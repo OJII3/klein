@@ -1,0 +1,10 @@
+{
+  "name": "klein",
+  "version": "0.1.0",
+  "description": "Pi Coding Agent Based Communication Agent.",
+  "license": "MIT",
+  "author": "OJII3",
+  "type": "module",
+  "scripts": {
+  }
+}
