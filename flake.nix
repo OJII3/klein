@@ -4,10 +4,7 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     flake-parts.url = "github:hercules-ci/flake-parts";
-    pi = {
-      url = "github:lukasl-dev/pi.nix";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
+    llm-agents.url = "github:numtide/llm-agents.nix";
   };
 
   outputs =
@@ -29,7 +26,7 @@
             packages = with pkgs; [
               nodejs_24
               pnpm
-              inputs'.pi.packages.coding-agent
+              inputs'.llm-agents.packages.pi
             ];
           };
         };
