@@ -1,6 +1,22 @@
-import type { DiscordChannel, DiscordService } from "../ports/discord-service.js";
+import { Client, Events, GatewayIntentBits, Partials, type Message } from "discord.js";
+
+import type { DiscordMessage } from "../domain/discord-message.js";
+import type { DiscordMessageHandler, DiscordService } from "../ports/discord-service.js";
 
 const DISCORD_MESSAGE_LIMIT = 2_000;
+
+interface SendableChannel {
+  send(content: string): Promise<unknown>;
+}
+
+function isSendableChannel(value: unknown): value is SendableChannel {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "send" in value &&
+    typeof value.send === "function"
+  );
+}
 
 function splitMessage(content: string): string[] {
   const chunks: string[] = [];
@@ -12,10 +28,88 @@ function splitMessage(content: string): string[] {
   return chunks;
 }
 
+function stripBotMention(content: string, botId: string): string {
+  return content.replace(new RegExp(`<@!?${botId}>`, "g"), "").trim();
+}
+
 export class DiscordJsService implements DiscordService {
-  async sendMessage(channel: DiscordChannel, content: string): Promise<void> {
+  private readonly client: Client;
+  private readonly channels = new Map<string, SendableChannel>();
+  private onMessage?: DiscordMessageHandler;
+
+  constructor(private readonly token: string) {
+    this.client = new Client({
+      intents: [
+        GatewayIntentBits.DirectMessages,
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent,
+      ],
+      partials: [Partials.Channel],
+    });
+  }
+
+  async start(onMessage: DiscordMessageHandler): Promise<void> {
+    this.onMessage = onMessage;
+    this.client.once(Events.ClientReady, (readyClient) => {
+      console.log(`Logged in as ${readyClient.user.tag}`);
+    });
+    this.client.on(Events.MessageCreate, (message) => {
+      void this.handleMessage(message).catch((error: unknown) => {
+        console.error("Failed to handle Discord message:", error);
+      });
+    });
+
+    await this.client.login(this.token);
+  }
+
+  async sendMessage(channelId: string, content: string): Promise<void> {
+    const channel = await this.getChannel(channelId);
+
     for (const chunk of splitMessage(content)) {
       await channel.send(chunk);
     }
+  }
+
+  async stop(): Promise<void> {
+    this.onMessage = undefined;
+    this.channels.clear();
+    this.client.destroy();
+  }
+
+  private async getChannel(channelId: string): Promise<SendableChannel> {
+    const cachedChannel = this.channels.get(channelId);
+    if (cachedChannel) return cachedChannel;
+
+    const channel = await this.client.channels.fetch(channelId);
+    if (!isSendableChannel(channel)) {
+      throw new Error(`Discord channel is not sendable: ${channelId}`);
+    }
+
+    this.channels.set(channelId, channel);
+    return channel;
+  }
+
+  private async handleMessage(message: Message): Promise<void> {
+    if (message.author.bot) return;
+
+    const botId = this.client.user?.id;
+    if (!botId) return;
+
+    if (message.guildId && !message.mentions.users.has(botId)) return;
+
+    const content = stripBotMention(message.content, botId);
+    if (!content) return;
+    if (!isSendableChannel(message.channel)) return;
+
+    this.channels.set(message.channelId, message.channel);
+
+    const normalizedMessage: DiscordMessage = {
+      authorName: message.member?.displayName ?? message.author.username,
+      channelId: message.channelId,
+      content,
+    };
+
+    await this.onMessage?.(normalizedMessage);
   }
 }

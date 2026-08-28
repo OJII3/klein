@@ -5,7 +5,7 @@ import type { DiscordService } from "../../../modules/discord/ports/discord-serv
 
 export function createDiscordSendTool(
   discordService: DiscordService,
-  channel: Parameters<DiscordService["sendMessage"]>[0],
+  channelId: Parameters<DiscordService["sendMessage"]>[0],
 ) {
   return defineTool({
     name: "discord_send",
@@ -21,7 +21,7 @@ export function createDiscordSendTool(
       content: Type.String({ minLength: 1 }),
     }),
     async execute(_toolCallId, params) {
-      await discordService.sendMessage(channel, params.content);
+      await discordService.sendMessage(channelId, params.content);
 
       return {
         content: [
