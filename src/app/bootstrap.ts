@@ -1,3 +1,5 @@
+import { resolve } from "node:path";
+
 import { AgentCoordinator } from "./agent-coordinator.js";
 import { TaskCoordinator } from "./task-coordinator.js";
 import { DiscordAgent } from "../agents/discord/discord-agent.js";
@@ -12,7 +14,8 @@ export async function bootstrap(): Promise<void> {
 
   const discordService = new DiscordJsService(token);
   const taskCoordinator = new TaskCoordinator();
-  const piAgentFactory = createPiAgentFactory();
+  const agentDir = resolve(process.env.PI_CODING_AGENT_DIR ?? ".runtime/pi");
+  const piAgentFactory = createPiAgentFactory({ agentDir });
   const agentCoordinator = new AgentCoordinator({
     createDiscordAgent: (channelId) =>
       DiscordAgent.create(piAgentFactory, discordService, channelId),

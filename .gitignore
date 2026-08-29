@@ -2,6 +2,10 @@
 .envrc
 .direnv
 
+# local secrets and runtime state
+.env
+.runtime/
+
 # nodejs
 /node_modules/
 /dist/

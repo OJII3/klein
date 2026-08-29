@@ -3,13 +3,16 @@ import {
   DefaultResourceLoader,
   SessionManager,
   createAgentSession,
-  getAgentDir,
 } from "@earendil-works/pi-coding-agent";
 
 import type { AgentDefinition } from "../../agents/core/agent-definition.js";
 import type { AgentFactory } from "../../agents/core/agent-factory.js";
 import type { AgentRuntime } from "../../agents/core/agent-runtime.js";
 import { adaptPiTools } from "./pi-tool-adapter.js";
+
+export interface PiAgentFactoryOptions {
+  readonly agentDir: string;
+}
 
 export class PiAgentRuntime implements AgentRuntime {
   private queue: Promise<void> = Promise.resolve();
@@ -31,10 +34,10 @@ export class PiAgentRuntime implements AgentRuntime {
   }
 }
 
-function createResourceLoader(systemPrompt: string): DefaultResourceLoader {
+function createResourceLoader(agentDir: string, systemPrompt: string): DefaultResourceLoader {
   return new DefaultResourceLoader({
     cwd: process.cwd(),
-    agentDir: getAgentDir(),
+    agentDir,
     noContextFiles: true,
     noExtensions: true,
     noPromptTemplates: true,
@@ -44,16 +47,17 @@ function createResourceLoader(systemPrompt: string): DefaultResourceLoader {
   });
 }
 
-export function createPiAgentFactory(): AgentFactory {
+export function createPiAgentFactory({ agentDir }: PiAgentFactoryOptions): AgentFactory {
   return {
     async create<TTool>(
       definition: AgentDefinition,
       tools: readonly TTool[],
     ): Promise<AgentRuntime> {
-      const resourceLoader = createResourceLoader(definition.systemPrompt);
+      const resourceLoader = createResourceLoader(agentDir, definition.systemPrompt);
       await resourceLoader.reload();
 
       const { session } = await createAgentSession({
+        agentDir,
         customTools: adaptPiTools(tools),
         resourceLoader,
         sessionManager: SessionManager.inMemory(),

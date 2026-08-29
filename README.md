@@ -12,11 +12,18 @@ pnpm install
 pnpm run build
 ```
 
-Set a Discord bot token and a provider API key, then start it:
+Copy the environment template, fill in the Discord bot token and OpenCode Go
+API key, then start it:
 
 ```sh
-DISCORD_BOT_TOKEN=... ANTHROPIC_API_KEY=... pnpm start
+cp .env.example .env
+${EDITOR:-vi} .env
+pnpm start
 ```
+
+The application uses OpenCode Go through Pi's `opencode-go` provider. Pi's
+runtime data is stored in `.runtime/pi` by default. Set
+`PI_CODING_AGENT_DIR` only when you need to override that location.
 
 The bot responds to direct messages and guild messages that mention it. The
 Discord application must have the Message Content intent enabled.
