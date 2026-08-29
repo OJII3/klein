@@ -11,6 +11,7 @@
     "lint:fix": "oxlint --fix",
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check",
+    "generate:config-schema": "pnpm run build && node scripts/generate-config-schema.mjs && pnpm exec oxfmt config/klein.schema.json",
     "start": "node --env-file-if-exists=.env dist/app/bootstrap.js",
     "typecheck": "tsc --noEmit"
   },
