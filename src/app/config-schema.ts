@@ -10,6 +10,32 @@ const ThinkingLevelSchema = Type.Union([
   Type.Literal("max"),
 ]);
 
+const DiscordIdSchema = Type.String({ minLength: 1, pattern: "^[0-9]+$" });
+const DiscordAccessSchema = Type.Union([Type.Literal("allow"), Type.Literal("deny")]);
+
+const DiscordThreadAccessSchema = Type.Object(
+  {
+    access: Type.Optional(DiscordAccessSchema),
+  },
+  { additionalProperties: false },
+);
+
+const DiscordChannelAccessSchema = Type.Object(
+  {
+    access: Type.Optional(DiscordAccessSchema),
+    threads: Type.Optional(Type.Record(DiscordIdSchema, DiscordThreadAccessSchema)),
+  },
+  { additionalProperties: false },
+);
+
+const DiscordGuildAccessSchema = Type.Object(
+  {
+    access: Type.Optional(DiscordAccessSchema),
+    channels: Type.Optional(Type.Record(DiscordIdSchema, DiscordChannelAccessSchema)),
+  },
+  { additionalProperties: false },
+);
+
 export const KleinConfigSchema = Type.Object(
   {
     $schema: Type.Optional(Type.String({ minLength: 1 })),
@@ -25,6 +51,19 @@ export const KleinConfigSchema = Type.Object(
     runtime: Type.Object(
       {
         agentDir: Type.String({ minLength: 1 }),
+      },
+      { additionalProperties: false },
+    ),
+    discord: Type.Object(
+      {
+        access: Type.Object(
+          {
+            default: DiscordAccessSchema,
+            directMessages: DiscordAccessSchema,
+            guilds: Type.Optional(Type.Record(DiscordIdSchema, DiscordGuildAccessSchema)),
+          },
+          { additionalProperties: false },
+        ),
       },
       { additionalProperties: false },
     ),
