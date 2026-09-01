@@ -12,18 +12,24 @@ pnpm install
 pnpm run build
 ```
 
-Copy the environment template, fill in the Discord bot token and OpenCode Go
-API key, then start it:
+Copy the configuration and environment templates, fill in the Discord access
+rules, bot token, and OpenCode Go API key, then start it:
 
 ```sh
+cp config/klein.example.json config/klein.json
 cp .env.example .env
 ${EDITOR:-vi} .env
+${EDITOR:-vi} config/klein.json
 pnpm start
 ```
 
 The application uses OpenCode Go through Pi's `opencode-go` provider. Pi's
-runtime data is stored in `.runtime/pi` by default. Set
-`PI_CODING_AGENT_DIR` only when you need to override that location.
+runtime data is stored in the directory configured by `runtime.agentDir`
+(`.runtime/pi` by default). Set `KLEIN_CONFIG_PATH` only when you need to use
+a different configuration file.
 
-The bot responds to direct messages and guild messages that mention it. The
-Discord application must have the Message Content intent enabled.
+The bot responds to direct messages and guild messages that mention it when
+allowed by `discord.access`. Guild access is resolved in the order
+thread → channel → guild → default, while direct messages use
+`directMessages`. The Discord application must have the Message Content intent
+enabled.

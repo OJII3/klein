@@ -6,6 +6,9 @@
 .env
 .runtime/
 
+# local configuration
+/config/klein.json
+
 # nodejs
 /node_modules/
 /dist/

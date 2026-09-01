@@ -1,20 +1,26 @@
 import { resolve } from "node:path";
 
 import { AgentCoordinator } from "./agent-coordinator.js";
+import { loadConfig } from "./config.js";
 import { TaskCoordinator } from "./task-coordinator.js";
 import { DiscordAgent } from "../agents/discord/discord-agent.js";
 import { createPiAgentFactory } from "../runtime/pi/pi-agent-runtime.js";
+import { createDiscordAccessPolicy } from "../modules/discord/domain/discord-access-policy.js";
 import { DiscordJsService } from "../modules/discord/infrastructure/discord-js-service.js";
 
 export async function bootstrap(): Promise<void> {
+  const config = await loadConfig();
   const token = process.env.DISCORD_BOT_TOKEN;
   if (!token) {
     throw new Error("DISCORD_BOT_TOKEN is required");
   }
 
-  const discordService = new DiscordJsService(token);
+  const discordService = new DiscordJsService(
+    token,
+    createDiscordAccessPolicy(config.discord.access),
+  );
   const taskCoordinator = new TaskCoordinator();
-  const agentDir = resolve(process.env.PI_CODING_AGENT_DIR ?? ".runtime/pi");
+  const agentDir = resolve(config.runtime.agentDir);
   const piAgentFactory = createPiAgentFactory({ agentDir });
   const agentCoordinator = new AgentCoordinator({
     createDiscordAgent: (channelId) =>

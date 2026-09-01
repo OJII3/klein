@@ -1,5 +1,6 @@
 import { Client, Events, GatewayIntentBits, Partials, type Message } from "discord.js";
 
+import type { DiscordAccessPolicy } from "../domain/discord-access-policy.js";
 import type { DiscordMessage } from "../domain/discord-message.js";
 import type { DiscordMessageHandler, DiscordService } from "../ports/discord-service.js";
 
@@ -37,7 +38,10 @@ export class DiscordJsService implements DiscordService {
   private readonly channels = new Map<string, SendableChannel>();
   private onMessage?: DiscordMessageHandler;
 
-  constructor(private readonly token: string) {
+  constructor(
+    private readonly token: string,
+    private readonly accessPolicy: DiscordAccessPolicy,
+  ) {
     this.client = new Client({
       intents: [
         GatewayIntentBits.DirectMessages,
@@ -100,15 +104,30 @@ export class DiscordJsService implements DiscordService {
 
     const content = stripBotMention(message.content, botId);
     if (!content) return;
+    const thread = message.channel.isThread() ? message.channel : undefined;
     if (!isSendableChannel(message.channel)) return;
 
     this.channels.set(message.channelId, message.channel);
 
+    const parentChannelId = thread?.parentId ?? undefined;
     const normalizedMessage: DiscordMessage = {
       authorName: message.member?.displayName ?? message.author.username,
       channelId: message.channelId,
       content,
+      guildId: message.guildId ?? undefined,
+      parentChannelId,
+      threadId: thread?.id,
     };
+
+    if (
+      !this.accessPolicy.canReceive({
+        guildId: normalizedMessage.guildId,
+        channelId: parentChannelId ?? normalizedMessage.channelId,
+        threadId: normalizedMessage.threadId,
+      })
+    ) {
+      return;
+    }
 
     await this.onMessage?.(normalizedMessage);
   }
