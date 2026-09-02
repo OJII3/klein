@@ -28,6 +28,9 @@ runtime data is stored in the directory configured by `runtime.agentDir`
 (`.runtime/pi` by default). Set `KLEIN_CONFIG_PATH` only when you need to use
 a different configuration file.
 
+The `llm.model` and optional `llm.thinkingLevel` settings are passed directly
+to each Pi session.
+
 The bot responds to direct messages and guild messages that mention it when
 allowed by `discord.access`. Guild access is resolved in the order
 thread → channel → guild → default, while direct messages use

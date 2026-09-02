@@ -21,7 +21,7 @@ export async function bootstrap(): Promise<void> {
   );
   const taskCoordinator = new TaskCoordinator();
   const agentDir = resolve(config.runtime.agentDir);
-  const piAgentFactory = createPiAgentFactory({ agentDir });
+  const piAgentFactory = createPiAgentFactory({ agentDir, llm: config.llm });
   const agentCoordinator = new AgentCoordinator({
     createDiscordAgent: (channelId) =>
       DiscordAgent.create(piAgentFactory, discordService, channelId),
