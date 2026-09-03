@@ -2,6 +2,7 @@ import {
   AgentSession,
   DefaultResourceLoader,
   SessionManager,
+  SettingsManager,
   createAgentSession,
 } from "@earendil-works/pi-coding-agent";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
@@ -10,6 +11,7 @@ import type { CreateAgentSessionOptions } from "@earendil-works/pi-coding-agent"
 import type { AgentDefinition } from "../../agents/core/agent-definition.js";
 import type { AgentFactory } from "../../agents/core/agent-factory.js";
 import type { AgentRuntime } from "../../agents/core/agent-runtime.js";
+import { createBackgroundCompactionExtension } from "./background-compaction.js";
 import { adaptPiTools } from "./pi-tool-adapter.js";
 
 export interface PiAgentFactoryOptions {
@@ -41,10 +43,16 @@ export class PiAgentRuntime implements AgentRuntime {
   }
 }
 
-function createResourceLoader(agentDir: string, systemPrompt: string): DefaultResourceLoader {
+function createResourceLoader(
+  agentDir: string,
+  systemPrompt: string,
+  settingsManager: SettingsManager,
+): DefaultResourceLoader {
   return new DefaultResourceLoader({
     cwd: process.cwd(),
     agentDir,
+    extensionFactories: [createBackgroundCompactionExtension(settingsManager)],
+    settingsManager,
     noContextFiles: true,
     noExtensions: true,
     noPromptTemplates: true,
@@ -74,7 +82,12 @@ export function createPiAgentFactory({ agentDir, llm }: PiAgentFactoryOptions): 
       definition: AgentDefinition,
       tools: readonly TTool[],
     ): Promise<AgentRuntime> {
-      const resourceLoader = createResourceLoader(agentDir, definition.systemPrompt);
+      const settingsManager = SettingsManager.create(process.cwd(), agentDir);
+      const resourceLoader = createResourceLoader(
+        agentDir,
+        definition.systemPrompt,
+        settingsManager,
+      );
       await resourceLoader.reload();
 
       const { session } = await createAgentSession({
@@ -83,6 +96,7 @@ export function createPiAgentFactory({ agentDir, llm }: PiAgentFactoryOptions): 
         model,
         resourceLoader,
         sessionManager: SessionManager.inMemory(),
+        settingsManager,
         thinkingLevel: llm.thinkingLevel,
         tools: [...definition.toolNames],
       });
