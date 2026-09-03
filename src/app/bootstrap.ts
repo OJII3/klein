@@ -35,8 +35,9 @@ export async function bootstrap(): Promise<void> {
     shuttingDown = true;
     console.log(`Received ${signal}, shutting down...`);
 
-    await discordService.stop();
+    discordService.stopAccepting();
     await taskCoordinator.waitForCompletion();
+    await discordService.stop();
     await agentCoordinator.dispose();
   };
 

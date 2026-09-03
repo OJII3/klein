@@ -37,6 +37,8 @@ export class DiscordJsService implements DiscordService {
   private readonly client: Client;
   private readonly channels = new Map<string, SendableChannel>();
   private onMessage?: DiscordMessageHandler;
+  private messageListener?: (message: Message) => void;
+  private acceptingMessages = false;
 
   constructor(
     private readonly token: string,
@@ -55,14 +57,16 @@ export class DiscordJsService implements DiscordService {
 
   async start(onMessage: DiscordMessageHandler): Promise<void> {
     this.onMessage = onMessage;
+    this.acceptingMessages = true;
     this.client.once(Events.ClientReady, (readyClient) => {
       console.log(`Logged in as ${readyClient.user.tag}`);
     });
-    this.client.on(Events.MessageCreate, (message) => {
+    this.messageListener = (message) => {
       void this.handleMessage(message).catch((error: unknown) => {
         console.error("Failed to handle Discord message:", error);
       });
-    });
+    };
+    this.client.on(Events.MessageCreate, this.messageListener);
 
     await this.client.login(this.token);
   }
@@ -75,8 +79,18 @@ export class DiscordJsService implements DiscordService {
     }
   }
 
+  stopAccepting(): void {
+    this.acceptingMessages = false;
+
+    if (this.messageListener) {
+      this.client.off(Events.MessageCreate, this.messageListener);
+      this.messageListener = undefined;
+    }
+  }
+
   async stop(): Promise<void> {
     this.onMessage = undefined;
+    this.stopAccepting();
     this.channels.clear();
     this.client.destroy();
   }
@@ -95,6 +109,7 @@ export class DiscordJsService implements DiscordService {
   }
 
   private async handleMessage(message: Message): Promise<void> {
+    if (!this.acceptingMessages) return;
     if (message.author.bot) return;
 
     const botId = this.client.user?.id;
@@ -118,6 +133,8 @@ export class DiscordJsService implements DiscordService {
       parentChannelId,
       threadId: thread?.id,
     };
+
+    if (!this.acceptingMessages) return;
 
     if (
       !this.accessPolicy.canReceive({

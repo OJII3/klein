@@ -30,5 +30,8 @@ jobs:
       - name: Typecheck (tsc)
         run: pnpm run typecheck
 
+      - name: Test (Node built-in test)
+        run: pnpm run test
+
       - name: Build
         run: pnpm run build
