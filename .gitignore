@@ -2,5 +2,13 @@
 .envrc
 .direnv
 
+# local secrets and runtime state
+.env
+.runtime/
+
+# local configuration
+/config/klein.json
+
 # nodejs
 /node_modules/
+/dist/

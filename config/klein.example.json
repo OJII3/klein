@@ -1,0 +1,41 @@
+{
+  "$schema": "./klein.schema.json",
+  "version": 1,
+  "llm": {
+    "provider": "opencode-go",
+    "model": "kimi-k3",
+    "thinkingLevel": "medium"
+  },
+  "runtime": {
+    "agentDir": ".runtime/pi"
+  },
+  "discord": {
+    "access": {
+      "default": "deny",
+      "directMessages": "allow",
+      "guilds": {
+        "123456789012345678": {
+          "access": "allow",
+          "channels": {
+            "234567890123456789": {
+              "access": "deny",
+              "threads": {
+                "345678901234567890": {
+                  "access": "allow"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "features": {
+    "memory": {
+      "enabled": false
+    },
+    "minecraft": {
+      "enabled": false
+    }
+  }
+}
