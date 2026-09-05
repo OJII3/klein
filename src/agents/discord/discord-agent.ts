@@ -1,7 +1,7 @@
 import type { AgentFactory } from "../core/agent-factory.js";
 import type { AgentRuntime } from "../core/agent-runtime.js";
 import type { DiscordService } from "../../modules/discord/ports/discord-service.js";
-import { DISCORD_AGENT_DEFINITION } from "./prompt-policy.js";
+import { DISCORD_AGENT_TOOL_NAMES } from "./prompt-policy.js";
 import { createDiscordSendTool } from "./tools/discord-send.js";
 
 export class DiscordAgent {
@@ -11,10 +11,15 @@ export class DiscordAgent {
     agentFactory: AgentFactory,
     discordService: DiscordService,
     channelId: string,
+    systemPrompt: string,
   ): Promise<DiscordAgent> {
-    const runtime = await agentFactory.create(DISCORD_AGENT_DEFINITION, [
-      createDiscordSendTool(discordService, channelId),
-    ]);
+    const runtime = await agentFactory.create(
+      {
+        systemPrompt,
+        toolNames: DISCORD_AGENT_TOOL_NAMES,
+      },
+      [createDiscordSendTool(discordService, channelId)],
+    );
 
     return new DiscordAgent(runtime);
   }

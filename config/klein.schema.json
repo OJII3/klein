@@ -175,6 +175,22 @@
       },
       "additionalProperties": false
     },
+    "agents": {
+      "type": "object",
+      "properties": {
+        "discord": {
+          "type": "object",
+          "properties": {
+            "systemPromptFile": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
     "features": {
       "type": "object",
       "required": ["memory", "minecraft"],
