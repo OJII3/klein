@@ -9,6 +9,11 @@
   "runtime": {
     "agentDir": ".runtime/pi"
   },
+  "agents": {
+    "discord": {
+      "systemPromptFile": "config/SOUL.md"
+    }
+  },
   "discord": {
     "access": {
       "default": "deny",

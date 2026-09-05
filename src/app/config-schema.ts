@@ -36,6 +36,13 @@ const DiscordGuildAccessSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const AgentPromptConfigurationSchema = Type.Object(
+  {
+    systemPromptFile: Type.Optional(Type.String({ minLength: 1 })),
+  },
+  { additionalProperties: false },
+);
+
 export const KleinConfigSchema = Type.Object(
   {
     $schema: Type.Optional(Type.String({ minLength: 1 })),
@@ -66,6 +73,14 @@ export const KleinConfigSchema = Type.Object(
         ),
       },
       { additionalProperties: false },
+    ),
+    agents: Type.Optional(
+      Type.Object(
+        {
+          discord: Type.Optional(AgentPromptConfigurationSchema),
+        },
+        { additionalProperties: false },
+      ),
     ),
     features: Type.Object(
       {

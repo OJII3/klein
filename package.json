@@ -13,7 +13,7 @@
     "fmt:check": "oxfmt --check",
     "generate:config-schema": "pnpm run build && node scripts/generate-config-schema.mjs && pnpm exec oxfmt config/klein.schema.json",
     "start": "node --env-file-if-exists=.env dist/app/bootstrap.js",
-    "test": "pnpm run build && node --test dist/modules/discord/domain/discord-access-policy.test.js dist/runtime/pi/pi-agent-runtime.test.js",
+    "test": "pnpm run build && node --test dist/app/prompt.test.js dist/modules/discord/domain/discord-access-policy.test.js dist/runtime/pi/pi-agent-runtime.test.js",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
