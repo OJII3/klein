@@ -1,7 +1,11 @@
 import { Client, Events, GatewayIntentBits, Partials, type Message } from "discord.js";
 
 import type { DiscordAccessPolicy } from "../domain/discord-access-policy.js";
-import type { DiscordMessage } from "../domain/discord-message.js";
+import {
+  resolveDiscordMentions,
+  type DiscordMessage,
+  type DiscordUser,
+} from "../domain/discord-message.js";
 import type { DiscordMessageHandler, DiscordService } from "../ports/discord-service.js";
 
 const DISCORD_MESSAGE_LIMIT = 2_000;
@@ -27,10 +31,6 @@ function splitMessage(content: string): string[] {
   }
 
   return chunks;
-}
-
-function stripBotMention(content: string, botId: string): string {
-  return content.replace(new RegExp(`<@!?${botId}>`, "g"), "").trim();
 }
 
 export class DiscordJsService implements DiscordService {
@@ -117,7 +117,7 @@ export class DiscordJsService implements DiscordService {
 
     if (message.guildId && !message.mentions.users.has(botId)) return;
 
-    const content = stripBotMention(message.content, botId);
+    const content = message.content.trim();
     if (!content) return;
     const thread = message.channel.isThread() ? message.channel : undefined;
     if (!isSendableChannel(message.channel)) return;
@@ -125,10 +125,30 @@ export class DiscordJsService implements DiscordService {
     this.channels.set(message.channelId, message.channel);
 
     const parentChannelId = thread?.parentId ?? undefined;
+    const author: DiscordUser = {
+      id: message.author.id,
+      username: message.author.username,
+      displayName: message.member?.displayName ?? message.author.displayName,
+    };
     const normalizedMessage: DiscordMessage = {
-      authorName: message.member?.displayName ?? message.author.username,
+      author,
       channelId: message.channelId,
-      content,
+      content: resolveDiscordMentions(content, {
+        user: (userId) => {
+          const user = message.mentions.users.get(userId);
+          if (!user) return undefined;
+
+          return {
+            id: user.id,
+            username: user.username,
+            displayName: message.mentions.members?.get(userId)?.displayName ?? user.displayName,
+          };
+        },
+        role: (roleId) => {
+          const role = message.mentions.roles.get(roleId);
+          return role ? { id: role.id, name: role.name } : undefined;
+        },
+      }),
       guildId: message.guildId ?? undefined,
       parentChannelId,
       threadId: thread?.id,

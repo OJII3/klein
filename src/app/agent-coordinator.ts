@@ -33,7 +33,7 @@ export class AgentCoordinator {
   private async processMessage(message: DiscordMessage): Promise<void> {
     try {
       const agent = await this.getDiscordAgent(message.channelId);
-      await agent.prompt(message.authorName, message.content);
+      await agent.prompt(message.author, message.content);
     } catch (error) {
       console.error("Failed to handle Discord message:", error);
       await this.dependencies.discordService.sendMessage(
