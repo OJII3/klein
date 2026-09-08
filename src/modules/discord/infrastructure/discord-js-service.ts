@@ -1,7 +1,11 @@
 import { Client, Events, GatewayIntentBits, Partials, type Message } from "discord.js";
 
 import type { DiscordAccessPolicy } from "../domain/discord-access-policy.js";
-import type { DiscordMessage } from "../domain/discord-message.js";
+import {
+  resolveDiscordUserMentions,
+  type DiscordMessage,
+  type DiscordUser,
+} from "../domain/discord-message.js";
 import type { DiscordMessageHandler, DiscordService } from "../ports/discord-service.js";
 
 const DISCORD_MESSAGE_LIMIT = 2_000;
@@ -125,10 +129,24 @@ export class DiscordJsService implements DiscordService {
     this.channels.set(message.channelId, message.channel);
 
     const parentChannelId = thread?.parentId ?? undefined;
+    const author: DiscordUser = {
+      id: message.author.id,
+      username: message.author.username,
+      displayName: message.member?.displayName ?? message.author.displayName,
+    };
     const normalizedMessage: DiscordMessage = {
-      authorName: message.member?.displayName ?? message.author.username,
+      author,
       channelId: message.channelId,
-      content,
+      content: resolveDiscordUserMentions(content, (userId) => {
+        const user = message.mentions.users.get(userId);
+        if (!user) return undefined;
+
+        return {
+          id: user.id,
+          username: user.username,
+          displayName: message.mentions.members?.get(userId)?.displayName ?? user.displayName,
+        };
+      }),
       guildId: message.guildId ?? undefined,
       parentChannelId,
       threadId: thread?.id,
