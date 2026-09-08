@@ -2,7 +2,7 @@ import { Client, Events, GatewayIntentBits, Partials, type Message } from "disco
 
 import type { DiscordAccessPolicy } from "../domain/discord-access-policy.js";
 import {
-  resolveDiscordUserMentions,
+  resolveDiscordMentions,
   type DiscordMessage,
   type DiscordUser,
 } from "../domain/discord-message.js";
@@ -133,15 +133,21 @@ export class DiscordJsService implements DiscordService {
     const normalizedMessage: DiscordMessage = {
       author,
       channelId: message.channelId,
-      content: resolveDiscordUserMentions(content, (userId) => {
-        const user = message.mentions.users.get(userId);
-        if (!user) return undefined;
+      content: resolveDiscordMentions(content, {
+        user: (userId) => {
+          const user = message.mentions.users.get(userId);
+          if (!user) return undefined;
 
-        return {
-          id: user.id,
-          username: user.username,
-          displayName: message.mentions.members?.get(userId)?.displayName ?? user.displayName,
-        };
+          return {
+            id: user.id,
+            username: user.username,
+            displayName: message.mentions.members?.get(userId)?.displayName ?? user.displayName,
+          };
+        },
+        role: (roleId) => {
+          const role = message.mentions.roles.get(roleId);
+          return role ? { id: role.id, name: role.name } : undefined;
+        },
       }),
       guildId: message.guildId ?? undefined,
       parentChannelId,
