@@ -33,10 +33,6 @@ function splitMessage(content: string): string[] {
   return chunks;
 }
 
-function stripBotMention(content: string, botId: string): string {
-  return content.replace(new RegExp(`<@!?${botId}>`, "g"), "").trim();
-}
-
 export class DiscordJsService implements DiscordService {
   private readonly client: Client;
   private readonly channels = new Map<string, SendableChannel>();
@@ -121,7 +117,7 @@ export class DiscordJsService implements DiscordService {
 
     if (message.guildId && !message.mentions.users.has(botId)) return;
 
-    const content = stripBotMention(message.content, botId);
+    const content = message.content.trim();
     if (!content) return;
     const thread = message.channel.isThread() ? message.channel : undefined;
     if (!isSendableChannel(message.channel)) return;

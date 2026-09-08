@@ -13,6 +13,12 @@ const user: DiscordUser = {
   displayName: "さつき",
 };
 
+const bot: DiscordUser = {
+  id: "987654321098765432",
+  username: "klein",
+  displayName: "クライン",
+};
+
 test("formats a Discord user with display name and username", () => {
   assert.equal(formatDiscordUser(user), "さつき (@satsuki)");
 });
@@ -28,5 +34,14 @@ test("resolves user mentions without changing unrelated numbers", () => {
       (userId) => (userId === user.id ? user : undefined),
     ),
     "こんにちは @さつき (@satsuki)。注文番号は123456です。<@!999999999999999999>",
+  );
+});
+
+test("resolves bot mentions like any other user mention", () => {
+  assert.equal(
+    resolveDiscordUserMentions("<@987654321098765432> これを教えて", (userId) =>
+      userId === bot.id ? bot : undefined,
+    ),
+    "@クライン (@klein) これを教えて",
   );
 });
