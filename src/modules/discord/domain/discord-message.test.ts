@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  formatDiscordReply,
   formatDiscordUser,
   resolveDiscordMentions,
   type DiscordRole,
@@ -31,6 +32,26 @@ test("formats a Discord user with display name and username", () => {
 
 test("does not duplicate a username used as the display name", () => {
   assert.equal(formatDiscordUser({ ...user, displayName: user.username }), "satsuki");
+});
+
+test("formats a reply reference with a display name and message id", () => {
+  assert.equal(
+    formatDiscordReply({
+      author: user,
+      content: "元のメッセージ\nの本文",
+      id: "message-123",
+    }),
+    "↪ さつき: 元のメッセージ の本文 ⟦message-123⟧",
+  );
+});
+
+test("truncates a reply reference preview", () => {
+  const content = "あ".repeat(257);
+
+  assert.equal(
+    formatDiscordReply({ content, id: "message-123" }),
+    `↪ 不明なユーザー: ${"あ".repeat(256)}… ⟦message-123⟧`,
+  );
 });
 
 test("resolves user mentions without changing unrelated numbers", () => {
