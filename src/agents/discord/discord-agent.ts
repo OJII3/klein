@@ -1,7 +1,9 @@
 import type { AgentFactory } from "../core/agent-factory.js";
 import type { AgentRuntime } from "../core/agent-runtime.js";
 import {
+  formatDiscordReply,
   formatDiscordUser,
+  type DiscordReplyReference,
   type DiscordUser,
 } from "../../modules/discord/domain/discord-message.js";
 import type { DiscordService } from "../../modules/discord/ports/discord-service.js";
@@ -28,8 +30,9 @@ export class DiscordAgent {
     return new DiscordAgent(runtime);
   }
 
-  prompt(author: DiscordUser, content: string): Promise<void> {
-    return this.runtime.prompt(`${formatDiscordUser(author)}:\n${content}`);
+  prompt(author: DiscordUser, content: string, replyTo?: DiscordReplyReference): Promise<void> {
+    const replyContext = replyTo ? `${formatDiscordReply(replyTo)}\n` : "";
+    return this.runtime.prompt(`${replyContext}${formatDiscordUser(author)}:\n${content}`);
   }
 
   dispose(): void {

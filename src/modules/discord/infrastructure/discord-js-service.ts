@@ -4,6 +4,7 @@ import type { DiscordAccessPolicy } from "../domain/discord-access-policy.js";
 import {
   resolveDiscordMentions,
   type DiscordMessage,
+  type DiscordReplyReference,
   type DiscordUser,
 } from "../domain/discord-message.js";
 import type { DiscordMessageHandler, DiscordService } from "../ports/discord-service.js";
@@ -31,6 +32,14 @@ function splitMessage(content: string): string[] {
   }
 
   return chunks;
+}
+
+function toDiscordUser(message: Message): DiscordUser {
+  return {
+    id: message.author.id,
+    username: message.author.username,
+    displayName: message.member?.displayName ?? message.author.displayName,
+  };
 }
 
 export class DiscordJsService implements DiscordService {
@@ -125,11 +134,7 @@ export class DiscordJsService implements DiscordService {
     this.channels.set(message.channelId, message.channel);
 
     const parentChannelId = thread?.parentId ?? undefined;
-    const author: DiscordUser = {
-      id: message.author.id,
-      username: message.author.username,
-      displayName: message.member?.displayName ?? message.author.displayName,
-    };
+    const author = toDiscordUser(message);
     const normalizedMessage: DiscordMessage = {
       author,
       channelId: message.channelId,
@@ -150,6 +155,7 @@ export class DiscordJsService implements DiscordService {
         },
       }),
       guildId: message.guildId ?? undefined,
+      id: message.id,
       parentChannelId,
       threadId: thread?.id,
     };
@@ -166,6 +172,26 @@ export class DiscordJsService implements DiscordService {
       return;
     }
 
-    await this.onMessage?.(normalizedMessage);
+    await this.onMessage?.({
+      ...normalizedMessage,
+      replyTo: await this.fetchReplyReference(message),
+    });
+  }
+
+  private async fetchReplyReference(message: Message): Promise<DiscordReplyReference | undefined> {
+    const messageId = message.reference?.messageId;
+    if (!messageId) return undefined;
+
+    try {
+      const referencedMessage = await message.fetchReference();
+      return {
+        author: toDiscordUser(referencedMessage),
+        content: referencedMessage.content.trim(),
+        id: referencedMessage.id,
+      };
+    } catch (error) {
+      console.warn(`Failed to fetch Discord reply reference: ${messageId}`, error);
+      return { id: messageId };
+    }
   }
 }
