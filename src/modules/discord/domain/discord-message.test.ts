@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  formatDiscordMessage,
   formatDiscordReply,
   formatDiscordUser,
   resolveDiscordMentions,
@@ -28,6 +29,23 @@ const role: DiscordRole = {
 
 test("formats a Discord user with display name and username", () => {
   assert.equal(formatDiscordUser(user), "さつき (@satsuki)");
+});
+
+test("formats a Discord message with its reply context", () => {
+  assert.equal(
+    formatDiscordMessage({
+      author: user,
+      channelId: "channel-123",
+      content: "本文です",
+      id: "message-456",
+      replyTo: {
+        author: bot,
+        content: "返信元",
+        id: "message-123",
+      },
+    }),
+    "↪ クライン: 返信元 ⟦message-123⟧\nさつき (@satsuki):\n本文です",
+  );
 });
 
 test("does not duplicate a username used as the display name", () => {

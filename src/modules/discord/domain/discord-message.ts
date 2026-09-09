@@ -26,6 +26,11 @@ export interface DiscordMessage {
   readonly replyTo?: DiscordReplyReference;
 }
 
+export interface DiscordMessageLocator {
+  readonly channelId: string;
+  readonly messageId: string;
+}
+
 const DISCORD_REPLY_PREVIEW_LIMIT = 256;
 
 export function formatDiscordUser(user: DiscordUser): string {
@@ -41,6 +46,12 @@ export function formatDiscordReply(reply: DiscordReplyReference): string {
   const truncated = content.length > preview.length ? `${preview}…` : preview;
 
   return `↪ ${author}${truncated ? `: ${truncated}` : ""} ⟦${reply.id}⟧`;
+}
+
+export function formatDiscordMessage(message: DiscordMessage): string {
+  const replyContext = message.replyTo ? `${formatDiscordReply(message.replyTo)}\n` : "";
+
+  return `${replyContext}${formatDiscordUser(message.author)}:\n${message.content}`;
 }
 
 export function resolveDiscordMentions(

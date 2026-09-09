@@ -1,13 +1,12 @@
 import type { AgentFactory } from "../core/agent-factory.js";
 import type { AgentRuntime } from "../core/agent-runtime.js";
 import {
-  formatDiscordReply,
-  formatDiscordUser,
-  type DiscordReplyReference,
-  type DiscordUser,
+  formatDiscordMessage,
+  type DiscordMessage,
 } from "../../modules/discord/domain/discord-message.js";
 import type { DiscordService } from "../../modules/discord/ports/discord-service.js";
 import { DISCORD_AGENT_TOOL_NAMES } from "./prompt-policy.js";
+import { createDiscordReadTool } from "./tools/discord-read.js";
 import { createDiscordSendTool } from "./tools/discord-send.js";
 
 export class DiscordAgent {
@@ -24,15 +23,17 @@ export class DiscordAgent {
         systemPrompt,
         toolNames: DISCORD_AGENT_TOOL_NAMES,
       },
-      [createDiscordSendTool(discordService, channelId)],
+      [
+        createDiscordReadTool(discordService, channelId),
+        createDiscordSendTool(discordService, channelId),
+      ],
     );
 
     return new DiscordAgent(runtime);
   }
 
-  prompt(author: DiscordUser, content: string, replyTo?: DiscordReplyReference): Promise<void> {
-    const replyContext = replyTo ? `${formatDiscordReply(replyTo)}\n` : "";
-    return this.runtime.prompt(`${replyContext}${formatDiscordUser(author)}:\n${content}`);
+  prompt(message: DiscordMessage): Promise<void> {
+    return this.runtime.prompt(formatDiscordMessage(message));
   }
 
   dispose(): void {
