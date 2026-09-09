@@ -137,11 +137,6 @@ export class DiscordJsService implements DiscordService {
     if (!this.acceptingMessages) return;
     if (message.author.bot) return;
 
-    const botId = this.client.user?.id;
-    if (!botId) return;
-
-    if (message.guildId && !message.mentions.users.has(botId)) return;
-
     const content = message.content.trim();
     if (!content) return;
     if (!isSendableChannel(message.channel)) return;
