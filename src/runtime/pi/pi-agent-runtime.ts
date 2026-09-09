@@ -1,3 +1,5 @@
+import { resolve } from "node:path";
+
 import {
   AgentSession,
   DefaultResourceLoader,
@@ -23,6 +25,8 @@ export interface PiAgentFactoryOptions {
   };
 }
 
+export const KLEIN_SKILLS_DIRECTORY = "config/skills";
+
 export class PiAgentRuntime implements AgentRuntime {
   private queue: Promise<void> = Promise.resolve();
 
@@ -43,7 +47,7 @@ export class PiAgentRuntime implements AgentRuntime {
   }
 }
 
-function createResourceLoader(
+export function createResourceLoader(
   agentDir: string,
   systemPrompt: string,
   settingsManager: SettingsManager,
@@ -53,6 +57,7 @@ function createResourceLoader(
     agentDir,
     extensionFactories: [createBackgroundCompactionExtension(settingsManager)],
     settingsManager,
+    additionalSkillPaths: [resolve(process.cwd(), KLEIN_SKILLS_DIRECTORY)],
     noContextFiles: true,
     noExtensions: true,
     noPromptTemplates: true,
