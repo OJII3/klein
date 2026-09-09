@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { resolve } from "node:path";
 
 import {
   SettingsManager,
@@ -13,7 +14,7 @@ import {
   createBackgroundCompactionExtension,
   shouldStartBackgroundCompaction,
 } from "./background-compaction.js";
-import { resolveConfiguredModel } from "./pi-agent-runtime.js";
+import { createResourceLoader, resolveConfiguredModel } from "./pi-agent-runtime.js";
 
 test("resolves a configured built-in model", () => {
   const model = resolveConfiguredModel("opencode-go", "kimi-k3");
@@ -27,6 +28,22 @@ test("rejects an unknown configured model", () => {
     () => resolveConfiguredModel("opencode-go", "does-not-exist"),
     /Configured Pi model was not found: opencode-go\/does-not-exist/,
   );
+});
+
+test("loads Klein skills from the configured skill directory", async () => {
+  const loader = createResourceLoader(
+    resolve(".runtime/pi"),
+    "Test system prompt",
+    SettingsManager.inMemory(),
+  );
+
+  await loader.reload();
+
+  assert.deepEqual(
+    loader.getSkills().skills.map((skill) => skill.name),
+    ["honkai-character-dialogue"],
+  );
+  assert.deepEqual(loader.getSkills().diagnostics, []);
 });
 
 test("starts background compaction before the built-in threshold", async () => {
