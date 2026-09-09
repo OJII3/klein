@@ -4,6 +4,7 @@ import type { DiscordAccessPolicy } from "../domain/discord-access-policy.js";
 import {
   resolveDiscordMentions,
   type DiscordMessage,
+  type DiscordMessageLocator,
   type DiscordReplyReference,
   type DiscordUser,
 } from "../domain/discord-message.js";
@@ -88,6 +89,21 @@ export class DiscordJsService implements DiscordService {
     }
   }
 
+  async readMessage(locator: DiscordMessageLocator): Promise<DiscordMessage> {
+    const channel = await this.client.channels.fetch(locator.channelId);
+    if (!channel?.isTextBased()) {
+      throw new Error(`Discord channel cannot contain messages: ${locator.channelId}`);
+    }
+
+    const message = await channel.messages.fetch(locator.messageId);
+    const normalizedMessage = this.toDiscordMessage(message);
+
+    return {
+      ...normalizedMessage,
+      replyTo: await this.fetchReplyReference(message),
+    };
+  }
+
   stopAccepting(): void {
     this.acceptingMessages = false;
 
@@ -128,44 +144,18 @@ export class DiscordJsService implements DiscordService {
 
     const content = message.content.trim();
     if (!content) return;
-    const thread = message.channel.isThread() ? message.channel : undefined;
     if (!isSendableChannel(message.channel)) return;
 
     this.channels.set(message.channelId, message.channel);
 
-    const parentChannelId = thread?.parentId ?? undefined;
-    const author = toDiscordUser(message);
-    const normalizedMessage: DiscordMessage = {
-      author,
-      channelId: message.channelId,
-      content: resolveDiscordMentions(content, {
-        user: (userId) => {
-          const user = message.mentions.users.get(userId);
-          if (!user) return undefined;
-
-          return {
-            id: user.id,
-            username: user.username,
-            displayName: message.mentions.members?.get(userId)?.displayName ?? user.displayName,
-          };
-        },
-        role: (roleId) => {
-          const role = message.mentions.roles.get(roleId);
-          return role ? { id: role.id, name: role.name } : undefined;
-        },
-      }),
-      guildId: message.guildId ?? undefined,
-      id: message.id,
-      parentChannelId,
-      threadId: thread?.id,
-    };
+    const normalizedMessage = this.toDiscordMessage(message);
 
     if (!this.acceptingMessages) return;
 
     if (
       !this.accessPolicy.canReceive({
         guildId: normalizedMessage.guildId,
-        channelId: parentChannelId ?? normalizedMessage.channelId,
+        channelId: normalizedMessage.parentChannelId ?? normalizedMessage.channelId,
         threadId: normalizedMessage.threadId,
       })
     ) {
@@ -178,6 +168,41 @@ export class DiscordJsService implements DiscordService {
     });
   }
 
+  private toDiscordMessage(message: Message): DiscordMessage {
+    const thread = message.channel.isThread() ? message.channel : undefined;
+
+    return {
+      author: toDiscordUser(message),
+      channelId: message.channelId,
+      content: this.normalizeMessageContent(message),
+      guildId: message.guildId ?? undefined,
+      id: message.id,
+      parentChannelId: thread?.parentId ?? undefined,
+      threadId: thread?.id,
+    };
+  }
+
+  private normalizeMessageContent(message: Message): string {
+    const content = message.content.trim();
+
+    return resolveDiscordMentions(content, {
+      user: (userId) => {
+        const user = message.mentions.users.get(userId);
+        if (!user) return undefined;
+
+        return {
+          id: user.id,
+          username: user.username,
+          displayName: message.mentions.members?.get(userId)?.displayName ?? user.displayName,
+        };
+      },
+      role: (roleId) => {
+        const role = message.mentions.roles.get(roleId);
+        return role ? { id: role.id, name: role.name } : undefined;
+      },
+    });
+  }
+
   private async fetchReplyReference(message: Message): Promise<DiscordReplyReference | undefined> {
     const messageId = message.reference?.messageId;
     if (!messageId) return undefined;
@@ -186,7 +211,7 @@ export class DiscordJsService implements DiscordService {
       const referencedMessage = await message.fetchReference();
       return {
         author: toDiscordUser(referencedMessage),
-        content: referencedMessage.content.trim(),
+        content: this.normalizeMessageContent(referencedMessage),
         id: referencedMessage.id,
       };
     } catch (error) {
