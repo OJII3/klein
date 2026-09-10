@@ -14,7 +14,7 @@
     "generate:config-schema": "bun scripts/generate-config-schema.ts && bunx oxfmt config/klein.schema.json",
     "start": "bun dist/app/bootstrap.js",
     "test": "bun test",
-    "typecheck": "tsc --noEmit && tsc -p tsconfig.web.json --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p web/tsconfig.json --noEmit",
     "dev:web": "vite"
   },
   "dependencies": {
