@@ -80,7 +80,8 @@ export type WebUiApp = ReturnType<typeof createWebUiApp>;
 export async function startWebUi(options: WebUiServerOptions): Promise<WebUiServer> {
   const staticApp = await staticPlugin({
     assets: resolve(options.staticDirectory),
-    bunFullstack: true,
+    alwaysStatic: true,
+    bunFullstack: false,
     indexHTML: true,
     prefix: "/",
   });

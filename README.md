@@ -11,8 +11,8 @@ nix develop
 bun install
 ```
 
-The Web UI is served directly from `web/` by Elysia's Bun Fullstack integration;
-no frontend build is needed for local development.
+The Web UI is bundled into `dist/web` and served as static files by Elysia.
+`bun run start` builds the frontend automatically before starting Klein.
 
 Copy the configuration and environment templates, fill in the Discord access
 rules, bot token, and OpenCode Go API key, then start it:
@@ -84,11 +84,11 @@ to loopback when exposing the viewer through a ZeroTrust tunnel. The UI is
 disabled by default and does not provide write operations.
 
 For an ahead-of-time production bundle, run `bun run build` and execute it with
-`bun dist/klein`, keeping the `web/` directory available from the working
-directory. For local UI development, start Klein normally:
+`bun dist/klein`, keeping the generated `dist/web/` directory available from
+the working directory. The frontend is not served with HMR:
 
 bun run start
-The same Elysia server provides the API and the Bun-bundled UI.
+The same Elysia server provides the API and the bundled UI.
 
 The bot responds to direct and guild messages when allowed by `discord.access`.
 Guild access is resolved in the order
