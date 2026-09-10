@@ -34,8 +34,8 @@ to each Pi session.
 The Discord agent's personality and behavior are loaded from the Markdown file
 configured by `agents.discord.systemPromptFile` (`config/SOUL.md` by default).
 
-The bot responds to direct messages and guild messages that mention it when
-allowed by `discord.access`. Guild access is resolved in the order
+The bot responds to direct and guild messages when allowed by `discord.access`.
+Guild access is resolved in the order
 thread → channel → guild → default, while direct messages use
 `directMessages`. The Discord application must have the Message Content intent
 enabled.
