@@ -4,16 +4,15 @@ Pi Coding Agent Based Communication Agent.
 
 ## Run the Discord bot
 
-Enter the Nix development shell, install dependencies, and build the Web UI:
+Enter the Nix development shell and install dependencies:
 
 ```sh
 nix develop
 bun install
-bun run build
 ```
 
-The build bundles the Vite client into `dist/web`; Bun runs the backend directly
-from `src/app/bootstrap.ts`.
+The Web UI is served directly from `web/` by Elysia's Bun Fullstack integration;
+no frontend build is needed for local development.
 
 Copy the configuration and environment templates, fill in the Discord access
 rules, bot token, and OpenCode Go API key, then start it:
@@ -80,20 +79,16 @@ required sections are omitted here):
 }
 ```
 
-Build and start Klein, then open `http://127.0.0.1:4310`. Keep the host bound
+Start Klein, then open `http://127.0.0.1:4310`. Keep the host bound
 to loopback when exposing the viewer through a ZeroTrust tunnel. The UI is
 disabled by default and does not provide write operations.
 
-For UI development, run the backend and Vite in separate shells:
+For an ahead-of-time production bundle, run `bun run build` and execute it with
+`bun dist/klein`, keeping the `web/` directory available from the working
+directory. For local UI development, start Klein normally:
 
-```sh
-# shell 1
 bun run start
-# shell 2
-bun run dev:web
-```
-
-The Vite server proxies `/api` to the Web UI server on port `4310`.
+The same Elysia server provides the API and the Bun-bundled UI.
 
 The bot responds to direct and guild messages when allowed by `discord.access`.
 Guild access is resolved in the order

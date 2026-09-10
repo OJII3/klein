@@ -56,7 +56,7 @@ export async function bootstrap(): Promise<void> {
         piSessions: new PiSessionReader(agentDir),
         pinoLogs: new PinoJsonlReader(logDirectory),
         port: webUiConfig.port,
-        staticDirectory: resolve("dist/web"),
+        staticDirectory: resolve("web"),
       })
     : undefined;
 

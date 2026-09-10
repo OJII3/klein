@@ -78,13 +78,13 @@ export function createWebUiApp(dependencies: WebUiDependencies) {
 export type WebUiApp = ReturnType<typeof createWebUiApp>;
 
 export async function startWebUi(options: WebUiServerOptions): Promise<WebUiServer> {
-  const app = createWebUiApp(options).use(
-    staticPlugin({
-      assets: resolve(options.staticDirectory),
-      indexHTML: true,
-      prefix: "/",
-    }),
-  );
+  const staticApp = await staticPlugin({
+    assets: resolve(options.staticDirectory),
+    bunFullstack: true,
+    indexHTML: true,
+    prefix: "/",
+  });
+  const app = createWebUiApp(options).use(staticApp);
 
   app.listen({ hostname: options.host, port: options.port });
   options.logger?.info(
