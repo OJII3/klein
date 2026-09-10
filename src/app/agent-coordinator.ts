@@ -1,3 +1,5 @@
+import type { Logger } from "pino";
+
 import type { DiscordMessage } from "../modules/discord/domain/discord-message.js";
 import type { DiscordService } from "../modules/discord/ports/discord-service.js";
 import { DiscordAgent } from "../agents/discord/discord-agent.js";
@@ -6,13 +8,17 @@ import type { TaskCoordinator } from "./task-coordinator.js";
 export interface AgentCoordinatorDependencies {
   readonly discordService: DiscordService;
   readonly createDiscordAgent: (channelId: string) => Promise<DiscordAgent>;
+  readonly logger: Logger;
   readonly taskCoordinator: TaskCoordinator;
 }
 
 export class AgentCoordinator {
   private readonly agents = new Map<string, Promise<DiscordAgent>>();
+  private readonly logger: Logger;
 
-  constructor(private readonly dependencies: AgentCoordinatorDependencies) {}
+  constructor(private readonly dependencies: AgentCoordinatorDependencies) {
+    this.logger = dependencies.logger.child({ component: "agent-coordinator" });
+  }
 
   handleDiscordMessage(message: DiscordMessage): Promise<void> {
     return this.dependencies.taskCoordinator.run(() => this.processMessage(message));
@@ -23,19 +29,44 @@ export class AgentCoordinator {
       [...this.agents.values()].map(async (agentPromise) => {
         try {
           (await agentPromise).dispose();
-        } catch {
+        } catch (error) {
           // The agent may fail to finish initialization during shutdown.
+          this.logger.warn(
+            { err: error, event: "discord_agent_dispose_failed" },
+            "Failed to dispose Discord agent",
+          );
         }
       }),
     );
   }
 
   private async processMessage(message: DiscordMessage): Promise<void> {
+    const logger = this.logger.child({
+      channelId: message.channelId,
+      messageId: message.id,
+    });
+    const startedAt = Date.now();
+    logger.debug({ event: "discord_message_processing_started" }, "Processing Discord message");
+
     try {
       const agent = await this.getDiscordAgent(message.channelId);
       await agent.prompt(message);
+      logger.debug(
+        {
+          durationMs: Date.now() - startedAt,
+          event: "discord_message_processed",
+        },
+        "Processed Discord message",
+      );
     } catch (error) {
-      console.error("Failed to handle Discord message:", error);
+      logger.error(
+        {
+          durationMs: Date.now() - startedAt,
+          err: error,
+          event: "discord_message_processing_failed",
+        },
+        "Failed to handle Discord message",
+      );
       await this.dependencies.discordService.sendMessage(
         message.channelId,
         "ごめん、今はうまく返答できないみたい。",

@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import type { Logger } from "pino";
 
 import {
   AgentSession,
@@ -23,6 +24,7 @@ export interface PiAgentFactoryOptions {
     readonly model: string;
     readonly thinkingLevel?: NonNullable<CreateAgentSessionOptions["thinkingLevel"]>;
   };
+  readonly logger: Logger;
 }
 
 export const KLEIN_SKILLS_DIRECTORY = "config/skills";
@@ -35,9 +37,7 @@ export class PiAgentRuntime implements AgentRuntime {
   prompt(content: string): Promise<void> {
     const run = this.queue.then(() => this.session.prompt(content, { source: "rpc" }));
 
-    this.queue = run.catch((error: unknown) => {
-      console.error("Pi agent prompt failed:", error);
-    });
+    this.queue = run.catch(() => undefined);
 
     return run;
   }
@@ -51,11 +51,12 @@ export function createResourceLoader(
   agentDir: string,
   systemPrompt: string,
   settingsManager: SettingsManager,
+  logger?: Logger,
 ): DefaultResourceLoader {
   return new DefaultResourceLoader({
     cwd: process.cwd(),
     agentDir,
-    extensionFactories: [createBackgroundCompactionExtension(settingsManager)],
+    extensionFactories: [createBackgroundCompactionExtension(settingsManager, { logger })],
     settingsManager,
     additionalSkillPaths: [resolve(process.cwd(), KLEIN_SKILLS_DIRECTORY)],
     noContextFiles: true,
@@ -79,7 +80,11 @@ export function resolveConfiguredModel(
   return model;
 }
 
-export function createPiAgentFactory({ agentDir, llm }: PiAgentFactoryOptions): AgentFactory {
+export function createPiAgentFactory({
+  agentDir,
+  llm,
+  logger,
+}: PiAgentFactoryOptions): AgentFactory {
   const model = resolveConfiguredModel(llm.provider, llm.model);
 
   return {
@@ -92,6 +97,7 @@ export function createPiAgentFactory({ agentDir, llm }: PiAgentFactoryOptions): 
         agentDir,
         definition.systemPrompt,
         settingsManager,
+        logger,
       );
       await resourceLoader.reload();
 
