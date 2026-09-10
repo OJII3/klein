@@ -8,8 +8,8 @@ Enter the Nix development shell, install dependencies, and build the bot:
 
 ```sh
 nix develop
-pnpm install
-pnpm run build
+bun install
+bun run build
 ```
 
 Copy the configuration and environment templates, fill in the Discord access
@@ -20,7 +20,7 @@ cp config/klein.example.json config/klein.json
 cp .env.example .env
 ${EDITOR:-vi} .env
 ${EDITOR:-vi} config/klein.json
-pnpm start
+bun run start
 ```
 
 By default, Klein resumes the latest Pi session for each Discord channel. Use
@@ -28,8 +28,8 @@ By default, Klein resumes the latest Pi session for each Discord channel. Use
 default behavior explicit:
 
 ```sh
-pnpm start -- --new
-pnpm start -- --resume
+bun run start -- --new
+bun run start -- --resume
 ```
 
 The application uses OpenCode Go through Pi's `opencode-go` provider. Pi's

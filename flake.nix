@@ -46,8 +46,6 @@
           devShells.default = pkgs.mkShell {
             packages = with pkgs; [
               bun
-              nodejs_24
-              pnpm
               inputs'.llm-agents.packages.pi
             ];
           };

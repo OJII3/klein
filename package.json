@@ -11,9 +11,9 @@
     "lint:fix": "oxlint --fix",
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check",
-    "generate:config-schema": "pnpm run build && node scripts/generate-config-schema.mjs && pnpm exec oxfmt config/klein.schema.json",
-    "start": "node --env-file-if-exists=.env dist/app/bootstrap.js",
-    "test": "pnpm run build && node --test 'dist/**/*.test.js'",
+    "generate:config-schema": "bun run build && bun scripts/generate-config-schema.mjs && bunx oxfmt config/klein.schema.json",
+    "start": "bun dist/app/bootstrap.js",
+    "test": "bun run build && bun test dist",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -29,5 +29,5 @@
     "oxlint": "^1.79.0",
     "typescript": "^7.0.2"
   },
-  "packageManager": "pnpm@11.21.0"
+  "packageManager": "bun@1.4.2"
 }
