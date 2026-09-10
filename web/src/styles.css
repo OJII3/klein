@@ -476,6 +476,7 @@ dd {
 }
 
 .mono,
+.json-value,
 .json-block,
 .timeline-content,
 .timeline-parent {
@@ -487,6 +488,7 @@ dd {
 }
 
 .json-block,
+.json-value,
 .timeline-content {
   overflow-x: auto;
   margin: 0;
@@ -499,6 +501,12 @@ dd {
   line-height: 1.6;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.json-value > ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 .pagination-row {
