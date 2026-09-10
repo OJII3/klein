@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type SubmitEvent } from "react";
 
 import type { LogsQuery, PinoLog } from "../../api.js";
 import { EmptyState, ErrorNotice, LoadingState } from "../../components/feedback.js";
@@ -51,7 +51,7 @@ export function LogsView({
     setDraft(draftFromFilters(filters));
   }, [filters]);
 
-  const submit = (event: FormEvent<HTMLFormElement>) => {
+  const submit = (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault();
     onFilter({
       limit: 100,
