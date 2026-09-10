@@ -13,7 +13,6 @@
     "fmt:check": "oxfmt --check",
     "generate:config-schema": "bun scripts/generate-config-schema.ts && bunx oxfmt config/klein.schema.json",
     "start": "bun dist/app/bootstrap.js",
-    "test": "bun test src",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
