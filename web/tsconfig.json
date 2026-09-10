@@ -4,7 +4,10 @@
     "jsx": "react-jsx",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "noEmit": true,
-    "rootDir": ".."
+    "rootDir": "..",
+    "paths": {
+      "@klein/webui/*": ["./../src/modules/webui/*"]
+    }
   },
   "include": ["**/*.ts", "**/*.tsx"]
 }

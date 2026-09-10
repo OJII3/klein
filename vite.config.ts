@@ -9,6 +9,11 @@ const projectRoot = fileURLToPath(new URL(".", import.meta.url));
 export default defineConfig({
   root: resolve(projectRoot, "web"),
   plugins: [react()],
+  resolve: {
+    alias: {
+      "@klein/webui": resolve(projectRoot, "src/modules/webui"),
+    },
+  },
   build: {
     outDir: resolve(projectRoot, "dist/web"),
     emptyOutDir: true,
