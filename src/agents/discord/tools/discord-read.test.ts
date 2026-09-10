@@ -13,6 +13,7 @@ const message: DiscordMessage = {
   channelId: "channel-123",
   content: "読み取った本文",
   id: "message-456",
+  images: [],
 };
 
 test("reads a message using the current channel by default", async () => {
@@ -40,6 +41,43 @@ test("reads a message using the current channel by default", async () => {
     messageId: "message-456",
   });
   assert.deepEqual(result.content, [{ type: "text", text: "さつき (@satsuki):\n読み取った本文" }]);
+});
+
+test("returns image attachments as tool result content", async () => {
+  const tool = createDiscordReadTool(
+    {
+      async readMessage() {
+        return {
+          ...message,
+          images: [
+            {
+              data: "c2VjcmV0",
+              filename: "sample.png",
+              id: "attachment-123",
+              mimeType: "image/png",
+            },
+          ],
+        };
+      },
+    },
+    "current-channel",
+  );
+
+  const result = await tool.execute(
+    "tool-call",
+    { messageId: "message-456" },
+    undefined,
+    undefined,
+    {} as never,
+  );
+
+  assert.deepEqual(result.content, [
+    {
+      type: "text",
+      text: "さつき (@satsuki):\n読み取った本文\n[添付画像: sample.png]",
+    },
+    { type: "image", data: "c2VjcmV0", mimeType: "image/png" },
+  ]);
 });
 
 test("reads a message from the explicitly provided channel", async () => {

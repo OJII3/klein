@@ -38,6 +38,7 @@ test("formats a Discord message with its reply context", () => {
       channelId: "channel-123",
       content: "本文です",
       id: "message-456",
+      images: [],
       replyTo: {
         author: bot,
         content: "返信元",
@@ -69,6 +70,46 @@ test("truncates a reply reference preview", () => {
   assert.equal(
     formatDiscordReply({ content, id: "message-123" }),
     `↪ 不明なユーザー: ${"あ".repeat(256)}… ⟦message-123⟧`,
+  );
+});
+
+test("formats image attachment context without including image data", () => {
+  assert.equal(
+    formatDiscordMessage({
+      author: user,
+      channelId: "channel-123",
+      content: "これを見て",
+      id: "message-456",
+      images: [
+        {
+          data: "c2VjcmV0",
+          filename: "sample.png",
+          id: "attachment-123",
+          mimeType: "image/png",
+        },
+      ],
+    }),
+    "さつき (@satsuki):\nこれを見て\n[添付画像: sample.png]",
+  );
+});
+
+test("formats an image-only message", () => {
+  assert.equal(
+    formatDiscordMessage({
+      author: user,
+      channelId: "channel-123",
+      content: "",
+      id: "message-456",
+      images: [
+        {
+          data: "c2VjcmV0",
+          filename: "sample.png",
+          id: "attachment-123",
+          mimeType: "image/png",
+        },
+      ],
+    }),
+    "さつき (@satsuki):\n(画像のみ)\n[添付画像: sample.png]",
   );
 });
 

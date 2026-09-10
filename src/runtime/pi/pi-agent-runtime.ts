@@ -13,7 +13,7 @@ import type { CreateAgentSessionOptions } from "@earendil-works/pi-coding-agent"
 
 import type { AgentDefinition } from "../../agents/core/agent-definition.js";
 import type { AgentFactory, AgentCreationOptions } from "../../agents/core/agent-factory.js";
-import type { AgentRuntime } from "../../agents/core/agent-runtime.js";
+import type { AgentPrompt, AgentRuntime } from "../../agents/core/agent-runtime.js";
 import type { SessionMode } from "../../app/cli-options.js";
 import { createBackgroundCompactionExtension } from "./background-compaction.js";
 import { adaptPiTools } from "./pi-tool-adapter.js";
@@ -49,8 +49,20 @@ export class PiAgentRuntime implements AgentRuntime {
 
   constructor(private readonly session: AgentSession) {}
 
-  prompt(content: string): Promise<void> {
-    const run = this.queue.then(() => this.session.prompt(content, { source: "rpc" }));
+  prompt(prompt: AgentPrompt): Promise<void> {
+    const run = this.queue.then(() =>
+      this.session.prompt(prompt.text, {
+        images:
+          prompt.images.length > 0
+            ? prompt.images.map((image) => ({
+                type: "image" as const,
+                data: image.data,
+                mimeType: image.mimeType,
+              }))
+            : undefined,
+        source: "rpc",
+      }),
+    );
 
     this.queue = run.catch(() => undefined);
 

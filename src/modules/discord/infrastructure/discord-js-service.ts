@@ -1,9 +1,18 @@
-import { Client, Events, GatewayIntentBits, Partials, type Message } from "discord.js";
+import { resizeImage } from "@earendil-works/pi-coding-agent";
+import {
+  Client,
+  Events,
+  GatewayIntentBits,
+  Partials,
+  type Attachment,
+  type Message,
+} from "discord.js";
 import type { Logger } from "pino";
 
 import type { DiscordAccessPolicy } from "../domain/discord-access-policy.js";
 import {
   resolveDiscordMentions,
+  type DiscordImageAttachment,
   type DiscordMessage,
   type DiscordMessageLocator,
   type DiscordReplyReference,
@@ -12,6 +21,9 @@ import {
 import type { DiscordMessageHandler, DiscordService } from "../ports/discord-service.js";
 
 const DISCORD_MESSAGE_LIMIT = 2_000;
+const DISCORD_IMAGE_MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024;
+const DISCORD_IMAGE_FETCH_TIMEOUT_MS = 15_000;
+const DISCORD_IMAGE_MIME_TYPES = new Set(["image/gif", "image/jpeg", "image/png", "image/webp"]);
 
 interface SendableChannel {
   send(content: string): Promise<unknown>;
@@ -34,6 +46,62 @@ function splitMessage(content: string): string[] {
   }
 
   return chunks;
+}
+
+function normalizeImageMimeType(contentType: string | null): string | undefined {
+  const mimeType = contentType?.split(";", 1)[0]?.trim().toLowerCase();
+  const normalizedMimeType = mimeType === "image/jpg" ? "image/jpeg" : mimeType;
+  if (!normalizedMimeType || !DISCORD_IMAGE_MIME_TYPES.has(normalizedMimeType)) {
+    return undefined;
+  }
+
+  return normalizedMimeType;
+}
+
+function hasSupportedImageAttachment(message: Message): boolean {
+  return [...message.attachments.values()].some(
+    (attachment) => normalizeImageMimeType(attachment.contentType) !== undefined,
+  );
+}
+
+async function readResponseBytes(response: Response): Promise<Uint8Array> {
+  const contentLength = response.headers.get("content-length");
+  if (contentLength && Number(contentLength) > DISCORD_IMAGE_MAX_DOWNLOAD_BYTES) {
+    throw new Error("Discord image attachment exceeds the download size limit");
+  }
+
+  if (!response.body) {
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (bytes.byteLength > DISCORD_IMAGE_MAX_DOWNLOAD_BYTES) {
+      throw new Error("Discord image attachment exceeds the download size limit");
+    }
+    return bytes;
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    totalBytes += value.byteLength;
+    if (totalBytes > DISCORD_IMAGE_MAX_DOWNLOAD_BYTES) {
+      await reader.cancel();
+      throw new Error("Discord image attachment exceeds the download size limit");
+    }
+    chunks.push(value);
+  }
+
+  const bytes = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+
+  return bytes;
 }
 
 function toDiscordUser(message: Message): DiscordUser {
@@ -110,10 +178,15 @@ export class DiscordJsService implements DiscordService {
 
     const message = await channel.messages.fetch(locator.messageId);
     const normalizedMessage = this.toDiscordMessage(message);
+    const [images, replyTo] = await Promise.all([
+      this.fetchImages(message),
+      this.fetchReplyReference(message),
+    ]);
 
     return {
       ...normalizedMessage,
-      replyTo: await this.fetchReplyReference(message),
+      images,
+      replyTo,
     };
   }
 
@@ -151,7 +224,7 @@ export class DiscordJsService implements DiscordService {
     if (message.author.bot) return;
 
     const content = message.content.trim();
-    if (!content) return;
+    if (!content && !hasSupportedImageAttachment(message)) return;
     if (!isSendableChannel(message.channel)) return;
 
     this.channels.set(message.channelId, message.channel);
@@ -170,9 +243,20 @@ export class DiscordJsService implements DiscordService {
       return;
     }
 
+    if (!this.acceptingMessages) return;
+
+    const [images, replyTo] = await Promise.all([
+      this.fetchImages(message),
+      this.fetchReplyReference(message),
+    ]);
+
+    if (!this.acceptingMessages) return;
+    if (!content && images.length === 0) return;
+
     await this.onMessage?.({
       ...normalizedMessage,
-      replyTo: await this.fetchReplyReference(message),
+      images,
+      replyTo,
     });
   }
 
@@ -185,8 +269,65 @@ export class DiscordJsService implements DiscordService {
       content: this.normalizeMessageContent(message),
       guildId: message.guildId ?? undefined,
       id: message.id,
+      images: [],
       parentChannelId: thread?.parentId ?? undefined,
       threadId: thread?.id,
+    };
+  }
+
+  private async fetchImages(message: Message): Promise<DiscordImageAttachment[]> {
+    const imageAttachments = [...message.attachments.values()].filter(
+      (attachment) => normalizeImageMimeType(attachment.contentType) !== undefined,
+    );
+
+    const images = await Promise.all(
+      imageAttachments.map(async (attachment) => {
+        try {
+          return await this.fetchImage(attachment);
+        } catch (error) {
+          this.logger?.warn(
+            {
+              attachmentId: attachment.id,
+              err: error,
+              event: "discord_image_attachment_fetch_failed",
+              messageId: message.id,
+            },
+            "Failed to fetch Discord image attachment",
+          );
+          return undefined;
+        }
+      }),
+    );
+
+    return images.filter((image): image is DiscordImageAttachment => image !== undefined);
+  }
+
+  private async fetchImage(attachment: Attachment): Promise<DiscordImageAttachment> {
+    const mimeType = normalizeImageMimeType(attachment.contentType);
+    if (!mimeType) {
+      throw new Error(`Unsupported Discord image type: ${attachment.contentType ?? "unknown"}`);
+    }
+    if (attachment.size > DISCORD_IMAGE_MAX_DOWNLOAD_BYTES) {
+      throw new Error("Discord image attachment exceeds the download size limit");
+    }
+
+    const response = await fetch(attachment.url, {
+      signal: AbortSignal.timeout(DISCORD_IMAGE_FETCH_TIMEOUT_MS),
+    });
+    if (!response.ok) {
+      throw new Error(`Discord image attachment returned HTTP ${response.status}`);
+    }
+
+    const processed = await resizeImage(await readResponseBytes(response), mimeType);
+    if (!processed) {
+      throw new Error("Discord image attachment could not be normalized");
+    }
+
+    return {
+      data: processed.data,
+      filename: attachment.name,
+      id: attachment.id,
+      mimeType: processed.mimeType,
     };
   }
 

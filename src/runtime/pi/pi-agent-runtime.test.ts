@@ -19,8 +19,38 @@ import {
 import {
   createPiSessionManager,
   createResourceLoader,
+  PiAgentRuntime,
   resolveConfiguredModel,
 } from "./pi-agent-runtime.js";
+
+test("passes agent image attachments to Pi", async () => {
+  let receivedPrompt:
+    | {
+        text: string;
+        options?: { images?: readonly unknown[]; source?: string };
+      }
+    | undefined;
+  const runtime = new PiAgentRuntime({
+    async prompt(text: string, options?: { images?: readonly unknown[]; source?: string }) {
+      receivedPrompt = { options, text };
+    },
+    dispose() {},
+  } as never);
+
+  await runtime.prompt({
+    text: "画像を確認して",
+    images: [{ data: "c2VjcmV0", mimeType: "image/png" }],
+  });
+
+  assert.deepEqual(receivedPrompt, {
+    options: {
+      images: [{ type: "image", data: "c2VjcmV0", mimeType: "image/png" }],
+      source: "rpc",
+    },
+    text: "画像を確認して",
+  });
+  runtime.dispose();
+});
 
 test("resolves a configured built-in model", () => {
   const model = resolveConfiguredModel("opencode-go", "kimi-k3");

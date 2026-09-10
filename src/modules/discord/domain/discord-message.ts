@@ -15,6 +15,13 @@ export interface DiscordReplyReference {
   readonly content?: string;
 }
 
+export interface DiscordImageAttachment {
+  readonly id: string;
+  readonly filename: string;
+  readonly mimeType: string;
+  readonly data: string;
+}
+
 export interface DiscordMessage {
   readonly channelId: string;
   readonly guildId?: string;
@@ -23,6 +30,7 @@ export interface DiscordMessage {
   readonly author: DiscordUser;
   readonly content: string;
   readonly id: string;
+  readonly images: readonly DiscordImageAttachment[];
   readonly replyTo?: DiscordReplyReference;
 }
 
@@ -50,8 +58,13 @@ export function formatDiscordReply(reply: DiscordReplyReference): string {
 
 export function formatDiscordMessage(message: DiscordMessage): string {
   const replyContext = message.replyTo ? `${formatDiscordReply(message.replyTo)}\n` : "";
+  const content = message.content || "(画像のみ)";
+  const imageContext =
+    message.images.length > 0
+      ? `\n[添付画像: ${message.images.map((image) => image.filename).join(", ")}]`
+      : "";
 
-  return `${replyContext}${formatDiscordUser(message.author)}:\n${message.content}`;
+  return `${replyContext}${formatDiscordUser(message.author)}:\n${content}${imageContext}`;
 }
 
 export function resolveDiscordMentions(

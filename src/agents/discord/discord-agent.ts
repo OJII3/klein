@@ -34,7 +34,10 @@ export class DiscordAgent {
   }
 
   prompt(message: DiscordMessage): Promise<void> {
-    return this.runtime.prompt(formatDiscordMessage(message));
+    return this.runtime.prompt({
+      text: formatDiscordMessage(message),
+      images: message.images.map(({ data, mimeType }) => ({ data, mimeType })),
+    });
   }
 
   dispose(): void {
