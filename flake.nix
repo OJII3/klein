@@ -27,9 +27,12 @@
             src = pkgs.fetchurl {
               url =
                 {
-                  "aarch64-darwin" = "https://github.com/oven-sh/bun/releases/download/bun-v1.4.2/bun-darwin-aarch64.zip";
-                  "aarch64-linux" = "https://github.com/oven-sh/bun/releases/download/bun-v1.4.2/bun-linux-aarch64.zip";
-                  "x86_64-linux" = "https://github.com/oven-sh/bun/releases/download/bun-v1.4.2/bun-linux-x64-baseline.zip";
+                  "aarch64-darwin" =
+                    "https://github.com/oven-sh/bun/releases/download/bun-v1.4.2/bun-darwin-aarch64.zip";
+                  "aarch64-linux" =
+                    "https://github.com/oven-sh/bun/releases/download/bun-v1.4.2/bun-linux-aarch64.zip";
+                  "x86_64-linux" =
+                    "https://github.com/oven-sh/bun/releases/download/bun-v1.4.2/bun-linux-x64-baseline.zip";
                 }
                 .${pkgs.stdenv.hostPlatform.system};
               hash =
@@ -44,10 +47,13 @@
         in
         {
           devShells.default = pkgs.mkShell {
-            packages = with pkgs; [
+            packages = [
               bun
               inputs'.llm-agents.packages.pi
             ];
+            shellHook = ''
+              bun --version > .bun-version
+            '';
           };
         };
     };
