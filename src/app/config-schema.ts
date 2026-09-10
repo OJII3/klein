@@ -43,6 +43,15 @@ const AgentPromptConfigurationSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const WebUiConfigurationSchema = Type.Object(
+  {
+    enabled: Type.Boolean(),
+    host: Type.Optional(Type.String({ minLength: 1 })),
+    port: Type.Optional(Type.Integer({ minimum: 1, maximum: 65535 })),
+  },
+  { additionalProperties: false },
+);
+
 export const KleinConfigSchema = Type.Object(
   {
     $schema: Type.Optional(Type.String({ minLength: 1 })),
@@ -58,6 +67,7 @@ export const KleinConfigSchema = Type.Object(
     runtime: Type.Object(
       {
         agentDir: Type.String({ minLength: 1 }),
+        logDir: Type.Optional(Type.String({ minLength: 1 })),
       },
       { additionalProperties: false },
     ),
@@ -96,6 +106,7 @@ export const KleinConfigSchema = Type.Object(
           },
           { additionalProperties: false },
         ),
+        webui: Type.Optional(WebUiConfigurationSchema),
       },
       { additionalProperties: false },
     ),

@@ -7,7 +7,8 @@
     "thinkingLevel": "medium"
   },
   "runtime": {
-    "agentDir": ".runtime/pi"
+    "agentDir": ".runtime/pi",
+    "logDir": ".runtime/logs"
   },
   "agents": {
     "discord": {
@@ -41,6 +42,11 @@
     },
     "minecraft": {
       "enabled": false
+    },
+    "webui": {
+      "enabled": false,
+      "host": "127.0.0.1",
+      "port": 4310
     }
   }
 }

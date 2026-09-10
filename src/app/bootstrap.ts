@@ -3,20 +3,25 @@ import { resolve } from "node:path";
 import { AgentCoordinator } from "./agent-coordinator.js";
 import { parseCliOptions } from "./cli-options.js";
 import { loadConfig } from "./config.js";
-import { createLogger } from "./logger.js";
+import { createLogFilePath, createLogger, flushLogger } from "./logger.js";
 import { loadPromptFile } from "./prompt.js";
 import { TaskCoordinator } from "./task-coordinator.js";
 import { DiscordAgent } from "../agents/discord/discord-agent.js";
 import { createPiAgentFactory } from "../runtime/pi/pi-agent-runtime.js";
 import { createDiscordAccessPolicy } from "../modules/discord/domain/discord-access-policy.js";
 import { DiscordJsService } from "../modules/discord/infrastructure/discord-js-service.js";
+import { resolveLogDirectory, resolveWebUiConfig } from "../modules/webui/domain/webui-config.js";
+import { startWebUi } from "../modules/webui/infrastructure/elysia-webui-app.js";
+import { PinoJsonlReader } from "../modules/webui/infrastructure/pino-jsonl-reader.js";
+import { PiSessionReader } from "../modules/webui/infrastructure/pi-session-reader.js";
 
 export async function bootstrap(): Promise<void> {
-  const logger = createLogger();
-  logger.info({ event: "application_starting" }, "Starting Klein");
-
   const { sessionMode } = parseCliOptions(process.argv.slice(2));
   const config = await loadConfig();
+  const logDirectory = resolveLogDirectory(config);
+  const logger = createLogger({ filePath: createLogFilePath(logDirectory) });
+  logger.info({ event: "application_starting" }, "Starting Klein");
+
   const systemPrompt = await loadPromptFile(config.agents?.discord?.systemPromptFile);
   const token = process.env.DISCORD_BOT_TOKEN;
   if (!token) {
@@ -43,6 +48,17 @@ export async function bootstrap(): Promise<void> {
     logger,
     taskCoordinator,
   });
+  const webUiConfig = resolveWebUiConfig(config);
+  const webUi = webUiConfig.enabled
+    ? await startWebUi({
+        host: webUiConfig.host,
+        logger,
+        piSessions: new PiSessionReader(agentDir),
+        pinoLogs: new PinoJsonlReader(logDirectory),
+        port: webUiConfig.port,
+        staticDirectory: resolve("dist/web"),
+      })
+    : undefined;
 
   let shuttingDown = false;
   const shutdown = async (signal: string): Promise<void> => {
@@ -50,11 +66,13 @@ export async function bootstrap(): Promise<void> {
     shuttingDown = true;
     logger.info({ event: "shutdown_started", signal }, "Shutting down");
 
+    await webUi?.stop();
     discordService.stopAccepting();
     await taskCoordinator.waitForCompletion();
     await discordService.stop();
     await agentCoordinator.dispose();
     logger.info({ event: "shutdown_completed" }, "Shutdown complete");
+    flushLogger(logger);
   };
 
   process.once("SIGINT", () => {

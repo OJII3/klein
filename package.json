@@ -6,27 +6,39 @@
   "author": "OJII3",
   "type": "module",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && vite build",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check",
     "generate:config-schema": "bun scripts/generate-config-schema.ts && bunx oxfmt config/klein.schema.json",
     "start": "bun dist/app/bootstrap.js",
-    "typecheck": "tsc --noEmit"
+    "test": "bun test",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.web.json --noEmit",
+    "dev:web": "vite"
   },
   "dependencies": {
     "@earendil-works/pi-ai": "^0.84.3",
     "@earendil-works/pi-coding-agent": "^0.84.3",
+    "@elysia/eden": "^1.4.10",
+    "@elysia/static": "^1.4.11",
+    "@tanstack/react-table": "^9.2.4",
     "discord.js": "^14.27.0",
+    "elysia": "^1.4.30",
     "pino": "^10.3.1",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
     "typebox": "^1.3.19"
   },
   "devDependencies": {
     "@types/node": "^26.4.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "@vitejs/plugin-react": "^6.1.1",
     "oxfmt": "^0.64.0",
     "oxlint": "^1.79.0",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "vite": "^8.2.2"
   },
   "packageManager": "bun@1.4.2"
 }

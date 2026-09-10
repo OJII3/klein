@@ -64,6 +64,10 @@
         "agentDir": {
           "type": "string",
           "minLength": 1
+        },
+        "logDir": {
+          "type": "string",
+          "minLength": 1
         }
       },
       "additionalProperties": false
@@ -211,6 +215,25 @@
           "properties": {
             "enabled": {
               "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        },
+        "webui": {
+          "type": "object",
+          "required": ["enabled"],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "host": {
+              "type": "string",
+              "minLength": 1
+            },
+            "port": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
             }
           },
           "additionalProperties": false
