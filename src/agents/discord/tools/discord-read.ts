@@ -11,7 +11,8 @@ export function createDiscordReadTool(
   return defineTool({
     name: "discord_read",
     label: "Read Discord message",
-    description: "Read a Discord message by ID. Use the current channel when channelId is omitted.",
+    description:
+      "Read a Discord message by ID, including image attachments. Use the current channel when channelId is omitted.",
     promptSnippet: "Read a Discord message by ID.",
     promptGuidelines: [
       "When given a Discord message link, extract its channel ID and message ID.",
@@ -33,6 +34,11 @@ export function createDiscordReadTool(
             type: "text",
             text: formatDiscordMessage(message),
           },
+          ...message.images.map((image) => ({
+            type: "image" as const,
+            data: image.data,
+            mimeType: image.mimeType,
+          })),
         ],
         details: {
           channelId: message.channelId,
