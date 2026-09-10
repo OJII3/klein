@@ -6,15 +6,15 @@
   "author": "OJII3",
   "type": "module",
   "scripts": {
-    "build": "tsc && vite build",
+    "build": "vite build",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check",
     "generate:config-schema": "bun scripts/generate-config-schema.ts && bunx oxfmt config/klein.schema.json",
-    "start": "bun dist/app/bootstrap.js",
+    "start": "bun src/app/bootstrap.ts",
     "test": "bun test",
-    "typecheck": "tsc --noEmit && tsc -p web/tsconfig.json --noEmit",
+    "typecheck": "tsc && tsc -p web/tsconfig.json",
     "dev:web": "vite"
   },
   "dependencies": {

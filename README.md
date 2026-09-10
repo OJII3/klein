@@ -4,13 +4,16 @@ Pi Coding Agent Based Communication Agent.
 
 ## Run the Discord bot
 
-Enter the Nix development shell, install dependencies, and build the bot:
+Enter the Nix development shell, install dependencies, and build the Web UI:
 
 ```sh
 nix develop
 bun install
 bun run build
 ```
+
+The build bundles the Vite client into `dist/web`; Bun runs the backend directly
+from `src/app/bootstrap.ts`.
 
 Copy the configuration and environment templates, fill in the Discord access
 rules, bot token, and OpenCode Go API key, then start it:
