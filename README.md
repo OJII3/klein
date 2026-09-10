@@ -34,6 +34,10 @@ to each Pi session.
 The Discord agent's personality and behavior are loaded from the Markdown file
 configured by `agents.discord.systemPromptFile` (`config/SOUL.md` by default).
 
+Logs are written as JSON lines to standard output. Set `KLEIN_LOG_LEVEL=debug`
+when investigating the bot locally; the default level is `info`. Log records do
+not include Discord message content, prompts, or API credentials.
+
 The bot responds to direct and guild messages when allowed by `discord.access`.
 Guild access is resolved in the order
 thread → channel → guild → default, while direct messages use

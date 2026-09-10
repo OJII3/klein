@@ -11,12 +11,14 @@ import {
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import type { ProviderHeaders } from "@earendil-works/pi-ai";
+import type { Logger } from "pino";
 
 /** Start preparing a summary this many tokens before Pi's compaction threshold. */
 export const BACKGROUND_COMPACTION_LEAD_TOKENS = 16_384;
 
 export interface BackgroundCompactionOptions {
   readonly leadTokens?: number;
+  readonly logger?: Logger;
   readonly summarize?: BackgroundCompactionSummarizer;
 }
 
@@ -63,6 +65,7 @@ export function createBackgroundCompactionExtension(
 ): ExtensionFactory {
   const state: CompactionState = {};
   const leadTokens = options.leadTokens ?? BACKGROUND_COMPACTION_LEAD_TOKENS;
+  const logger = options.logger?.child({ component: "pi-background-compaction" });
   const summarize =
     options.summarize ??
     ((preparation, context, signal) =>
@@ -123,7 +126,10 @@ export function createBackgroundCompactionExtension(
           if (state.pending !== nextPending) return;
           state.pending = undefined;
           if (!controller.signal.aborted) {
-            console.error("Pi background compaction failed:", error);
+            logger?.error(
+              { err: error, event: "pi_background_compaction_failed" },
+              "Pi background compaction failed",
+            );
           }
         });
     });

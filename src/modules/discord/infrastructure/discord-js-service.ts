@@ -1,4 +1,5 @@
 import { Client, Events, GatewayIntentBits, Partials, type Message } from "discord.js";
+import type { Logger } from "pino";
 
 import type { DiscordAccessPolicy } from "../domain/discord-access-policy.js";
 import {
@@ -49,11 +50,14 @@ export class DiscordJsService implements DiscordService {
   private onMessage?: DiscordMessageHandler;
   private messageListener?: (message: Message) => void;
   private acceptingMessages = false;
+  private readonly logger?: Logger;
 
   constructor(
     private readonly token: string,
     private readonly accessPolicy: DiscordAccessPolicy,
+    logger?: Logger,
   ) {
+    this.logger = logger?.child({ component: "discord-service" });
     this.client = new Client({
       intents: [
         GatewayIntentBits.DirectMessages,
@@ -69,11 +73,20 @@ export class DiscordJsService implements DiscordService {
     this.onMessage = onMessage;
     this.acceptingMessages = true;
     this.client.once(Events.ClientReady, (readyClient) => {
-      console.log(`Logged in as ${readyClient.user.tag}`);
+      this.logger?.info(
+        {
+          event: "discord_client_ready",
+          userId: readyClient.user.id,
+        },
+        "Discord client is ready",
+      );
     });
     this.messageListener = (message) => {
       void this.handleMessage(message).catch((error: unknown) => {
-        console.error("Failed to handle Discord message:", error);
+        this.logger?.error(
+          { err: error, event: "discord_message_handler_failed" },
+          "Failed to handle Discord message",
+        );
       });
     };
     this.client.on(Events.MessageCreate, this.messageListener);
@@ -210,7 +223,14 @@ export class DiscordJsService implements DiscordService {
         id: referencedMessage.id,
       };
     } catch (error) {
-      console.warn(`Failed to fetch Discord reply reference: ${messageId}`, error);
+      this.logger?.warn(
+        {
+          err: error,
+          event: "discord_reply_reference_fetch_failed",
+          messageId,
+        },
+        "Failed to fetch Discord reply reference",
+      );
       return { id: messageId };
     }
   }
