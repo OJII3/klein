@@ -12,13 +12,15 @@ import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { CreateAgentSessionOptions } from "@earendil-works/pi-coding-agent";
 
 import type { AgentDefinition } from "../../agents/core/agent-definition.js";
-import type { AgentFactory } from "../../agents/core/agent-factory.js";
+import type { AgentFactory, AgentCreationOptions } from "../../agents/core/agent-factory.js";
 import type { AgentRuntime } from "../../agents/core/agent-runtime.js";
+import type { SessionMode } from "../../app/cli-options.js";
 import { createBackgroundCompactionExtension } from "./background-compaction.js";
 import { adaptPiTools } from "./pi-tool-adapter.js";
 
 export interface PiAgentFactoryOptions {
   readonly agentDir: string;
+  readonly sessionMode: SessionMode;
   readonly llm: {
     readonly provider: string;
     readonly model: string;
@@ -28,6 +30,19 @@ export interface PiAgentFactoryOptions {
 }
 
 export const KLEIN_SKILLS_DIRECTORY = "config/skills";
+
+export function createPiSessionManager(
+  agentDir: string,
+  sessionKey: string,
+  sessionMode: SessionMode,
+  cwd = process.cwd(),
+): SessionManager {
+  const sessionDir = resolve(agentDir, "sessions", encodeURIComponent(sessionKey));
+
+  return sessionMode === "resume"
+    ? SessionManager.continueRecent(cwd, sessionDir)
+    : SessionManager.create(cwd, sessionDir);
+}
 
 export class PiAgentRuntime implements AgentRuntime {
   private queue: Promise<void> = Promise.resolve();
@@ -84,6 +99,7 @@ export function createPiAgentFactory({
   agentDir,
   llm,
   logger,
+  sessionMode,
 }: PiAgentFactoryOptions): AgentFactory {
   const model = resolveConfiguredModel(llm.provider, llm.model);
 
@@ -91,6 +107,7 @@ export function createPiAgentFactory({
     async create<TTool>(
       definition: AgentDefinition,
       tools: readonly TTool[],
+      options: AgentCreationOptions,
     ): Promise<AgentRuntime> {
       const settingsManager = SettingsManager.create(process.cwd(), agentDir);
       const resourceLoader = createResourceLoader(
@@ -106,7 +123,7 @@ export function createPiAgentFactory({
         customTools: adaptPiTools(tools),
         model,
         resourceLoader,
-        sessionManager: SessionManager.inMemory(),
+        sessionManager: createPiSessionManager(agentDir, options.sessionKey, sessionMode),
         settingsManager,
         thinkingLevel: llm.thinkingLevel,
         tools: [...definition.toolNames],
