@@ -6,13 +6,14 @@
   "author": "OJII3",
   "type": "module",
   "scripts": {
-    "build": "bun build --target=bun --production --outfile=dist/klein src/app/bootstrap.ts",
+    "build": "bun run build:web && bun build --target=bun --production --outfile=dist/klein src/app/bootstrap.ts",
+    "build:web": "bun build web/index.html --outdir dist/web --minify",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check",
     "generate:config-schema": "bun scripts/generate-config-schema.ts && bunx oxfmt config/klein.schema.json",
-    "start": "bun src/app/bootstrap.ts",
+    "start": "bun run build:web && bun src/app/bootstrap.ts",
     "test": "bun test",
     "typecheck": "tsc && tsc -p web/tsconfig.json"
   },
