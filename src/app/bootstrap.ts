@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 
 import { AgentCoordinator } from "./agent-coordinator.js";
+import { parseCliOptions } from "./cli-options.js";
 import { loadConfig } from "./config.js";
 import { createLogger } from "./logger.js";
 import { loadPromptFile } from "./prompt.js";
@@ -14,6 +15,7 @@ export async function bootstrap(): Promise<void> {
   const logger = createLogger();
   logger.info({ event: "application_starting" }, "Starting Klein");
 
+  const { sessionMode } = parseCliOptions(process.argv.slice(2));
   const config = await loadConfig();
   const systemPrompt = await loadPromptFile(config.agents?.discord?.systemPromptFile);
   const token = process.env.DISCORD_BOT_TOKEN;
@@ -28,7 +30,12 @@ export async function bootstrap(): Promise<void> {
   );
   const taskCoordinator = new TaskCoordinator();
   const agentDir = resolve(config.runtime.agentDir);
-  const piAgentFactory = createPiAgentFactory({ agentDir, llm: config.llm, logger });
+  const piAgentFactory = createPiAgentFactory({
+    agentDir,
+    llm: config.llm,
+    logger,
+    sessionMode,
+  });
   const agentCoordinator = new AgentCoordinator({
     createDiscordAgent: (channelId) =>
       DiscordAgent.create(piAgentFactory, discordService, channelId, systemPrompt),

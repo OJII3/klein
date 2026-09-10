@@ -23,10 +23,19 @@ ${EDITOR:-vi} config/klein.json
 pnpm start
 ```
 
+By default, Klein resumes the latest Pi session for each Discord channel. Use
+`--new` to start fresh sessions for the next run, or `--resume` to make the
+default behavior explicit:
+
+```sh
+pnpm start -- --new
+pnpm start -- --resume
+```
+
 The application uses OpenCode Go through Pi's `opencode-go` provider. Pi's
 runtime data is stored in the directory configured by `runtime.agentDir`
-(`.runtime/pi` by default). Set `KLEIN_CONFIG_PATH` only when you need to use
-a different configuration file.
+(`.runtime/pi` by default), including the per-channel session history. Set
+`KLEIN_CONFIG_PATH` only when you need to use a different configuration file.
 
 The `llm.model` and optional `llm.thinkingLevel` settings are passed directly
 to each Pi session.

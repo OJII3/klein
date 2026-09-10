@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm } from "node:fs/promises";
 import test from "node:test";
-import { resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 
 import {
   SettingsManager,
@@ -14,7 +16,11 @@ import {
   createBackgroundCompactionExtension,
   shouldStartBackgroundCompaction,
 } from "./background-compaction.js";
-import { createResourceLoader, resolveConfiguredModel } from "./pi-agent-runtime.js";
+import {
+  createPiSessionManager,
+  createResourceLoader,
+  resolveConfiguredModel,
+} from "./pi-agent-runtime.js";
 
 test("resolves a configured built-in model", () => {
   const model = resolveConfiguredModel("opencode-go", "kimi-k3");
@@ -44,6 +50,55 @@ test("loads Klein skills from the configured skill directory", async () => {
     ["honkai-character-dialogue"],
   );
   assert.deepEqual(loader.getSkills().diagnostics, []);
+});
+
+test("resumes the latest session for each session key", async () => {
+  const agentDir = await mkdtemp(join(tmpdir(), "klein-pi-session-"));
+
+  try {
+    const first = createPiSessionManager(agentDir, "discord-channel:123", "resume", process.cwd());
+    appendTestConversation(first);
+
+    const resumed = createPiSessionManager(
+      agentDir,
+      "discord-channel:123",
+      "resume",
+      process.cwd(),
+    );
+    const otherChannel = createPiSessionManager(
+      agentDir,
+      "discord-channel:456",
+      "resume",
+      process.cwd(),
+    );
+
+    assert.equal(resumed.getSessionId(), first.getSessionId());
+    assert.equal(resumed.buildSessionContext().messages.length, 2);
+    assert.equal(otherChannel.buildSessionContext().messages.length, 0);
+  } finally {
+    await rm(agentDir, { force: true, recursive: true });
+  }
+});
+
+test("starts a separate session in new mode", async () => {
+  const agentDir = await mkdtemp(join(tmpdir(), "klein-pi-session-"));
+
+  try {
+    const previous = createPiSessionManager(
+      agentDir,
+      "discord-channel:123",
+      "resume",
+      process.cwd(),
+    );
+    appendTestConversation(previous);
+
+    const fresh = createPiSessionManager(agentDir, "discord-channel:123", "new", process.cwd());
+
+    assert.notEqual(fresh.getSessionId(), previous.getSessionId());
+    assert.equal(fresh.buildSessionContext().messages.length, 0);
+  } finally {
+    await rm(agentDir, { force: true, recursive: true });
+  }
 });
 
 test("starts background compaction before the built-in threshold", async () => {
@@ -170,4 +225,29 @@ function createTestSession(): SessionManager {
     });
   }
   return sessionManager;
+}
+
+function appendTestConversation(sessionManager: SessionManager): void {
+  sessionManager.appendMessage({
+    role: "user",
+    content: "hello",
+    timestamp: Date.now(),
+  });
+  sessionManager.appendMessage({
+    role: "assistant",
+    content: [{ type: "text", text: "hello" }],
+    api: "openai-completions",
+    provider: "opencode-go",
+    model: "kimi-k3",
+    usage: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 0,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+    stopReason: "stop",
+    timestamp: Date.now(),
+  } as never);
 }

@@ -27,6 +27,7 @@ export class DiscordAgent {
         createDiscordReadTool(discordService, channelId),
         createDiscordSendTool(discordService, channelId),
       ],
+      { sessionKey: `discord-channel:${channelId}` },
     );
 
     return new DiscordAgent(runtime);
