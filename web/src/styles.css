@@ -82,7 +82,7 @@ select:focus-visible {
 }
 
 .brand-lockup {
-  align-items: flex-start;
+  align-items: center;
   gap: 14px;
 }
 

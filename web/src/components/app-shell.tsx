@@ -20,10 +20,7 @@ export function AppShell({ view, lastUpdated, onViewChange, onRefresh, children 
           <span className="brand-mark" aria-hidden="true">
             ◒
           </span>
-          <div>
-            <p className="eyebrow">KLEIN OBSERVATORY</p>
-            <h1>ログとセッション</h1>
-          </div>
+          <h1 className="eyebrow">KLEIN OBSERVATORY</h1>
         </div>
         <div className="header-status">
           <span className="status-dot" aria-hidden="true" />
