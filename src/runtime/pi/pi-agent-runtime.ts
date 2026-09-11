@@ -17,6 +17,7 @@ import type { AgentFactory, AgentCreationOptions } from "../../agents/core/agent
 import type { AgentPrompt, AgentRuntime } from "../../agents/core/agent-runtime.js";
 import type { SessionMode } from "../../app/cli-options.js";
 import { createBackgroundCompactionExtension } from "./background-compaction.js";
+import { createFxtwitterFetchExtension } from "./fxtwitter-fetch.js";
 import { PiImageAnalyzer, type ImageAnalyzer } from "./pi-image-analyzer.js";
 import { adaptPiTools } from "./pi-tool-adapter.js";
 
@@ -117,7 +118,10 @@ export function createResourceLoader(
   return new DefaultResourceLoader({
     cwd: process.cwd(),
     agentDir,
-    extensionFactories: [createBackgroundCompactionExtension(settingsManager, { logger })],
+    extensionFactories: [
+      createBackgroundCompactionExtension(settingsManager, { logger }),
+      createFxtwitterFetchExtension(),
+    ],
     additionalExtensionPaths: [resolve(process.cwd(), PI_WEB_ACCESS_EXTENSION_PATH)],
     settingsManager,
     additionalSkillPaths: [resolve(process.cwd(), KLEIN_SKILLS_DIRECTORY)],

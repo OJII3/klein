@@ -53,6 +53,11 @@ Exa MCP; provider credentials and routing can be configured in
 [Pi Web Access documentation](https://github.com/nicobailon/pi-web-access) for
 available providers and configuration options.
 
+When `fetch_content` receives an X/Twitter post URL, Klein fetches the post
+through the [FxTwitter API](https://docs.fxembed.com/api/twitter/operations/2statusid/)
+instead of requesting the X/Twitter page directly. Other URLs use the normal
+Pi Web Access routing.
+
 The Discord agent's personality and behavior are loaded from the Markdown file
 configured by `agents.discord.systemPromptFile` (`config/SOUL.md` by default).
 
