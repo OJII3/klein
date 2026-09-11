@@ -21,6 +21,7 @@ import {
   createResourceLoader,
   PiAgentRuntime,
   resolveConfiguredModel,
+  withOpenCodeSessionHeader,
 } from "./pi-agent-runtime.js";
 
 test("passes agent image attachments to Pi", async () => {
@@ -135,6 +136,14 @@ test("resolves a configured built-in model", () => {
 
   assert.equal(model.provider, "opencode-go");
   assert.equal(model.id, "kimi-k3");
+});
+
+test("adds the stable session header to OpenCode models", () => {
+  const model = resolveConfiguredModel("opencode-go", "kimi-k3");
+  const configured = withOpenCodeSessionHeader(model, "session-123");
+
+  assert.equal(configured.headers?.["x-opencode-session"], "session-123");
+  assert.equal(model.headers, undefined);
 });
 
 test("rejects an unknown configured model", () => {

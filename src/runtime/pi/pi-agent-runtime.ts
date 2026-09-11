@@ -9,6 +9,7 @@ import {
   createAgentSession,
 } from "@earendil-works/pi-coding-agent";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
+import type { Api, Model } from "@earendil-works/pi-ai";
 import type { CreateAgentSessionOptions } from "@earendil-works/pi-coding-agent";
 
 import type { AgentDefinition } from "../../agents/core/agent-definition.js";
@@ -139,6 +140,20 @@ export function resolveConfiguredModel(
   return model;
 }
 
+export function withOpenCodeSessionHeader(model: Model<Api>, sessionId: string): Model<Api> {
+  if (model.provider !== "opencode" && model.provider !== "opencode-go") {
+    return model;
+  }
+
+  return {
+    ...model,
+    headers: {
+      ...model.headers,
+      "x-opencode-session": sessionId,
+    },
+  };
+}
+
 export function resolveConfiguredImageModel(
   provider: string,
   modelId: string,
@@ -159,7 +174,6 @@ export function createPiAgentFactory({
   logger,
   sessionMode,
 }: PiAgentFactoryOptions): AgentFactory {
-  const model = resolveConfiguredModel(llm.provider, llm.model);
   const imageModel = llm.image
     ? resolveConfiguredImageModel(llm.image.provider, llm.image.model)
     : undefined;
@@ -179,19 +193,29 @@ export function createPiAgentFactory({
       );
       await resourceLoader.reload();
 
+      const sessionManager = createPiSessionManager(agentDir, options.sessionKey, sessionMode);
+      const sessionId = sessionManager.getSessionId();
+      const model = withOpenCodeSessionHeader(
+        resolveConfiguredModel(llm.provider, llm.model),
+        sessionId,
+      );
+      const sessionImageModel = imageModel
+        ? withOpenCodeSessionHeader(imageModel, sessionId)
+        : undefined;
+
       const { session } = await createAgentSession({
         agentDir,
         customTools: adaptPiTools(tools),
         model,
         resourceLoader,
-        sessionManager: createPiSessionManager(agentDir, options.sessionKey, sessionMode),
+        sessionManager,
         settingsManager,
         thinkingLevel: llm.thinkingLevel,
         tools: [...definition.toolNames],
       });
 
-      const imageAnalyzer = imageModel
-        ? new PiImageAnalyzer(session.modelRuntime, imageModel, llm.image?.thinkingLevel)
+      const imageAnalyzer = sessionImageModel
+        ? new PiImageAnalyzer(session.modelRuntime, sessionImageModel, llm.image?.thinkingLevel)
         : undefined;
 
       return new PiAgentRuntime(session, imageAnalyzer);
