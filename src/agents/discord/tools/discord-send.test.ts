@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { createDiscordSendTool } from "./discord-send.js";
 
-test("returns the sent content in the tool result", async () => {
+test("returns the sent content and terminates after the final message", async () => {
   let sentMessage: { channelId: string; content: string } | undefined;
   const tool = createDiscordSendTool(
     {
@@ -16,7 +16,7 @@ test("returns the sent content in the tool result", async () => {
 
   const result = await tool.execute(
     "tool-call",
-    { content: "送信する本文" },
+    { content: "送信する本文", next_action: "finish" },
     undefined,
     undefined,
     {} as never,
@@ -29,7 +29,25 @@ test("returns the sent content in the tool result", async () => {
   assert.deepEqual(result.content, [
     {
       type: "text",
-      text: "The message was sent to Discord.\nSent content:\n送信する本文",
+      text:
+        "The message was sent to Discord.\n" +
+        "Sent content:\n送信する本文\n" +
+        "Next action: finish.",
     },
   ]);
+  assert.equal(result.terminate, true);
+});
+
+test("continues the agent loop when more work is needed", async () => {
+  const tool = createDiscordSendTool({ async sendMessage() {} }, "current-channel");
+
+  const result = await tool.execute(
+    "tool-call",
+    { content: "調べてみる", next_action: "continue" },
+    undefined,
+    undefined,
+    {} as never,
+  );
+
+  assert.equal(result.terminate, false);
 });
