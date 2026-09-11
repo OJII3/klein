@@ -37,6 +37,7 @@ export interface PiAgentFactoryOptions {
 }
 
 export const KLEIN_SKILLS_DIRECTORY = "config/skills";
+const PI_WEB_ACCESS_EXTENSION_PATH = "node_modules/pi-web-access/index.ts";
 
 export function createPiSessionManager(
   agentDir: string,
@@ -117,6 +118,7 @@ export function createResourceLoader(
     cwd: process.cwd(),
     agentDir,
     extensionFactories: [createBackgroundCompactionExtension(settingsManager, { logger })],
+    additionalExtensionPaths: [resolve(process.cwd(), PI_WEB_ACCESS_EXTENSION_PATH)],
     settingsManager,
     additionalSkillPaths: [resolve(process.cwd(), KLEIN_SKILLS_DIRECTORY)],
     noContextFiles: true,

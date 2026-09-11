@@ -46,6 +46,13 @@ to that model; its text analysis is provided to the main session as context,
 which keeps the final response in the main model's voice. The image model must
 support image input.
 
+Pi Web Access is enabled for the Discord agent with the `web_search`,
+`fetch_content`, and `get_search_content` tools. It works without an API key via
+Exa MCP; provider credentials and routing can be configured in
+`~/.pi/web-search.json` or with the provider's environment variables. See the
+[Pi Web Access documentation](https://github.com/nicobailon/pi-web-access) for
+available providers and configuration options.
+
 The Discord agent's personality and behavior are loaded from the Markdown file
 configured by `agents.discord.systemPromptFile` (`config/SOUL.md` by default).
 
