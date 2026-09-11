@@ -169,6 +169,27 @@ test("loads Klein skills from the configured skill directory", async () => {
   assert.deepEqual(loader.getSkills().diagnostics, []);
 });
 
+test("loads Pi web access tools", async () => {
+  const loader = createResourceLoader(
+    resolve(".runtime/pi"),
+    "Test system prompt",
+    SettingsManager.inMemory(),
+  );
+
+  await loader.reload();
+
+  assert.deepEqual(loader.getExtensions().errors, []);
+  const webAccess = loader
+    .getExtensions()
+    .extensions.find((extension) => extension.path.endsWith("node_modules/pi-web-access/index.ts"));
+
+  assert.ok(webAccess);
+  assert.deepEqual(
+    [...webAccess.tools.keys()],
+    ["web_search", "source_check", "fetch_content", "get_search_content"],
+  );
+});
+
 test("resumes the latest session for each session key", async () => {
   const agentDir = await mkdtemp(join(tmpdir(), "klein-pi-session-"));
 
