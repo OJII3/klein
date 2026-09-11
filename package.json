@@ -18,8 +18,8 @@
     "typecheck": "tsc && tsc -p web/tsconfig.json"
   },
   "dependencies": {
-    "@earendil-works/pi-ai": "^0.84.3",
-    "@earendil-works/pi-coding-agent": "^0.84.3",
+    "@earendil-works/pi-ai": "^0.85.1",
+    "@earendil-works/pi-coding-agent": "^0.85.1",
     "@elysia/eden": "^1.4.10",
     "@elysia/static": "^1.4.11",
     "discord.js": "^14.27.0",
