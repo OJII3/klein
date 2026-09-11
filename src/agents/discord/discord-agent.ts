@@ -1,5 +1,5 @@
 import type { AgentFactory } from "../core/agent-factory.js";
-import type { AgentRuntime } from "../core/agent-runtime.js";
+import type { AgentPrompt, AgentRuntime } from "../core/agent-runtime.js";
 import {
   formatDiscordMessage,
   type DiscordMessage,
@@ -18,13 +18,24 @@ export class DiscordAgent {
     channelId: string,
     systemPrompt: string,
   ): Promise<DiscordAgent> {
-    const runtime = await agentFactory.create(
+    let runtime: AgentRuntime | undefined;
+    const analyzeImages = async (message: DiscordMessage): Promise<string | undefined> => {
+      if (!runtime?.analyzeImage) return undefined;
+
+      const prompt: AgentPrompt = {
+        text: formatDiscordMessage(message),
+        images: message.images.map(({ data, mimeType }) => ({ data, mimeType })),
+      };
+      return runtime.analyzeImage(prompt);
+    };
+
+    runtime = await agentFactory.create(
       {
         systemPrompt,
         toolNames: DISCORD_AGENT_TOOL_NAMES,
       },
       [
-        createDiscordReadTool(discordService, channelId),
+        createDiscordReadTool(discordService, channelId, analyzeImages),
         createDiscordSendTool(discordService, channelId),
       ],
       { sessionKey: `discord-channel:${channelId}` },

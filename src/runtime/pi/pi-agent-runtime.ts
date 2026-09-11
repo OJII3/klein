@@ -93,6 +93,14 @@ export class PiAgentRuntime implements AgentRuntime {
     return run;
   }
 
+  analyzeImage(prompt: AgentPrompt): Promise<string> {
+    if (!this.imageAnalyzer) {
+      throw new Error("Image analysis is not configured");
+    }
+
+    return this.imageAnalyzer.analyze(prompt);
+  }
+
   dispose(): void {
     this.session.dispose();
   }
