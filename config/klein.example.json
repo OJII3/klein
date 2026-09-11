@@ -3,8 +3,12 @@
   "version": 1,
   "llm": {
     "provider": "opencode-go",
-    "model": "kimi-k3",
-    "thinkingLevel": "medium"
+    "model": "glm-5.3",
+    "thinkingLevel": "high",
+    "image": {
+      "provider": "opencode-go",
+      "model": "kimi-k3"
+    }
   },
   "runtime": {
     "agentDir": ".runtime/pi",

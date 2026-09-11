@@ -39,8 +39,12 @@ runtime data is stored in the directory configured by `runtime.agentDir`
 (`.runtime/pi` by default), including the per-channel session history. Set
 `KLEIN_CONFIG_PATH` only when you need to use a different configuration file.
 
-The `llm.model` and optional `llm.thinkingLevel` settings are passed directly
-to each Pi session.
+The `llm.model` and optional `llm.thinkingLevel` settings are used by the main
+Pi session. The optional `llm.image` setting configures a separate, one-shot
+image analysis model. When it is configured, image attachments are sent only
+to that model; its text analysis is provided to the main session as context,
+which keeps the final response in the main model's voice. The image model must
+support image input.
 
 The Discord agent's personality and behavior are loaded from the Markdown file
 configured by `agents.discord.systemPromptFile` (`config/SOUL.md` by default).
