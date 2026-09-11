@@ -102,6 +102,34 @@ test("passes image analysis to the main session without image attachments", asyn
   runtime.dispose();
 });
 
+test("exposes the configured image analyzer to tools", async () => {
+  let receivedPrompt: { text: string; images: readonly unknown[] } | undefined;
+  const runtime = new PiAgentRuntime(
+    {
+      async prompt() {},
+      dispose() {},
+    } as never,
+    {
+      async analyze(prompt) {
+        receivedPrompt = prompt;
+        return "画像解析結果";
+      },
+    },
+  );
+
+  const result = await runtime.analyzeImage({
+    text: "メッセージ本文",
+    images: [{ data: "c2VjcmV0", mimeType: "image/png" }],
+  });
+
+  assert.equal(result, "画像解析結果");
+  assert.deepEqual(receivedPrompt, {
+    text: "メッセージ本文",
+    images: [{ data: "c2VjcmV0", mimeType: "image/png" }],
+  });
+  runtime.dispose();
+});
+
 test("resolves a configured built-in model", () => {
   const model = resolveConfiguredModel("opencode-go", "kimi-k3");
 

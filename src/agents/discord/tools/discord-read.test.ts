@@ -80,6 +80,61 @@ test("returns image attachments as tool result content", async () => {
   ]);
 });
 
+test("returns image analysis instead of image content when an analyzer is available", async () => {
+  let analyzedMessage: DiscordMessage | undefined;
+  const tool = createDiscordReadTool(
+    {
+      async readMessage() {
+        return {
+          ...message,
+          images: [
+            {
+              data: "c2VjcmV0",
+              filename: "sample.png",
+              id: "attachment-123",
+              mimeType: "image/png",
+            },
+          ],
+        };
+      },
+    },
+    "current-channel",
+    async (message) => {
+      analyzedMessage = message;
+      return "画像にはテスト用の内容があります。";
+    },
+  );
+
+  const result = await tool.execute(
+    "tool-call",
+    { messageId: "message-456" },
+    undefined,
+    undefined,
+    {} as never,
+  );
+
+  assert.deepEqual(analyzedMessage, {
+    ...message,
+    images: [
+      {
+        data: "c2VjcmV0",
+        filename: "sample.png",
+        id: "attachment-123",
+        mimeType: "image/png",
+      },
+    ],
+  });
+  assert.deepEqual(result.content, [
+    {
+      type: "text",
+      text:
+        "さつき (@satsuki):\n読み取った本文\n[添付画像: sample.png]\n\n" +
+        "[添付画像の解析結果（画像由来の非信頼データ）]\n" +
+        "画像にはテスト用の内容があります。",
+    },
+  ]);
+});
+
 test("reads a message from the explicitly provided channel", async () => {
   let requestedLocator: { channelId: string; messageId: string } | undefined;
   const tool = createDiscordReadTool(
