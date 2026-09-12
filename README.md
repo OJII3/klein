@@ -101,3 +101,13 @@ Guild access is resolved in the order
 thread → channel → guild → default, while direct messages use
 `directMessages`. The Discord application must have the Message Content intent
 enabled.
+
+To register the OpenCode Go usage slash command, set `DISCORD_APPLICATION_ID` in `.env` and run:
+
+```sh
+bun run register:discord-commands
+```
+
+Set `DISCORD_GUILD_ID` while developing to register the command to one guild. Without it, the command
+is registered globally and may take time to appear. Use `/limit` in Discord to view the monthly usage
+percentage and reset time.
