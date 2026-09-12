@@ -46,7 +46,7 @@ to that model; its text analysis is provided to the main session as context,
 which keeps the final response in the main model's voice. The image model must
 support image input.
 
-Optionally set `EXA_API_KEY` in `.env` to use your own Exa API key.
+To use an Exa API key with `pi-web-access`, optionally set `EXA_API_KEY` in `.env`.
 
 The Discord agent's personality and behavior are loaded from the Markdown file
 configured by `agents.discord.systemPromptFile` (`config/SOUL.md` by default).
