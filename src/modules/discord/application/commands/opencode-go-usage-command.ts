@@ -2,11 +2,11 @@ import type { GetMonthlyUsageLimit } from "../../../usage/application/get-monthl
 import type { DiscordSlashCommandHandler } from "../../ports/discord-service.js";
 import type { DiscordSlashCommand } from "./discord-slash-command-router.js";
 
-export const OPENCODE_GO_LIMIT_COMMAND_NAME = "limit";
+export const OPENCODE_GO_USAGE_COMMAND_NAME = "usage";
 
-export const OPENCODE_GO_LIMIT_COMMAND_DEFINITION = {
+export const OPENCODE_GO_USAGE_COMMAND_DEFINITION = {
   description: "OpenCode Go の月間使用量を確認する",
-  name: OPENCODE_GO_LIMIT_COMMAND_NAME,
+  name: OPENCODE_GO_USAGE_COMMAND_NAME,
 } as const;
 
 function formatPercentage(value: number): string {
@@ -21,7 +21,7 @@ function formatResetDate(date: Date): string {
   }).format(date);
 }
 
-export function createOpenCodeGoLimitCommand(
+export function createOpenCodeGoUsageCommand(
   getMonthlyUsageLimit: GetMonthlyUsageLimit,
 ): DiscordSlashCommand {
   const handler: DiscordSlashCommandHandler = async (interaction) => {
@@ -42,7 +42,7 @@ export function createOpenCodeGoLimitCommand(
   };
 
   return {
-    ...OPENCODE_GO_LIMIT_COMMAND_DEFINITION,
+    ...OPENCODE_GO_USAGE_COMMAND_DEFINITION,
     handler,
   };
 }

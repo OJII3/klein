@@ -109,5 +109,5 @@ bun run register:discord-commands
 ```
 
 The command is registered to every guild listed in `discord.access.guilds` in `config/klein.json`.
-It is not registered globally or in DMs. Use `/limit` in Discord to view the monthly usage percentage
+It is not registered globally or in DMs. Use `/usage` in Discord to view the monthly usage percentage
 and reset time.

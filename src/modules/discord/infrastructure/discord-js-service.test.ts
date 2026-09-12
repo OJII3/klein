@@ -62,7 +62,7 @@ function createInteraction() {
   const interaction = {
     channel: null,
     channelId: "channel-123",
-    commandName: "limit",
+    commandName: "usage",
     deferred: false,
     guildId: "guild-123",
     isChatInputCommand: () => true,
@@ -170,7 +170,7 @@ test("forwards allowed slash commands to the command handler", async () => {
   try {
     await testableService.handleInteraction(interaction);
 
-    assert.deepEqual(received, ["limit:さつき"]);
+    assert.deepEqual(received, ["usage:さつき"]);
     assert.deepEqual(replies, [{ content: "usage", ephemeral: true }]);
   } finally {
     await service.stop();

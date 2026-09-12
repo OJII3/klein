@@ -9,7 +9,7 @@ import { TaskCoordinator } from "./task-coordinator.js";
 import { DiscordAgent } from "../agents/discord/discord-agent.js";
 import { createPiAgentFactory } from "../runtime/pi/pi-agent-runtime.js";
 import { createDiscordSlashCommandRouter } from "../modules/discord/application/commands/discord-slash-command-router.js";
-import { createOpenCodeGoLimitCommand } from "../modules/discord/application/commands/opencode-go-limit-command.js";
+import { createOpenCodeGoUsageCommand } from "../modules/discord/application/commands/opencode-go-usage-command.js";
 import { createDiscordAccessPolicy } from "../modules/discord/domain/discord-access-policy.js";
 import { DiscordJsService } from "../modules/discord/infrastructure/discord-js-service.js";
 import { createGetMonthlyUsageLimit } from "../modules/usage/application/get-monthly-usage-limit.js";
@@ -60,7 +60,7 @@ export async function bootstrap(): Promise<void> {
     new OpenCodeGoUsageProvider(openCodeGoApiKey),
   );
   const discordSlashCommandHandler = createDiscordSlashCommandRouter([
-    createOpenCodeGoLimitCommand(getMonthlyUsageLimit),
+    createOpenCodeGoUsageCommand(getMonthlyUsageLimit),
   ]);
   const webUiConfig = resolveWebUiConfig(config);
   const webUi = webUiConfig.enabled

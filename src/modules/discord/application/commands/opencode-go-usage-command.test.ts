@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createOpenCodeGoLimitCommand } from "./opencode-go-limit-command.js";
+import { createOpenCodeGoUsageCommand } from "./opencode-go-usage-command.js";
 
 test("replies with the monthly usage and reset time", async () => {
   const deferredReplies: Array<{ ephemeral: boolean | undefined }> = [];
   const editedReplies: string[] = [];
-  const command = createOpenCodeGoLimitCommand(async () => ({
+  const command = createOpenCodeGoUsageCommand(async () => ({
     resetsAt: new Date("2026-10-01T14:00:00.000Z"),
     status: "ok",
     usedPercentage: 34.5,
@@ -14,7 +14,7 @@ test("replies with the monthly usage and reset time", async () => {
 
   await command.handler({
     channelId: "channel-123",
-    commandName: "limit",
+    commandName: "usage",
     deferReply: async (options) => {
       deferredReplies.push({ ephemeral: options?.ephemeral });
     },
