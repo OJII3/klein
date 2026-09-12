@@ -13,6 +13,7 @@
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check",
     "generate:config-schema": "bun scripts/generate-config-schema.ts && bunx oxfmt config/klein.schema.json",
+    "register:discord-commands": "bun scripts/register-discord-commands.ts",
     "start": "bun run build:web && bun src/app/bootstrap.ts",
     "test": "bun test",
     "typecheck": "tsc && tsc -p web/tsconfig.json"
@@ -24,6 +25,7 @@
     "@elysia/static": "^1.4.11",
     "discord.js": "^14.27.0",
     "elysia": "^1.4.30",
+    "ky": "^2.1.0",
     "pi-web-access": "0.28.0",
     "pino": "^10.3.1",
     "react": "^19.2.8",

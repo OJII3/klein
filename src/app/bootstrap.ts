@@ -8,8 +8,12 @@ import { loadPromptFile } from "./prompt.js";
 import { TaskCoordinator } from "./task-coordinator.js";
 import { DiscordAgent } from "../agents/discord/discord-agent.js";
 import { createPiAgentFactory } from "../runtime/pi/pi-agent-runtime.js";
+import { createDiscordSlashCommandRouter } from "../modules/discord/application/commands/discord-slash-command-router.js";
+import { createOpenCodeGoUsageCommand } from "../modules/discord/application/commands/opencode-go-usage-command.js";
 import { createDiscordAccessPolicy } from "../modules/discord/domain/discord-access-policy.js";
 import { DiscordJsService } from "../modules/discord/infrastructure/discord-js-service.js";
+import { createGetMonthlyUsageLimit } from "../modules/usage/application/get-monthly-usage-limit.js";
+import { OpenCodeGoUsageProvider } from "../modules/usage/infrastructure/opencode-go-usage-provider.js";
 import { resolveLogDirectory, resolveWebUiConfig } from "../modules/webui/domain/webui-config.js";
 import { startWebUi } from "../modules/webui/infrastructure/elysia-webui-app.js";
 import { PinoJsonlReader } from "../modules/webui/infrastructure/pino-jsonl-reader.js";
@@ -26,6 +30,10 @@ export async function bootstrap(): Promise<void> {
   const token = process.env.DISCORD_BOT_TOKEN;
   if (!token) {
     throw new Error("DISCORD_BOT_TOKEN is required");
+  }
+  const openCodeGoApiKey = process.env.OPENCODE_API_KEY;
+  if (!openCodeGoApiKey) {
+    throw new Error("OPENCODE_API_KEY is required");
   }
 
   const discordService = new DiscordJsService(
@@ -48,6 +56,12 @@ export async function bootstrap(): Promise<void> {
     logger,
     taskCoordinator,
   });
+  const getMonthlyUsageLimit = createGetMonthlyUsageLimit(
+    new OpenCodeGoUsageProvider(openCodeGoApiKey),
+  );
+  const discordSlashCommandHandler = createDiscordSlashCommandRouter([
+    createOpenCodeGoUsageCommand(getMonthlyUsageLimit),
+  ]);
   const webUiConfig = resolveWebUiConfig(config);
   const webUi = webUiConfig.enabled
     ? await startWebUi({
@@ -82,7 +96,10 @@ export async function bootstrap(): Promise<void> {
     void shutdown("SIGTERM");
   });
 
-  await discordService.start((message) => agentCoordinator.handleDiscordMessage(message));
+  await discordService.start(
+    (message) => agentCoordinator.handleDiscordMessage(message),
+    discordSlashCommandHandler,
+  );
 }
 
 try {
