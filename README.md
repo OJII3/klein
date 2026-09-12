@@ -108,6 +108,6 @@ To register the OpenCode Go usage slash command, set `DISCORD_APPLICATION_ID` in
 bun run register:discord-commands
 ```
 
-Set `DISCORD_GUILD_ID` while developing to register the command to one guild. Without it, the command
-is registered globally and may take time to appear. Use `/limit` in Discord to view the monthly usage
-percentage and reset time.
+The command is registered to every guild listed in `discord.access.guilds` in `config/klein.json`.
+It is not registered globally or in DMs. Use `/limit` in Discord to view the monthly usage percentage
+and reset time.
