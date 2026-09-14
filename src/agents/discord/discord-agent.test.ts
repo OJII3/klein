@@ -49,6 +49,7 @@ test("wires the runtime image analyzer into discord_read", async () => {
   const discordService: DiscordService = {
     async start() {},
     stopAccepting() {},
+    setActivity() {},
     async sendMessage() {},
     async readMessage() {
       return message;
@@ -104,6 +105,7 @@ test("exposes codex_delegate only when configured", async () => {
   const discordService: DiscordService = {
     async start() {},
     stopAccepting() {},
+    setActivity() {},
     async sendMessage() {},
     async readMessage() {
       return message;
