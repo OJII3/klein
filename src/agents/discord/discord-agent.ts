@@ -6,6 +6,7 @@ import {
 } from "../../modules/discord/domain/discord-message.js";
 import type { DiscordService } from "../../modules/discord/ports/discord-service.js";
 import { DISCORD_AGENT_TOOL_NAMES } from "./prompt-policy.js";
+import type { CodexDelegateTool } from "./tools/codex-delegate.js";
 import { createDiscordReadTool } from "./tools/discord-read.js";
 import { createDiscordSendTool } from "./tools/discord-send.js";
 
@@ -17,6 +18,7 @@ export class DiscordAgent {
     discordService: DiscordService,
     channelId: string,
     systemPrompt: string,
+    codexTool?: CodexDelegateTool,
   ): Promise<DiscordAgent> {
     let runtime: AgentRuntime | undefined;
     const analyzeImages = async (message: DiscordMessage): Promise<string | undefined> => {
@@ -29,15 +31,26 @@ export class DiscordAgent {
       return runtime.analyzeImage(prompt);
     };
 
+    const toolNames = codexTool
+      ? [...DISCORD_AGENT_TOOL_NAMES, "codex_delegate"]
+      : DISCORD_AGENT_TOOL_NAMES;
+    const tools = codexTool
+      ? [
+          createDiscordReadTool(discordService, channelId, analyzeImages),
+          createDiscordSendTool(discordService, channelId),
+          codexTool,
+        ]
+      : [
+          createDiscordReadTool(discordService, channelId, analyzeImages),
+          createDiscordSendTool(discordService, channelId),
+        ];
+
     runtime = await agentFactory.create(
       {
         systemPrompt,
-        toolNames: DISCORD_AGENT_TOOL_NAMES,
+        toolNames,
       },
-      [
-        createDiscordReadTool(discordService, channelId, analyzeImages),
-        createDiscordSendTool(discordService, channelId),
-      ],
+      tools,
       { sessionKey: `discord-channel:${channelId}` },
     );
 

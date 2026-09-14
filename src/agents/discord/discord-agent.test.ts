@@ -6,6 +6,7 @@ import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { AgentFactory } from "../core/agent-factory.js";
 import type { AgentRuntime } from "../core/agent-runtime.js";
 import { DiscordAgent } from "./discord-agent.js";
+import { createCodexDelegateTool } from "./tools/codex-delegate.js";
 import type { DiscordMessage } from "../../modules/discord/domain/discord-message.js";
 import type { DiscordService } from "../../modules/discord/ports/discord-service.js";
 
@@ -85,5 +86,43 @@ test("wires the runtime image analyzer into discord_read", async () => {
     },
   ]);
 
+  agent.dispose();
+});
+
+test("exposes codex_delegate only when configured", async () => {
+  let definition: { toolNames: readonly string[] } | undefined;
+  const runtime: AgentRuntime = {
+    async prompt() {},
+    dispose() {},
+  };
+  const agentFactory: AgentFactory = {
+    async create(agentDefinition) {
+      definition = agentDefinition;
+      return runtime;
+    },
+  };
+  const discordService: DiscordService = {
+    async start() {},
+    stopAccepting() {},
+    async sendMessage() {},
+    async readMessage() {
+      return message;
+    },
+    async stop() {},
+  };
+
+  const codexTool = createCodexDelegateTool({
+    cwd: "/workspace/klein",
+    socketPath: "/tmp/codex.sock",
+  });
+  const agent = await DiscordAgent.create(
+    agentFactory,
+    discordService,
+    "channel-123",
+    "system prompt",
+    codexTool,
+  );
+
+  assert.ok(definition?.toolNames.includes("codex_delegate"));
   agent.dispose();
 });

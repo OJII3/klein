@@ -47,6 +47,12 @@
     "minecraft": {
       "enabled": false
     },
+    "codexAppServer": {
+      "enabled": false,
+      "socketPath": "/home/your-user/.codex/app-server-control/app-server-control.sock",
+      "workspace": ".",
+      "timeoutSeconds": 900
+    },
     "webui": {
       "enabled": false,
       "host": "127.0.0.1",
