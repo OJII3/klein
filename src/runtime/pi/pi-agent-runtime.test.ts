@@ -164,7 +164,7 @@ test("loads Klein skills from the configured skill directory", async () => {
 
   assert.deepEqual(
     loader.getSkills().skills.map((skill) => skill.name),
-    ["honkai-character-dialogue"],
+    ["honkai-character-dialogue", "codex-app-server"],
   );
   assert.deepEqual(loader.getSkills().diagnostics, []);
 });

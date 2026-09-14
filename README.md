@@ -48,6 +48,57 @@ support image input.
 
 To use an Exa API key with `pi-web-access`, optionally set `EXA_API_KEY` in `.env`.
 
+## Delegate workspace changes to Codex app server
+
+Klein can expose a `codex_delegate` tool to the Discord agent. The tool connects
+to an already-running Codex app server through its Unix socket and delegates
+workspace edits, tests, and small tool implementations without exposing a
+local shell tool to the Discord agent.
+
+Enable it in `config/klein.json`:
+
+```json
+{
+  "features": {
+    "codexAppServer": {
+      "enabled": true,
+      "socketPath": "/home/your-user/.codex/app-server-control/app-server-control.sock",
+      "codexHome": "/home/your-user/.codex",
+      "workspace": "/home/your-user/src/klein",
+      "timeoutSeconds": 900
+    }
+  }
+}
+```
+
+The app server must already be listening on the configured Unix socket. Klein
+performs the Unix-domain WebSocket handshake itself and exchanges
+newline-delimited JSON-RPC messages over the connection. The Codex CLI is
+needed for type generation, but is not started for each delegation.
+
+`workspace` is the default project. `codexHome` points to the Codex home whose
+`config.toml` contains the `[projects."..."]` entries. If omitted, Klein uses
+`$CODEX_HOME` or `~/.codex`. Those Codex project entries are listed by
+`codex_projects` (this is read from the local Codex config; it is not an
+app-server project-list RPC); `codex_delegate` accepts a project path from
+that list and starts the Codex task in the background. The tool returns immediately;
+completion, failure, timeout, or cancellation is posted to the current Discord
+channel. `codex_task_status` can check tasks while Klein is running.
+
+The protocol types used by the client are generated from the installed Codex
+CLI:
+
+```sh
+bun run generate:codex-types
+```
+
+This copies only the stable type dependency closure needed by Klein into
+`src/modules/codex-app-server/protocol/generated/`. Keep the generated types
+in sync with the Codex CLI version used by the app server.
+
+See `config/skills/codex-app-server/SKILL.md` for how to formulate delegation
+tasks and the safety boundary.
+
 The Discord agent's personality and behavior are loaded from the Markdown file
 configured by `agents.discord.systemPromptFile` (`config/SOUL.md` by default).
 

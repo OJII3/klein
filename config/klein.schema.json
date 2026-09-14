@@ -284,6 +284,37 @@
             }
           },
           "additionalProperties": false
+        },
+        "codexAppServer": {
+          "type": "object",
+          "required": ["enabled", "socketPath", "workspace"],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "socketPath": {
+              "type": "string",
+              "minLength": 1
+            },
+            "codexHome": {
+              "type": "string",
+              "minLength": 1
+            },
+            "workspace": {
+              "type": "string",
+              "minLength": 1
+            },
+            "model": {
+              "type": "string",
+              "minLength": 1
+            },
+            "timeoutSeconds": {
+              "type": "integer",
+              "minimum": 10,
+              "maximum": 3600
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false

@@ -7,6 +7,7 @@ import { createLogFilePath, createLogger, flushLogger } from "./logger.js";
 import { loadPromptFile } from "./prompt.js";
 import { TaskCoordinator } from "./task-coordinator.js";
 import { DiscordAgent } from "../agents/discord/discord-agent.js";
+import { createCodexTools } from "../agents/discord/tools/codex-delegate.js";
 import { createPiAgentFactory } from "../runtime/pi/pi-agent-runtime.js";
 import { createDiscordSlashCommandRouter } from "../modules/discord/application/commands/discord-slash-command-router.js";
 import { createOpenCodeGoUsageCommand } from "../modules/discord/application/commands/opencode-go-usage-command.js";
@@ -49,9 +50,33 @@ export async function bootstrap(): Promise<void> {
     logger,
     sessionMode,
   });
+  const codexConfiguration = config.features.codexAppServer;
+  const codexToolOptions = codexConfiguration?.enabled
+    ? {
+        defaultWorkspace: resolve(codexConfiguration.workspace),
+        codexHome: codexConfiguration.codexHome ? resolve(codexConfiguration.codexHome) : undefined,
+        logger,
+        model: codexConfiguration.model,
+        socketPath: resolve(codexConfiguration.socketPath),
+        taskScheduler: taskCoordinator,
+        timeoutMs: (codexConfiguration.timeoutSeconds ?? 900) * 1_000,
+      }
+    : undefined;
   const agentCoordinator = new AgentCoordinator({
     createDiscordAgent: (channelId) =>
-      DiscordAgent.create(piAgentFactory, discordService, channelId, systemPrompt),
+      DiscordAgent.create(
+        piAgentFactory,
+        discordService,
+        channelId,
+        systemPrompt,
+        codexToolOptions
+          ? createCodexTools({
+              ...codexToolOptions,
+              channelId,
+              discordService,
+            })
+          : undefined,
+      ),
     discordService,
     logger,
     taskCoordinator,

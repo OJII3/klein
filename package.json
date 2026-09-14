@@ -12,6 +12,7 @@
     "lint:fix": "oxlint --fix",
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check",
+    "generate:codex-types": "bun scripts/generate-codex-app-server-types.ts && bunx oxfmt src/modules/codex-app-server/protocol/generated",
     "generate:config-schema": "bun scripts/generate-config-schema.ts && bunx oxfmt config/klein.schema.json",
     "register:discord-commands": "bun scripts/register-discord-commands.ts",
     "start": "bun run build:web && bun src/app/bootstrap.ts",

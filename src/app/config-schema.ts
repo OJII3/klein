@@ -70,6 +70,18 @@ const WebUiConfigurationSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const CodexAppServerConfigurationSchema = Type.Object(
+  {
+    enabled: Type.Boolean(),
+    socketPath: Type.String({ minLength: 1 }),
+    codexHome: Type.Optional(Type.String({ minLength: 1 })),
+    workspace: Type.String({ minLength: 1 }),
+    model: Type.Optional(Type.String({ minLength: 1 })),
+    timeoutSeconds: Type.Optional(Type.Integer({ minimum: 10, maximum: 3600 })),
+  },
+  { additionalProperties: false },
+);
+
 export const KleinConfigSchema = Type.Object(
   {
     $schema: Type.Optional(Type.String({ minLength: 1 })),
@@ -118,6 +130,7 @@ export const KleinConfigSchema = Type.Object(
           { additionalProperties: false },
         ),
         webui: Type.Optional(WebUiConfigurationSchema),
+        codexAppServer: Type.Optional(CodexAppServerConfigurationSchema),
       },
       { additionalProperties: false },
     ),
