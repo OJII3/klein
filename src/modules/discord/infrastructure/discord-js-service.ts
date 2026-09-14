@@ -5,8 +5,6 @@ import {
   GatewayIntentBits,
   Partials,
   type Attachment,
-  type ChatInputCommandInteraction,
-  type Interaction,
   type Message,
 } from "discord.js";
 import type { Logger } from "pino";
@@ -20,11 +18,7 @@ import {
   type DiscordReplyReference,
   type DiscordUser,
 } from "../domain/discord-message.js";
-import type {
-  DiscordMessageHandler,
-  DiscordService,
-  DiscordSlashCommandHandler,
-} from "../ports/discord-service.js";
+import type { DiscordMessageHandler, DiscordService } from "../ports/discord-service.js";
 
 const DISCORD_MESSAGE_LIMIT = 2_000;
 const DISCORD_IMAGE_MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024;
@@ -118,20 +112,10 @@ function toDiscordUser(message: Message): DiscordUser {
   };
 }
 
-function toDiscordInteractionUser(interaction: ChatInputCommandInteraction): DiscordUser {
-  return {
-    id: interaction.user.id,
-    username: interaction.user.username,
-    displayName: interaction.user.displayName,
-  };
-}
-
 export class DiscordJsService implements DiscordService {
   private readonly client: Client;
   private readonly channels = new Map<string, SendableChannel>();
   private onMessage?: DiscordMessageHandler;
-  private onSlashCommand?: DiscordSlashCommandHandler;
-  private interactionListener?: (interaction: Interaction) => void;
   private messageListener?: (message: Message) => void;
   private acceptingMessages = false;
   private readonly logger?: Logger;
@@ -153,12 +137,8 @@ export class DiscordJsService implements DiscordService {
     });
   }
 
-  async start(
-    onMessage: DiscordMessageHandler,
-    onSlashCommand?: DiscordSlashCommandHandler,
-  ): Promise<void> {
+  async start(onMessage: DiscordMessageHandler): Promise<void> {
     this.onMessage = onMessage;
-    this.onSlashCommand = onSlashCommand;
     this.acceptingMessages = true;
     this.client.once(Events.ClientReady, (readyClient) => {
       this.logger?.info(
@@ -178,19 +158,16 @@ export class DiscordJsService implements DiscordService {
       });
     };
     this.client.on(Events.MessageCreate, this.messageListener);
-    if (onSlashCommand) {
-      this.interactionListener = (interaction) => {
-        void this.handleInteraction(interaction).catch((error: unknown) => {
-          this.logger?.error(
-            { err: error, event: "discord_interaction_handler_failed" },
-            "Failed to handle Discord interaction",
-          );
-        });
-      };
-      this.client.on(Events.InteractionCreate, this.interactionListener);
-    }
 
     await this.client.login(this.token);
+  }
+
+  setActivity(name: string): void {
+    if (!this.client.user) {
+      throw new Error("Discord client is not ready");
+    }
+
+    this.client.user.setActivity(name);
   }
 
   async sendMessage(channelId: string, content: string): Promise<void> {
@@ -228,16 +205,10 @@ export class DiscordJsService implements DiscordService {
       this.client.off(Events.MessageCreate, this.messageListener);
       this.messageListener = undefined;
     }
-
-    if (this.interactionListener) {
-      this.client.off(Events.InteractionCreate, this.interactionListener);
-      this.interactionListener = undefined;
-    }
   }
 
   async stop(): Promise<void> {
     this.onMessage = undefined;
-    this.onSlashCommand = undefined;
     this.stopAccepting();
     this.channels.clear();
     this.client.destroy();
@@ -295,89 +266,6 @@ export class DiscordJsService implements DiscordService {
       images,
       replyTo,
     });
-  }
-
-  private async handleInteraction(interaction: Interaction): Promise<void> {
-    if (!this.acceptingMessages || !interaction.isChatInputCommand()) return;
-
-    const channelId = interaction.channelId;
-    if (!channelId) {
-      await this.replyToInteraction(interaction, "この場所ではコマンドを利用できません。", true);
-      return;
-    }
-
-    const channel = interaction.channel;
-    const thread = channel?.isThread() ? channel : undefined;
-    const canReceive = this.accessPolicy.canReceive({
-      channelId: thread?.parentId ?? channelId,
-      guildId: interaction.guildId ?? undefined,
-      threadId: thread?.id,
-    });
-    if (!canReceive) {
-      await this.replyToInteraction(interaction, "この場所ではコマンドを利用できません。", true);
-      return;
-    }
-
-    const handler = this.onSlashCommand;
-    if (!handler) return;
-
-    try {
-      await handler({
-        channelId,
-        commandName: interaction.commandName,
-        deferReply: async (options) => {
-          await interaction.deferReply({ ephemeral: options?.ephemeral ?? false });
-        },
-        editReply: async (content) => {
-          await interaction.editReply({ content });
-        },
-        guildId: interaction.guildId ?? undefined,
-        reply: (content, options) =>
-          this.replyToInteraction(interaction, content, options?.ephemeral ?? false),
-        user: toDiscordInteractionUser(interaction),
-      });
-    } catch (error) {
-      this.logger?.error(
-        {
-          commandName: interaction.commandName,
-          err: error,
-          event: "discord_slash_command_handler_failed",
-        },
-        "Failed to handle Discord slash command",
-      );
-
-      try {
-        await this.replyToInteraction(
-          interaction,
-          "ごめん、コマンドを処理できませんでした。",
-          true,
-        );
-      } catch (replyError) {
-        this.logger?.error(
-          {
-            commandName: interaction.commandName,
-            err: replyError,
-            event: "discord_slash_command_error_reply_failed",
-          },
-          "Failed to reply to Discord slash command error",
-        );
-      }
-    }
-  }
-
-  private async replyToInteraction(
-    interaction: ChatInputCommandInteraction,
-    content: string,
-    ephemeral: boolean,
-  ): Promise<void> {
-    const options = { content, ephemeral };
-    if (interaction.deferred) {
-      await interaction.editReply({ content });
-    } else if (interaction.replied) {
-      await interaction.followUp(options);
-    } else {
-      await interaction.reply(options);
-    }
   }
 
   private toDiscordMessage(message: Message): DiscordMessage {

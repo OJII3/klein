@@ -153,12 +153,5 @@ thread → channel → guild → default, while direct messages use
 `directMessages`. The Discord application must have the Message Content intent
 enabled.
 
-To register the OpenCode Go usage slash command, set `DISCORD_APPLICATION_ID` in `.env` and run:
-
-```sh
-bun run register:discord-commands
-```
-
-The command is registered to every guild listed in `discord.access.guilds` in `config/klein.json`.
-It is not registered globally or in DMs. Use `/usage` in Discord to view the monthly usage percentage
-and reset time.
+The bot's Discord activity displays the remaining OpenCode Go monthly usage and reset countdown, for
+example `65.5%/month (reset in 17 days)`. It is refreshed hourly.

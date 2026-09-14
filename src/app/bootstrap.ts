@@ -9,16 +9,17 @@ import { TaskCoordinator } from "./task-coordinator.js";
 import { DiscordAgent } from "../agents/discord/discord-agent.js";
 import { createCodexTools } from "../agents/discord/tools/codex-delegate.js";
 import { createPiAgentFactory } from "../runtime/pi/pi-agent-runtime.js";
-import { createDiscordSlashCommandRouter } from "../modules/discord/application/commands/discord-slash-command-router.js";
-import { createOpenCodeGoUsageCommand } from "../modules/discord/application/commands/opencode-go-usage-command.js";
 import { createDiscordAccessPolicy } from "../modules/discord/domain/discord-access-policy.js";
 import { DiscordJsService } from "../modules/discord/infrastructure/discord-js-service.js";
 import { createGetMonthlyUsageLimit } from "../modules/usage/application/get-monthly-usage-limit.js";
+import { formatMonthlyUsageStatus } from "../modules/usage/application/format-monthly-usage-status.js";
 import { OpenCodeGoUsageProvider } from "../modules/usage/infrastructure/opencode-go-usage-provider.js";
 import { resolveLogDirectory, resolveWebUiConfig } from "../modules/webui/domain/webui-config.js";
 import { startWebUi } from "../modules/webui/infrastructure/elysia-webui-app.js";
 import { PinoJsonlReader } from "../modules/webui/infrastructure/pino-jsonl-reader.js";
 import { PiSessionReader } from "../modules/webui/infrastructure/pi-session-reader.js";
+
+const DISCORD_USAGE_STATUS_REFRESH_INTERVAL_MS = 60 * 60 * 1_000;
 
 export async function bootstrap(): Promise<void> {
   const { sessionMode } = parseCliOptions(process.argv.slice(2));
@@ -84,9 +85,17 @@ export async function bootstrap(): Promise<void> {
   const getMonthlyUsageLimit = createGetMonthlyUsageLimit(
     new OpenCodeGoUsageProvider(openCodeGoApiKey),
   );
-  const discordSlashCommandHandler = createDiscordSlashCommandRouter([
-    createOpenCodeGoUsageCommand(getMonthlyUsageLimit),
-  ]);
+  const updateDiscordUsageStatus = async (): Promise<void> => {
+    try {
+      const monthly = await getMonthlyUsageLimit();
+      discordService.setActivity(formatMonthlyUsageStatus(monthly));
+    } catch (error) {
+      logger.warn(
+        { err: error, event: "discord_usage_status_update_failed" },
+        "Failed to update Discord usage status",
+      );
+    }
+  };
   const webUiConfig = resolveWebUiConfig(config);
   const webUi = webUiConfig.enabled
     ? await startWebUi({
@@ -99,12 +108,17 @@ export async function bootstrap(): Promise<void> {
       })
     : undefined;
 
+  let usageStatusInterval: ReturnType<typeof setInterval> | undefined;
   let shuttingDown = false;
   const shutdown = async (signal: string): Promise<void> => {
     if (shuttingDown) return;
     shuttingDown = true;
     logger.info({ event: "shutdown_started", signal }, "Shutting down");
 
+    if (usageStatusInterval) {
+      clearInterval(usageStatusInterval);
+      usageStatusInterval = undefined;
+    }
     await webUi?.stop();
     discordService.stopAccepting();
     await taskCoordinator.waitForCompletion();
@@ -121,10 +135,11 @@ export async function bootstrap(): Promise<void> {
     void shutdown("SIGTERM");
   });
 
-  await discordService.start(
-    (message) => agentCoordinator.handleDiscordMessage(message),
-    discordSlashCommandHandler,
-  );
+  await discordService.start((message) => agentCoordinator.handleDiscordMessage(message));
+  await updateDiscordUsageStatus();
+  usageStatusInterval = setInterval(() => {
+    void updateDiscordUsageStatus();
+  }, DISCORD_USAGE_STATUS_REFRESH_INTERVAL_MS);
 }
 
 try {

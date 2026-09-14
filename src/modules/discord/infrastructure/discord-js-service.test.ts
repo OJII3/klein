@@ -1,24 +1,19 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { Interaction, Message } from "discord.js";
+import type { Message } from "discord.js";
 
 import { createDiscordAccessPolicy } from "../domain/discord-access-policy.js";
 import type { DiscordMessage } from "../domain/discord-message.js";
-import type {
-  DiscordMessageHandler,
-  DiscordSlashCommandHandler,
-} from "../ports/discord-service.js";
+import type { DiscordMessageHandler } from "../ports/discord-service.js";
 import { DiscordJsService } from "./discord-js-service.js";
 
 type TestableDiscordJsService = {
   readonly client: {
-    user: { id: string } | null;
+    user: { id: string; setActivity?: (name: string) => void } | null;
   };
   acceptingMessages: boolean;
   onMessage?: DiscordMessageHandler;
-  onSlashCommand?: DiscordSlashCommandHandler;
   handleMessage(message: Message): Promise<void>;
-  handleInteraction(interaction: Interaction): Promise<void>;
 };
 
 function createMessage(
@@ -55,32 +50,6 @@ function createImageAttachment() {
     size: 68,
     url: "https://cdn.discordapp.com/attachments/sample.png",
   };
-}
-
-function createInteraction() {
-  const replies: unknown[] = [];
-  const interaction = {
-    channel: null,
-    channelId: "channel-123",
-    commandName: "usage",
-    deferred: false,
-    guildId: "guild-123",
-    isChatInputCommand: () => true,
-    replied: false,
-    reply: async (options: unknown) => {
-      replies.push(options);
-    },
-    followUp: async (options: unknown) => {
-      replies.push(options);
-    },
-    user: {
-      displayName: "さつき",
-      id: "user-123",
-      username: "satsuki",
-    },
-  } as unknown as Interaction;
-
-  return { interaction, replies };
 }
 
 test("forwards guild messages without a bot mention", async () => {
@@ -152,49 +121,21 @@ test("forwards image attachments, including image-only messages", async () => {
   }
 });
 
-test("forwards allowed slash commands to the command handler", async () => {
+test("sets the bot activity", async () => {
   const service = new DiscordJsService(
     "token",
     createDiscordAccessPolicy({ default: "allow", directMessages: "allow" }),
   );
   const testableService = service as unknown as TestableDiscordJsService;
-  testableService.acceptingMessages = true;
-
-  const received: string[] = [];
-  testableService.onSlashCommand = async (interaction) => {
-    received.push(`${interaction.commandName}:${interaction.user.displayName}`);
-    await interaction.reply("usage", { ephemeral: true });
+  const activities: string[] = [];
+  testableService.client.user = {
+    id: "bot-123",
+    setActivity: (name) => activities.push(name),
   };
-  const { interaction, replies } = createInteraction();
 
   try {
-    await testableService.handleInteraction(interaction);
-
-    assert.deepEqual(received, ["usage:さつき"]);
-    assert.deepEqual(replies, [{ content: "usage", ephemeral: true }]);
-  } finally {
-    await service.stop();
-  }
-});
-
-test("rejects slash commands outside the Discord access policy", async () => {
-  const service = new DiscordJsService(
-    "token",
-    createDiscordAccessPolicy({ default: "deny", directMessages: "deny" }),
-  );
-  const testableService = service as unknown as TestableDiscordJsService;
-  testableService.acceptingMessages = true;
-  testableService.onSlashCommand = async () => {
-    throw new Error("The handler must not run");
-  };
-  const { interaction, replies } = createInteraction();
-
-  try {
-    await testableService.handleInteraction(interaction);
-
-    assert.deepEqual(replies, [
-      { content: "この場所ではコマンドを利用できません。", ephemeral: true },
-    ]);
+    service.setActivity("65.5%/month (reset in 17 days)");
+    assert.deepEqual(activities, ["65.5%/month (reset in 17 days)"]);
   } finally {
     await service.stop();
   }
