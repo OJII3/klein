@@ -54,11 +54,9 @@ export async function bootstrap(): Promise<void> {
   const codexToolOptions = codexConfiguration?.enabled
     ? {
         defaultWorkspace: resolve(codexConfiguration.workspace),
+        codexHome: codexConfiguration.codexHome ? resolve(codexConfiguration.codexHome) : undefined,
         logger,
         model: codexConfiguration.model,
-        projectsRoot: codexConfiguration.projectsRoot
-          ? resolve(codexConfiguration.projectsRoot)
-          : undefined,
         socketPath: resolve(codexConfiguration.socketPath),
         taskScheduler: taskCoordinator,
         timeoutMs: (codexConfiguration.timeoutSeconds ?? 900) * 1_000,

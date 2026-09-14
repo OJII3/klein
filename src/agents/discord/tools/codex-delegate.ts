@@ -36,7 +36,7 @@ export function createCodexProjectsTool(service: Pick<CodexDelegationService, "l
     promptSnippet: "List available Codex projects.",
     promptGuidelines: [
       "Use codex_projects before delegating when the user did not specify which project to change.",
-      "Choose a project id from the returned list and pass it to codex_delegate.",
+      "Choose a project path from the returned list and pass it to codex_delegate.",
     ],
     parameters: Type.Object({}),
     async execute() {
@@ -73,8 +73,8 @@ export function createCodexDelegateTool(service: Pick<CodexDelegationService, "s
       "Use codex_delegate for implementation, debugging, refactoring, tests, and prompt or skill edits in the configured workspace.",
       "Give codex_delegate a concrete goal, relevant constraints, and acceptance criteria; do not ask it to use a particular shell command unless that is part of the requirement.",
       "codex_delegate returns immediately and posts its acceptance to Discord; do not call discord_send just to acknowledge this task.",
-      "Use codex_projects first when a project is not clear, then pass its id as project.",
-      "codex_delegate runs with workspace-write and approvalPolicy=never; do not use it for changes outside the configured workspace or for secrets.",
+      "Use codex_projects first when a project is not clear, then pass its path as project.",
+      "codex_delegate runs with workspace-write and approvalPolicy=never; do not use it for changes outside a Codex project or for secrets.",
     ],
     executionMode: "sequential",
     parameters: Type.Object({
@@ -85,7 +85,7 @@ export function createCodexDelegateTool(service: Pick<CodexDelegationService, "s
       project: Type.Optional(
         Type.String({
           minLength: 1,
-          description: "Project id from codex_projects. Omit to use the default project.",
+          description: "Project path from codex_projects. Omit to use the default project.",
         }),
       ),
     }),

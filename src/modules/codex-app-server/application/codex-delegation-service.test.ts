@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import test from "node:test";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -32,9 +32,21 @@ function waitFor(predicate: () => boolean): Promise<void> {
 
 test("lists projects and completes delegation in the background", async () => {
   const directory = await mkdtemp(join(tmpdir(), "klein-codex-projects-"));
+  const codexHome = join(directory, "codex-home");
   const defaultWorkspace = join(directory, "klein");
   const otherWorkspace = join(directory, "other-project");
-  await Promise.all([mkdir(defaultWorkspace), mkdir(otherWorkspace)]);
+  const unlistedWorkspace = join(directory, "unlisted-project");
+  await Promise.all([
+    mkdir(codexHome),
+    mkdir(defaultWorkspace),
+    mkdir(otherWorkspace),
+    mkdir(unlistedWorkspace),
+  ]);
+  await writeFile(
+    join(codexHome, "config.toml"),
+    `[projects."${defaultWorkspace}"]\ntrust_level = "trusted"\n\n` +
+      `[projects."${otherWorkspace}"]\ntrust_level = "trusted"\n`,
+  );
 
   let resolveRun!: (value: {
     threadId: string;
@@ -66,7 +78,7 @@ test("lists projects and completes delegation in the background", async () => {
         sentMessages.push(content);
       },
     },
-    projectsRoot: directory,
+    codexHome,
     socketPath: join(directory, "server.sock"),
     taskScheduler: new InlineTaskScheduler(),
   });
@@ -74,11 +86,11 @@ test("lists projects and completes delegation in the background", async () => {
   try {
     const projects = await service.listProjects();
     assert.deepEqual(
-      projects.map(({ id }) => id),
-      ["klein", "other-project"],
+      projects.map(({ path }) => path),
+      [defaultWorkspace, otherWorkspace],
     );
 
-    const task = await service.submit("修正してテストして", "other-project");
+    const task = await service.submit("修正してテストして", otherWorkspace);
     assert.match(task.id, /^codex-/);
     await waitFor(() => service.getStatus(task.id)?.status === "running");
     assert.deepEqual(clientWorkspaces, [otherWorkspace]);

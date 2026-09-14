@@ -1,5 +1,6 @@
-import { readdir, stat } from "node:fs/promises";
-import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
+import { readFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { basename, join, resolve } from "node:path";
 
 export interface CodexProject {
   readonly id: string;
@@ -10,36 +11,29 @@ export interface CodexProject {
 
 export interface CodexProjectCatalogOptions {
   readonly defaultWorkspace: string;
-  readonly projectsRoot?: string;
-}
-
-function isWithin(root: string, candidate: string): boolean {
-  const relativePath = relative(root, candidate);
-  return relativePath === "" || (!relativePath.startsWith("..") && !isAbsolute(relativePath));
+  readonly codexHome?: string;
 }
 
 export class CodexProjectCatalog {
   private readonly defaultWorkspace: string;
-  private readonly projectsRoot: string;
+  private readonly configPath: string;
 
   constructor(options: CodexProjectCatalogOptions) {
     this.defaultWorkspace = resolve(options.defaultWorkspace);
-    this.projectsRoot = resolve(options.projectsRoot ?? dirname(this.defaultWorkspace));
+    const codexHome = resolve(
+      options.codexHome ?? process.env.CODEX_HOME ?? join(homedir(), ".codex"),
+    );
+    this.configPath = join(codexHome, "config.toml");
   }
 
   async list(): Promise<readonly CodexProject[]> {
-    const projects = new Map<string, CodexProject>();
-    projects.set(this.defaultWorkspace, this.toProject(this.defaultWorkspace, true));
+    const config = await readFile(this.configPath, "utf8");
+    const paths = new Set(readProjectPaths(config));
+    const projects = [...paths].map((path) => this.toProject(path, path === this.defaultWorkspace));
 
-    for (const entry of await readdir(this.projectsRoot, { withFileTypes: true })) {
-      if (!entry.isDirectory()) continue;
-      const path = resolve(this.projectsRoot, entry.name);
-      if (!projects.has(path)) projects.set(path, this.toProject(path, false));
-    }
-
-    return [...projects.values()].sort((left, right) => {
+    return projects.sort((left, right) => {
       if (left.isDefault !== right.isDefault) return left.isDefault ? -1 : 1;
-      return left.name.localeCompare(right.name);
+      return left.path.localeCompare(right.path);
     });
   }
 
@@ -47,32 +41,52 @@ export class CodexProjectCatalog {
     if (!project) return this.toProject(this.defaultWorkspace, true);
 
     const projects = await this.list();
-    const named = projects.find(
-      (candidate) =>
-        candidate.id === project || candidate.name === project || candidate.path === project,
+    const selected = projects.find(
+      (candidate) => candidate.id === project || candidate.path === project,
     );
-    if (named) return named;
-
-    const candidatePath = resolve(isAbsolute(project) ? project : this.projectsRoot, project);
-    if (!isWithin(this.projectsRoot, candidatePath) && candidatePath !== this.defaultWorkspace) {
-      throw new Error(`Codex project is outside the configured projects root: ${project}`);
-    }
-
-    const candidateStats = await stat(candidatePath).catch(() => undefined);
-    if (!candidateStats?.isDirectory()) {
-      throw new Error(`Codex project directory was not found: ${project}`);
-    }
-
-    return this.toProject(candidatePath, candidatePath === this.defaultWorkspace);
+    if (!selected) throw new Error(`Codex project was not found in config.toml: ${project}`);
+    return selected;
   }
 
   private toProject(path: string, isDefault: boolean): CodexProject {
-    const relativePath = relative(this.projectsRoot, path);
+    const resolvedPath = resolve(path);
     return {
-      id: relativePath && !relativePath.startsWith("..") ? relativePath : basename(path),
-      name: basename(path),
-      path,
+      id: resolvedPath,
+      name: basename(resolvedPath),
+      path: resolvedPath,
       isDefault,
     };
   }
+}
+
+function readProjectPaths(config: string): readonly string[] {
+  const paths: string[] = [];
+  for (const line of config.split("\n")) {
+    const match = line.match(/^\s*\[projects\."((?:\\.|[^"])*)"\]\s*(?:#.*)?$/);
+    if (match?.[1]) paths.push(decodeTomlBasicString(match[1]));
+  }
+  return paths;
+}
+
+function decodeTomlBasicString(value: string): string {
+  return value.replace(/\\(u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8}|["\\bfnrt])/g, (_, escape: string) => {
+    switch (escape) {
+      case '"':
+        return '"';
+      case "\\":
+        return "\\";
+      case "b":
+        return "\b";
+      case "f":
+        return "\f";
+      case "n":
+        return "\n";
+      case "r":
+        return "\r";
+      case "t":
+        return "\t";
+      default:
+        return String.fromCodePoint(Number.parseInt(escape.slice(1), 16));
+    }
+  });
 }

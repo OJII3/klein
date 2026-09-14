@@ -296,11 +296,11 @@
               "type": "string",
               "minLength": 1
             },
-            "workspace": {
+            "codexHome": {
               "type": "string",
               "minLength": 1
             },
-            "projectsRoot": {
+            "workspace": {
               "type": "string",
               "minLength": 1
             },

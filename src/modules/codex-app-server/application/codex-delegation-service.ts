@@ -46,7 +46,7 @@ interface MutableCodexTask {
 export interface CodexDelegationServiceOptions {
   readonly socketPath: string;
   readonly defaultWorkspace: string;
-  readonly projectsRoot?: string;
+  readonly codexHome?: string;
   readonly model?: string;
   readonly timeoutMs?: number;
   readonly channelId: string;
@@ -66,7 +66,7 @@ export class CodexDelegationService {
   constructor(private readonly options: CodexDelegationServiceOptions) {
     this.catalog = new CodexProjectCatalog({
       defaultWorkspace: options.defaultWorkspace,
-      projectsRoot: options.projectsRoot,
+      codexHome: options.codexHome,
     });
     this.createClient =
       options.createClient ?? ((clientOptions) => new CodexAppServerClient(clientOptions));

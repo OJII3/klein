@@ -63,8 +63,8 @@ Enable it in `config/klein.json`:
     "codexAppServer": {
       "enabled": true,
       "socketPath": "/home/your-user/.codex/app-server-control/app-server-control.sock",
+      "codexHome": "/home/your-user/.codex",
       "workspace": "/home/your-user/src/klein",
-      "projectsRoot": "/home/your-user/src",
       "timeoutSeconds": 900
     }
   }
@@ -76,12 +76,14 @@ performs the Unix-domain WebSocket handshake itself and exchanges
 newline-delimited JSON-RPC messages over the connection. The Codex CLI is
 needed for type generation, but is not started for each delegation.
 
-`workspace` is the default project. `projectsRoot` is an optional directory
-whose immediate child directories are listed by the `codex_projects` tool.
-`codex_delegate` accepts a project id from that list and starts the Codex task
-in the background. The tool returns immediately; completion, failure, timeout,
-or cancellation is posted to the current Discord channel. `codex_task_status`
-can check tasks while Klein is running.
+`workspace` is the default project. `codexHome` points to the Codex home whose
+`config.toml` contains the `[projects."..."]` entries. If omitted, Klein uses
+`$CODEX_HOME` or `~/.codex`. Those Codex project entries are listed by
+`codex_projects` (this is read from the local Codex config; it is not an
+app-server project-list RPC); `codex_delegate` accepts a project path from
+that list and starts the Codex task in the background. The tool returns immediately;
+completion, failure, timeout, or cancellation is posted to the current Discord
+channel. `codex_task_status` can check tasks while Klein is running.
 
 The protocol types used by the client are generated from the installed Codex
 CLI:
