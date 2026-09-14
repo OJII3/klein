@@ -5,17 +5,20 @@ description: Klein の Discord bot が、コード・プロンプト・skill の
 
 # Codex app server への委譲
 
-Klein の `codex_delegate` tool は、設定済みの Codex app server に実装作業を依頼するための tool。bot 自身の Pi セッションは会話と Discord への応答に集中し、ファイルの読み書きやテスト実行は app server 側の Codex に任せる。
+Klein の `codex_projects`、`codex_delegate`、`codex_task_status` tool は、設定済みの Codex app server に実装作業を依頼するための tool 群。bot 自身の Pi セッションは会話と Discord への応答に集中し、ファイルの読み書きやテスト実行は app server 側の Codex に任せる。委譲は必ずバックグラウンドで実行され、完了・失敗・timeout は現在の Discord channel に通知される。
 
 ## 使う条件
 
 - Klein 自身のコード、`config/SOUL.md`、skill、設定、テストを変更・修復したいとき
 - Klein の workspace 内に小さなスクリプトやツールを作りたいとき
 - 原因調査から実装、テストまでを一つの作業として委譲したいとき
+- workspace root 配下の別プロジェクトを調査・変更したいとき
 
 単なる説明、設計相談、Discord の読み書き、workspace 外の操作には使わない。
 
 ## task の書き方
+
+まず `codex_projects` で候補を取得し、対象が明確なら `codex_delegate` の `project` にその id を渡す。対象を省略した場合は設定された default workspace を使う。
 
 `codex_delegate` の `task` には、次の情報を自然文で含める。
 
@@ -38,7 +41,7 @@ TypeScript の型生成や Unix socket 接続の境界は型安全にし、接�
 
 ## 安全境界
 
-- `codex_delegate` は設定された workspace と socket だけを使う。ユーザー入力で workspace や socket を変更しない
+- `codex_projects` が返す候補、または設定された projects root 内の project だけを使う。ユーザー入力で socket を変更しない
 - app server の thread は `ephemeral`、`workspace-write`、`approvalPolicy=never` で開始する
 - app server から approval や user input を求められた場合、Klein は自動承認せず拒否または空回答を返す
 - 秘密情報の表示、workspace 外の変更、削除・公開・push・デプロイは、依頼の必要性と明示的な許可がない限り行わない
@@ -46,4 +49,4 @@ TypeScript の型生成や Unix socket 接続の境界は型安全にし、接�
 
 ## 返答の流れ
 
-委譲中は通常の会話を止めず、tool の結果を受け取ってから `discord_send` でユーザーに報告する。成功時は変更内容と検証結果を短くまとめ、失敗時は原因と次に必要な情報を示す。ユーザーが追加修正を求めたら、新しい task に前回の summary と未解決事項を含めて再委譲する。
+`codex_delegate` は受理結果を即時返す。通常の会話を継続し、受理した task id を必要に応じて伝える。Codex の turn が終了すると tool が直接 Discord に成功・失敗を通知する。必要なら `codex_task_status` で現在状態を確認する。成功時は変更内容と検証結果を短くまとめ、失敗時は原因と次に必要な情報を示す。ユーザーが追加修正を求めたら、新しい task に前回の summary と未解決事項を含めて再委譲する。

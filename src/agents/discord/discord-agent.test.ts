@@ -6,7 +6,7 @@ import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { AgentFactory } from "../core/agent-factory.js";
 import type { AgentRuntime } from "../core/agent-runtime.js";
 import { DiscordAgent } from "./discord-agent.js";
-import { createCodexDelegateTool } from "./tools/codex-delegate.js";
+import { createCodexTools } from "./tools/codex-delegate.js";
 import type { DiscordMessage } from "../../modules/discord/domain/discord-message.js";
 import type { DiscordService } from "../../modules/discord/ports/discord-service.js";
 
@@ -111,18 +111,23 @@ test("exposes codex_delegate only when configured", async () => {
     async stop() {},
   };
 
-  const codexTool = createCodexDelegateTool({
-    cwd: "/workspace/klein",
+  const codexTools = createCodexTools({
+    defaultWorkspace: "/workspace/klein",
+    discordService,
+    channelId: "channel-123",
     socketPath: "/tmp/codex.sock",
+    taskScheduler: { run: async (task) => task() },
   });
   const agent = await DiscordAgent.create(
     agentFactory,
     discordService,
     "channel-123",
     "system prompt",
-    codexTool,
+    codexTools,
   );
 
   assert.ok(definition?.toolNames.includes("codex_delegate"));
+  assert.ok(definition?.toolNames.includes("codex_projects"));
+  assert.ok(definition?.toolNames.includes("codex_task_status"));
   agent.dispose();
 });

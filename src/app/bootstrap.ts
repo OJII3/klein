@@ -7,7 +7,7 @@ import { createLogFilePath, createLogger, flushLogger } from "./logger.js";
 import { loadPromptFile } from "./prompt.js";
 import { TaskCoordinator } from "./task-coordinator.js";
 import { DiscordAgent } from "../agents/discord/discord-agent.js";
-import { createCodexDelegateTool } from "../agents/discord/tools/codex-delegate.js";
+import { createCodexTools } from "../agents/discord/tools/codex-delegate.js";
 import { createPiAgentFactory } from "../runtime/pi/pi-agent-runtime.js";
 import { createDiscordSlashCommandRouter } from "../modules/discord/application/commands/discord-slash-command-router.js";
 import { createOpenCodeGoUsageCommand } from "../modules/discord/application/commands/opencode-go-usage-command.js";
@@ -51,17 +51,34 @@ export async function bootstrap(): Promise<void> {
     sessionMode,
   });
   const codexConfiguration = config.features.codexAppServer;
-  const codexTool = codexConfiguration?.enabled
-    ? createCodexDelegateTool({
-        cwd: resolve(codexConfiguration.workspace),
+  const codexToolOptions = codexConfiguration?.enabled
+    ? {
+        defaultWorkspace: resolve(codexConfiguration.workspace),
+        logger,
         model: codexConfiguration.model,
+        projectsRoot: codexConfiguration.projectsRoot
+          ? resolve(codexConfiguration.projectsRoot)
+          : undefined,
         socketPath: resolve(codexConfiguration.socketPath),
+        taskScheduler: taskCoordinator,
         timeoutMs: (codexConfiguration.timeoutSeconds ?? 900) * 1_000,
-      })
+      }
     : undefined;
   const agentCoordinator = new AgentCoordinator({
     createDiscordAgent: (channelId) =>
-      DiscordAgent.create(piAgentFactory, discordService, channelId, systemPrompt, codexTool),
+      DiscordAgent.create(
+        piAgentFactory,
+        discordService,
+        channelId,
+        systemPrompt,
+        codexToolOptions
+          ? createCodexTools({
+              ...codexToolOptions,
+              channelId,
+              discordService,
+            })
+          : undefined,
+      ),
     discordService,
     logger,
     taskCoordinator,

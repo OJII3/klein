@@ -300,6 +300,10 @@
               "type": "string",
               "minLength": 1
             },
+            "projectsRoot": {
+              "type": "string",
+              "minLength": 1
+            },
             "model": {
               "type": "string",
               "minLength": 1

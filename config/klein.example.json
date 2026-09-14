@@ -50,7 +50,8 @@
     "codexAppServer": {
       "enabled": false,
       "socketPath": "/home/your-user/.codex/app-server-control/app-server-control.sock",
-      "workspace": ".",
+      "workspace": "/home/your-user/src/klein",
+      "projectsRoot": "/home/your-user/src",
       "timeoutSeconds": 900
     },
     "webui": {
