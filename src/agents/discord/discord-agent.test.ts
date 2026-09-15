@@ -4,7 +4,7 @@ import test from "node:test";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 
 import type { AgentFactory } from "../core/agent-factory.js";
-import type { AgentRuntime } from "../core/agent-runtime.js";
+import type { AgentPrompt, AgentRuntime } from "../core/agent-runtime.js";
 import { DiscordAgent } from "./discord-agent.js";
 import { createCodexTools } from "./tools/codex-delegate.js";
 import type { DiscordMessage } from "../../modules/discord/domain/discord-message.js";
@@ -12,6 +12,7 @@ import type { DiscordService } from "../../modules/discord/ports/discord-service
 
 const message: DiscordMessage = {
   author: {
+    bot: false,
     id: "123456789012345678",
     username: "satsuki",
     displayName: "さつき",
@@ -131,5 +132,53 @@ test("exposes codex_delegate only when configured", async () => {
   assert.ok(definition?.toolNames.includes("codex_delegate"));
   assert.ok(definition?.toolNames.includes("codex_projects"));
   assert.ok(definition?.toolNames.includes("codex_task_status"));
+  agent.dispose();
+});
+
+test("adds bot-specific conversation guidance only for bot messages", async () => {
+  const prompts: AgentPrompt[] = [];
+  const runtime: AgentRuntime = {
+    async prompt(prompt) {
+      prompts.push(prompt);
+    },
+    dispose() {},
+  };
+  const agentFactory: AgentFactory = {
+    async create() {
+      return runtime;
+    },
+  };
+  const discordService: DiscordService = {
+    async start() {},
+    stopAccepting() {},
+    setActivity() {},
+    async sendMessage() {},
+    async readMessage() {
+      return message;
+    },
+    async stop() {},
+  };
+  const agent = await DiscordAgent.create(
+    agentFactory,
+    discordService,
+    "channel-123",
+    "system prompt",
+  );
+
+  await agent.prompt(message);
+  await agent.prompt({
+    ...message,
+    author: { ...message.author, bot: true },
+  });
+
+  assert.equal(prompts.length, 2);
+  assert.equal(prompts[0]?.text, "さつき (@satsuki):\n読み取った本文\n[添付画像: sample.png]");
+  assert.match(prompts[1]?.text ?? "", /latest Discord message was sent by another bot/);
+  assert.match(
+    prompts[1]?.text ?? "",
+    /history, experiences, preferences, or personal information/,
+  );
+  assert.match(prompts[1]?.text ?? "", /self-contained character-driven closing remark/);
+
   agent.dispose();
 });
