@@ -12,14 +12,14 @@ import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import type { CreateAgentSessionOptions } from "@earendil-works/pi-coding-agent";
 
-import type { AgentDefinition } from "../../agents/core/agent-definition.js";
-import type { AgentFactory, AgentCreationOptions } from "../../agents/core/agent-factory.js";
-import type { AgentPrompt, AgentRuntime } from "../../agents/core/agent-runtime.js";
-import type { SessionMode } from "../../app/cli-options.js";
-import { createBackgroundCompactionExtension } from "./background-compaction.js";
-import { createFxtwitterFetchExtension } from "./fxtwitter-fetch.js";
-import { PiImageAnalyzer, type ImageAnalyzer } from "./pi-image-analyzer.js";
-import { adaptPiTools } from "./pi-tool-adapter.js";
+import type { AgentDefinition } from "@agents/core/agent-definition";
+import type { AgentFactory, AgentCreationOptions } from "@agents/core/agent-factory";
+import type { AgentPrompt, AgentRuntime } from "@agents/core/agent-runtime";
+import type { SessionMode } from "@app/cli-options";
+import { createBackgroundCompactionExtension } from "./background-compaction";
+import { createFxtwitterFetchExtension } from "./fxtwitter-fetch";
+import { PiImageAnalyzer, type ImageAnalyzer } from "./pi-image-analyzer";
+import { adaptPiTools } from "./pi-tool-adapter";
 
 export interface PiAgentFactoryOptions {
   readonly agentDir: string;

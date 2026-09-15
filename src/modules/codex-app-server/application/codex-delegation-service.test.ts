@@ -4,7 +4,7 @@ import test from "node:test";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { CodexDelegationService, type CodexTaskScheduler } from "./codex-delegation-service.js";
+import { CodexDelegationService, type CodexTaskScheduler } from "./codex-delegation-service";
 
 class InlineTaskScheduler implements CodexTaskScheduler {
   run(task: () => Promise<void>): Promise<void> {

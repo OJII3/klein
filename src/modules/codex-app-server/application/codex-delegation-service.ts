@@ -5,9 +5,9 @@ import {
   CodexAppServerClient,
   type CodexAppServerClientOptions,
   type CodexAppServerRunResult,
-} from "../infrastructure/codex-app-server-client.js";
-import { CodexProjectCatalog, type CodexProject } from "../infrastructure/codex-project-catalog.js";
-import type { DiscordService } from "../../discord/ports/discord-service.js";
+} from "../infrastructure/codex-app-server-client";
+import { CodexProjectCatalog, type CodexProject } from "../infrastructure/codex-project-catalog";
+import type { DiscordService } from "../../discord/ports/discord-service";
 
 export interface CodexTaskScheduler {
   run(task: () => Promise<void>): Promise<void>;

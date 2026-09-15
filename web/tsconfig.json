@@ -6,6 +6,10 @@
     "noEmit": true,
     "rootDir": "..",
     "paths": {
+      "@app/*": ["./../src/app/*"],
+      "@agents/*": ["./../src/agents/*"],
+      "@modules/*": ["./../src/modules/*"],
+      "@runtime/*": ["./../src/runtime/*"],
       "@klein/webui/*": ["./../src/modules/webui/*"]
     }
   },

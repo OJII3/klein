@@ -3,8 +3,8 @@ import test from "node:test";
 
 import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
 
-import { IMAGE_ANALYSIS_SYSTEM_PROMPT, PiImageAnalyzer } from "./pi-image-analyzer.js";
-import { resolveConfiguredImageModel, resolveConfiguredModel } from "./pi-agent-runtime.js";
+import { IMAGE_ANALYSIS_SYSTEM_PROMPT, PiImageAnalyzer } from "./pi-image-analyzer";
+import { resolveConfiguredImageModel, resolveConfiguredModel } from "./pi-agent-runtime";
 
 test("sends image attachments to a one-shot analysis request", async () => {
   let received:

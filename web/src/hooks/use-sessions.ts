@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { getSession, listSessions, type PiSessionEvent, type SessionSummary } from "../api.js";
+import { getSession, listSessions, type PiSessionEvent, type SessionSummary } from "../api";
 
 interface UseSessionsOptions {
   active: boolean;

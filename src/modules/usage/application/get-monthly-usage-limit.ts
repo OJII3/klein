@@ -1,5 +1,5 @@
-import type { MonthlyUsageLimit } from "../domain/monthly-usage-limit.js";
-import type { UsageLimitProvider } from "../ports/usage-limit-provider.js";
+import type { MonthlyUsageLimit } from "../domain/monthly-usage-limit";
+import type { UsageLimitProvider } from "../ports/usage-limit-provider";
 
 export type GetMonthlyUsageLimit = () => Promise<MonthlyUsageLimit>;
 

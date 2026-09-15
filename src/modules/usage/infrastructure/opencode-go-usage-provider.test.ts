@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { OpenCodeGoUsageProvider } from "./opencode-go-usage-provider.js";
+import { OpenCodeGoUsageProvider } from "./opencode-go-usage-provider";
 
 test("fetches and maps the monthly OpenCode Go usage", async () => {
   const originalFetch = globalThis.fetch;

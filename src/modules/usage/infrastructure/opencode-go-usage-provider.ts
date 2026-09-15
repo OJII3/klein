@@ -2,8 +2,8 @@ import ky from "ky";
 import { Check, Errors } from "typebox/value";
 import { Type, type Static } from "typebox";
 
-import type { MonthlyUsageLimit } from "../domain/monthly-usage-limit.js";
-import type { UsageLimitProvider } from "../ports/usage-limit-provider.js";
+import type { MonthlyUsageLimit } from "../domain/monthly-usage-limit";
+import type { UsageLimitProvider } from "../ports/usage-limit-provider";
 
 const OPENCODE_GO_USAGE_URL = "https://opencode.ai/zen/go/v1/usage";
 const OPENCODE_GO_USAGE_TIMEOUT_MS = 10_000;

@@ -2,9 +2,15 @@
   "compilerOptions": {
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
     "noEmit": true,
+    "paths": {
+      "@app/*": ["./src/app/*"],
+      "@agents/*": ["./src/agents/*"],
+      "@modules/*": ["./src/modules/*"],
+      "@runtime/*": ["./src/runtime/*"]
+    },
     "rootDir": "src",
     "skipLibCheck": true,
     "strict": true,

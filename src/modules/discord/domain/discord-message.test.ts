@@ -8,7 +8,7 @@ import {
   resolveDiscordMentions,
   type DiscordRole,
   type DiscordUser,
-} from "./discord-message.js";
+} from "./discord-message";
 
 const user: DiscordUser = {
   bot: false,

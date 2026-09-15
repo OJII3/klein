@@ -1,7 +1,7 @@
 import type { Api, AssistantMessage, ImageContent, Model } from "@earendil-works/pi-ai";
 import type { CreateAgentSessionOptions, ModelRuntime } from "@earendil-works/pi-coding-agent";
 
-import type { AgentPrompt } from "../../agents/core/agent-runtime.js";
+import type { AgentPrompt } from "@agents/core/agent-runtime";
 
 type ThinkingLevel = NonNullable<CreateAgentSessionOptions["thinkingLevel"]>;
 

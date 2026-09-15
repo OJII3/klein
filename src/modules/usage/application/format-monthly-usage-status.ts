@@ -1,4 +1,4 @@
-import type { MonthlyUsageLimit } from "../domain/monthly-usage-limit.js";
+import type { MonthlyUsageLimit } from "../domain/monthly-usage-limit";
 
 const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1_000;
 

@@ -15,14 +15,14 @@ import {
   type BackgroundCompactionPreparation,
   createBackgroundCompactionExtension,
   shouldStartBackgroundCompaction,
-} from "./background-compaction.js";
+} from "./background-compaction";
 import {
   createPiSessionManager,
   createResourceLoader,
   PiAgentRuntime,
   resolveConfiguredModel,
   withOpenCodeSessionHeader,
-} from "./pi-agent-runtime.js";
+} from "./pi-agent-runtime";
 
 test("passes agent image attachments to Pi", async () => {
   let receivedPrompt:

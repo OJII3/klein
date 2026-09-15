@@ -1,7 +1,7 @@
-import type { PiSessionEvent, SessionSummary } from "../../api.js";
-import { EmptyState } from "../../components/feedback.js";
-import { JsonValue } from "../../components/json-value.js";
-import { formatTimestamp } from "../../lib/format.js";
+import type { PiSessionEvent, SessionSummary } from "../../api";
+import { EmptyState } from "../../components/feedback";
+import { JsonValue } from "../../components/json-value";
+import { formatTimestamp } from "../../lib/format";
 
 interface SessionTimelineProps {
   events: PiSessionEvent[];
