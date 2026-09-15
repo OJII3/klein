@@ -1,23 +1,23 @@
 import { resolve } from "node:path";
 
-import { AgentCoordinator } from "./agent-coordinator.js";
-import { parseCliOptions } from "./cli-options.js";
-import { loadConfig } from "./config.js";
-import { createLogFilePath, createLogger, flushLogger } from "./logger.js";
-import { loadPromptFile } from "./prompt.js";
-import { TaskCoordinator } from "./task-coordinator.js";
-import { DiscordAgent } from "../agents/discord/discord-agent.js";
-import { createCodexTools } from "../agents/discord/tools/codex-delegate.js";
-import { createPiAgentFactory } from "../runtime/pi/pi-agent-runtime.js";
-import { createDiscordAccessPolicy } from "../modules/discord/domain/discord-access-policy.js";
-import { DiscordJsService } from "../modules/discord/infrastructure/discord-js-service.js";
-import { createGetMonthlyUsageLimit } from "../modules/usage/application/get-monthly-usage-limit.js";
-import { formatMonthlyUsageStatus } from "../modules/usage/application/format-monthly-usage-status.js";
-import { OpenCodeGoUsageProvider } from "../modules/usage/infrastructure/opencode-go-usage-provider.js";
-import { resolveLogDirectory, resolveWebUiConfig } from "../modules/webui/domain/webui-config.js";
-import { startWebUi } from "../modules/webui/infrastructure/elysia-webui-app.js";
-import { PinoJsonlReader } from "../modules/webui/infrastructure/pino-jsonl-reader.js";
-import { PiSessionReader } from "../modules/webui/infrastructure/pi-session-reader.js";
+import { AgentCoordinator } from "./agent-coordinator";
+import { parseCliOptions } from "./cli-options";
+import { loadConfig } from "./config";
+import { createLogFilePath, createLogger, flushLogger } from "./logger";
+import { loadPromptFile } from "./prompt";
+import { TaskCoordinator } from "./task-coordinator";
+import { DiscordAgent } from "../agents/discord/discord-agent";
+import { createCodexTools } from "../agents/discord/tools/codex-delegate";
+import { createPiAgentFactory } from "../runtime/pi/pi-agent-runtime";
+import { createDiscordAccessPolicy } from "../modules/discord/domain/discord-access-policy";
+import { DiscordJsService } from "../modules/discord/infrastructure/discord-js-service";
+import { createGetMonthlyUsageLimit } from "../modules/usage/application/get-monthly-usage-limit";
+import { formatMonthlyUsageStatus } from "../modules/usage/application/format-monthly-usage-status";
+import { OpenCodeGoUsageProvider } from "../modules/usage/infrastructure/opencode-go-usage-provider";
+import { resolveLogDirectory, resolveWebUiConfig } from "../modules/webui/domain/webui-config";
+import { startWebUi } from "../modules/webui/infrastructure/elysia-webui-app";
+import { PinoJsonlReader } from "../modules/webui/infrastructure/pino-jsonl-reader";
+import { PiSessionReader } from "../modules/webui/infrastructure/pi-session-reader";
 
 const DISCORD_USAGE_STATUS_REFRESH_INTERVAL_MS = 60 * 60 * 1_000;
 

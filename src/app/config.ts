@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { Check, Errors } from "typebox/value";
 
-import { KleinConfigSchema, type KleinConfig } from "./config-schema.js";
+import { KleinConfigSchema, type KleinConfig } from "./config-schema";
 
 export const DEFAULT_CONFIG_PATH = "config/klein.json";
 

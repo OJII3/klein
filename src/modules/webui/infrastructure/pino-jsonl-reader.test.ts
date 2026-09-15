@@ -4,7 +4,7 @@ import test from "node:test";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-import { PinoJsonlReader } from "./pino-jsonl-reader.js";
+import { PinoJsonlReader } from "./pino-jsonl-reader";
 
 test("reads newest pino entries first and paginates across files", async () => {
   const logDirectory = await mkdtemp(join(tmpdir(), "klein-pino-reader-"));

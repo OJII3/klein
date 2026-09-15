@@ -1,10 +1,10 @@
 import { createHash, randomBytes } from "node:crypto";
 import { createConnection, type Socket } from "node:net";
 
-import type { InitializeParams } from "../protocol/generated/InitializeParams.js";
-import type { InitializeResponse } from "../protocol/generated/InitializeResponse.js";
-import type { ThreadStartParams } from "../protocol/generated/v2/ThreadStartParams.js";
-import type { TurnStartParams } from "../protocol/generated/v2/TurnStartParams.js";
+import type { InitializeParams } from "../protocol/generated/InitializeParams";
+import type { InitializeResponse } from "../protocol/generated/InitializeResponse";
+import type { ThreadStartParams } from "../protocol/generated/v2/ThreadStartParams";
+import type { TurnStartParams } from "../protocol/generated/v2/TurnStartParams";
 
 type RpcId = number | string;
 

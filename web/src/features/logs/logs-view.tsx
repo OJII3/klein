@@ -1,9 +1,9 @@
 import { useEffect, useState, type SubmitEvent } from "react";
 
-import type { LogsQuery, PinoLog } from "../../api.js";
-import { EmptyState, ErrorNotice, LoadingState } from "../../components/feedback.js";
-import { LEVEL_OPTIONS } from "../../lib/format.js";
-import { LogTable } from "./log-table.js";
+import type { LogsQuery, PinoLog } from "../../api";
+import { EmptyState, ErrorNotice, LoadingState } from "../../components/feedback";
+import { LEVEL_OPTIONS } from "../../lib/format";
+import { LogTable } from "./log-table";
 
 interface LogsViewProps {
   logs: PinoLog[];

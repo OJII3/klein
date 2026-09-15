@@ -14,7 +14,7 @@ import type {
   PiViewerEventKind,
   ViewerSessionDetail,
   ViewerSessionSummary,
-} from "../domain/viewer-event.js";
+} from "../domain/viewer-event";
 
 const FIRST_MESSAGE_MAX_LENGTH = 240;
 const EVENT_SUMMARY_MAX_LENGTH = 500;

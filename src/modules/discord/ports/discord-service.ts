@@ -1,4 +1,4 @@
-import type { DiscordMessage, DiscordMessageLocator } from "../domain/discord-message.js";
+import type { DiscordMessage, DiscordMessageLocator } from "../domain/discord-message";
 
 export type DiscordMessageHandler = (message: DiscordMessage) => Promise<void>;
 

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { formatMonthlyUsageStatus } from "./format-monthly-usage-status.js";
+import { formatMonthlyUsageStatus } from "./format-monthly-usage-status";
 
 test("formats the remaining monthly usage and reset countdown", () => {
   assert.equal(

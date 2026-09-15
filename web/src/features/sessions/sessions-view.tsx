@@ -1,7 +1,7 @@
-import type { PiSessionEvent, SessionSummary } from "../../api.js";
-import { EmptyState, ErrorNotice, LoadingState } from "../../components/feedback.js";
-import { formatTimestamp } from "../../lib/format.js";
-import { SessionTimeline } from "./session-timeline.js";
+import type { PiSessionEvent, SessionSummary } from "../../api";
+import { EmptyState, ErrorNotice, LoadingState } from "../../components/feedback";
+import { formatTimestamp } from "../../lib/format";
+import { SessionTimeline } from "./session-timeline";
 
 interface SessionsViewProps {
   sessions: SessionSummary[];

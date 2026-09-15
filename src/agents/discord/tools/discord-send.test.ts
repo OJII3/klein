@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createDiscordSendTool } from "./discord-send.js";
+import { createDiscordSendTool } from "./discord-send";
 
 test("returns the sent content in the tool result", async () => {
   let sentMessage: { channelId: string; content: string } | undefined;

@@ -4,8 +4,8 @@ import { Type } from "typebox";
 import {
   formatDiscordMessage,
   type DiscordMessage,
-} from "../../../modules/discord/domain/discord-message.js";
-import type { DiscordService } from "../../../modules/discord/ports/discord-service.js";
+} from "../../../modules/discord/domain/discord-message";
+import type { DiscordService } from "../../../modules/discord/ports/discord-service";
 
 export type DiscordImageAnalysis = (message: DiscordMessage) => Promise<string | undefined>;
 

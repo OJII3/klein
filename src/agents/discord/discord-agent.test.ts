@@ -3,12 +3,12 @@ import test from "node:test";
 
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 
-import type { AgentFactory } from "../core/agent-factory.js";
-import type { AgentPrompt, AgentRuntime } from "../core/agent-runtime.js";
-import { DiscordAgent } from "./discord-agent.js";
-import { createCodexTools } from "./tools/codex-delegate.js";
-import type { DiscordMessage } from "../../modules/discord/domain/discord-message.js";
-import type { DiscordService } from "../../modules/discord/ports/discord-service.js";
+import type { AgentFactory } from "../core/agent-factory";
+import type { AgentPrompt, AgentRuntime } from "../core/agent-runtime";
+import { DiscordAgent } from "./discord-agent";
+import { createCodexTools } from "./tools/codex-delegate";
+import type { DiscordMessage } from "../../modules/discord/domain/discord-message";
+import type { DiscordService } from "../../modules/discord/ports/discord-service";
 
 const message: DiscordMessage = {
   author: {

@@ -44,7 +44,7 @@ try {
 
     const destinationPath = join(generatedDirectory, relativePath);
     await mkdir(dirname(destinationPath), { recursive: true });
-    await Bun.write(destinationPath, content.replace(/from "(\.{1,2}\/[^".]+)"/g, 'from "$1.js"'));
+    await Bun.write(destinationPath, content);
 
     for (const importPath of imports) {
       const dependencyPath = join(dirname(relativePath), `${importPath}.ts`);

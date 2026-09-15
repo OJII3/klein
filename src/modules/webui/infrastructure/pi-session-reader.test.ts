@@ -4,8 +4,8 @@ import test from "node:test";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-import { createPiSessionManager } from "../../../runtime/pi/pi-agent-runtime.js";
-import { PiSessionReader } from "./pi-session-reader.js";
+import { createPiSessionManager } from "../../../runtime/pi/pi-agent-runtime";
+import { PiSessionReader } from "./pi-session-reader";
 
 test("lists and reads Pi sessions without exposing image data", async () => {
   const agentDirectory = await mkdtemp(join(tmpdir(), "klein-pi-reader-"));

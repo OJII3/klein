@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { rewriteFxtwitterFetchInput, toFxTwitterApiUrl } from "./fxtwitter-fetch.js";
+import { rewriteFxtwitterFetchInput, toFxTwitterApiUrl } from "./fxtwitter-fetch";
 
 test("rewrites X and Twitter status URLs to the FxTwitter API", () => {
   assert.equal(

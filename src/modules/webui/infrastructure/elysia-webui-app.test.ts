@@ -4,10 +4,10 @@ import test from "node:test";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-import { createPiSessionManager } from "../../../runtime/pi/pi-agent-runtime.js";
-import { createWebUiApp } from "./elysia-webui-app.js";
-import { PinoJsonlReader } from "./pino-jsonl-reader.js";
-import { PiSessionReader } from "./pi-session-reader.js";
+import { createPiSessionManager } from "../../../runtime/pi/pi-agent-runtime";
+import { createWebUiApp } from "./elysia-webui-app";
+import { PinoJsonlReader } from "./pino-jsonl-reader";
+import { PiSessionReader } from "./pi-session-reader";
 
 test("serves health, pino logs, and Pi sessions through Elysia", async () => {
   const rootDirectory = await mkdtemp(join(tmpdir(), "klein-webui-"));

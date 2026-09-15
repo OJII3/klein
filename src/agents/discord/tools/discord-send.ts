@@ -1,7 +1,7 @@
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
-import type { DiscordService } from "../../../modules/discord/ports/discord-service.js";
+import type { DiscordService } from "../../../modules/discord/ports/discord-service";
 
 export function createDiscordSendTool(
   discordService: Pick<DiscordService, "sendMessage">,

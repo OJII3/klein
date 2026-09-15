@@ -4,10 +4,10 @@ import { staticPlugin } from "@elysia/static";
 import { Elysia } from "elysia";
 import type { Logger } from "pino";
 
-import { LogsQuerySchema, SessionParamsSchema } from "../domain/api-schema.js";
-import type { PinoLogQuery } from "./pino-jsonl-reader.js";
-import { PinoJsonlReader } from "./pino-jsonl-reader.js";
-import { PiSessionReader } from "./pi-session-reader.js";
+import { LogsQuerySchema, SessionParamsSchema } from "../domain/api-schema";
+import type { PinoLogQuery } from "./pino-jsonl-reader";
+import { PinoJsonlReader } from "./pino-jsonl-reader";
+import { PiSessionReader } from "./pi-session-reader";
 
 const LOG_LEVELS = new Set(["trace", "debug", "info", "warn", "error", "fatal"]);
 

@@ -10,7 +10,7 @@ import {
   CodexAppServerClient,
   CodexAppServerUnixTransport,
   type CodexAppServerTransport,
-} from "./codex-app-server-client.js";
+} from "./codex-app-server-client";
 
 class FakeTransport implements CodexAppServerTransport {
   readonly sent: Array<Record<string, unknown>> = [];

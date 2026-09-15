@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { DiscordMessage } from "../../../modules/discord/domain/discord-message.js";
-import { createDiscordReadTool } from "./discord-read.js";
+import type { DiscordMessage } from "../../../modules/discord/domain/discord-message";
+import { createDiscordReadTool } from "./discord-read";
 
 const message: DiscordMessage = {
   author: {
