@@ -153,5 +153,10 @@ thread → channel → guild → default, while direct messages use
 `directMessages`. The Discord application must have the Message Content intent
 enabled.
 
+Members with the Manage Server permission can use `/idle` to pause new message
+processing and `/online` to resume it. Messages already being processed are
+allowed to finish. The operating mode is kept in memory and starts as active
+after each restart.
+
 The bot's Discord activity displays the remaining OpenCode Go monthly usage and reset countdown, for
 example `65.5%/month (reset in 17 days)`. It is refreshed hourly.

@@ -4,12 +4,19 @@ import {
   Events,
   GatewayIntentBits,
   Partials,
+  PermissionFlagsBits,
   type Attachment,
   type Message,
+  type ApplicationCommandDataResolvable,
+  type Interaction,
 } from "discord.js";
 import type { Logger } from "pino";
 
 import type { DiscordAccessPolicy } from "../domain/discord-access-policy";
+import {
+  DiscordOperatingState,
+  type DiscordOperatingMode,
+} from "../domain/discord-operating-state";
 import {
   resolveDiscordMentions,
   type DiscordImageAttachment,
@@ -24,6 +31,20 @@ const DISCORD_MESSAGE_LIMIT = 2_000;
 const DISCORD_IMAGE_MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024;
 const DISCORD_IMAGE_FETCH_TIMEOUT_MS = 15_000;
 const DISCORD_IMAGE_MIME_TYPES = new Set(["image/gif", "image/jpeg", "image/png", "image/webp"]);
+const OPERATING_MODE_COMMANDS: readonly ApplicationCommandDataResolvable[] = [
+  {
+    name: "idle",
+    description: "Botを一時停止します",
+    defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
+    dmPermission: false,
+  },
+  {
+    name: "online",
+    description: "Botを再開します",
+    defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
+    dmPermission: false,
+  },
+];
 
 interface SendableChannel {
   send(content: string): Promise<unknown>;
@@ -118,6 +139,7 @@ export class DiscordJsService implements DiscordService {
   private readonly channels = new Map<string, SendableChannel>();
   private onMessage?: DiscordMessageHandler;
   private messageListener?: (message: Message) => void;
+  private interactionListener?: (interaction: Interaction) => void;
   private acceptingMessages = false;
   private readonly logger?: Logger;
 
@@ -125,6 +147,7 @@ export class DiscordJsService implements DiscordService {
     private readonly token: string,
     private readonly accessPolicy: DiscordAccessPolicy,
     logger?: Logger,
+    private readonly operatingState = new DiscordOperatingState(),
   ) {
     this.logger = logger?.child({ component: "discord-service" });
     this.client = new Client({
@@ -142,6 +165,7 @@ export class DiscordJsService implements DiscordService {
     this.onMessage = onMessage;
     this.acceptingMessages = true;
     this.client.once(Events.ClientReady, (readyClient) => {
+      this.applyOperatingModePresence();
       this.logger?.info(
         {
           event: "discord_client_ready",
@@ -149,6 +173,20 @@ export class DiscordJsService implements DiscordService {
         },
         "Discord client is ready",
       );
+      void readyClient.application.commands
+        .set(OPERATING_MODE_COMMANDS)
+        .then(() => {
+          this.logger?.info(
+            { event: "discord_operating_mode_commands_registered" },
+            "Registered Discord operating mode commands",
+          );
+        })
+        .catch((error: unknown) => {
+          this.logger?.error(
+            { err: error, event: "discord_operating_mode_commands_registration_failed" },
+            "Failed to register Discord operating mode commands",
+          );
+        });
     });
     this.messageListener = (message) => {
       void this.handleMessage(message).catch((error: unknown) => {
@@ -159,6 +197,15 @@ export class DiscordJsService implements DiscordService {
       });
     };
     this.client.on(Events.MessageCreate, this.messageListener);
+    this.interactionListener = (interaction) => {
+      void this.handleInteraction(interaction).catch((error: unknown) => {
+        this.logger?.error(
+          { err: error, event: "discord_interaction_handler_failed" },
+          "Failed to handle Discord interaction",
+        );
+      });
+    };
+    this.client.on(Events.InteractionCreate, this.interactionListener);
 
     await this.client.login(this.token);
   }
@@ -169,6 +216,15 @@ export class DiscordJsService implements DiscordService {
     }
 
     this.client.user.setActivity(name);
+  }
+
+  setOperatingMode(mode: DiscordOperatingMode): void {
+    this.operatingState.setMode(mode);
+    this.applyOperatingModePresence();
+    this.logger?.info(
+      { event: "discord_operating_mode_changed", mode },
+      "Changed Discord operating mode",
+    );
   }
 
   async sendMessage(channelId: string, content: string): Promise<void> {
@@ -206,6 +262,11 @@ export class DiscordJsService implements DiscordService {
       this.client.off(Events.MessageCreate, this.messageListener);
       this.messageListener = undefined;
     }
+
+    if (this.interactionListener) {
+      this.client.off(Events.InteractionCreate, this.interactionListener);
+      this.interactionListener = undefined;
+    }
   }
 
   async stop(): Promise<void> {
@@ -229,7 +290,7 @@ export class DiscordJsService implements DiscordService {
   }
 
   private async handleMessage(message: Message): Promise<void> {
-    if (!this.acceptingMessages) return;
+    if (!this.canAcceptMessages()) return;
     if (message.author.id === this.client.user?.id) return;
 
     const content = message.content.trim();
@@ -240,7 +301,7 @@ export class DiscordJsService implements DiscordService {
 
     const normalizedMessage = this.toDiscordMessage(message);
 
-    if (!this.acceptingMessages) return;
+    if (!this.canAcceptMessages()) return;
 
     if (
       !this.accessPolicy.canReceive({
@@ -252,20 +313,64 @@ export class DiscordJsService implements DiscordService {
       return;
     }
 
-    if (!this.acceptingMessages) return;
+    if (!this.canAcceptMessages()) return;
 
     const [images, replyTo] = await Promise.all([
       this.fetchImages(message),
       this.fetchReplyReference(message),
     ]);
 
-    if (!this.acceptingMessages) return;
+    if (!this.canAcceptMessages()) return;
     if (!content && images.length === 0) return;
 
     await this.onMessage?.({
       ...normalizedMessage,
       images,
       replyTo,
+    });
+  }
+
+  private canAcceptMessages(): boolean {
+    return this.acceptingMessages && this.operatingState.isActive();
+  }
+
+  private applyOperatingModePresence(): void {
+    if (!this.client.user) return;
+
+    this.client.user.setStatus(this.operatingState.isActive() ? "online" : "idle");
+  }
+
+  private async handleInteraction(interaction: Interaction): Promise<void> {
+    if (!interaction.isChatInputCommand()) return;
+
+    const mode =
+      interaction.commandName === "idle"
+        ? ("paused" as const)
+        : interaction.commandName === "online"
+          ? ("active" as const)
+          : undefined;
+    if (!mode) return;
+
+    if (!interaction.inGuild()) {
+      await interaction.reply({
+        content: "このコマンドはサーバー内でのみ使用できます。",
+        ephemeral: true,
+      });
+      return;
+    }
+
+    if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+      await interaction.reply({
+        content: "このコマンドを実行する権限がありません。",
+        ephemeral: true,
+      });
+      return;
+    }
+
+    this.setOperatingMode(mode);
+    await interaction.reply({
+      content: mode === "active" ? "Botを再開しました。" : "Botを一時停止しました。",
+      ephemeral: true,
     });
   }
 
