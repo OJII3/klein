@@ -1,19 +1,25 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { Message } from "discord.js";
+import type { Interaction, Message } from "discord.js";
 
 import { createDiscordAccessPolicy } from "../domain/discord-access-policy";
 import type { DiscordMessage } from "../domain/discord-message";
+import { DiscordOperatingState } from "../domain/discord-operating-state";
 import type { DiscordMessageHandler } from "../ports/discord-service";
 import { DiscordJsService } from "./discord-js-service";
 
 type TestableDiscordJsService = {
   readonly client: {
-    user: { id: string; setActivity?: (name: string) => void } | null;
+    user: {
+      id: string;
+      setActivity?: (name: string) => void;
+      setStatus?: (status: "online" | "idle") => void;
+    } | null;
   };
   acceptingMessages: boolean;
   onMessage?: DiscordMessageHandler;
   handleMessage(message: Message): Promise<void>;
+  handleInteraction(interaction: Interaction): Promise<void>;
 };
 
 function createMessage(
@@ -170,6 +176,96 @@ test("sets the bot activity", async () => {
   try {
     service.setActivity("65.5%/month (reset in 17 days)");
     assert.deepEqual(activities, ["65.5%/month (reset in 17 days)"]);
+  } finally {
+    await service.stop();
+  }
+});
+
+test("pauses message handling while the bot is idle", async () => {
+  const operatingState = new DiscordOperatingState();
+  const service = new DiscordJsService(
+    "token",
+    createDiscordAccessPolicy({ default: "allow", directMessages: "allow" }),
+    undefined,
+    operatingState,
+  );
+  const testableService = service as unknown as TestableDiscordJsService;
+  testableService.client.user = { id: "bot-123", setStatus: () => undefined };
+  testableService.acceptingMessages = true;
+
+  const received: DiscordMessage[] = [];
+  testableService.onMessage = async (message) => {
+    received.push(message);
+  };
+
+  try {
+    service.setOperatingMode("paused");
+    await testableService.handleMessage(createMessage());
+
+    assert.equal(operatingState.mode, "paused");
+    assert.equal(received.length, 0);
+  } finally {
+    await service.stop();
+  }
+});
+
+test("changes the Discord presence when the operating mode changes", async () => {
+  const operatingState = new DiscordOperatingState();
+  const statuses: string[] = [];
+  const service = new DiscordJsService(
+    "token",
+    createDiscordAccessPolicy({ default: "allow", directMessages: "allow" }),
+    undefined,
+    operatingState,
+  );
+  const testableService = service as unknown as TestableDiscordJsService;
+  testableService.client.user = {
+    id: "bot-123",
+    setStatus: (status) => statuses.push(status),
+  };
+
+  try {
+    service.setOperatingMode("paused");
+    service.setOperatingMode("active");
+
+    assert.deepEqual(statuses, ["idle", "online"]);
+    assert.equal(operatingState.mode, "active");
+  } finally {
+    await service.stop();
+  }
+});
+
+test("handles idle and online slash commands for members with Manage Server", async () => {
+  const operatingState = new DiscordOperatingState();
+  const service = new DiscordJsService(
+    "token",
+    createDiscordAccessPolicy({ default: "allow", directMessages: "allow" }),
+    undefined,
+    operatingState,
+  );
+  const testableService = service as unknown as TestableDiscordJsService;
+  testableService.client.user = {
+    id: "bot-123",
+    setStatus: () => undefined,
+  };
+  const replies: Array<{ content: string; ephemeral: boolean }> = [];
+  const interaction = {
+    commandName: "idle",
+    inGuild: () => true,
+    isChatInputCommand: () => true,
+    memberPermissions: {
+      has: () => true,
+    },
+    reply: async (response: { content: string; ephemeral: boolean }) => {
+      replies.push(response);
+    },
+  } as unknown as Interaction;
+
+  try {
+    await testableService.handleInteraction(interaction);
+
+    assert.equal(operatingState.mode, "paused");
+    assert.deepEqual(replies, [{ content: "Botを一時停止しました。", ephemeral: true }]);
   } finally {
     await service.stop();
   }

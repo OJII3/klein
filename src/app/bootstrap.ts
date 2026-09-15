@@ -10,6 +10,7 @@ import { DiscordAgent } from "@agents/discord/discord-agent";
 import { createCodexTools } from "@agents/discord/tools/codex-delegate";
 import { createPiAgentFactory } from "@runtime/pi/pi-agent-runtime";
 import { createDiscordAccessPolicy } from "@modules/discord/domain/discord-access-policy";
+import { DiscordOperatingState } from "@modules/discord/domain/discord-operating-state";
 import { DiscordJsService } from "@modules/discord/infrastructure/discord-js-service";
 import { createGetMonthlyUsageLimit } from "@modules/usage/application/get-monthly-usage-limit";
 import { formatMonthlyUsageStatus } from "@modules/usage/application/format-monthly-usage-status";
@@ -38,10 +39,12 @@ export async function bootstrap(): Promise<void> {
     throw new Error("OPENCODE_API_KEY is required");
   }
 
+  const discordOperatingState = new DiscordOperatingState();
   const discordService = new DiscordJsService(
     token,
     createDiscordAccessPolicy(config.discord.access),
     logger,
+    discordOperatingState,
   );
   const taskCoordinator = new TaskCoordinator();
   const agentDir = resolve(config.runtime.agentDir);
@@ -80,6 +83,7 @@ export async function bootstrap(): Promise<void> {
       ),
     discordService,
     logger,
+    operatingState: discordOperatingState,
     taskCoordinator,
   });
   const getMonthlyUsageLimit = createGetMonthlyUsageLimit(
