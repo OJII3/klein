@@ -8,7 +8,6 @@ import {
   type Attachment,
   type Message,
   type ApplicationCommandDataResolvable,
-  type Guild,
   type Interaction,
 } from "discord.js";
 import type { Logger } from "pino";
@@ -341,35 +340,7 @@ export class DiscordJsService implements DiscordService {
   }
 
   private async synchronizeCommands(readyClient: Client<true>): Promise<void> {
-    await Promise.all(
-      [...readyClient.guilds.cache.values()].map((guild) => this.removeLegacyUsage(guild)),
-    );
     await readyClient.application.commands.set(OPERATING_MODE_COMMANDS);
-  }
-
-  private async removeLegacyUsage(guild: Guild): Promise<void> {
-    try {
-      const commands = await guild.commands.fetch();
-      const legacyCommands = commands.filter((command) => command.name === "usage");
-      if (legacyCommands.size === 0) return;
-
-      await Promise.all(
-        [...legacyCommands.values()].map((command) => guild.commands.delete(command.id)),
-      );
-      this.logger?.info(
-        {
-          commandCount: legacyCommands.size,
-          event: "discord_legacy_usage_commands_removed",
-          guildId: guild.id,
-        },
-        "Removed legacy Discord usage commands",
-      );
-    } catch (error) {
-      this.logger?.warn(
-        { err: error, event: "discord_legacy_usage_commands_removal_failed", guildId: guild.id },
-        "Failed to remove legacy Discord usage commands",
-      );
-    }
   }
 
   private async handleInteraction(interaction: Interaction): Promise<void> {
