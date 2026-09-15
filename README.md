@@ -158,11 +158,5 @@ processing and `/online` to resume it. Messages already being processed are
 allowed to finish. The operating mode is kept in memory and starts as active
 after each restart.
 
-The old guild-scoped `/usage` command can be removed once with:
-
-```sh
-bun run remove:legacy-discord-commands
-```
-
 The bot's Discord activity displays the remaining OpenCode Go monthly usage and reset countdown, for
 example `65.5%/month (reset in 17 days)`. It is refreshed hourly.

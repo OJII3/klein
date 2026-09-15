@@ -14,7 +14,6 @@
     "fmt:check": "oxfmt --check",
     "generate:codex-types": "bun scripts/generate-codex-app-server-types.ts && bunx oxfmt src/modules/codex-app-server/protocol/generated",
     "generate:config-schema": "bun scripts/generate-config-schema.ts && bunx oxfmt config/klein.schema.json",
-    "remove:legacy-discord-commands": "bun scripts/remove-legacy-discord-commands.ts",
     "start": "bun run build:web && bun src/app/bootstrap.ts",
     "test": "bun test",
     "typecheck": "tsc && tsc -p web/tsconfig.json"
