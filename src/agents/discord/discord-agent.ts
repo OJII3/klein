@@ -1,10 +1,7 @@
 import type { AgentFactory } from "../core/agent-factory";
 import type { AgentPrompt, AgentRuntime } from "../core/agent-runtime";
-import {
-  formatDiscordMessage,
-  type DiscordMessage,
-} from "../../modules/discord/domain/discord-message";
-import type { DiscordService } from "../../modules/discord/ports/discord-service";
+import { formatDiscordMessage, type DiscordMessage } from "@modules/discord/domain/discord-message";
+import type { DiscordService } from "@modules/discord/ports/discord-service";
 import { DISCORD_AGENT_TOOL_NAMES } from "./prompt-policy";
 import type { CodexTools } from "./tools/codex-delegate";
 import { createDiscordReadTool } from "./tools/discord-read";

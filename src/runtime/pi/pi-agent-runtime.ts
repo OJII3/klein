@@ -12,10 +12,10 @@ import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import type { CreateAgentSessionOptions } from "@earendil-works/pi-coding-agent";
 
-import type { AgentDefinition } from "../../agents/core/agent-definition";
-import type { AgentFactory, AgentCreationOptions } from "../../agents/core/agent-factory";
-import type { AgentPrompt, AgentRuntime } from "../../agents/core/agent-runtime";
-import type { SessionMode } from "../../app/cli-options";
+import type { AgentDefinition } from "@agents/core/agent-definition";
+import type { AgentFactory, AgentCreationOptions } from "@agents/core/agent-factory";
+import type { AgentPrompt, AgentRuntime } from "@agents/core/agent-runtime";
+import type { SessionMode } from "@app/cli-options";
 import { createBackgroundCompactionExtension } from "./background-compaction";
 import { createFxtwitterFetchExtension } from "./fxtwitter-fetch";
 import { PiImageAnalyzer, type ImageAnalyzer } from "./pi-image-analyzer";

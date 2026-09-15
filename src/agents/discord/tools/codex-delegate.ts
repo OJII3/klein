@@ -5,7 +5,7 @@ import {
   CodexDelegationService,
   type CodexDelegationServiceOptions,
   type CodexTask,
-} from "../../../modules/codex-app-server/application/codex-delegation-service";
+} from "@modules/codex-app-server/application/codex-delegation-service";
 
 export type CodexTools = readonly [
   ReturnType<typeof createCodexProjectsTool>,

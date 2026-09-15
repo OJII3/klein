@@ -1,8 +1,8 @@
 import type { Logger } from "pino";
 
-import type { DiscordMessage } from "../modules/discord/domain/discord-message";
-import type { DiscordService } from "../modules/discord/ports/discord-service";
-import { DiscordAgent } from "../agents/discord/discord-agent";
+import type { DiscordMessage } from "@modules/discord/domain/discord-message";
+import type { DiscordService } from "@modules/discord/ports/discord-service";
+import { DiscordAgent } from "@agents/discord/discord-agent";
 import type { TaskCoordinator } from "./task-coordinator";
 
 export interface AgentCoordinatorDependencies {

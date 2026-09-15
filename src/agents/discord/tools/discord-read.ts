@@ -1,11 +1,8 @@
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
-import {
-  formatDiscordMessage,
-  type DiscordMessage,
-} from "../../../modules/discord/domain/discord-message";
-import type { DiscordService } from "../../../modules/discord/ports/discord-service";
+import { formatDiscordMessage, type DiscordMessage } from "@modules/discord/domain/discord-message";
+import type { DiscordService } from "@modules/discord/ports/discord-service";
 
 export type DiscordImageAnalysis = (message: DiscordMessage) => Promise<string | undefined>;
 

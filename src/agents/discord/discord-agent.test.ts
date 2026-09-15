@@ -7,8 +7,8 @@ import type { AgentFactory } from "../core/agent-factory";
 import type { AgentPrompt, AgentRuntime } from "../core/agent-runtime";
 import { DiscordAgent } from "./discord-agent";
 import { createCodexTools } from "./tools/codex-delegate";
-import type { DiscordMessage } from "../../modules/discord/domain/discord-message";
-import type { DiscordService } from "../../modules/discord/ports/discord-service";
+import type { DiscordMessage } from "@modules/discord/domain/discord-message";
+import type { DiscordService } from "@modules/discord/ports/discord-service";
 
 const message: DiscordMessage = {
   author: {
