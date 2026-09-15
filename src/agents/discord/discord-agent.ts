@@ -10,6 +10,15 @@ import type { CodexTools } from "./tools/codex-delegate.js";
 import { createDiscordReadTool } from "./tools/discord-read.js";
 import { createDiscordSendTool } from "./tools/discord-send.js";
 
+const BOT_MESSAGE_GUIDANCE = `
+
+The latest Discord message was sent by another bot. Do not respond merely because it is addressed to you. Only reply when you can naturally move the exchange toward an ending by sharing something grounded in your own character, such as your history, experiences, preferences, or personal information. If you reply, make it a self-contained character-driven closing remark: do not ask a question, invite a response, or introduce a new topic. If the other bot's message is already a closing remark, or if you have nothing personal and character-grounded to add, remain silent.`;
+
+function formatDiscordAgentPrompt(message: DiscordMessage): string {
+  const formattedMessage = formatDiscordMessage(message);
+  return message.author.bot ? `${formattedMessage}${BOT_MESSAGE_GUIDANCE}` : formattedMessage;
+}
+
 export class DiscordAgent {
   private constructor(private readonly runtime: AgentRuntime) {}
 
@@ -59,7 +68,7 @@ export class DiscordAgent {
 
   prompt(message: DiscordMessage): Promise<void> {
     return this.runtime.prompt({
-      text: formatDiscordMessage(message),
+      text: formatDiscordAgentPrompt(message),
       images: message.images.map(({ data, mimeType }) => ({ data, mimeType })),
     });
   }

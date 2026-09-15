@@ -106,6 +106,7 @@ async function readResponseBytes(response: Response): Promise<Uint8Array> {
 
 function toDiscordUser(message: Message): DiscordUser {
   return {
+    bot: message.author.bot,
     id: message.author.id,
     username: message.author.username,
     displayName: message.member?.displayName ?? message.author.displayName,
@@ -348,6 +349,7 @@ export class DiscordJsService implements DiscordService {
         if (!user) return undefined;
 
         return {
+          bot: user.bot,
           id: user.id,
           username: user.username,
           displayName: message.mentions.members?.get(userId)?.displayName ?? user.displayName,

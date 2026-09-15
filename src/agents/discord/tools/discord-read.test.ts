@@ -6,6 +6,7 @@ import { createDiscordReadTool } from "./discord-read.js";
 
 const message: DiscordMessage = {
   author: {
+    bot: false,
     id: "123456789012345678",
     username: "satsuki",
     displayName: "さつき",
