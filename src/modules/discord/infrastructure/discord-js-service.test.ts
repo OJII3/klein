@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { Interaction, Message } from "discord.js";
+import { Collection } from "discord.js";
+import type { Client, Interaction, Message } from "discord.js";
 
 import { createDiscordAccessPolicy } from "../domain/discord-access-policy";
 import type { DiscordMessage } from "../domain/discord-message";
@@ -20,6 +21,7 @@ type TestableDiscordJsService = {
   onMessage?: DiscordMessageHandler;
   handleMessage(message: Message): Promise<void>;
   handleInteraction(interaction: Interaction): Promise<void>;
+  synchronizeCommands(client: Client<true>): Promise<void>;
 };
 
 function createMessage(
@@ -266,6 +268,49 @@ test("handles idle and online slash commands for members with Manage Server", as
 
     assert.equal(operatingState.mode, "paused");
     assert.deepEqual(replies, [{ content: "Botを一時停止しました。", ephemeral: true }]);
+  } finally {
+    await service.stop();
+  }
+});
+
+test("removes legacy usage commands before synchronizing current commands", async () => {
+  const service = new DiscordJsService(
+    "token",
+    createDiscordAccessPolicy({ default: "allow", directMessages: "allow" }),
+  );
+  const testableService = service as unknown as TestableDiscordJsService;
+  const deletedCommandIds: string[] = [];
+  const registeredCommandNames: string[] = [];
+  const guild = {
+    commands: {
+      async delete(commandId: string) {
+        deletedCommandIds.push(commandId);
+      },
+      async fetch() {
+        return new Collection([
+          ["legacy-usage", { id: "legacy-usage", name: "usage" }],
+          ["other-command", { id: "other-command", name: "other" }],
+        ]);
+      },
+    },
+    id: "guild-123",
+  };
+  const readyClient = {
+    application: {
+      commands: {
+        async set(commands: readonly { name: string }[]) {
+          registeredCommandNames.push(...commands.map((command) => command.name));
+        },
+      },
+    },
+    guilds: { cache: new Collection([[guild.id, guild]]) },
+  } as unknown as Client<true>;
+
+  try {
+    await testableService.synchronizeCommands(readyClient);
+
+    assert.deepEqual(deletedCommandIds, ["legacy-usage"]);
+    assert.deepEqual(registeredCommandNames, ["idle", "online"]);
   } finally {
     await service.stop();
   }
