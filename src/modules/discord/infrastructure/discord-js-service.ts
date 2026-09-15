@@ -229,7 +229,7 @@ export class DiscordJsService implements DiscordService {
 
   private async handleMessage(message: Message): Promise<void> {
     if (!this.acceptingMessages) return;
-    if (message.author.bot) return;
+    if (message.author.id === this.client.user?.id) return;
 
     const content = message.content.trim();
     if (!content && !hasSupportedImageAttachment(message)) return;
