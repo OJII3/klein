@@ -102,6 +102,13 @@ tasks and the safety boundary.
 The Discord agent's personality and behavior are loaded from the Markdown file
 configured by `agents.discord.systemPromptFile` (`config/SOUL.md` by default).
 
+When `features.memory.enabled` is true, Klein periodically extracts durable
+guild-wide facts, rules, decisions, and procedures from recent Discord
+messages in the background. The default path is
+`.runtime/memory/{guildId}/MEMORY.md`; `{guildId}` is replaced for each guild.
+The memory model is optional and inherits `llm` when omitted. When configured,
+it is a separate one-shot model and does not share the Discord agent session.
+
 Logs are written as JSON lines to standard output and to the `pino` directory
 under `runtime.logDir` (`.runtime/logs/pino` by default). Set
 `KLEIN_LOG_LEVEL=debug` when investigating the bot locally; the default level
@@ -122,7 +129,16 @@ required sections are omitted here):
   },
   "features": {
     "memory": {
-      "enabled": false
+      "enabled": true,
+      "filePath": ".runtime/memory/{guildId}/MEMORY.md",
+      "llm": {
+        "provider": "opencode-go",
+        "model": "deepseek-v4-flash",
+        "thinkingLevel": "low"
+      },
+      "idleSeconds": 180,
+      "maxBatchAgeSeconds": 1800,
+      "maxBatchMessages": 32
     },
     "minecraft": {
       "enabled": false

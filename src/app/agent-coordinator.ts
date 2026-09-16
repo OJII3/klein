@@ -3,6 +3,7 @@ import type { Logger } from "pino";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import type { DiscordOperatingState } from "@modules/discord/domain/discord-operating-state";
 import type { DiscordService } from "@modules/discord/ports/discord-service";
+import type { MemoryCoordinator } from "@modules/memory/application/memory-coordinator";
 import { DiscordAgent } from "@agents/discord/discord-agent";
 import type { TaskCoordinator } from "./task-coordinator";
 
@@ -10,6 +11,7 @@ export interface AgentCoordinatorDependencies {
   readonly discordService: DiscordService;
   readonly createDiscordAgent: (channelId: string) => Promise<DiscordAgent>;
   readonly logger: Logger;
+  readonly memoryCoordinator?: MemoryCoordinator;
   readonly operatingState: DiscordOperatingState;
   readonly taskCoordinator: TaskCoordinator;
 }
@@ -56,7 +58,10 @@ export class AgentCoordinator {
 
     try {
       const agent = await this.getDiscordAgent(message.channelId);
-      await agent.prompt(message);
+      const guildMemory = message.guildId
+        ? await this.dependencies.memoryCoordinator?.getContext(message.guildId)
+        : undefined;
+      await agent.prompt(message, guildMemory);
       logger.debug(
         {
           durationMs: Date.now() - startedAt,
@@ -77,6 +82,8 @@ export class AgentCoordinator {
         message.channelId,
         "ごめん、今はうまく返答できないみたい。",
       );
+    } finally {
+      this.dependencies.memoryCoordinator?.enqueue(message);
     }
   }
 

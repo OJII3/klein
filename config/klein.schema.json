@@ -252,6 +252,72 @@
           "properties": {
             "enabled": {
               "type": "boolean"
+            },
+            "filePath": {
+              "type": "string",
+              "minLength": 1
+            },
+            "llm": {
+              "type": "object",
+              "required": ["provider", "model"],
+              "properties": {
+                "provider": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "model": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "thinkingLevel": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "const": "off"
+                    },
+                    {
+                      "type": "string",
+                      "const": "minimal"
+                    },
+                    {
+                      "type": "string",
+                      "const": "low"
+                    },
+                    {
+                      "type": "string",
+                      "const": "medium"
+                    },
+                    {
+                      "type": "string",
+                      "const": "high"
+                    },
+                    {
+                      "type": "string",
+                      "const": "xhigh"
+                    },
+                    {
+                      "type": "string",
+                      "const": "max"
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false
+            },
+            "idleSeconds": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3600
+            },
+            "maxBatchAgeSeconds": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 86400
+            },
+            "maxBatchMessages": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
             }
           },
           "additionalProperties": false

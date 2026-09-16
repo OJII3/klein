@@ -61,6 +61,27 @@ const LlmConfigurationSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const MemoryModelConfigurationSchema = Type.Object(
+  {
+    provider: Type.String({ minLength: 1 }),
+    model: Type.String({ minLength: 1 }),
+    thinkingLevel: Type.Optional(ThinkingLevelSchema),
+  },
+  { additionalProperties: false },
+);
+
+const MemoryConfigurationSchema = Type.Object(
+  {
+    enabled: Type.Boolean(),
+    filePath: Type.Optional(Type.String({ minLength: 1 })),
+    llm: Type.Optional(MemoryModelConfigurationSchema),
+    idleSeconds: Type.Optional(Type.Integer({ minimum: 1, maximum: 3600 })),
+    maxBatchAgeSeconds: Type.Optional(Type.Integer({ minimum: 1, maximum: 86400 })),
+    maxBatchMessages: Type.Optional(Type.Integer({ minimum: 1, maximum: 1000 })),
+  },
+  { additionalProperties: false },
+);
+
 const WebUiConfigurationSchema = Type.Object(
   {
     enabled: Type.Boolean(),
@@ -117,12 +138,7 @@ export const KleinConfigSchema = Type.Object(
     ),
     features: Type.Object(
       {
-        memory: Type.Object(
-          {
-            enabled: Type.Boolean(),
-          },
-          { additionalProperties: false },
-        ),
+        memory: Type.Object(MemoryConfigurationSchema.properties, { additionalProperties: false }),
         minecraft: Type.Object(
           {
             enabled: Type.Boolean(),

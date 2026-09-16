@@ -42,7 +42,16 @@
   },
   "features": {
     "memory": {
-      "enabled": false
+      "enabled": false,
+      "filePath": ".runtime/memory/{guildId}/MEMORY.md",
+      "llm": {
+        "provider": "opencode-go",
+        "model": "deepseek-v4-flash",
+        "thinkingLevel": "low"
+      },
+      "idleSeconds": 180,
+      "maxBatchAgeSeconds": 1800,
+      "maxBatchMessages": 32
     },
     "minecraft": {
       "enabled": false

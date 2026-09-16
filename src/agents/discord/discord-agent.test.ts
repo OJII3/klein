@@ -182,3 +182,41 @@ test("adds bot-specific conversation guidance only for bot messages", async () =
 
   agent.dispose();
 });
+
+test("injects the current guild memory into the agent prompt", async () => {
+  let receivedPrompt: AgentPrompt | undefined;
+  const runtime: AgentRuntime = {
+    async prompt(prompt) {
+      receivedPrompt = prompt;
+    },
+    dispose() {},
+  };
+  const agentFactory: AgentFactory = {
+    async create() {
+      return runtime;
+    },
+  };
+  const discordService: DiscordService = {
+    async start() {},
+    stopAccepting() {},
+    setActivity() {},
+    async sendMessage() {},
+    async readMessage() {
+      return message;
+    },
+    async stop() {},
+  };
+  const agent = await DiscordAgent.create(
+    agentFactory,
+    discordService,
+    "channel-123",
+    "system prompt",
+  );
+
+  await agent.prompt(message, "### 定例会の曜日\n\n毎週土曜日");
+
+  assert.match(receivedPrompt?.text ?? "", /<guild-memory>/u);
+  assert.match(receivedPrompt?.text ?? "", /毎週土曜日/u);
+  assert.match(receivedPrompt?.text ?? "", /読み取った本文/u);
+  agent.dispose();
+});

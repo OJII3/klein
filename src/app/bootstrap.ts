@@ -8,10 +8,12 @@ import { loadPromptFile } from "./prompt";
 import { TaskCoordinator } from "./task-coordinator";
 import { DiscordAgent } from "@agents/discord/discord-agent";
 import { createCodexTools } from "@agents/discord/tools/codex-delegate";
-import { createPiAgentFactory } from "@runtime/pi/pi-agent-runtime";
+import { createPiAgentFactory, resolveConfiguredModel } from "@runtime/pi/pi-agent-runtime";
+import { PiMemoryProcessor } from "@runtime/pi/pi-memory-processor";
 import { createDiscordAccessPolicy } from "@modules/discord/domain/discord-access-policy";
 import { DiscordOperatingState } from "@modules/discord/domain/discord-operating-state";
 import { DiscordJsService } from "@modules/discord/infrastructure/discord-js-service";
+import { MemoryCoordinator } from "@modules/memory/application/memory-coordinator";
 import { createGetMonthlyUsageLimit } from "@modules/usage/application/get-monthly-usage-limit";
 import { formatMonthlyUsageStatus } from "@modules/usage/application/format-monthly-usage-status";
 import { OpenCodeGoUsageProvider } from "@modules/usage/infrastructure/opencode-go-usage-provider";
@@ -54,6 +56,22 @@ export async function bootstrap(): Promise<void> {
     logger,
     sessionMode,
   });
+  const memoryConfiguration = config.features.memory;
+  const memoryLlmConfiguration = memoryConfiguration.llm ?? config.llm;
+  const memoryCoordinator = memoryConfiguration.enabled
+    ? new MemoryCoordinator({
+        filePath: memoryConfiguration.filePath ?? ".runtime/memory/{guildId}/MEMORY.md",
+        idleSeconds: memoryConfiguration.idleSeconds ?? 180,
+        logger,
+        maxBatchAgeSeconds: memoryConfiguration.maxBatchAgeSeconds ?? 1800,
+        maxBatchMessages: memoryConfiguration.maxBatchMessages ?? 32,
+        processor: new PiMemoryProcessor(
+          resolveConfiguredModel(memoryLlmConfiguration.provider, memoryLlmConfiguration.model),
+          memoryLlmConfiguration.thinkingLevel,
+        ),
+        taskCoordinator,
+      })
+    : undefined;
   const codexConfiguration = config.features.codexAppServer;
   const codexToolOptions = codexConfiguration?.enabled
     ? {
@@ -83,6 +101,7 @@ export async function bootstrap(): Promise<void> {
       ),
     discordService,
     logger,
+    memoryCoordinator,
     operatingState: discordOperatingState,
     taskCoordinator,
   });
@@ -125,6 +144,7 @@ export async function bootstrap(): Promise<void> {
     }
     await webUi?.stop();
     discordService.stopAccepting();
+    memoryCoordinator?.dispose();
     await taskCoordinator.waitForCompletion();
     await discordService.stop();
     await agentCoordinator.dispose();
