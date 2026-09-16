@@ -4,7 +4,8 @@ import { staticPlugin } from "@elysia/static";
 import { Elysia } from "elysia";
 import type { Logger } from "pino";
 
-import { LogsQuerySchema, SessionParamsSchema } from "../domain/api-schema";
+import type { MemoryReader } from "@modules/memory/domain/memory";
+import { LogsQuerySchema, MemoryParamsSchema, SessionParamsSchema } from "../domain/api-schema";
 import type { PinoLogQuery } from "./pino-jsonl-reader";
 import { PinoJsonlReader } from "./pino-jsonl-reader";
 import { PiSessionReader } from "./pi-session-reader";
@@ -12,6 +13,7 @@ import { PiSessionReader } from "./pi-session-reader";
 const LOG_LEVELS = new Set(["trace", "debug", "info", "warn", "error", "fatal"]);
 
 export interface WebUiDependencies {
+  readonly memory?: MemoryReader;
   readonly pinoLogs: PinoJsonlReader;
   readonly piSessions: PiSessionReader;
   readonly logger?: Logger;
@@ -72,6 +74,32 @@ export function createWebUiApp(dependencies: WebUiDependencies) {
         }
       },
       { params: SessionParamsSchema },
+    )
+    .get("/api/memory", async ({ set }) => {
+      if (!dependencies.memory) return { enabled: false, items: [] };
+
+      try {
+        return { enabled: true, items: await dependencies.memory.listGuilds() };
+      } catch (error) {
+        return handleRouteError(set, dependencies.logger, error, "Failed to list guild memories");
+      }
+    })
+    .get(
+      "/api/memory/:guildId",
+      async ({ params, set }) => {
+        if (!dependencies.memory) {
+          set.status = 404;
+          return { error: "Memory is disabled" };
+        }
+
+        try {
+          const document = await dependencies.memory.read(params.guildId);
+          return { entries: document.entries, guildId: params.guildId };
+        } catch (error) {
+          return handleRouteError(set, dependencies.logger, error, "Failed to read guild memory");
+        }
+      },
+      { params: MemoryParamsSchema },
     );
 }
 

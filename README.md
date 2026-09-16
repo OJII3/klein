@@ -115,9 +115,11 @@ under `runtime.logDir` (`.runtime/logs/pino` by default). Set
 is `info`. Log records do not include Discord message content, prompts, or API
 credentials.
 
-## Run the log and session viewer
+## Run the Web UI viewer
 
-The optional read-only Web UI shows persisted Pino logs and Pi session history.
+The optional read-only Web UI shows persisted Pino logs, Pi session history, and
+guild memory contents. The memory tab lists guilds with persisted memory and
+shows each entry's kind, title, body, timestamps, and source message count.
 Update the `runtime` and `features` sections in `config/klein.json` (other
 required sections are omitted here):
 
@@ -133,7 +135,7 @@ required sections are omitted here):
       "filePath": ".runtime/memory/{guildId}/MEMORY.md",
       "llm": {
         "provider": "opencode-go",
-        "model": "deepseek-v4-flash",
+        "model": "qwen3.8-flash",
         "thinkingLevel": "low"
       },
       "idleSeconds": 180,

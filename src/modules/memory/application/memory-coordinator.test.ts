@@ -51,6 +51,13 @@ test("batches recent guild messages and keeps guild memory files separate", asyn
     assert.match((await coordinator.getContext("guild-a")) ?? "", /message-a1/u);
     assert.match((await coordinator.getContext("guild-b")) ?? "", /message-b1/u);
     assert.equal(await coordinator.getContext("guild-c"), undefined);
+    assert.deepEqual(
+      (await coordinator.listGuilds()).map(({ entryCount, guildId }) => ({ entryCount, guildId })),
+      [
+        { entryCount: 1, guildId: "guild-a" },
+        { entryCount: 1, guildId: "guild-b" },
+      ],
+    );
   } finally {
     coordinator.dispose();
     await rm(directory, { force: true, recursive: true });

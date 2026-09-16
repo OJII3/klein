@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 
 import { formatTimestamp } from "../lib/format";
 
-export type View = "logs" | "sessions";
+export type View = "logs" | "sessions" | "memory";
 
 interface AppShellProps {
   view: View;
@@ -50,6 +50,13 @@ export function AppShell({ view, lastUpdated, onViewChange, onRefresh, children 
           type="button"
         >
           <span aria-hidden="true">◌</span> Piセッション
+        </button>
+        <button
+          className={view === "memory" ? "is-active" : ""}
+          onClick={() => onViewChange("memory")}
+          type="button"
+        >
+          <span aria-hidden="true">▣</span> メモリ
         </button>
       </nav>
 

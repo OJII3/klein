@@ -55,6 +55,34 @@ export interface SessionDetailResponse {
   items: PiSessionEvent[];
 }
 
+export type MemoryKind = "fact" | "rule" | "decision" | "procedure" | "temporary";
+
+export interface MemoryEntry {
+  id: string;
+  kind: MemoryKind;
+  title: string;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+  sourceMessageIds: string[];
+}
+
+export interface MemoryGuildSummary {
+  guildId: string;
+  entryCount: number;
+  updatedAt: string | null;
+}
+
+export interface MemoryGuildsResponse {
+  enabled: boolean;
+  items: MemoryGuildSummary[];
+}
+
+export interface MemoryDetailResponse {
+  guildId: string;
+  entries: MemoryEntry[];
+}
+
 const apiOrigin = typeof window === "undefined" ? "http://127.0.0.1:4310" : window.location.origin;
 
 const client = treaty<WebUiApp>(apiOrigin);
@@ -100,4 +128,12 @@ export function listSessions(): Promise<SessionsResponse> {
 
 export function getSession(sessionId: string): Promise<SessionDetailResponse> {
   return unwrap<SessionDetailResponse>(client.api.sessions({ sessionId }).get());
+}
+
+export function listMemoryGuilds(): Promise<MemoryGuildsResponse> {
+  return unwrap<MemoryGuildsResponse>(client.api.memory.get());
+}
+
+export function getMemory(guildId: string): Promise<MemoryDetailResponse> {
+  return unwrap<MemoryDetailResponse>(client.api.memory({ guildId }).get());
 }
