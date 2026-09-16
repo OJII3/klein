@@ -63,9 +63,11 @@ export class DiscordAgent {
     return new DiscordAgent(runtime);
   }
 
-  prompt(message: DiscordMessage): Promise<void> {
+  prompt(message: DiscordMessage, guildMemory?: string): Promise<void> {
     return this.runtime.prompt({
-      text: formatDiscordAgentPrompt(message),
+      text: guildMemory
+        ? `<guild-memory>\n${guildMemory}\n</guild-memory>\n\n${formatDiscordAgentPrompt(message)}`
+        : formatDiscordAgentPrompt(message),
       images: message.images.map(({ data, mimeType }) => ({ data, mimeType })),
     });
   }
