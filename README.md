@@ -131,7 +131,7 @@ required sections are omitted here):
     "memory": {
       "enabled": true,
       "filePath": ".runtime/memory/{guildId}/MEMORY.md",
-      "model": {
+      "llm": {
         "provider": "opencode-go",
         "model": "deepseek-v4-flash",
         "thinkingLevel": "low"

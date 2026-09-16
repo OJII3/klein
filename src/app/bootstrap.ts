@@ -57,7 +57,7 @@ export async function bootstrap(): Promise<void> {
     sessionMode,
   });
   const memoryConfiguration = config.features.memory;
-  const memoryModelConfiguration = memoryConfiguration.model ?? config.llm;
+  const memoryLlmConfiguration = memoryConfiguration.llm ?? config.llm;
   const memoryCoordinator = memoryConfiguration.enabled
     ? new MemoryCoordinator({
         filePath: memoryConfiguration.filePath ?? ".runtime/memory/{guildId}/MEMORY.md",
@@ -66,8 +66,8 @@ export async function bootstrap(): Promise<void> {
         maxBatchAgeSeconds: memoryConfiguration.maxBatchAgeSeconds ?? 1800,
         maxBatchMessages: memoryConfiguration.maxBatchMessages ?? 32,
         processor: new PiMemoryProcessor(
-          resolveConfiguredModel(memoryModelConfiguration.provider, memoryModelConfiguration.model),
-          memoryModelConfiguration.thinkingLevel,
+          resolveConfiguredModel(memoryLlmConfiguration.provider, memoryLlmConfiguration.model),
+          memoryLlmConfiguration.thinkingLevel,
         ),
         taskCoordinator,
       })
