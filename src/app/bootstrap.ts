@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 
 import { AgentCoordinator } from "./agent-coordinator";
@@ -8,7 +9,11 @@ import { loadPromptFile } from "./prompt";
 import { TaskCoordinator } from "./task-coordinator";
 import { DiscordAgent } from "@agents/discord/discord-agent";
 import { createCodexTools } from "@agents/discord/tools/codex-delegate";
-import { createPiAgentFactory, resolveConfiguredModel } from "@runtime/pi/pi-agent-runtime";
+import {
+  createPiAgentFactory,
+  resolveConfiguredModel,
+  withOpenCodeSessionHeader,
+} from "@runtime/pi/pi-agent-runtime";
 import { PiMemoryProcessor } from "@runtime/pi/pi-memory-processor";
 import { createDiscordAccessPolicy } from "@modules/discord/domain/discord-access-policy";
 import { DiscordOperatingState } from "@modules/discord/domain/discord-operating-state";
@@ -58,6 +63,7 @@ export async function bootstrap(): Promise<void> {
   });
   const memoryConfiguration = config.features.memory;
   const memoryLlmConfiguration = memoryConfiguration.llm ?? config.llm;
+  const memorySessionId = `memory-${randomUUID()}`;
   const memoryCoordinator = memoryConfiguration.enabled
     ? new MemoryCoordinator({
         filePath: memoryConfiguration.filePath ?? ".runtime/memory/{guildId}/MEMORY.md",
@@ -66,7 +72,10 @@ export async function bootstrap(): Promise<void> {
         maxBatchAgeSeconds: memoryConfiguration.maxBatchAgeSeconds ?? 1800,
         maxBatchMessages: memoryConfiguration.maxBatchMessages ?? 32,
         processor: new PiMemoryProcessor(
-          resolveConfiguredModel(memoryLlmConfiguration.provider, memoryLlmConfiguration.model),
+          withOpenCodeSessionHeader(
+            resolveConfiguredModel(memoryLlmConfiguration.provider, memoryLlmConfiguration.model),
+            memorySessionId,
+          ),
           memoryLlmConfiguration.thinkingLevel,
         ),
         taskCoordinator,
