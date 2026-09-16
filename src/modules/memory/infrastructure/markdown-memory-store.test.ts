@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { MarkdownMemoryStore } from "./markdown-memory-store";
+import {
+  listMemoryGuildIds,
+  MarkdownMemoryStore,
+  renderMemoryDocument,
+} from "./markdown-memory-store";
 
 test("applies memory operations to a Markdown file", async () => {
   const directory = await mkdtemp(join(tmpdir(), "klein-memory-"));
@@ -86,6 +90,33 @@ test("rejects an unclosed managed entry", async () => {
     );
 
     await assert.rejects(store.read(), /unclosed memory entry/u);
+  } finally {
+    await rm(directory, { force: true, recursive: true });
+  }
+});
+
+test("lists guilds with persisted memory files", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "klein-memory-"));
+
+  try {
+    const filePath = join(directory, "{guildId}", "MEMORY.md");
+    const entry = {
+      content: "本文",
+      createdAt: "2026-09-11T00:00:00.000Z",
+      id: "mem-1",
+      kind: "fact" as const,
+      sourceMessageIds: [],
+      title: "事実",
+      updatedAt: "2026-09-11T00:00:00.000Z",
+    };
+    await mkdir(join(directory, "guild-a"));
+    await writeFile(
+      join(directory, "guild-a", "MEMORY.md"),
+      renderMemoryDocument({ entries: [entry] }),
+      "utf8",
+    );
+
+    assert.deepEqual(await listMemoryGuildIds(filePath), ["guild-a"]);
   } finally {
     await rm(directory, { force: true, recursive: true });
   }

@@ -2,8 +2,18 @@ import type { Logger } from "pino";
 
 import { formatDiscordMessage, type DiscordMessage } from "@modules/discord/domain/discord-message";
 import type { TaskCoordinator } from "@app/task-coordinator";
-import { MarkdownMemoryStore, renderMemoryDocument } from "../infrastructure/markdown-memory-store";
-import type { MemoryMessage, MemoryProcessor } from "../domain/memory";
+import {
+  listMemoryGuildIds,
+  MarkdownMemoryStore,
+  renderMemoryDocument,
+} from "../infrastructure/markdown-memory-store";
+import type {
+  MemoryDocument,
+  MemoryGuildSummary,
+  MemoryMessage,
+  MemoryProcessor,
+  MemoryReader,
+} from "../domain/memory";
 
 interface GuildMemoryQueue {
   readonly messages: DiscordMessage[];
@@ -22,7 +32,7 @@ export interface MemoryCoordinatorOptions {
   readonly taskCoordinator: TaskCoordinator;
 }
 
-export class MemoryCoordinator {
+export class MemoryCoordinator implements MemoryReader {
   private readonly logger: Logger;
   private readonly queues = new Map<string, GuildMemoryQueue>();
   private disposed = false;
@@ -63,8 +73,7 @@ export class MemoryCoordinator {
     if (this.disposed) return undefined;
 
     try {
-      const store = new MarkdownMemoryStore(resolveMemoryFilePath(this.options.filePath, guildId));
-      const document = await store.read();
+      const document = await this.read(guildId);
       return document.entries.length > 0 ? renderMemoryDocument(document) : undefined;
     } catch (error) {
       this.logger.warn(
@@ -73,6 +82,27 @@ export class MemoryCoordinator {
       );
       return undefined;
     }
+  }
+
+  async listGuilds(): Promise<readonly MemoryGuildSummary[]> {
+    if (this.disposed) return [];
+
+    const guildIds = await listMemoryGuildIds(this.options.filePath);
+    return Promise.all(
+      guildIds.map(async (guildId) => {
+        const document = await this.read(guildId);
+        return {
+          entryCount: document.entries.length,
+          guildId,
+          updatedAt: latestUpdatedAt(document),
+        };
+      }),
+    );
+  }
+
+  async read(guildId: string): Promise<MemoryDocument> {
+    const store = new MarkdownMemoryStore(resolveMemoryFilePath(this.options.filePath, guildId));
+    return store.read();
   }
 
   dispose(): void {
@@ -174,6 +204,13 @@ function toMemoryMessage(message: DiscordMessage): MemoryMessage {
     content: formatDiscordMessage(message),
     id: message.id,
   };
+}
+
+function latestUpdatedAt(document: MemoryDocument): string | null {
+  return document.entries.reduce<string | null>(
+    (latest, entry) => (latest === null || entry.updatedAt > latest ? entry.updatedAt : latest),
+    null,
+  );
 }
 
 export function resolveMemoryFilePath(filePath: string, guildId: string): string {

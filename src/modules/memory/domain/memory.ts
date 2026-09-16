@@ -16,6 +16,17 @@ export interface MemoryDocument {
   readonly entries: readonly MemoryEntry[];
 }
 
+export interface MemoryGuildSummary {
+  readonly guildId: string;
+  readonly entryCount: number;
+  readonly updatedAt: string | null;
+}
+
+export interface MemoryReader {
+  listGuilds(): Promise<readonly MemoryGuildSummary[]>;
+  read(guildId: string): Promise<MemoryDocument>;
+}
+
 export type MemoryOperation =
   | {
       readonly type: "add";

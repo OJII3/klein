@@ -12,3 +12,11 @@ export const LogsQuerySchema = t.Object({
 export const SessionParamsSchema = t.Object({
   sessionId: t.String({ minLength: 1, maxLength: 100 }),
 });
+
+export const MemoryParamsSchema = t.Object({
+  guildId: t.String({
+    minLength: 1,
+    maxLength: 100,
+    pattern: "^[A-Za-z0-9_-]+$",
+  }),
+});

@@ -1,6 +1,6 @@
-import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
-import { dirname, resolve } from "node:path";
+import { basename, dirname, resolve, sep } from "node:path";
 
 import {
   MEMORY_KINDS,
@@ -17,6 +17,7 @@ Klein がギルド内の複数チャンネルで共有するメモリです。
 `;
 const MEMORY_BLOCK_PATTERN =
   /<!-- memory:start\n([\s\S]*?)\n-->\n([\s\S]*?)\n<!-- memory:end -->/gu;
+const MEMORY_GUILD_ID_TOKEN = "{guildId}";
 
 export class MarkdownMemoryStore implements MemoryStore {
   private readonly filePath: string;
@@ -150,6 +151,51 @@ export function parseMemoryDocument(content: string): MemoryDocument {
   }
 
   return { entries };
+}
+
+export async function listMemoryGuildIds(filePath: string): Promise<string[]> {
+  const absolutePath = resolve(filePath);
+  const tokenIndex = absolutePath.indexOf(MEMORY_GUILD_ID_TOKEN);
+  if (tokenIndex === -1) return [];
+
+  const prefix = absolutePath.slice(0, tokenIndex);
+  const suffix = absolutePath.slice(tokenIndex + MEMORY_GUILD_ID_TOKEN.length);
+  const hasDirectoryPrefix = prefix.endsWith(sep);
+  const directory = hasDirectoryPrefix ? prefix.slice(0, -1) || sep : dirname(prefix);
+  const namePrefix = hasDirectoryPrefix ? "" : basename(prefix);
+
+  let entries;
+  try {
+    entries = await readdir(directory, { withFileTypes: true });
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") return [];
+    throw error;
+  }
+
+  const guildIds: string[] = [];
+  for (const entry of entries) {
+    if (!hasDirectoryPrefix && !entry.name.startsWith(namePrefix)) continue;
+    if (hasDirectoryPrefix && !entry.isDirectory()) continue;
+
+    if (!hasDirectoryPrefix && suffix && !entry.name.endsWith(suffix)) continue;
+    const guildId = hasDirectoryPrefix
+      ? entry.name
+      : entry.name.slice(namePrefix.length, entry.name.length - suffix.length);
+    if (!guildId || guildId.includes("/") || guildId.includes("\\")) continue;
+
+    const candidate = hasDirectoryPrefix
+      ? resolve(directory, entry.name) + suffix
+      : resolve(directory, entry.name);
+
+    try {
+      const candidateStats = await stat(candidate);
+      if (candidateStats.isFile()) guildIds.push(guildId);
+    } catch (error) {
+      if (!isNodeError(error) || error.code !== "ENOENT") throw error;
+    }
+  }
+
+  return guildIds.sort((left, right) => left.localeCompare(right));
 }
 
 export function renderMemoryDocument(document: MemoryDocument): string {

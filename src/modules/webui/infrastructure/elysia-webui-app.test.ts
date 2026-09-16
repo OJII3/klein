@@ -9,7 +9,7 @@ import { createWebUiApp } from "./elysia-webui-app";
 import { PinoJsonlReader } from "./pino-jsonl-reader";
 import { PiSessionReader } from "./pi-session-reader";
 
-test("serves health, pino logs, and Pi sessions through Elysia", async () => {
+test("serves health, logs, Pi sessions, and guild memory through Elysia", async () => {
   const rootDirectory = await mkdtemp(join(tmpdir(), "klein-webui-"));
 
   try {
@@ -47,6 +47,24 @@ test("serves health, pino logs, and Pi sessions through Elysia", async () => {
     } as never);
 
     const app = createWebUiApp({
+      memory: {
+        listGuilds: async () => [
+          { entryCount: 1, guildId: "guild-a", updatedAt: "2026-09-11T00:00:00.000Z" },
+        ],
+        read: async (guildId) => ({
+          entries: [
+            {
+              content: "本文",
+              createdAt: "2026-09-11T00:00:00.000Z",
+              id: "mem-1",
+              kind: "fact" as const,
+              sourceMessageIds: [],
+              title: `${guildId} の事実`,
+              updatedAt: "2026-09-11T00:00:00.000Z",
+            },
+          ],
+        }),
+      },
       piSessions: new PiSessionReader(agentDirectory),
       pinoLogs: new PinoJsonlReader(logDirectory),
     });
@@ -73,6 +91,20 @@ test("serves health, pino logs, and Pi sessions through Elysia", async () => {
     );
     assert.equal(detail.status, 200);
     assert.equal((await detail.json()).items.length, 2);
+
+    const memoryGuilds = await app.handle(new Request("http://localhost/api/memory"));
+    assert.equal(memoryGuilds.status, 200);
+    assert.deepEqual(await memoryGuilds.json(), {
+      enabled: true,
+      items: [{ entryCount: 1, guildId: "guild-a", updatedAt: "2026-09-11T00:00:00.000Z" }],
+    });
+
+    const memory = await app.handle(new Request("http://localhost/api/memory/guild-a"));
+    assert.equal(memory.status, 200);
+    assert.equal((await memory.json()).entries[0].title, "guild-a の事実");
+
+    const invalidMemory = await app.handle(new Request("http://localhost/api/memory/guild.a"));
+    assert.equal(invalidMemory.status, 422);
 
     const invalid = await app.handle(new Request("http://localhost/api/logs?limit=0"));
     assert.equal(invalid.status, 422);
