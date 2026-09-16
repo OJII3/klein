@@ -135,7 +135,7 @@ required sections are omitted here):
       "filePath": ".runtime/memory/{guildId}/MEMORY.md",
       "llm": {
         "provider": "opencode-go",
-        "model": "deepseek-v4-flash",
+        "model": "qwen3.8-flash",
         "thinkingLevel": "low"
       },
       "idleSeconds": 180,
