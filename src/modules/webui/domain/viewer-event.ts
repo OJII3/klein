@@ -52,4 +52,5 @@ export interface ViewerSessionSummary {
 export interface ViewerSessionDetail {
   readonly session: ViewerSessionSummary;
   readonly items: PiViewerEvent[];
+  readonly nextCursor: string | null;
 }

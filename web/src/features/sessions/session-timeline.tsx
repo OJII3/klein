@@ -5,10 +5,19 @@ import { formatTimestamp } from "../../lib/format";
 
 interface SessionTimelineProps {
   events: PiSessionEvent[];
+  loadingMore: boolean;
+  nextCursor: string | null;
+  onLoadMore: () => void;
   session: SessionSummary;
 }
 
-export function SessionTimeline({ events, session }: SessionTimelineProps) {
+export function SessionTimeline({
+  events,
+  loadingMore,
+  nextCursor,
+  onLoadMore,
+  session,
+}: SessionTimelineProps) {
   return (
     <div className="timeline-panel">
       <div className="session-detail-heading">
@@ -56,6 +65,17 @@ export function SessionTimeline({ events, session }: SessionTimelineProps) {
             </li>
           ))}
         </ol>
+      )}
+      {events.length > 0 && (
+        <div className="pagination-row">
+          {nextCursor ? (
+            <button className="button" disabled={loadingMore} onClick={onLoadMore} type="button">
+              {loadingMore ? "読み込み中…" : "古いイベントを読み込む"}
+            </button>
+          ) : (
+            <span className="muted">これより古いイベントはありません</span>
+          )}
+        </div>
       )}
     </div>
   );

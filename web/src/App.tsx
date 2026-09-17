@@ -48,7 +48,10 @@ export default function App() {
           events={sessions.events}
           loading={sessions.sessionsLoading}
           loadingDetail={sessions.detailLoading}
+          loadingMoreDetail={sessions.detailLoadingMore}
+          nextCursor={sessions.nextCursor}
           onRetry={() => void sessions.reload()}
+          onLoadMoreDetail={sessions.loadMoreDetail}
           onRetryDetail={sessions.retryDetail}
           onSelect={sessions.selectSession}
           selectedSession={sessions.selectedSession}

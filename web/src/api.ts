@@ -54,6 +54,12 @@ export interface PiSessionEvent {
 export interface SessionDetailResponse {
   session: SessionSummary;
   items: PiSessionEvent[];
+  nextCursor: string | null;
+}
+
+export interface SessionQuery {
+  limit?: number;
+  cursor?: string;
 }
 
 export type MemoryKind = "fact" | "rule" | "decision" | "procedure" | "temporary";
@@ -127,8 +133,13 @@ export function listSessions(): Promise<SessionsResponse> {
   return unwrap<SessionsResponse>(client.api.sessions.get());
 }
 
-export function getSession(sessionId: string): Promise<SessionDetailResponse> {
-  return unwrap<SessionDetailResponse>(client.api.sessions({ sessionId }).get());
+export function getSession(
+  sessionId: string,
+  query: SessionQuery = {},
+): Promise<SessionDetailResponse> {
+  return unwrap<SessionDetailResponse>(
+    client.api.sessions({ sessionId }).get({ query: withoutEmptyValues(query) }),
+  );
 }
 
 export function listMemoryGuilds(): Promise<MemoryGuildsResponse> {

@@ -13,6 +13,11 @@ export const SessionParamsSchema = t.Object({
   sessionId: t.String({ minLength: 1, maxLength: 100 }),
 });
 
+export const SessionQuerySchema = t.Object({
+  limit: t.Optional(t.Numeric({ minimum: 1, maximum: 200 })),
+  cursor: t.Optional(t.String({ minLength: 1, maxLength: 4096 })),
+});
+
 export const MemoryParamsSchema = t.Object({
   guildId: t.String({
     minLength: 1,

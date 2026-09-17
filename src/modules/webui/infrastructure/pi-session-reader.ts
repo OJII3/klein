@@ -18,6 +18,17 @@ import type {
 
 const FIRST_MESSAGE_MAX_LENGTH = 240;
 const EVENT_SUMMARY_MAX_LENGTH = 500;
+const DEFAULT_EVENT_LIMIT = 100;
+
+export interface PiSessionQuery {
+  readonly limit?: number;
+  readonly cursor?: string;
+}
+
+interface PiSessionCursor {
+  readonly sessionId: string;
+  readonly beforeEntryId: string;
+}
 
 export class PiSessionReader {
   constructor(private readonly agentDirectory: string) {}
@@ -34,7 +45,10 @@ export class PiSessionReader {
     return sessions.sort((left, right) => right.modified.localeCompare(left.modified));
   }
 
-  async get(sessionId: string): Promise<ViewerSessionDetail | undefined> {
+  async get(
+    sessionId: string,
+    query: PiSessionQuery = {},
+  ): Promise<ViewerSessionDetail | undefined> {
     const session = await this.findSession(sessionId);
     if (!session) return undefined;
 
@@ -44,11 +58,27 @@ export class PiSessionReader {
     });
     if (!header || header.id !== sessionId) return undefined;
 
+    const sessionEntries = entries.filter(
+      (entry): entry is SessionEntry => entry.type !== "session",
+    );
+    const limit = normalizeLimit(query.limit);
+    const cursor = query.cursor ? decodeCursor(query.cursor, sessionId) : undefined;
+    const endIndex = cursor
+      ? sessionEntries.findIndex((entry) => entry.id === cursor.beforeEntryId)
+      : sessionEntries.length;
+    if (cursor && endIndex < 0) throw new Error("Unknown session cursor entry");
+
+    const pageEnd = cursor ? endIndex + 1 : sessionEntries.length;
+    const pageStart = Math.max(0, pageEnd - limit);
+    const pageEntries = sessionEntries.slice(pageStart, pageEnd);
+
     return {
       session: toSessionSummary(session.info, session.channelKey),
-      items: entries
-        .filter((entry): entry is SessionEntry => entry.type !== "session")
-        .map((entry) => toViewerEvent(entry, sessionId)),
+      items: pageEntries.map((entry) => toViewerEvent(entry, sessionId)),
+      nextCursor:
+        pageStart > 0
+          ? encodeCursor({ sessionId, beforeEntryId: sessionEntries[pageStart - 1]?.id ?? "" })
+          : null,
     };
   }
 
@@ -208,6 +238,38 @@ function decodeChannelKey(directoryName: string): string | undefined {
 
 function truncate(value: string, maxLength: number): string {
   return value.length > maxLength ? `${value.slice(0, maxLength - 1)}…` : value;
+}
+
+function encodeCursor(cursor: PiSessionCursor): string {
+  return Buffer.from(JSON.stringify(cursor), "utf8").toString("base64url");
+}
+
+function decodeCursor(value: string, sessionId: string): PiSessionCursor {
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(Buffer.from(value, "base64url").toString("utf8"));
+  } catch {
+    throw new Error("Invalid session cursor");
+  }
+
+  if (
+    !isRecord(decoded) ||
+    decoded.sessionId !== sessionId ||
+    typeof decoded.beforeEntryId !== "string" ||
+    decoded.beforeEntryId.length === 0
+  ) {
+    throw new Error("Invalid session cursor");
+  }
+
+  return { beforeEntryId: decoded.beforeEntryId, sessionId: decoded.sessionId };
+}
+
+function normalizeLimit(value: number | undefined): number {
+  if (value === undefined) return DEFAULT_EVENT_LIMIT;
+  if (!Number.isInteger(value) || value < 1 || value > 200) {
+    throw new Error("Session event limit must be an integer between 1 and 200");
+  }
+  return value;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

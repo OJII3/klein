@@ -7,26 +7,32 @@ interface SessionsViewProps {
   sessions: SessionSummary[];
   selectedSession: SessionSummary | null;
   events: PiSessionEvent[];
+  nextCursor: string | null;
   loading: boolean;
   loadingDetail: boolean;
+  loadingMoreDetail: boolean;
   error: string | null;
   detailError: string | null;
   onSelect: (id: string) => void;
   onRetry: () => void;
   onRetryDetail: () => void;
+  onLoadMoreDetail: () => void;
 }
 
 export function SessionsView({
   sessions,
   selectedSession,
   events,
+  nextCursor,
   loading,
   loadingDetail,
+  loadingMoreDetail,
   error,
   detailError,
   onSelect,
   onRetry,
   onRetryDetail,
+  onLoadMoreDetail,
 }: SessionsViewProps) {
   return (
     <section className="view-section" aria-labelledby="sessions-heading">
@@ -68,7 +74,13 @@ export function SessionsView({
             {loadingDetail ? (
               <LoadingState label="セッションを読み込み中…" />
             ) : selectedSession ? (
-              <SessionTimeline events={events} session={selectedSession} />
+              <SessionTimeline
+                events={events}
+                loadingMore={loadingMoreDetail}
+                nextCursor={nextCursor}
+                onLoadMore={onLoadMoreDetail}
+                session={selectedSession}
+              />
             ) : (
               <EmptyState>セッションを選択してください</EmptyState>
             )}
