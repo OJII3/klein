@@ -42,9 +42,15 @@ export function SessionTimeline({ events, session }: SessionTimelineProps) {
                   </div>
                   <time dateTime={event.timestamp}>{formatTimestamp(event.timestamp)}</time>
                 </header>
-                {event.content !== undefined && (
-                  <JsonValue className="timeline-content" value={event.content} />
+                {event.errorMessage && (
+                  <pre className="timeline-error" role="alert">
+                    {event.errorMessage}
+                  </pre>
                 )}
+                {event.content !== undefined &&
+                  (!Array.isArray(event.content) || event.content.length > 0) && (
+                    <JsonValue className="timeline-content" value={event.content} />
+                  )}
                 {event.parentId && <p className="timeline-parent">parent: {event.parentId}</p>}
               </article>
             </li>

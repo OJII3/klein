@@ -42,25 +42,46 @@ test("lists and reads Pi sessions without exposing image data", async () => {
       stopReason: "stop",
       timestamp: Date.now(),
     } as never);
+    sessionManager.appendMessage({
+      role: "assistant",
+      content: [],
+      api: "openai-completions",
+      provider: "opencode-go",
+      model: "deepseek-v4.1-flash",
+      usage: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 0,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      },
+      stopReason: "error",
+      errorMessage: "403: RegionError",
+      timestamp: Date.now(),
+    } as never);
 
     const reader = new PiSessionReader(agentDirectory);
     const sessions = await reader.list();
     assert.equal(sessions.length, 1);
     assert.equal(sessions[0]?.id, sessionManager.getSessionId());
     assert.equal(sessions[0]?.channelKey, "discord-channel:123");
-    assert.equal(sessions[0]?.messageCount, 2);
+    assert.equal(sessions[0]?.messageCount, 3);
     assert.equal(sessions[0]?.firstMessage, "hello");
 
     const detail = await reader.get(sessionManager.getSessionId());
     assert.ok(detail);
     assert.equal(detail.session.channelKey, "discord-channel:123");
-    assert.equal(detail.items.length, 2);
+    assert.equal(detail.items.length, 3);
     assert.equal(detail.items[0]?.role, "user");
     assert.equal(detail.items[0]?.summary, "hello");
     assert.deepEqual(detail.items[1]?.content, [
       { type: "text", text: "hello back" },
       { type: "image", mimeType: "image/png", omitted: true },
     ]);
+    assert.equal(detail.items[2]?.summary, "Error: 403: RegionError");
+    assert.equal(detail.items[2]?.errorMessage, "403: RegionError");
+    assert.deepEqual(detail.items[2]?.content, []);
   } finally {
     await rm(agentDirectory, { force: true, recursive: true });
   }
