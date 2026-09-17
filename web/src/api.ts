@@ -47,6 +47,7 @@ export interface PiSessionEvent {
   kind: string;
   role?: string;
   parentId?: string | null;
+  errorMessage?: string;
   content?: unknown;
 }
 

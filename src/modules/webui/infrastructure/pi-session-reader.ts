@@ -114,10 +114,18 @@ function toViewerEvent(entry: SessionEntry, sessionId: string): PiViewerEvent {
   switch (entry.type) {
     case "message": {
       const content = "content" in entry.message ? entry.message.content : undefined;
+      const errorMessage =
+        "errorMessage" in entry.message && typeof entry.message.errorMessage === "string"
+          ? entry.message.errorMessage
+          : undefined;
       return {
         ...base,
         role: entry.message.role,
-        summary: truncate(extractText(content), EVENT_SUMMARY_MAX_LENGTH),
+        summary: truncate(
+          errorMessage ? `Error: ${errorMessage}` : extractText(content),
+          EVENT_SUMMARY_MAX_LENGTH,
+        ),
+        errorMessage,
         content: sanitizeContent(content),
       };
     }

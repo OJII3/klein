@@ -841,6 +841,22 @@ dd {
   margin-top: 3px;
 }
 
+.timeline-error {
+  max-height: 420px;
+  overflow: auto;
+  margin: 3px 0 0;
+  padding: 11px 12px;
+  border: 1px solid #6f2d3a;
+  border-radius: 7px;
+  color: var(--danger);
+  background: #2a1820;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .timeline-parent {
   margin: 10px 0 0;
   color: var(--faint);

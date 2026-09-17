@@ -34,6 +34,7 @@ export interface PiViewerEvent {
   readonly role?: string;
   readonly parentId: string | null;
   readonly summary?: string;
+  readonly errorMessage?: string;
   readonly content?: unknown;
 }
 
