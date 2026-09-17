@@ -11,6 +11,7 @@ import { DiscordAgent } from "@agents/discord/discord-agent";
 import { createCodexTools } from "@agents/discord/tools/codex-delegate";
 import {
   createPiAgentFactory,
+  createPiModelRuntime,
   resolveConfiguredModel,
   withOpenCodeSessionHeader,
 } from "@runtime/pi/pi-agent-runtime";
@@ -55,10 +56,12 @@ export async function bootstrap(): Promise<void> {
   );
   const taskCoordinator = new TaskCoordinator();
   const agentDir = resolve(config.runtime.agentDir);
+  const modelRuntime = await createPiModelRuntime(agentDir);
   const piAgentFactory = createPiAgentFactory({
     agentDir,
     llm: config.llm,
     logger,
+    modelRuntime,
     sessionMode,
   });
   const memoryConfiguration = config.features.memory;
@@ -73,7 +76,11 @@ export async function bootstrap(): Promise<void> {
         maxBatchMessages: memoryConfiguration.maxBatchMessages ?? 32,
         processor: new PiMemoryProcessor(
           withOpenCodeSessionHeader(
-            resolveConfiguredModel(memoryLlmConfiguration.provider, memoryLlmConfiguration.model),
+            resolveConfiguredModel(
+              memoryLlmConfiguration.provider,
+              memoryLlmConfiguration.model,
+              modelRuntime,
+            ),
             memorySessionId,
           ),
           memoryLlmConfiguration.thinkingLevel,
