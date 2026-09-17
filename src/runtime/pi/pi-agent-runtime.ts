@@ -4,12 +4,13 @@ import type { Logger } from "pino";
 import {
   AgentSession,
   DefaultResourceLoader,
+  ModelRuntime,
   SessionManager,
   SettingsManager,
   createAgentSession,
 } from "@earendil-works/pi-coding-agent";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
-import type { Api, Model } from "@earendil-works/pi-ai";
+import type { Api, Model, Models } from "@earendil-works/pi-ai";
 import type { CreateAgentSessionOptions } from "@earendil-works/pi-coding-agent";
 
 import type { AgentDefinition } from "@agents/core/agent-definition";
@@ -23,6 +24,7 @@ import { adaptPiTools } from "./pi-tool-adapter";
 
 export interface PiAgentFactoryOptions {
   readonly agentDir: string;
+  readonly modelRuntime: ModelRuntime;
   readonly sessionMode: SessionMode;
   readonly llm: {
     readonly provider: string;
@@ -39,6 +41,51 @@ export interface PiAgentFactoryOptions {
 
 export const KLEIN_SKILLS_DIRECTORY = "config/skills";
 const PI_WEB_ACCESS_EXTENSION_PATH = "node_modules/pi-web-access/index.ts";
+const MODEL_CATALOG_REFRESH_TIMEOUT_MS = 5_000;
+
+const DEEPSEEK_V41_FLASH_FALLBACK: Model<"openai-completions"> = {
+  id: "deepseek-v4.1-flash",
+  name: "DeepSeek V4.1 Flash",
+  api: "openai-completions",
+  provider: "opencode-go",
+  baseUrl: "https://opencode.ai/zen/go/v1",
+  reasoning: true,
+  thinkingLevelMap: {
+    minimal: null,
+    low: null,
+    medium: null,
+    high: "high",
+    max: "max",
+  },
+  input: ["text", "image"],
+  cost: {
+    input: 0.15,
+    output: 0.6,
+    cacheRead: 0.003,
+    cacheWrite: 0,
+  },
+  contextWindow: 1_000_000,
+  maxTokens: 384_000,
+  compat: {
+    supportsStore: false,
+    supportsDeveloperRole: false,
+    maxTokensField: "max_tokens",
+    requiresReasoningContentOnAssistantMessages: true,
+    thinkingFormat: "deepseek",
+  },
+};
+
+const BUILTIN_MODEL_CATALOG = builtinModels();
+
+export async function createPiModelRuntime(agentDir: string): Promise<ModelRuntime> {
+  return ModelRuntime.create({
+    authPath: resolve(agentDir, "auth.json"),
+    modelsPath: resolve(agentDir, "models.json"),
+    modelsStorePath: resolve(agentDir, "models-store.json"),
+    allowModelNetwork: true,
+    modelRefreshTimeoutMs: MODEL_CATALOG_REFRESH_TIMEOUT_MS,
+  });
+}
 
 export function createPiSessionManager(
   agentDir: string,
@@ -137,9 +184,14 @@ export function createResourceLoader(
 export function resolveConfiguredModel(
   provider: string,
   modelId: string,
-): NonNullable<ReturnType<ReturnType<typeof builtinModels>["getModel"]>> {
-  const model = builtinModels().getModel(provider, modelId);
+  modelCatalog: Pick<Models, "getModel"> = BUILTIN_MODEL_CATALOG,
+): Model<Api> {
+  const model = modelCatalog.getModel(provider, modelId);
   if (!model) {
+    if (provider === "opencode-go" && modelId === DEEPSEEK_V41_FLASH_FALLBACK.id) {
+      return DEEPSEEK_V41_FLASH_FALLBACK;
+    }
+
     throw new Error(`Configured Pi model was not found: ${provider}/${modelId}`);
   }
 
@@ -163,8 +215,9 @@ export function withOpenCodeSessionHeader(model: Model<Api>, sessionId: string):
 export function resolveConfiguredImageModel(
   provider: string,
   modelId: string,
-): NonNullable<ReturnType<ReturnType<typeof builtinModels>["getModel"]>> {
-  const model = resolveConfiguredModel(provider, modelId);
+  modelCatalog: Pick<Models, "getModel"> = BUILTIN_MODEL_CATALOG,
+): Model<Api> {
+  const model = resolveConfiguredModel(provider, modelId, modelCatalog);
   if (!model.input.includes("image")) {
     throw new Error(
       `Configured Pi image model does not support image input: ${provider}/${modelId}`,
@@ -178,10 +231,11 @@ export function createPiAgentFactory({
   agentDir,
   llm,
   logger,
+  modelRuntime,
   sessionMode,
 }: PiAgentFactoryOptions): AgentFactory {
   const imageModel = llm.image
-    ? resolveConfiguredImageModel(llm.image.provider, llm.image.model)
+    ? resolveConfiguredImageModel(llm.image.provider, llm.image.model, modelRuntime)
     : undefined;
 
   return {
@@ -202,7 +256,7 @@ export function createPiAgentFactory({
       const sessionManager = createPiSessionManager(agentDir, options.sessionKey, sessionMode);
       const sessionId = sessionManager.getSessionId();
       const model = withOpenCodeSessionHeader(
-        resolveConfiguredModel(llm.provider, llm.model),
+        resolveConfiguredModel(llm.provider, llm.model, modelRuntime),
         sessionId,
       );
       const sessionImageModel = imageModel
@@ -213,6 +267,7 @@ export function createPiAgentFactory({
         agentDir,
         customTools: adaptPiTools(tools),
         model,
+        modelRuntime,
         resourceLoader,
         sessionManager,
         settingsManager,

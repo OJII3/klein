@@ -36,8 +36,11 @@ bun run start -- --resume
 
 The application uses OpenCode Go through Pi's `opencode-go` provider. Pi's
 runtime data is stored in the directory configured by `runtime.agentDir`
-(`.runtime/pi` by default), including the per-channel session history. Set
-`KLEIN_CONFIG_PATH` only when you need to use a different configuration file.
+(`.runtime/pi` by default), including the per-channel session history and the
+cached model catalog. Klein refreshes Pi's online model catalog when starting;
+cached and built-in model definitions remain available when the catalog cannot
+be reached. Set `KLEIN_CONFIG_PATH` only when you need to use a different
+configuration file.
 
 The `llm.model` and optional `llm.thinkingLevel` settings are used by the main
 Pi session. The optional `llm.image` setting configures a separate, one-shot
