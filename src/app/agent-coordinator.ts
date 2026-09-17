@@ -59,7 +59,10 @@ export class AgentCoordinator {
     try {
       const agent = await this.getDiscordAgent(message.channelId);
       const guildMemory = message.guildId
-        ? await this.dependencies.memoryCoordinator?.getContext(message.guildId)
+        ? await this.dependencies.memoryCoordinator?.getContext(
+            message.guildId,
+            buildMemoryQuery(message),
+          )
         : undefined;
       await agent.prompt(message, guildMemory);
       logger.debug(
@@ -101,4 +104,8 @@ export class AgentCoordinator {
 
     return created;
   }
+}
+
+function buildMemoryQuery(message: DiscordMessage): string {
+  return [message.content, message.replyTo?.content].filter(Boolean).join("\n");
 }

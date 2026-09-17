@@ -7,6 +7,7 @@ import {
   MarkdownMemoryStore,
   renderMemoryDocument,
 } from "../infrastructure/markdown-memory-store";
+import { selectMemoryEntries } from "./memory-context-selector";
 import type {
   MemoryDocument,
   MemoryGuildSummary,
@@ -69,12 +70,15 @@ export class MemoryCoordinator implements MemoryReader {
     }
   }
 
-  async getContext(guildId: string): Promise<string | undefined> {
+  async getContext(guildId: string, query: string): Promise<string | undefined> {
     if (this.disposed) return undefined;
 
     try {
       const document = await this.read(guildId);
-      return document.entries.length > 0 ? renderMemoryDocument(document) : undefined;
+      const selectedDocument = selectMemoryEntries(document, query);
+      return selectedDocument.entries.length > 0
+        ? renderMemoryDocument(selectedDocument)
+        : undefined;
     } catch (error) {
       this.logger.warn(
         { err: error, event: "guild_memory_context_read_failed", guildId },

@@ -48,9 +48,9 @@ test("batches recent guild messages and keeps guild memory files separate", asyn
     await taskCoordinator.waitForCompletion();
 
     assert.deepEqual(processed.sort(), [["message-a1", "message-a2"], ["message-b1"]].sort());
-    assert.match((await coordinator.getContext("guild-a")) ?? "", /message-a1/u);
-    assert.match((await coordinator.getContext("guild-b")) ?? "", /message-b1/u);
-    assert.equal(await coordinator.getContext("guild-c"), undefined);
+    assert.match((await coordinator.getContext("guild-a", "処理済み")) ?? "", /message-a1/u);
+    assert.match((await coordinator.getContext("guild-b", "処理済み")) ?? "", /message-b1/u);
+    assert.equal(await coordinator.getContext("guild-c", "何もない"), undefined);
     assert.deepEqual(
       (await coordinator.listGuilds()).map(({ entryCount, guildId }) => ({ entryCount, guildId })),
       [
