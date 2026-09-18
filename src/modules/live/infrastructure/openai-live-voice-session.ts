@@ -9,7 +9,14 @@ const LIVE_MODEL = "gpt-live-1";
 const LIVE_AUDIO_RATE = 24_000;
 const LIVE_SESSION_START_TIMEOUT_MS = 15_000;
 const MAX_TRANSCRIPT_CHARACTERS = 12_000;
-const MAX_COMMENTARY_CHARACTERS = 1_800;
+const MAX_COMMENTARY_CHARACTERS = 400;
+
+type TranscriptRole = "assistant" | "user";
+
+interface TranscriptTurn {
+  role: TranscriptRole;
+  text: string;
+}
 
 export class OpenAiLiveVoiceSessionFactory implements LiveVoiceSessionFactory {
   private readonly client: OpenAI;
@@ -34,7 +41,9 @@ class OpenAiLiveVoiceSession implements LiveVoiceSession {
   private socket?: LiveWS;
   private started = false;
   private stopped = false;
-  private transcript = "";
+  private inputTranscript = "";
+  private outputTranscript = "";
+  private readonly transcriptTurns: TranscriptTurn[] = [];
   private inputAudioStarted = false;
   private outputAudioStarted = false;
 
@@ -108,7 +117,7 @@ class OpenAiLiveVoiceSession implements LiveVoiceSession {
   appendCommentary(content: string, delegationId: string | null): void {
     if (!this.started || this.stopped || !this.socket) return;
 
-    const trimmed = content.trim();
+    const trimmed = truncateVoiceCommentary(content);
     if (!trimmed) return;
 
     this.socket.send({
@@ -129,8 +138,10 @@ class OpenAiLiveVoiceSession implements LiveVoiceSession {
   private handleEvent(event: LiveAPI.ServerEvent): void {
     switch (event.type) {
       case "session.input_transcript.delta":
+        this.appendTranscript("user", event.delta);
+        return;
       case "session.output_transcript.delta":
-        this.appendTranscript(event.delta);
+        this.appendTranscript("assistant", event.delta);
         return;
       case "session.output_audio.delta":
         if (!this.outputAudioStarted) {
@@ -161,13 +172,56 @@ class OpenAiLiveVoiceSession implements LiveVoiceSession {
     }
   }
 
-  private appendTranscript(delta: string): void {
-    this.transcript = `${this.transcript}${delta}`.slice(-MAX_TRANSCRIPT_CHARACTERS);
+  private appendTranscript(role: TranscriptRole, delta: string): void {
+    if (!delta) return;
+
+    if (role === "user") {
+      this.inputTranscript = `${this.inputTranscript}${delta}`.slice(
+        -MAX_TRANSCRIPT_CHARACTERS / 2,
+      );
+    } else {
+      this.outputTranscript = `${this.outputTranscript}${delta}`.slice(
+        -MAX_TRANSCRIPT_CHARACTERS / 2,
+      );
+    }
+
+    const lastTurn = this.transcriptTurns.at(-1);
+    if (lastTurn?.role === role) {
+      lastTurn.text += delta;
+    } else {
+      this.transcriptTurns.push({ role, text: delta });
+    }
+
+    while (
+      this.transcriptTurns.length > 1 &&
+      this.getTranscriptLength() > MAX_TRANSCRIPT_CHARACTERS
+    ) {
+      this.transcriptTurns.shift();
+    }
+    if (this.transcriptTurns.length === 1) {
+      this.transcriptTurns[0].text = this.transcriptTurns[0].text.slice(-MAX_TRANSCRIPT_CHARACTERS);
+    }
+  }
+
+  private getTranscript(): string {
+    if (this.transcriptTurns.length > 0) {
+      return this.transcriptTurns
+        .map(({ role, text }) => `${role === "user" ? "User" : "Assistant"}: ${text}`)
+        .join("\n");
+    }
+
+    return [`User: ${this.inputTranscript}`, `Assistant: ${this.outputTranscript}`]
+      .filter((part) => part.trim().length > 8)
+      .join("\n");
+  }
+
+  private getTranscriptLength(): number {
+    return this.transcriptTurns.reduce((length, turn) => length + turn.text.length, 0);
   }
 
   private async handleDelegation(delegationId: string): Promise<void> {
     try {
-      const result = await this.options.onDelegation(delegationId, this.transcript.trim());
+      const result = await this.options.onDelegation(delegationId, this.getTranscript());
       this.appendCommentary(result, delegationId);
     } catch (error) {
       this.logger.error(
@@ -203,6 +257,24 @@ class OpenAiLiveVoiceSession implements LiveVoiceSession {
       socket.once("close", onClose);
     });
   }
+}
+
+export function truncateVoiceCommentary(content: string): string {
+  const normalized = content.replace(/\s+/gu, " ").trim();
+  if (normalized.length <= MAX_COMMENTARY_CHARACTERS) return normalized;
+
+  const candidate = normalized.slice(0, MAX_COMMENTARY_CHARACTERS - 1);
+  const boundary = Math.max(
+    candidate.lastIndexOf("。"),
+    candidate.lastIndexOf("！"),
+    candidate.lastIndexOf("？"),
+    candidate.lastIndexOf("."),
+    candidate.lastIndexOf("!"),
+    candidate.lastIndexOf("?"),
+  );
+  const end = boundary >= MAX_COMMENTARY_CHARACTERS / 2 ? boundary + 1 : candidate.length;
+  const clipped = candidate.slice(0, end).trimEnd();
+  return /[。！？.!?]$/u.test(clipped) ? clipped : `${clipped}。`;
 }
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {

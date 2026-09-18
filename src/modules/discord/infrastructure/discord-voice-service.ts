@@ -31,6 +31,7 @@ import type {
 
 const VOICE_CONNECTION_TIMEOUT_MS = 15_000;
 const VOICE_INPUT_SILENCE_MS = 100;
+const VOICE_IDLE_TIMEOUT_MS = 10 * 60 * 1_000;
 const DISCORD_AUDIO_RATE = 48_000;
 
 const LIVE_VOICE_INSTRUCTIONS = `
@@ -51,6 +52,7 @@ interface ActiveVoiceSession {
   readonly outputs: Set<PassThrough>;
   readonly player: AudioPlayer;
   readonly inputSubscriptions: Map<string, InputSubscription>;
+  idleTimer: ReturnType<typeof setTimeout> | undefined;
   readonly speakingListener: (userId: string) => void;
   readonly voiceChannelId: string;
 }
@@ -96,7 +98,24 @@ export class DiscordVoiceService implements DiscordVoiceCommandHandler {
     let outputs: Set<PassThrough> | undefined;
     let player: AudioPlayer | undefined;
     let live: LiveVoiceSession | undefined;
+    let activeSession: ActiveVoiceSession | undefined;
     let speakingListener: ((userId: string) => void) | undefined;
+
+    const refreshIdleTimer = (): void => {
+      if (!activeSession) return;
+      if (activeSession.idleTimer) clearTimeout(activeSession.idleTimer);
+
+      const session = activeSession;
+      activeSession.idleTimer = setTimeout(() => {
+        if (this.sessions.get(request.guildId) !== session) return;
+        this.logger.info(
+          { event: "discord_voice_session_idle", guildId: request.guildId },
+          "Leaving idle Discord voice session",
+        );
+        void this.leaveGuild(request.guildId);
+      }, VOICE_IDLE_TIMEOUT_MS);
+      activeSession.idleTimer.unref?.();
+    };
     try {
       await entersState(connection, VoiceConnectionStatus.Ready, VOICE_CONNECTION_TIMEOUT_MS);
 
@@ -195,6 +214,8 @@ export class DiscordVoiceService implements DiscordVoiceCommandHandler {
 
       const inputSubscriptions = new Map<string, InputSubscription>();
       speakingListener = (userId: string): void => {
+        if (userId === this.adapterProvider.getCurrentUserId()) return;
+        refreshIdleTimer();
         this.startInputSubscription(
           request.guildId,
           connection,
@@ -205,15 +226,19 @@ export class DiscordVoiceService implements DiscordVoiceCommandHandler {
       };
       connection.receiver.speaking.on("start", speakingListener);
 
-      this.sessions.set(request.guildId, {
+      const session: ActiveVoiceSession = {
         connection,
         inputSubscriptions,
+        idleTimer: undefined,
         live: liveSession,
         outputs: outputStreams,
         player: audioPlayer,
         speakingListener,
         voiceChannelId: request.voiceChannelId,
-      });
+      };
+      activeSession = session;
+      this.sessions.set(request.guildId, session);
+      refreshIdleTimer();
       this.logger.info(
         {
           event: "discord_voice_session_started",
@@ -226,6 +251,7 @@ export class DiscordVoiceService implements DiscordVoiceCommandHandler {
       return "ボイスチャンネルに参加しました。話しかけてください。";
     } catch (error) {
       if (speakingListener) connection.receiver.speaking.off("start", speakingListener);
+      if (activeSession?.idleTimer) clearTimeout(activeSession.idleTimer);
       live?.stop();
       for (const stream of outputs ?? (output ? new Set([output]) : [])) stream.end();
       player?.stop(true);
@@ -302,6 +328,7 @@ export class DiscordVoiceService implements DiscordVoiceCommandHandler {
     if (!session) return;
 
     this.sessions.delete(guildId);
+    if (session.idleTimer) clearTimeout(session.idleTimer);
     session.connection.receiver.speaking.off("start", session.speakingListener);
     for (const { disposeDecoder, opus } of session.inputSubscriptions.values()) {
       opus.destroy();
