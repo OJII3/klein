@@ -11,7 +11,11 @@ interface MemoryViewProps {
   loadingDetail: boolean;
   error: string | null;
   detailError: string | null;
+  deleteError: string | null;
+  deletingEntryId: string | null;
   onSelect: (guildId: string) => void;
+  onDelete: (entryId: string) => void;
+  onDismissDeleteError: () => void;
   onRetry: () => void;
   onRetryDetail: () => void;
 }
@@ -25,7 +29,11 @@ export function MemoryView({
   loadingDetail,
   error,
   detailError,
+  deleteError,
+  deletingEntryId,
   onSelect,
+  onDelete,
+  onDismissDeleteError,
   onRetry,
   onRetryDetail,
 }: MemoryViewProps) {
@@ -69,11 +77,23 @@ export function MemoryView({
           </div>
 
           <div className="memory-detail">
+            {deleteError && (
+              <ErrorNotice
+                message={deleteError}
+                onRetry={onDismissDeleteError}
+                retryLabel="閉じる"
+              />
+            )}
             {detailError && <ErrorNotice message={detailError} onRetry={onRetryDetail} />}
             {loadingDetail ? (
               <LoadingState label="メモリを読み込み中…" />
             ) : selectedGuildId ? (
-              <MemoryEntries entries={entries} guildId={selectedGuildId} />
+              <MemoryEntries
+                deletingEntryId={deletingEntryId}
+                entries={entries}
+                guildId={selectedGuildId}
+                onDelete={onDelete}
+              />
             ) : (
               <EmptyState>ギルドを選択してください</EmptyState>
             )}
@@ -84,7 +104,17 @@ export function MemoryView({
   );
 }
 
-function MemoryEntries({ entries, guildId }: { entries: MemoryEntry[]; guildId: string }) {
+function MemoryEntries({
+  deletingEntryId,
+  entries,
+  guildId,
+  onDelete,
+}: {
+  deletingEntryId: string | null;
+  entries: MemoryEntry[];
+  guildId: string;
+  onDelete: (entryId: string) => void;
+}) {
   return (
     <div className="memory-panel">
       <div className="memory-panel-heading">
@@ -105,7 +135,25 @@ function MemoryEntries({ entries, guildId }: { entries: MemoryEntry[]; guildId: 
                   <span className={`memory-kind memory-kind-${entry.kind}`}>{entry.kind}</span>
                   <h3>{entry.title}</h3>
                 </div>
-                <time dateTime={entry.updatedAt}>更新 {formatTimestamp(entry.updatedAt)}</time>
+                <div className="memory-entry-actions">
+                  <time dateTime={entry.updatedAt}>更新 {formatTimestamp(entry.updatedAt)}</time>
+                  <button
+                    className="button button-danger button-small"
+                    disabled={deletingEntryId !== null}
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          `「${entry.title}」を削除しますか？\nこの操作は元に戻せません。`,
+                        )
+                      ) {
+                        onDelete(entry.id);
+                      }
+                    }}
+                    type="button"
+                  >
+                    {deletingEntryId === entry.id ? "削除中…" : "削除"}
+                  </button>
+                </div>
               </div>
               <p className="memory-content">{entry.content}</p>
               <dl className="memory-meta">

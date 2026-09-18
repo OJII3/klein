@@ -8,8 +8,10 @@ import {
   renderMemoryDocument,
 } from "../infrastructure/markdown-memory-store";
 import { selectMemoryEntries } from "./memory-context-selector";
+import { MemoryEntryNotFoundError } from "../domain/memory";
 import type {
   MemoryDocument,
+  MemoryEditor,
   MemoryGuildSummary,
   MemoryMessage,
   MemoryProcessor,
@@ -33,9 +35,10 @@ export interface MemoryCoordinatorOptions {
   readonly taskCoordinator: TaskCoordinator;
 }
 
-export class MemoryCoordinator implements MemoryReader {
+export class MemoryCoordinator implements MemoryReader, MemoryEditor {
   private readonly logger: Logger;
   private readonly queues = new Map<string, GuildMemoryQueue>();
+  private readonly guildOperations = new Map<string, Promise<void>>();
   private disposed = false;
 
   constructor(private readonly options: MemoryCoordinatorOptions) {
@@ -109,6 +112,20 @@ export class MemoryCoordinator implements MemoryReader {
     return store.read();
   }
 
+  deleteEntry(guildId: string, entryId: string): Promise<void> {
+    if (this.disposed) return Promise.reject(new Error("Memory coordinator is disposed"));
+
+    return this.runGuildOperation(guildId, async () => {
+      const store = new MarkdownMemoryStore(resolveMemoryFilePath(this.options.filePath, guildId));
+      const document = await store.read();
+      if (!document.entries.some((entry) => entry.id === entryId)) {
+        throw new MemoryEntryNotFoundError(guildId, entryId);
+      }
+
+      await store.apply([{ id: entryId, type: "delete" }], []);
+    });
+  }
+
   dispose(): void {
     this.disposed = true;
     for (const queue of this.queues.values()) {
@@ -139,58 +156,78 @@ export class MemoryCoordinator implements MemoryReader {
     if (!queue || queue.processing || queue.messages.length === 0) return;
 
     queue.processing = true;
-    const messages = queue.messages.splice(0, this.options.maxBatchMessages);
-    const startedAt = Date.now();
-    let failed = false;
+    return this.runGuildOperation(guildId, async () => {
+      const messages = queue.messages.splice(0, this.options.maxBatchMessages);
+      const startedAt = Date.now();
+      let failed = false;
 
-    try {
-      const store = new MarkdownMemoryStore(resolveMemoryFilePath(this.options.filePath, guildId));
-      const document = await store.read();
-      const operations = await this.options.processor.process(
-        document,
-        messages.map(toMemoryMessage),
-      );
-      await store.apply(
-        operations,
-        messages.map((message) => message.id),
-      );
-      this.logger.info(
-        {
-          durationMs: Date.now() - startedAt,
-          event: "guild_memory_processed",
-          guildId,
-          messageCount: messages.length,
-          operationCount: operations.filter((operation) => operation.type !== "noop").length,
-        },
-        "Processed guild memory",
-      );
-    } catch (error) {
-      failed = true;
-      queue.messages.unshift(...messages);
-      this.logger.warn(
-        {
-          durationMs: Date.now() - startedAt,
-          err: error,
-          event: "guild_memory_processing_failed",
-          guildId,
-          messageCount: messages.length,
-        },
-        "Failed to process guild memory",
-      );
-    } finally {
-      queue.processing = false;
-      if (queue.messages.length === 0 || this.disposed) {
-        this.queues.delete(guildId);
-      } else if (failed) {
-        this.resetIdleTimer(guildId, queue);
-        queue.maxAgeTimer = setTimeout(
-          () => this.scheduleProcessing(guildId),
-          this.options.maxBatchAgeSeconds * 1_000,
+      try {
+        const store = new MarkdownMemoryStore(
+          resolveMemoryFilePath(this.options.filePath, guildId),
         );
-      } else {
-        this.scheduleProcessing(guildId);
+        const document = await store.read();
+        const operations = await this.options.processor.process(
+          document,
+          messages.map(toMemoryMessage),
+        );
+        await store.apply(
+          operations,
+          messages.map((message) => message.id),
+        );
+        this.logger.info(
+          {
+            durationMs: Date.now() - startedAt,
+            event: "guild_memory_processed",
+            guildId,
+            messageCount: messages.length,
+            operationCount: operations.filter((operation) => operation.type !== "noop").length,
+          },
+          "Processed guild memory",
+        );
+      } catch (error) {
+        failed = true;
+        queue.messages.unshift(...messages);
+        this.logger.warn(
+          {
+            durationMs: Date.now() - startedAt,
+            err: error,
+            event: "guild_memory_processing_failed",
+            guildId,
+            messageCount: messages.length,
+          },
+          "Failed to process guild memory",
+        );
+      } finally {
+        queue.processing = false;
+        if (queue.messages.length === 0 || this.disposed) {
+          this.queues.delete(guildId);
+        } else if (failed) {
+          this.resetIdleTimer(guildId, queue);
+          queue.maxAgeTimer = setTimeout(
+            () => this.scheduleProcessing(guildId),
+            this.options.maxBatchAgeSeconds * 1_000,
+          );
+        } else {
+          this.scheduleProcessing(guildId);
+        }
       }
-    }
+    });
+  }
+
+  private runGuildOperation(guildId: string, operation: () => Promise<void>): Promise<void> {
+    const previous = this.guildOperations.get(guildId) ?? Promise.resolve();
+    const current = previous.catch(() => undefined).then(operation);
+    const tracked = current.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.guildOperations.set(guildId, tracked);
+    void tracked.then(() => {
+      if (this.guildOperations.get(guildId) === tracked) {
+        this.guildOperations.delete(guildId);
+      }
+    });
+    return current;
   }
 
   private resetIdleTimer(guildId: string, queue: GuildMemoryQueue): void {

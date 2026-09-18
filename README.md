@@ -120,7 +120,7 @@ credentials.
 
 ## Run the Web UI viewer
 
-The optional read-only Web UI shows persisted Pino logs, Pi session history, and
+The optional Web UI shows persisted Pino logs, Pi session history, and
 guild memory contents. The memory tab lists guilds with persisted memory and
 shows each entry's kind, title, body, timestamps, and source message count.
 Update the `runtime` and `features` sections in `config/klein.json` (other
@@ -159,7 +159,7 @@ required sections are omitted here):
 
 Start Klein, then open `http://127.0.0.1:4310`. Keep the host bound
 to loopback when exposing the viewer through a ZeroTrust tunnel. The UI is
-disabled by default and does not provide write operations.
+disabled by default and allows deleting individual persisted memories.
 
 For an ahead-of-time production bundle, run `bun run build` and execute it with
 `bun dist/klein`, keeping the generated `dist/web/` directory available from

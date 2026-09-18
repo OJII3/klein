@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { getMemory, listMemoryGuilds, type MemoryEntry, type MemoryGuildSummary } from "../api";
+import {
+  deleteMemory,
+  getMemory,
+  listMemoryGuilds,
+  type MemoryEntry,
+  type MemoryGuildSummary,
+} from "../api";
 
 interface UseMemoryOptions {
   active: boolean;
@@ -17,6 +23,8 @@ export function useMemory({ active, onUpdated }: UseMemoryOptions) {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [detailReloadKey, setDetailReloadKey] = useState(0);
+  const [deletingEntryId, setDeletingEntryId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setGuildsLoading(true);
@@ -81,6 +89,36 @@ export function useMemory({ active, onUpdated }: UseMemoryOptions) {
     setDetailReloadKey((key) => key + 1);
   }, []);
 
+  const selectGuild = useCallback((guildId: string) => {
+    setSelectedGuildId(guildId);
+    setDeleteError(null);
+  }, []);
+
+  const dismissDeleteError = useCallback(() => {
+    setDeleteError(null);
+  }, []);
+
+  const deleteEntry = useCallback(
+    async (entryId: string) => {
+      if (!selectedGuildId || deletingEntryId) return;
+
+      setDeletingEntryId(entryId);
+      setDeleteError(null);
+      try {
+        await deleteMemory(selectedGuildId, entryId);
+        setEntries((current) => current.filter((entry) => entry.id !== entryId));
+        void load();
+      } catch (requestError) {
+        setDeleteError(
+          requestError instanceof Error ? requestError.message : "メモリの削除に失敗しました",
+        );
+      } finally {
+        setDeletingEntryId(null);
+      }
+    },
+    [deletingEntryId, load, selectedGuildId],
+  );
+
   const reload = useCallback(() => {
     void load();
     setDetailReloadKey((key) => key + 1);
@@ -95,7 +133,11 @@ export function useMemory({ active, onUpdated }: UseMemoryOptions) {
     entries,
     detailLoading,
     detailError,
-    selectGuild: setSelectedGuildId,
+    deleteEntry,
+    deleteError,
+    deletingEntryId,
+    dismissDeleteError,
+    selectGuild,
     reload,
     retryDetail,
   };

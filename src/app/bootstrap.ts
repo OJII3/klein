@@ -141,6 +141,7 @@ export async function bootstrap(): Promise<void> {
         host: webUiConfig.host,
         logger,
         memory: memoryCoordinator,
+        memoryEditor: memoryCoordinator,
         piSessions: new PiSessionReader(agentDir),
         pinoLogs: new PinoJsonlReader(logDirectory),
         port: webUiConfig.port,

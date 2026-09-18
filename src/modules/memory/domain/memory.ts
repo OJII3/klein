@@ -27,6 +27,17 @@ export interface MemoryReader {
   read(guildId: string): Promise<MemoryDocument>;
 }
 
+export interface MemoryEditor {
+  deleteEntry(guildId: string, entryId: string): Promise<void>;
+}
+
+export class MemoryEntryNotFoundError extends Error {
+  constructor(guildId: string, entryId: string) {
+    super(`Memory entry was not found: ${guildId}/${entryId}`);
+    this.name = "MemoryEntryNotFoundError";
+  }
+}
+
 export type MemoryOperation =
   | {
       readonly type: "add";

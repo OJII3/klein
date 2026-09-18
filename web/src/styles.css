@@ -668,6 +668,24 @@ dd {
   font-size: 10px;
 }
 
+.memory-entry-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.button-danger {
+  border-color: #693743;
+  color: var(--danger);
+  background: #2a1820;
+}
+
+.button-danger:hover:not(:disabled) {
+  border-color: #a34d5a;
+  background: #40212b;
+}
+
 .memory-kind {
   display: inline-flex;
   padding: 4px 7px;

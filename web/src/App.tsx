@@ -63,12 +63,16 @@ export default function App() {
       ) : (
         <MemoryView
           detailError={memory.detailError}
+          deleteError={memory.deleteError}
+          deletingEntryId={memory.deletingEntryId}
           enabled={memory.enabled}
           entries={memory.entries}
           error={memory.guildsError}
           guilds={memory.guilds}
           loading={memory.guildsLoading}
           loadingDetail={memory.detailLoading}
+          onDelete={memory.deleteEntry}
+          onDismissDeleteError={memory.dismissDeleteError}
           onRetry={() => void memory.reload()}
           onRetryDetail={memory.retryDetail}
           onSelect={memory.selectGuild}

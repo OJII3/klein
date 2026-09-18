@@ -1,14 +1,15 @@
 interface ErrorNoticeProps {
   message: string;
   onRetry: () => void;
+  retryLabel?: string;
 }
 
-export function ErrorNotice({ message, onRetry }: ErrorNoticeProps) {
+export function ErrorNotice({ message, onRetry, retryLabel = "再試行" }: ErrorNoticeProps) {
   return (
     <div className="notice notice-error" role="alert">
       <span>{message}</span>
       <button className="button button-small" onClick={onRetry} type="button">
-        再試行
+        {retryLabel}
       </button>
     </div>
   );

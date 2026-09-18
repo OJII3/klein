@@ -4,9 +4,14 @@ import { staticPlugin } from "@elysia/static";
 import { Elysia } from "elysia";
 import type { Logger } from "pino";
 
-import type { MemoryReader } from "@modules/memory/domain/memory";
+import {
+  MemoryEntryNotFoundError,
+  type MemoryEditor,
+  type MemoryReader,
+} from "@modules/memory/domain/memory";
 import {
   LogsQuerySchema,
+  MemoryEntryParamsSchema,
   MemoryParamsSchema,
   SessionParamsSchema,
   SessionQuerySchema,
@@ -19,6 +24,7 @@ const LOG_LEVELS = new Set(["trace", "debug", "info", "warn", "error", "fatal"])
 
 export interface WebUiDependencies {
   readonly memory?: MemoryReader;
+  readonly memoryEditor?: MemoryEditor;
   readonly pinoLogs: PinoJsonlReader;
   readonly piSessions: PiSessionReader;
   readonly logger?: Logger;
@@ -109,6 +115,31 @@ export function createWebUiApp(dependencies: WebUiDependencies) {
         }
       },
       { params: MemoryParamsSchema },
+    )
+    .delete(
+      "/api/memory/:guildId/:entryId",
+      async ({ params, set }) => {
+        if (!dependencies.memory) {
+          set.status = 404;
+          return { error: "Memory is disabled" };
+        }
+        if (!dependencies.memoryEditor) {
+          set.status = 405;
+          return { error: "Memory editing is disabled" };
+        }
+
+        try {
+          await dependencies.memoryEditor.deleteEntry(params.guildId, params.entryId);
+          return { deleted: true };
+        } catch (error) {
+          if (error instanceof MemoryEntryNotFoundError) {
+            set.status = 404;
+            return { error: "Memory entry not found" };
+          }
+          return handleRouteError(set, dependencies.logger, error, "Failed to delete guild memory");
+        }
+      },
+      { params: MemoryEntryParamsSchema },
     );
 }
 
