@@ -35,6 +35,8 @@ class OpenAiLiveVoiceSession implements LiveVoiceSession {
   private started = false;
   private stopped = false;
   private transcript = "";
+  private inputAudioStarted = false;
+  private outputAudioStarted = false;
 
   constructor(
     private readonly client: OpenAI,
@@ -76,6 +78,10 @@ class OpenAiLiveVoiceSession implements LiveVoiceSession {
     try {
       await withTimeout(started, LIVE_SESSION_START_TIMEOUT_MS);
       this.started = true;
+      this.logger.info(
+        { event: "openai_live_session_started", model: LIVE_MODEL },
+        "OpenAI Live session started",
+      );
     } catch (error) {
       this.stop();
       throw error;
@@ -84,6 +90,14 @@ class OpenAiLiveVoiceSession implements LiveVoiceSession {
 
   pushInputAudio(audio: Buffer): void {
     if (!this.started || this.stopped || !this.socket || audio.length === 0) return;
+
+    if (!this.inputAudioStarted) {
+      this.inputAudioStarted = true;
+      this.logger.info(
+        { bytes: audio.length, event: "openai_live_input_audio_started" },
+        "OpenAI Live input audio started",
+      );
+    }
 
     this.socket.send({
       type: "session.input_audio.append",
@@ -119,6 +133,16 @@ class OpenAiLiveVoiceSession implements LiveVoiceSession {
         this.appendTranscript(event.delta);
         return;
       case "session.output_audio.delta":
+        if (!this.outputAudioStarted) {
+          this.outputAudioStarted = true;
+          this.logger.info(
+            {
+              bytes: Buffer.byteLength(event.delta, "base64"),
+              event: "openai_live_output_started",
+            },
+            "OpenAI Live output audio started",
+          );
+        }
         this.options.onAudioOutput(Buffer.from(event.delta, "base64"));
         return;
       case "session.delegation.created":

@@ -298,6 +298,10 @@ test("joins the member's current voice channel through the voice command handler
     inGuild: () => true,
     isChatInputCommand: () => true,
     user: { id: "user-123" },
+    deferReply: async () => undefined,
+    editReply: async (response: { content: string }) => {
+      replies.push({ ...response, ephemeral: true });
+    },
     reply: async (response: { content: string; ephemeral: boolean }) => {
       replies.push(response);
     },

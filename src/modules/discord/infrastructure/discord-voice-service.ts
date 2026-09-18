@@ -100,20 +100,30 @@ export class DiscordVoiceService implements DiscordVoiceCommandHandler {
 
       const outputStream = new PassThrough();
       output = outputStream;
-      player = createAudioPlayer();
-      player.on("error", (error) => {
+      const audioPlayer = createAudioPlayer();
+      player = audioPlayer;
+      audioPlayer.on("error", (error) => {
         this.logger.warn(
           { err: error, event: "discord_voice_output_failed", guildId: request.guildId },
           "Failed to play Discord voice output",
         );
       });
-      player.play(createAudioResource(outputStream, { inputType: StreamType.Raw }));
-      connection.subscribe(player);
+      const resource = createAudioResource(outputStream, { inputType: StreamType.Raw });
+      let outputStarted = false;
+      connection.subscribe(audioPlayer);
 
       const liveSession = this.liveSessionFactory.create({
         instructions: `${this.systemPrompt}\n${LIVE_VOICE_INSTRUCTIONS}`,
         onAudioOutput: (audio) => {
           if (!outputStream.destroyed && !outputStream.writableEnded) {
+            if (!outputStarted) {
+              outputStarted = true;
+              audioPlayer.play(resource);
+              this.logger.info(
+                { event: "discord_voice_output_started", guildId: request.guildId },
+                "Discord voice output started",
+              );
+            }
             outputStream.write(toDiscordPcm(audio));
           }
         },
@@ -144,10 +154,18 @@ export class DiscordVoiceService implements DiscordVoiceCommandHandler {
         inputSubscriptions,
         live: liveSession,
         output: outputStream,
-        player,
+        player: audioPlayer,
         speakingListener,
         voiceChannelId: request.voiceChannelId,
       });
+      this.logger.info(
+        {
+          event: "discord_voice_session_started",
+          guildId: request.guildId,
+          voiceChannelId: request.voiceChannelId,
+        },
+        "Discord voice session started",
+      );
 
       return "ボイスチャンネルに参加しました。話しかけてください。";
     } catch (error) {
@@ -196,6 +214,10 @@ export class DiscordVoiceService implements DiscordVoiceCommandHandler {
     };
     const subscription = { disposeDecoder, opus };
     inputSubscriptions.set(userId, subscription);
+    this.logger.info(
+      { event: "discord_voice_input_started", guildId, userId },
+      "Discord voice input started",
+    );
 
     const onError = (error: Error): void => {
       this.logger.debug(

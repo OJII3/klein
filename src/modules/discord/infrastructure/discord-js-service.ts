@@ -432,7 +432,10 @@ export class DiscordJsService implements DiscordService {
       return;
     }
 
+    let deferred = false;
     try {
+      await interaction.deferReply({ ephemeral: true });
+      deferred = true;
       const content =
         interaction.commandName === "join"
           ? await this.joinVoiceChannel(interaction)
@@ -440,16 +443,25 @@ export class DiscordJsService implements DiscordService {
               guildId: interaction.guildId,
               requesterId: interaction.user.id,
             });
-      await interaction.reply({ content, ephemeral: true });
+      await interaction.editReply({ content });
     } catch (error) {
       this.logger?.warn(
         { err: error, event: "discord_voice_command_failed" },
         "Failed to handle Discord voice command",
       );
-      await interaction.reply({
-        content: "音声会話を開始できませんでした。しばらくしてから再試行してください。",
-        ephemeral: true,
-      });
+      try {
+        const response = {
+          content: "音声会話を開始できませんでした。しばらくしてから再試行してください。",
+          ephemeral: true,
+        };
+        if (deferred) await interaction.editReply(response);
+        else await interaction.reply(response);
+      } catch (replyError) {
+        this.logger?.warn(
+          { err: replyError, event: "discord_voice_command_response_failed" },
+          "Failed to send Discord voice command error response",
+        );
+      }
     }
   }
 
