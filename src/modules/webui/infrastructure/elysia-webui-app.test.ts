@@ -65,6 +65,12 @@ test("serves health, logs, Pi sessions, and guild memory through Elysia", async 
           ],
         }),
       },
+      memoryEditor: {
+        deleteEntry: async (guildId, entryId) => {
+          assert.equal(guildId, "guild-a");
+          assert.equal(entryId, "mem-1");
+        },
+      },
       piSessions: new PiSessionReader(agentDirectory),
       pinoLogs: new PinoJsonlReader(logDirectory),
     });
@@ -126,8 +132,19 @@ test("serves health, logs, Pi sessions, and guild memory through Elysia", async 
     assert.equal(memory.status, 200);
     assert.equal((await memory.json()).entries[0].title, "guild-a の事実");
 
+    const deletedMemory = await app.handle(
+      new Request("http://localhost/api/memory/guild-a/mem-1", { method: "DELETE" }),
+    );
+    assert.equal(deletedMemory.status, 200);
+    assert.deepEqual(await deletedMemory.json(), { deleted: true });
+
     const invalidMemory = await app.handle(new Request("http://localhost/api/memory/guild.a"));
     assert.equal(invalidMemory.status, 422);
+
+    const invalidMemoryEntry = await app.handle(
+      new Request("http://localhost/api/memory/guild-a/mem.1", { method: "DELETE" }),
+    );
+    assert.equal(invalidMemoryEntry.status, 422);
 
     const invalid = await app.handle(new Request("http://localhost/api/logs?limit=0"));
     assert.equal(invalid.status, 422);
