@@ -6,6 +6,7 @@ import {
   EndBehaviorType,
   entersState,
   joinVoiceChannel,
+  NoSubscriberBehavior,
   StreamType,
   VoiceConnectionStatus,
   type AudioReceiveStream,
@@ -100,8 +101,22 @@ export class DiscordVoiceService implements DiscordVoiceCommandHandler {
 
       const outputStream = new PassThrough();
       output = outputStream;
-      const audioPlayer = createAudioPlayer();
+      const audioPlayer = createAudioPlayer({
+        behaviors: { noSubscriber: NoSubscriberBehavior.Play },
+      });
       player = audioPlayer;
+      audioPlayer.on("stateChange", (oldState, newState) => {
+        this.logger.info(
+          {
+            event: "discord_voice_player_state_changed",
+            guildId: request.guildId,
+            from: oldState.status,
+            to: newState.status,
+            playableConnections: audioPlayer.playable.length,
+          },
+          "Discord voice player state changed",
+        );
+      });
       audioPlayer.on("error", (error) => {
         this.logger.warn(
           { err: error, event: "discord_voice_output_failed", guildId: request.guildId },
@@ -111,20 +126,40 @@ export class DiscordVoiceService implements DiscordVoiceCommandHandler {
       const resource = createAudioResource(outputStream, { inputType: StreamType.Raw });
       let outputStarted = false;
       connection.subscribe(audioPlayer);
+      this.logger.info(
+        {
+          event: "discord_voice_output_ready",
+          guildId: request.guildId,
+          connectionState: connection.state.status,
+          playableConnections: audioPlayer.playable.length,
+        },
+        "Discord voice output is ready",
+      );
 
       const liveSession = this.liveSessionFactory.create({
         instructions: `${this.systemPrompt}\n${LIVE_VOICE_INSTRUCTIONS}`,
         onAudioOutput: (audio) => {
           if (!outputStream.destroyed && !outputStream.writableEnded) {
+            const discordPcm = toDiscordPcm(audio);
             if (!outputStarted) {
               outputStarted = true;
+              // Put the first frame in the pipeline before starting the player so
+              // the resource is readable when AudioPlayer begins buffering.
+              outputStream.write(discordPcm);
               audioPlayer.play(resource);
               this.logger.info(
-                { event: "discord_voice_output_started", guildId: request.guildId },
+                {
+                  event: "discord_voice_output_started",
+                  guildId: request.guildId,
+                  bytes: discordPcm.length,
+                  connectionState: connection.state.status,
+                  playerState: audioPlayer.state.status,
+                },
                 "Discord voice output started",
               );
+              return;
             }
-            outputStream.write(toDiscordPcm(audio));
+            outputStream.write(discordPcm);
           }
         },
         onDelegation: (delegationId, transcript) =>
