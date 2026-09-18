@@ -82,6 +82,29 @@ test("lists and reads Pi sessions without exposing image data", async () => {
     assert.equal(detail.items[2]?.summary, "Error: 403: RegionError");
     assert.equal(detail.items[2]?.errorMessage, "403: RegionError");
     assert.deepEqual(detail.items[2]?.content, []);
+    assert.equal(detail.nextCursor, null);
+
+    const firstPage = await reader.get(sessionManager.getSessionId(), { limit: 2 });
+    assert.ok(firstPage?.nextCursor);
+    assert.deepEqual(
+      firstPage?.items.map((item) => item.summary),
+      ["hello back", "Error: 403: RegionError"],
+    );
+
+    const secondPage = await reader.get(sessionManager.getSessionId(), {
+      cursor: firstPage?.nextCursor ?? "",
+      limit: 2,
+    });
+    assert.deepEqual(
+      secondPage?.items.map((item) => item.summary),
+      ["hello"],
+    );
+    assert.equal(secondPage?.nextCursor, null);
+
+    await assert.rejects(
+      () => reader.get(sessionManager.getSessionId(), { cursor: "bad" }),
+      /Invalid session cursor/,
+    );
   } finally {
     await rm(agentDirectory, { force: true, recursive: true });
   }

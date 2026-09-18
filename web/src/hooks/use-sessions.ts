@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { getSession, listSessions, type PiSessionEvent, type SessionSummary } from "../api";
 
@@ -14,9 +14,13 @@ export function useSessions({ active, onUpdated }: UseSessionsOptions) {
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [selectedSession, setSelectedSession] = useState<SessionSummary | null>(null);
   const [events, setEvents] = useState<PiSessionEvent[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [detailLoadingMore, setDetailLoadingMore] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [detailReloadKey, setDetailReloadKey] = useState(0);
+  const selectedSessionIdRef = useRef<string | null>(null);
+  selectedSessionIdRef.current = selectedSessionId;
 
   const load = useCallback(async () => {
     setSessionsLoading(true);
@@ -49,13 +53,17 @@ export function useSessions({ active, onUpdated }: UseSessionsOptions) {
 
     let current = true;
     setDetailLoading(true);
+    setDetailLoadingMore(false);
     setDetailError(null);
+    setEvents([]);
+    setNextCursor(null);
 
-    void getSession(selectedSessionId)
+    void getSession(selectedSessionId, { limit: 100 })
       .then((response) => {
         if (!current) return;
         setSelectedSession(response.session);
         setEvents(response.items);
+        setNextCursor(response.nextCursor);
       })
       .catch((requestError: unknown) => {
         if (!current) return;
@@ -76,6 +84,29 @@ export function useSessions({ active, onUpdated }: UseSessionsOptions) {
     setDetailReloadKey((key) => key + 1);
   }, []);
 
+  const loadMoreDetail = useCallback(() => {
+    if (!selectedSessionId || !nextCursor || detailLoadingMore) return;
+
+    const requestedSessionId = selectedSessionId;
+    setDetailLoadingMore(true);
+    setDetailError(null);
+    void getSession(requestedSessionId, { cursor: nextCursor, limit: 100 })
+      .then((response) => {
+        if (selectedSessionIdRef.current !== requestedSessionId) return;
+        setEvents((current) => [...response.items, ...current]);
+        setNextCursor(response.nextCursor);
+      })
+      .catch((requestError: unknown) => {
+        if (selectedSessionIdRef.current !== requestedSessionId) return;
+        setDetailError(
+          requestError instanceof Error ? requestError.message : "セッションの取得に失敗しました",
+        );
+      })
+      .finally(() => {
+        if (selectedSessionIdRef.current === requestedSessionId) setDetailLoadingMore(false);
+      });
+  }, [detailLoadingMore, nextCursor, selectedSessionId]);
+
   const selectedFromList =
     sessions.find((session) => session.id === selectedSessionId) ?? selectedSession;
 
@@ -86,10 +117,13 @@ export function useSessions({ active, onUpdated }: UseSessionsOptions) {
     selectedSessionId,
     selectedSession: selectedFromList ?? null,
     events,
+    nextCursor,
     detailLoading,
+    detailLoadingMore,
     detailError,
     selectSession: setSelectedSessionId,
     reload: load,
     retryDetail,
+    loadMoreDetail,
   };
 }

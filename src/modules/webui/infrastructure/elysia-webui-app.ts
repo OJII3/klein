@@ -5,7 +5,12 @@ import { Elysia } from "elysia";
 import type { Logger } from "pino";
 
 import type { MemoryReader } from "@modules/memory/domain/memory";
-import { LogsQuerySchema, MemoryParamsSchema, SessionParamsSchema } from "../domain/api-schema";
+import {
+  LogsQuerySchema,
+  MemoryParamsSchema,
+  SessionParamsSchema,
+  SessionQuerySchema,
+} from "../domain/api-schema";
 import type { PinoLogQuery } from "./pino-jsonl-reader";
 import { PinoJsonlReader } from "./pino-jsonl-reader";
 import { PiSessionReader } from "./pi-session-reader";
@@ -61,9 +66,9 @@ export function createWebUiApp(dependencies: WebUiDependencies) {
     })
     .get(
       "/api/sessions/:sessionId",
-      async ({ params, set }) => {
+      async ({ params, query, set }) => {
         try {
-          const detail = await dependencies.piSessions.get(params.sessionId);
+          const detail = await dependencies.piSessions.get(params.sessionId, query);
           if (!detail) {
             set.status = 404;
             return { error: "Session not found" };
@@ -73,7 +78,7 @@ export function createWebUiApp(dependencies: WebUiDependencies) {
           return handleRouteError(set, dependencies.logger, error, "Failed to read Pi session");
         }
       },
-      { params: SessionParamsSchema },
+      { params: SessionParamsSchema, query: SessionQuerySchema },
     )
     .get("/api/memory", async ({ set }) => {
       if (!dependencies.memory) return { enabled: false, items: [] };
@@ -169,7 +174,10 @@ function isClientError(error: unknown): error is Error {
     error instanceof Error &&
     (error.message.startsWith("Invalid log cursor") ||
       error.message.startsWith("Unknown log cursor") ||
-      error.message.startsWith("Log limit"))
+      error.message.startsWith("Log limit") ||
+      error.message.startsWith("Invalid session cursor") ||
+      error.message.startsWith("Unknown session cursor") ||
+      error.message.startsWith("Session event limit"))
   );
 }
 

@@ -90,7 +90,28 @@ test("serves health, logs, Pi sessions, and guild memory through Elysia", async 
       new Request(`http://localhost/api/sessions/${sessionManager.getSessionId()}`),
     );
     assert.equal(detail.status, 200);
-    assert.equal((await detail.json()).items.length, 2);
+    const detailBody = await detail.json();
+    assert.equal(detailBody.items.length, 2);
+    assert.equal(detailBody.nextCursor, null);
+
+    const firstSessionPage = await app.handle(
+      new Request(`http://localhost/api/sessions/${sessionManager.getSessionId()}?limit=1`),
+    );
+    assert.equal(firstSessionPage.status, 200);
+    const firstSessionPageBody = (await firstSessionPage.json()) as {
+      items: { summary: string }[];
+      nextCursor: string | null;
+    };
+    assert.equal(firstSessionPageBody.items[0]?.summary, "hello back");
+    assert.ok(firstSessionPageBody.nextCursor);
+
+    const secondSessionPage = await app.handle(
+      new Request(
+        `http://localhost/api/sessions/${sessionManager.getSessionId()}?limit=1&cursor=${encodeURIComponent(firstSessionPageBody.nextCursor ?? "")}`,
+      ),
+    );
+    assert.equal(secondSessionPage.status, 200);
+    assert.equal((await secondSessionPage.json()).items[0].summary, "hello");
 
     const memoryGuilds = await app.handle(new Request("http://localhost/api/memory"));
     assert.equal(memoryGuilds.status, 200);
@@ -108,6 +129,11 @@ test("serves health, logs, Pi sessions, and guild memory through Elysia", async 
 
     const invalid = await app.handle(new Request("http://localhost/api/logs?limit=0"));
     assert.equal(invalid.status, 422);
+
+    const invalidSession = await app.handle(
+      new Request(`http://localhost/api/sessions/${sessionManager.getSessionId()}?limit=0`),
+    );
+    assert.equal(invalidSession.status, 422);
   } finally {
     await rm(rootDirectory, { force: true, recursive: true });
   }
