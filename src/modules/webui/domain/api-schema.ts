@@ -25,3 +25,16 @@ export const MemoryParamsSchema = t.Object({
     pattern: "^[A-Za-z0-9_-]+$",
   }),
 });
+
+export const MemoryEntryParamsSchema = t.Object({
+  entryId: t.String({
+    minLength: 1,
+    maxLength: 100,
+    pattern: "^[A-Za-z0-9_-]+$",
+  }),
+  guildId: t.String({
+    minLength: 1,
+    maxLength: 100,
+    pattern: "^[A-Za-z0-9_-]+$",
+  }),
+});

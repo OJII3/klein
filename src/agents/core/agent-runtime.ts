@@ -10,6 +10,7 @@ export interface AgentPrompt {
 
 export interface AgentRuntime {
   prompt(prompt: AgentPrompt): Promise<void>;
+  promptForText?(prompt: AgentPrompt): Promise<string>;
   analyzeImage?(prompt: AgentPrompt): Promise<string>;
   dispose(): void;
 }

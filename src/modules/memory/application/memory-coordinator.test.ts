@@ -7,7 +7,13 @@ import pino from "pino";
 
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import { TaskCoordinator } from "@app/task-coordinator";
-import type { MemoryMessage, MemoryOperation, MemoryProcessor } from "../domain/memory";
+import {
+  MemoryEntryNotFoundError,
+  type MemoryMessage,
+  type MemoryOperation,
+  type MemoryProcessor,
+} from "../domain/memory";
+import { MarkdownMemoryStore } from "../infrastructure/markdown-memory-store";
 import { MemoryCoordinator } from "./memory-coordinator";
 
 test("batches recent guild messages and keeps guild memory files separate", async () => {
@@ -58,6 +64,48 @@ test("batches recent guild messages and keeps guild memory files separate", asyn
         { entryCount: 1, guildId: "guild-b" },
       ],
     );
+  } finally {
+    coordinator.dispose();
+    await rm(directory, { force: true, recursive: true });
+  }
+});
+
+test("deletes a persisted memory entry for a guild", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "klein-memory-"));
+  const taskCoordinator = new TaskCoordinator();
+  const coordinator = new MemoryCoordinator({
+    filePath: join(directory, "{guildId}", "MEMORY.md"),
+    idleSeconds: 1,
+    logger: pino({ level: "silent" }),
+    maxBatchAgeSeconds: 1,
+    maxBatchMessages: 10,
+    processor: {
+      async process(): Promise<readonly MemoryOperation[]> {
+        return [];
+      },
+    },
+    taskCoordinator,
+  });
+
+  try {
+    const store = new MarkdownMemoryStore(join(directory, "guild-a", "MEMORY.md"));
+    await store.apply(
+      [
+        {
+          content: "削除対象の本文",
+          kind: "fact",
+          title: "削除対象",
+          type: "add",
+        },
+      ],
+      [],
+    );
+    const entry = (await store.read()).entries[0];
+    assert.ok(entry);
+
+    await coordinator.deleteEntry("guild-a", entry.id);
+    assert.deepEqual((await store.read()).entries, []);
+    await assert.rejects(coordinator.deleteEntry("guild-a", entry.id), MemoryEntryNotFoundError);
   } finally {
     coordinator.dispose();
     await rm(directory, { force: true, recursive: true });

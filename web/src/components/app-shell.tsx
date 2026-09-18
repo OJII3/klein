@@ -62,7 +62,7 @@ export function AppShell({ view, lastUpdated, onViewChange, onRefresh, children 
 
       <main>{children}</main>
 
-      <footer className="app-footer">Klein / read-only viewer</footer>
+      <footer className="app-footer">Klein / local viewer</footer>
     </div>
   );
 }

@@ -152,3 +152,7 @@ export function listMemoryGuilds(): Promise<MemoryGuildsResponse> {
 export function getMemory(guildId: string): Promise<MemoryDetailResponse> {
   return unwrap<MemoryDetailResponse>(client.api.memory({ guildId }).get());
 }
+
+export function deleteMemory(guildId: string, entryId: string): Promise<{ deleted: boolean }> {
+  return unwrap<{ deleted: boolean }>(client.api.memory({ guildId })({ entryId }).delete());
+}

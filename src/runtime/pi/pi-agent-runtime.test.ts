@@ -131,6 +131,19 @@ test("exposes the configured image analyzer to tools", async () => {
   runtime.dispose();
 });
 
+test("returns the latest Pi assistant text for delegated voice work", async () => {
+  const runtime = new PiAgentRuntime({
+    async prompt() {},
+    getLastAssistantText() {
+      return "Piからの返答";
+    },
+    dispose() {},
+  } as never);
+
+  assert.equal(await runtime.promptForText({ text: "重い処理をして", images: [] }), "Piからの返答");
+  runtime.dispose();
+});
+
 test("resolves a configured built-in model", () => {
   const model = resolveConfiguredModel("opencode-go", "kimi-k3");
 

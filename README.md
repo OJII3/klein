@@ -51,6 +51,19 @@ support image input.
 
 To use an Exa API key with `pi-web-access`, optionally set `EXA_API_KEY` in `.env`.
 
+## Discord voice conversations
+
+Set `OPENAI_API_KEY` in `.env`, join a Discord voice channel, and run `/join`.
+Klein uses GPT-Live-1 for the real-time voice conversation. Requests that need
+substantial reasoning or backend work are delegated to the existing Pi runtime;
+the result is returned to the voice conversation. Run `/leave` to disconnect.
+
+The existing `discord.access` rules are reused for voice channels: the voice
+channel ID is evaluated as the guild `channelId`, so no separate permission
+configuration is needed. The bot needs the Discord `Connect`, `Speak`, and
+`Use Voice Activity` permissions in the voice channel. OpenAI Live voice also
+requires the bot to have access to the network.
+
 ## Delegate workspace changes to Codex app server
 
 Klein can expose a `codex_delegate` tool to the Discord agent. The tool connects
@@ -120,7 +133,7 @@ credentials.
 
 ## Run the Web UI viewer
 
-The optional read-only Web UI shows persisted Pino logs, Pi session history, and
+The optional Web UI shows persisted Pino logs, Pi session history, and
 guild memory contents. The memory tab lists guilds with persisted memory and
 shows each entry's kind, title, body, timestamps, and source message count.
 Update the `runtime` and `features` sections in `config/klein.json` (other
@@ -159,7 +172,7 @@ required sections are omitted here):
 
 Start Klein, then open `http://127.0.0.1:4310`. Keep the host bound
 to loopback when exposing the viewer through a ZeroTrust tunnel. The UI is
-disabled by default and does not provide write operations.
+disabled by default and allows deleting individual persisted memories.
 
 For an ahead-of-time production bundle, run `bun run build` and execute it with
 `bun dist/klein`, keeping the generated `dist/web/` directory available from
