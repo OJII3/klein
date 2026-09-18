@@ -10,6 +10,7 @@ import {
   type ApplicationCommandDataResolvable,
   type ChatInputCommandInteraction,
   type Interaction,
+  type VoiceState,
 } from "discord.js";
 import type { DiscordGatewayAdapterCreator } from "@discordjs/voice";
 import type { Logger } from "pino";
@@ -153,6 +154,7 @@ export class DiscordJsService implements DiscordService {
   private onMessage?: DiscordMessageHandler;
   private messageListener?: (message: Message) => void;
   private interactionListener?: (interaction: Interaction) => void;
+  private voiceStateListener?: (oldState: VoiceState, newState: VoiceState) => void;
   private voiceCommandHandler?: DiscordVoiceCommandHandler;
   private acceptingMessages = false;
   private readonly logger?: Logger;
@@ -220,6 +222,17 @@ export class DiscordJsService implements DiscordService {
       });
     };
     this.client.on(Events.InteractionCreate, this.interactionListener);
+    this.voiceStateListener = (oldState, newState) => {
+      const channelIds = new Set(
+        [oldState.channelId, newState.channelId].filter(
+          (channelId): channelId is string => channelId !== null,
+        ),
+      );
+      for (const channelId of channelIds) {
+        this.voiceCommandHandler?.onVoiceStateUpdate?.(oldState.guild.id, channelId);
+      }
+    };
+    this.client.on(Events.VoiceStateUpdate, this.voiceStateListener);
 
     await this.client.login(this.token);
   }
@@ -247,6 +260,15 @@ export class DiscordJsService implements DiscordService {
 
   getCurrentUserId(): string | undefined {
     return this.client.user?.id;
+  }
+
+  getVoiceChannelMemberCount(guildId: string, voiceChannelId: string): number | undefined {
+    const guild = this.client.guilds.cache.get(guildId);
+    if (!guild) return undefined;
+
+    return [...guild.voiceStates.cache.values()].filter(
+      (voiceState) => voiceState.channelId === voiceChannelId,
+    ).length;
   }
 
   setOperatingMode(mode: DiscordOperatingMode): void {
@@ -297,6 +319,11 @@ export class DiscordJsService implements DiscordService {
     if (this.interactionListener) {
       this.client.off(Events.InteractionCreate, this.interactionListener);
       this.interactionListener = undefined;
+    }
+
+    if (this.voiceStateListener) {
+      this.client.off(Events.VoiceStateUpdate, this.voiceStateListener);
+      this.voiceStateListener = undefined;
     }
   }
 

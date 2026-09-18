@@ -20,11 +20,13 @@ export interface DiscordVoiceDelegationRequest {
 export interface DiscordVoiceCommandHandler {
   join(request: DiscordVoiceJoinRequest): Promise<string>;
   leave(request: DiscordVoiceLeaveRequest): Promise<string>;
+  onVoiceStateUpdate?(guildId: string, voiceChannelId: string): void;
 }
 
 export interface DiscordVoiceAdapterProvider {
   getVoiceAdapter(guildId: string): DiscordGatewayAdapterCreator;
   getCurrentUserId(): string | undefined;
+  getVoiceChannelMemberCount(guildId: string, voiceChannelId: string): number | undefined;
 }
 
 export interface DiscordVoiceService extends DiscordVoiceCommandHandler {
