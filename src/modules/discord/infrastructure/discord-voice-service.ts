@@ -48,7 +48,7 @@ interface InputSubscription {
 interface ActiveVoiceSession {
   readonly connection: VoiceConnection;
   readonly live: LiveVoiceSession;
-  readonly output: PassThrough;
+  readonly outputs: Set<PassThrough>;
   readonly player: AudioPlayer;
   readonly inputSubscriptions: Map<string, InputSubscription>;
   readonly speakingListener: (userId: string) => void;
@@ -93,6 +93,7 @@ export class DiscordVoiceService implements DiscordVoiceCommandHandler {
       selfMute: false,
     });
     let output: PassThrough | undefined;
+    let outputs: Set<PassThrough> | undefined;
     let player: AudioPlayer | undefined;
     let live: LiveVoiceSession | undefined;
     let speakingListener: ((userId: string) => void) | undefined;
@@ -101,8 +102,13 @@ export class DiscordVoiceService implements DiscordVoiceCommandHandler {
 
       const outputStream = new PassThrough();
       output = outputStream;
+      const outputStreams = new Set([outputStream]);
+      outputs = outputStreams;
       const audioPlayer = createAudioPlayer({
-        behaviors: { noSubscriber: NoSubscriberBehavior.Play },
+        behaviors: {
+          maxMissedFrames: 5,
+          noSubscriber: NoSubscriberBehavior.Play,
+        },
       });
       player = audioPlayer;
       audioPlayer.on("stateChange", (oldState, newState) => {
@@ -123,7 +129,10 @@ export class DiscordVoiceService implements DiscordVoiceCommandHandler {
           "Failed to play Discord voice output",
         );
       });
-      const resource = createAudioResource(outputStream, { inputType: StreamType.Raw });
+      let currentOutputStream = outputStream;
+      let currentResource = createAudioResource(currentOutputStream, {
+        inputType: StreamType.Raw,
+      });
       let outputStarted = false;
       connection.subscribe(audioPlayer);
       this.logger.info(
@@ -139,14 +148,28 @@ export class DiscordVoiceService implements DiscordVoiceCommandHandler {
       const liveSession = this.liveSessionFactory.create({
         instructions: `${this.systemPrompt}\n${LIVE_VOICE_INSTRUCTIONS}`,
         onAudioOutput: (audio) => {
-          if (!outputStream.destroyed && !outputStream.writableEnded) {
-            const discordPcm = toDiscordPcm(audio);
+          const discordPcm = toDiscordPcm(audio);
+          if (
+            audioPlayer.state.status === "idle" ||
+            currentResource.ended ||
+            currentOutputStream.destroyed ||
+            currentOutputStream.writableEnded
+          ) {
+            currentOutputStream = new PassThrough();
+            outputStreams.add(currentOutputStream);
+            currentResource = createAudioResource(currentOutputStream, {
+              inputType: StreamType.Raw,
+            });
+            outputStarted = false;
+          }
+
+          if (!currentOutputStream.destroyed && !currentOutputStream.writableEnded) {
+            // Put the first frame in the pipeline before starting the player so
+            // the resource is readable when AudioPlayer begins buffering.
+            currentOutputStream.write(discordPcm);
             if (!outputStarted) {
               outputStarted = true;
-              // Put the first frame in the pipeline before starting the player so
-              // the resource is readable when AudioPlayer begins buffering.
-              outputStream.write(discordPcm);
-              audioPlayer.play(resource);
+              audioPlayer.play(currentResource);
               this.logger.info(
                 {
                   event: "discord_voice_output_started",
@@ -157,9 +180,7 @@ export class DiscordVoiceService implements DiscordVoiceCommandHandler {
                 },
                 "Discord voice output started",
               );
-              return;
             }
-            outputStream.write(discordPcm);
           }
         },
         onDelegation: (delegationId, transcript) =>
@@ -188,7 +209,7 @@ export class DiscordVoiceService implements DiscordVoiceCommandHandler {
         connection,
         inputSubscriptions,
         live: liveSession,
-        output: outputStream,
+        outputs: outputStreams,
         player: audioPlayer,
         speakingListener,
         voiceChannelId: request.voiceChannelId,
@@ -206,7 +227,7 @@ export class DiscordVoiceService implements DiscordVoiceCommandHandler {
     } catch (error) {
       if (speakingListener) connection.receiver.speaking.off("start", speakingListener);
       live?.stop();
-      output?.end();
+      for (const stream of outputs ?? (output ? new Set([output]) : [])) stream.end();
       player?.stop(true);
       connection.destroy();
       throw error;
@@ -288,7 +309,8 @@ export class DiscordVoiceService implements DiscordVoiceCommandHandler {
     }
     session.inputSubscriptions.clear();
     session.live.stop();
-    session.output.end();
+    for (const output of session.outputs) output.end();
+    session.outputs.clear();
     session.player.stop(true);
     session.connection.destroy();
   }
