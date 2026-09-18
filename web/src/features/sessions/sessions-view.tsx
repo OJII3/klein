@@ -5,32 +5,38 @@ import { SessionTimeline } from "./session-timeline";
 
 interface SessionsViewProps {
   sessions: SessionSummary[];
+  sessionsNextCursor: string | null;
   selectedSession: SessionSummary | null;
   events: PiSessionEvent[];
   nextCursor: string | null;
   loading: boolean;
+  loadingMoreSessions: boolean;
   loadingDetail: boolean;
   loadingMoreDetail: boolean;
   error: string | null;
   detailError: string | null;
   onSelect: (id: string) => void;
   onRetry: () => void;
+  onLoadMoreSessions: () => void;
   onRetryDetail: () => void;
   onLoadMoreDetail: () => void;
 }
 
 export function SessionsView({
   sessions,
+  sessionsNextCursor,
   selectedSession,
   events,
   nextCursor,
   loading,
+  loadingMoreSessions,
   loadingDetail,
   loadingMoreDetail,
   error,
   detailError,
   onSelect,
   onRetry,
+  onLoadMoreSessions,
   onRetryDetail,
   onLoadMoreDetail,
 }: SessionsViewProps) {
@@ -67,6 +73,20 @@ export function SessionsView({
                 <time dateTime={session.modified}>更新 {formatTimestamp(session.modified)}</time>
               </button>
             ))}
+            <div className="pagination-row">
+              {sessionsNextCursor ? (
+                <button
+                  className="button"
+                  disabled={loadingMoreSessions}
+                  onClick={onLoadMoreSessions}
+                  type="button"
+                >
+                  {loadingMoreSessions ? "読み込み中…" : "古いセッションを読み込む"}
+                </button>
+              ) : (
+                <span className="muted">これより古いセッションはありません</span>
+              )}
+            </div>
           </div>
 
           <div className="session-detail">

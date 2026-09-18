@@ -81,10 +81,12 @@ test("serves health, logs, Pi sessions, and guild memory through Elysia", async 
     assert.equal(sessions.status, 200);
     const sessionList = (await sessions.json()) as {
       items: { id: string; firstMessage: string }[];
+      nextCursor: string | null;
     };
     assert.equal(sessionList.items.length, 1);
     assert.equal(sessionList.items[0]?.id, sessionManager.getSessionId());
     assert.equal(sessionList.items[0]?.firstMessage, "hello");
+    assert.equal(sessionList.nextCursor, null);
 
     const detail = await app.handle(
       new Request(`http://localhost/api/sessions/${sessionManager.getSessionId()}`),
@@ -134,6 +136,11 @@ test("serves health, logs, Pi sessions, and guild memory through Elysia", async 
       new Request(`http://localhost/api/sessions/${sessionManager.getSessionId()}?limit=0`),
     );
     assert.equal(invalidSession.status, 422);
+
+    const invalidSessionListCursor = await app.handle(
+      new Request("http://localhost/api/sessions?cursor=bad"),
+    );
+    assert.equal(invalidSessionListCursor.status, 400);
   } finally {
     await rm(rootDirectory, { force: true, recursive: true });
   }

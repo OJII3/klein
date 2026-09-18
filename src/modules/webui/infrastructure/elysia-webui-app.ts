@@ -57,13 +57,17 @@ export function createWebUiApp(dependencies: WebUiDependencies) {
       },
       { query: LogsQuerySchema },
     )
-    .get("/api/sessions", async ({ set }) => {
-      try {
-        return { items: await dependencies.piSessions.list() };
-      } catch (error) {
-        return handleRouteError(set, dependencies.logger, error, "Failed to list Pi sessions");
-      }
-    })
+    .get(
+      "/api/sessions",
+      async ({ query, set }) => {
+        try {
+          return await dependencies.piSessions.list(query);
+        } catch (error) {
+          return handleRouteError(set, dependencies.logger, error, "Failed to list Pi sessions");
+        }
+      },
+      { query: SessionQuerySchema },
+    )
     .get(
       "/api/sessions/:sessionId",
       async ({ params, query, set }) => {
@@ -177,7 +181,9 @@ function isClientError(error: unknown): error is Error {
       error.message.startsWith("Log limit") ||
       error.message.startsWith("Invalid session cursor") ||
       error.message.startsWith("Unknown session cursor") ||
-      error.message.startsWith("Session event limit"))
+      error.message.startsWith("Session event limit") ||
+      error.message.startsWith("Invalid session list cursor") ||
+      error.message.startsWith("Unknown session list cursor"))
   );
 }
 

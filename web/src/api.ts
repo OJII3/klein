@@ -37,6 +37,7 @@ export interface SessionSummary {
 
 export interface SessionsResponse {
   items: SessionSummary[];
+  nextCursor: string | null;
 }
 
 export interface PiSessionEvent {
@@ -117,10 +118,10 @@ async function unwrap<T>(request: Promise<unknown>): Promise<T> {
   return response.data as T;
 }
 
-function withoutEmptyValues(query: LogsQuery): Partial<LogsQuery> {
+function withoutEmptyValues<T extends object>(query: T): Partial<T> {
   return Object.fromEntries(
     Object.entries(query).filter(([, value]) => value !== undefined && value !== ""),
-  ) as Partial<LogsQuery>;
+  ) as Partial<T>;
 }
 
 export function listLogs(query: LogsQuery = {}): Promise<LogsResponse> {
@@ -129,8 +130,10 @@ export function listLogs(query: LogsQuery = {}): Promise<LogsResponse> {
   );
 }
 
-export function listSessions(): Promise<SessionsResponse> {
-  return unwrap<SessionsResponse>(client.api.sessions.get());
+export function listSessions(query: SessionQuery = {}): Promise<SessionsResponse> {
+  return unwrap<SessionsResponse>(
+    client.api.sessions.get({ query: withoutEmptyValues({ limit: 100, ...query }) }),
+  );
 }
 
 export function getSession(
