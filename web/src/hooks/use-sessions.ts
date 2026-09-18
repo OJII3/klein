@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { getSession, listSessions, type PiSessionEvent, type SessionSummary } from "../api";
+import {
+  getSession,
+  listSessions,
+  type PiSessionEvent,
+  type SessionQuery,
+  type SessionSummary,
+} from "../api";
 
 interface UseSessionsOptions {
   active: boolean;
@@ -10,7 +16,9 @@ interface UseSessionsOptions {
 export function useSessions({ active, onUpdated }: UseSessionsOptions) {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [sessionsLoadingMore, setSessionsLoadingMore] = useState(false);
   const [sessionsError, setSessionsError] = useState<string | null>(null);
+  const [sessionsNextCursor, setSessionsNextCursor] = useState<string | null>(null);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [selectedSession, setSelectedSession] = useState<SessionSummary | null>(null);
   const [events, setEvents] = useState<PiSessionEvent[]>([]);
@@ -22,23 +30,29 @@ export function useSessions({ active, onUpdated }: UseSessionsOptions) {
   const selectedSessionIdRef = useRef<string | null>(null);
   selectedSessionIdRef.current = selectedSessionId;
 
-  const load = useCallback(async () => {
-    setSessionsLoading(true);
-    setSessionsError(null);
+  const load = useCallback(
+    async (query: SessionQuery = {}, append = false) => {
+      if (append) setSessionsLoadingMore(true);
+      else setSessionsLoading(true);
+      setSessionsError(null);
 
-    try {
-      const response = await listSessions();
-      setSessions(response.items);
-      setSelectedSessionId((current) => current ?? response.items[0]?.id ?? null);
-      onUpdated();
-    } catch (requestError) {
-      setSessionsError(
-        requestError instanceof Error ? requestError.message : "セッションの取得に失敗しました",
-      );
-    } finally {
-      setSessionsLoading(false);
-    }
-  }, [onUpdated]);
+      try {
+        const response = await listSessions(query);
+        setSessions((current) => (append ? [...current, ...response.items] : response.items));
+        setSessionsNextCursor(response.nextCursor);
+        if (!append) setSelectedSessionId((current) => current ?? response.items[0]?.id ?? null);
+        onUpdated();
+      } catch (requestError) {
+        setSessionsError(
+          requestError instanceof Error ? requestError.message : "セッションの取得に失敗しました",
+        );
+      } finally {
+        if (append) setSessionsLoadingMore(false);
+        else setSessionsLoading(false);
+      }
+    },
+    [onUpdated],
+  );
 
   useEffect(() => {
     if (!active) return;
@@ -84,6 +98,11 @@ export function useSessions({ active, onUpdated }: UseSessionsOptions) {
     setDetailReloadKey((key) => key + 1);
   }, []);
 
+  const loadMoreSessions = useCallback(() => {
+    if (!sessionsNextCursor || sessionsLoadingMore) return;
+    void load({ cursor: sessionsNextCursor, limit: 100 }, true);
+  }, [load, sessionsLoadingMore, sessionsNextCursor]);
+
   const loadMoreDetail = useCallback(() => {
     if (!selectedSessionId || !nextCursor || detailLoadingMore) return;
 
@@ -113,7 +132,9 @@ export function useSessions({ active, onUpdated }: UseSessionsOptions) {
   return {
     sessions,
     sessionsLoading,
+    sessionsLoadingMore,
     sessionsError,
+    sessionsNextCursor,
     selectedSessionId,
     selectedSession: selectedFromList ?? null,
     events,
@@ -124,6 +145,7 @@ export function useSessions({ active, onUpdated }: UseSessionsOptions) {
     selectSession: setSelectedSessionId,
     reload: load,
     retryDetail,
+    loadMoreSessions,
     loadMoreDetail,
   };
 }

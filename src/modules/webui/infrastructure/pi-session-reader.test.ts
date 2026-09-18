@@ -61,13 +61,37 @@ test("lists and reads Pi sessions without exposing image data", async () => {
       timestamp: Date.now(),
     } as never);
 
+    const secondSessionManager = createPiSessionManager(
+      agentDirectory,
+      "discord-channel:456",
+      "new",
+      process.cwd(),
+    );
+    secondSessionManager.appendMessage({ role: "user", content: "second", timestamp: Date.now() });
+    secondSessionManager.appendMessage({
+      role: "assistant",
+      content: "second response",
+      timestamp: Date.now(),
+    } as never);
+
     const reader = new PiSessionReader(agentDirectory);
     const sessions = await reader.list();
-    assert.equal(sessions.length, 1);
-    assert.equal(sessions[0]?.id, sessionManager.getSessionId());
-    assert.equal(sessions[0]?.channelKey, "discord-channel:123");
-    assert.equal(sessions[0]?.messageCount, 3);
-    assert.equal(sessions[0]?.firstMessage, "hello");
+    assert.equal(sessions.items.length, 2);
+    const sessionSummary = sessions.items.find((item) => item.id === sessionManager.getSessionId());
+    assert.equal(sessionSummary?.channelKey, "discord-channel:123");
+    assert.equal(sessionSummary?.messageCount, 3);
+    assert.equal(sessionSummary?.firstMessage, "hello");
+
+    const firstSessionPage = await reader.list({ limit: 1 });
+    assert.equal(firstSessionPage.items.length, 1);
+    assert.ok(firstSessionPage.nextCursor);
+    const secondSessionPage = await reader.list({
+      cursor: firstSessionPage.nextCursor ?? "",
+      limit: 1,
+    });
+    assert.equal(secondSessionPage.items.length, 1);
+    assert.notEqual(secondSessionPage.items[0]?.id, firstSessionPage.items[0]?.id);
+    assert.equal(secondSessionPage.nextCursor, null);
 
     const detail = await reader.get(sessionManager.getSessionId());
     assert.ok(detail);
@@ -105,6 +129,7 @@ test("lists and reads Pi sessions without exposing image data", async () => {
       () => reader.get(sessionManager.getSessionId(), { cursor: "bad" }),
       /Invalid session cursor/,
     );
+    await assert.rejects(() => reader.list({ cursor: "bad" }), /Invalid session list cursor/);
   } finally {
     await rm(agentDirectory, { force: true, recursive: true });
   }
@@ -115,7 +140,7 @@ test("returns no Pi sessions when the session directory is absent", async () => 
 
   try {
     const reader = new PiSessionReader(agentDirectory);
-    assert.deepEqual(await reader.list(), []);
+    assert.deepEqual(await reader.list(), { items: [], nextCursor: null });
     assert.equal(await reader.get("missing"), undefined);
   } finally {
     await rm(agentDirectory, { force: true, recursive: true });

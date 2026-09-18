@@ -12,6 +12,7 @@ import {
 import type {
   PiViewerEvent,
   PiViewerEventKind,
+  ViewerPage,
   ViewerSessionDetail,
   ViewerSessionSummary,
 } from "../domain/viewer-event";
@@ -30,10 +31,14 @@ interface PiSessionCursor {
   readonly beforeEntryId: string;
 }
 
+interface PiSessionListCursor {
+  readonly beforeSessionId: string;
+}
+
 export class PiSessionReader {
   constructor(private readonly agentDirectory: string) {}
 
-  async list(): Promise<ViewerSessionSummary[]> {
+  async list(query: PiSessionQuery = {}): Promise<ViewerPage<ViewerSessionSummary>> {
     const sessionDirectories = await this.listSessionDirectories();
     const sessions: ViewerSessionSummary[] = [];
 
@@ -42,7 +47,25 @@ export class PiSessionReader {
       sessions.push(...infos.map((info) => toSessionSummary(info, channelKey)));
     }
 
-    return sessions.sort((left, right) => right.modified.localeCompare(left.modified));
+    sessions.sort((left, right) => right.modified.localeCompare(left.modified));
+
+    const limit = normalizeLimit(query.limit);
+    const cursor = query.cursor ? decodeListCursor(query.cursor) : undefined;
+    const endIndex = cursor
+      ? sessions.findIndex((session) => session.id === cursor.beforeSessionId)
+      : sessions.length;
+    if (cursor && endIndex < 0) throw new Error("Unknown session list cursor session");
+
+    const pageEnd = cursor ? endIndex + 1 : sessions.length;
+    const pageStart = Math.max(0, pageEnd - limit);
+
+    return {
+      items: sessions.slice(pageStart, pageEnd),
+      nextCursor:
+        pageStart > 0
+          ? encodeListCursor({ beforeSessionId: sessions[pageStart - 1]?.id ?? "" })
+          : null,
+    };
   }
 
   async get(
@@ -244,6 +267,10 @@ function encodeCursor(cursor: PiSessionCursor): string {
   return Buffer.from(JSON.stringify(cursor), "utf8").toString("base64url");
 }
 
+function encodeListCursor(cursor: PiSessionListCursor): string {
+  return Buffer.from(JSON.stringify(cursor), "utf8").toString("base64url");
+}
+
 function decodeCursor(value: string, sessionId: string): PiSessionCursor {
   let decoded: unknown;
   try {
@@ -262,6 +289,25 @@ function decodeCursor(value: string, sessionId: string): PiSessionCursor {
   }
 
   return { beforeEntryId: decoded.beforeEntryId, sessionId: decoded.sessionId };
+}
+
+function decodeListCursor(value: string): PiSessionListCursor {
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(Buffer.from(value, "base64url").toString("utf8"));
+  } catch {
+    throw new Error("Invalid session list cursor");
+  }
+
+  if (
+    !isRecord(decoded) ||
+    typeof decoded.beforeSessionId !== "string" ||
+    decoded.beforeSessionId.length === 0
+  ) {
+    throw new Error("Invalid session list cursor");
+  }
+
+  return { beforeSessionId: decoded.beforeSessionId };
 }
 
 function normalizeLimit(value: number | undefined): number {
