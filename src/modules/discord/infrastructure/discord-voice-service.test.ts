@@ -23,13 +23,18 @@ test("upsamples mono Live PCM to stereo Discord PCM", () => {
 
   const discordPcm = toDiscordPcm(livePcm);
 
+  assert.equal(discordPcm.length, 16);
   assert.deepEqual(
     [
       discordPcm.readInt16LE(0),
       discordPcm.readInt16LE(2),
       discordPcm.readInt16LE(4),
       discordPcm.readInt16LE(6),
+      discordPcm.readInt16LE(8),
+      discordPcm.readInt16LE(10),
+      discordPcm.readInt16LE(12),
+      discordPcm.readInt16LE(14),
     ],
-    [-500, -500, 1_500, 1_500],
+    [-500, -500, -500, -500, 1_500, 1_500, 1_500, 1_500],
   );
 });

@@ -337,13 +337,16 @@ export function toLivePcm(discordPcm: Buffer): Buffer {
 
 export function toDiscordPcm(livePcm: Buffer): Buffer {
   const sampleCount = Math.floor(livePcm.length / 2);
-  const discordPcm = Buffer.alloc(sampleCount * 4);
+  const discordPcm = Buffer.alloc(sampleCount * 8);
 
   for (let sample = 0; sample < sampleCount; sample += 1) {
     const value = livePcm.readInt16LE(sample * 2);
-    const outputOffset = sample * 4;
-    discordPcm.writeInt16LE(value, outputOffset);
-    discordPcm.writeInt16LE(value, outputOffset + 2);
+    const firstFrameOffset = sample * 8;
+    const secondFrameOffset = firstFrameOffset + 4;
+    for (const outputOffset of [firstFrameOffset, secondFrameOffset]) {
+      discordPcm.writeInt16LE(value, outputOffset);
+      discordPcm.writeInt16LE(value, outputOffset + 2);
+    }
   }
 
   return discordPcm;
