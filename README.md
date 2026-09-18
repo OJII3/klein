@@ -51,6 +51,19 @@ support image input.
 
 To use an Exa API key with `pi-web-access`, optionally set `EXA_API_KEY` in `.env`.
 
+## Discord voice conversations
+
+Set `OPENAI_API_KEY` in `.env`, join a Discord voice channel, and run `/join`.
+Klein uses GPT-Live-1 for the real-time voice conversation. Requests that need
+substantial reasoning or backend work are delegated to the existing Pi runtime;
+the result is returned to the voice conversation. Run `/leave` to disconnect.
+
+The existing `discord.access` rules are reused for voice channels: the voice
+channel ID is evaluated as the guild `channelId`, so no separate permission
+configuration is needed. The bot needs the Discord `Connect`, `Speak`, and
+`Use Voice Activity` permissions in the voice channel. OpenAI Live voice also
+requires the bot to have access to the network.
+
 ## Delegate workspace changes to Codex app server
 
 Klein can expose a `codex_delegate` tool to the Discord agent. The tool connects

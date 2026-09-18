@@ -270,3 +270,47 @@ test("handles idle and online slash commands for members with Manage Server", as
     await service.stop();
   }
 });
+
+test("joins the member's current voice channel through the voice command handler", async () => {
+  const service = new DiscordJsService(
+    "token",
+    createDiscordAccessPolicy({ default: "allow", directMessages: "allow" }),
+  );
+  const testableService = service as unknown as TestableDiscordJsService;
+  testableService.client.user = { id: "bot-123" };
+  const requests: Array<{ guildId: string; voiceChannelId: string; requesterId: string }> = [];
+  service.setVoiceCommandHandler({
+    join: async (request) => {
+      requests.push(request);
+      return "参加しました。";
+    },
+    leave: async () => "退出しました。",
+  });
+  const replies: Array<{ content: string; ephemeral: boolean }> = [];
+  const interaction = {
+    commandName: "join",
+    guild: {
+      voiceStates: {
+        cache: new Map([["user-123", { channelId: "voice-123" }]]),
+      },
+    },
+    guildId: "guild-123",
+    inGuild: () => true,
+    isChatInputCommand: () => true,
+    user: { id: "user-123" },
+    reply: async (response: { content: string; ephemeral: boolean }) => {
+      replies.push(response);
+    },
+  } as unknown as Interaction;
+
+  try {
+    await testableService.handleInteraction(interaction);
+
+    assert.deepEqual(requests, [
+      { guildId: "guild-123", requesterId: "user-123", voiceChannelId: "voice-123" },
+    ]);
+    assert.deepEqual(replies, [{ content: "参加しました。", ephemeral: true }]);
+  } finally {
+    await service.stop();
+  }
+});

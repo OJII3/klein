@@ -8,8 +8,10 @@ import {
   type Attachment,
   type Message,
   type ApplicationCommandDataResolvable,
+  type ChatInputCommandInteraction,
   type Interaction,
 } from "discord.js";
+import type { DiscordGatewayAdapterCreator } from "@discordjs/voice";
 import type { Logger } from "pino";
 
 import type { DiscordAccessPolicy } from "../domain/discord-access-policy";
@@ -26,6 +28,7 @@ import {
   type DiscordUser,
 } from "../domain/discord-message";
 import type { DiscordMessageHandler, DiscordService } from "../ports/discord-service";
+import type { DiscordVoiceCommandHandler } from "../ports/discord-voice-service";
 
 const DISCORD_MESSAGE_LIMIT = 2_000;
 const DISCORD_IMAGE_MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024;
@@ -42,6 +45,16 @@ const OPERATING_MODE_COMMANDS: readonly ApplicationCommandDataResolvable[] = [
     name: "online",
     description: "Botを再開します",
     defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
+    dmPermission: false,
+  },
+  {
+    name: "join",
+    description: "参加中のボイスチャンネルで音声会話を開始します",
+    dmPermission: false,
+  },
+  {
+    name: "leave",
+    description: "ボイスチャンネルから退出します",
     dmPermission: false,
   },
 ];
@@ -140,6 +153,7 @@ export class DiscordJsService implements DiscordService {
   private onMessage?: DiscordMessageHandler;
   private messageListener?: (message: Message) => void;
   private interactionListener?: (interaction: Interaction) => void;
+  private voiceCommandHandler?: DiscordVoiceCommandHandler;
   private acceptingMessages = false;
   private readonly logger?: Logger;
 
@@ -156,6 +170,7 @@ export class DiscordJsService implements DiscordService {
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
+        GatewayIntentBits.GuildVoiceStates,
       ],
       partials: [Partials.Channel],
     });
@@ -217,6 +232,23 @@ export class DiscordJsService implements DiscordService {
     this.client.user.setActivity(name);
   }
 
+  setVoiceCommandHandler(handler: DiscordVoiceCommandHandler): void {
+    this.voiceCommandHandler = handler;
+  }
+
+  getVoiceAdapter(guildId: string): DiscordGatewayAdapterCreator {
+    const guild = this.client.guilds.cache.get(guildId);
+    if (!guild) {
+      throw new Error(`Discord guild is not available: ${guildId}`);
+    }
+
+    return guild.voiceAdapterCreator;
+  }
+
+  getCurrentUserId(): string | undefined {
+    return this.client.user?.id;
+  }
+
   setOperatingMode(mode: DiscordOperatingMode): void {
     this.operatingState.setMode(mode);
     this.applyOperatingModePresence();
@@ -270,6 +302,7 @@ export class DiscordJsService implements DiscordService {
 
   async stop(): Promise<void> {
     this.onMessage = undefined;
+    this.voiceCommandHandler = undefined;
     this.stopAccepting();
     this.channels.clear();
     this.client.destroy();
@@ -346,6 +379,11 @@ export class DiscordJsService implements DiscordService {
   private async handleInteraction(interaction: Interaction): Promise<void> {
     if (!interaction.isChatInputCommand()) return;
 
+    if (interaction.commandName === "join" || interaction.commandName === "leave") {
+      await this.handleVoiceInteraction(interaction);
+      return;
+    }
+
     const mode =
       interaction.commandName === "idle"
         ? ("paused" as const)
@@ -374,6 +412,58 @@ export class DiscordJsService implements DiscordService {
     await interaction.reply({
       content: mode === "active" ? "Botを再開しました。" : "Botを一時停止しました。",
       ephemeral: true,
+    });
+  }
+
+  private async handleVoiceInteraction(interaction: ChatInputCommandInteraction): Promise<void> {
+    if (!interaction.inGuild()) {
+      await interaction.reply({
+        content: "このコマンドはサーバー内でのみ使用できます。",
+        ephemeral: true,
+      });
+      return;
+    }
+
+    if (!this.voiceCommandHandler) {
+      await interaction.reply({
+        content: "音声会話機能は設定されていません。",
+        ephemeral: true,
+      });
+      return;
+    }
+
+    try {
+      const content =
+        interaction.commandName === "join"
+          ? await this.joinVoiceChannel(interaction)
+          : await this.voiceCommandHandler.leave({
+              guildId: interaction.guildId,
+              requesterId: interaction.user.id,
+            });
+      await interaction.reply({ content, ephemeral: true });
+    } catch (error) {
+      this.logger?.warn(
+        { err: error, event: "discord_voice_command_failed" },
+        "Failed to handle Discord voice command",
+      );
+      await interaction.reply({
+        content: "音声会話を開始できませんでした。しばらくしてから再試行してください。",
+        ephemeral: true,
+      });
+    }
+  }
+
+  private async joinVoiceChannel(interaction: ChatInputCommandInteraction): Promise<string> {
+    const guildId = interaction.guildId;
+    const voiceChannelId = interaction.guild?.voiceStates.cache.get(interaction.user.id)?.channelId;
+    if (!guildId || !voiceChannelId) {
+      return "先にボイスチャンネルへ参加してください。";
+    }
+
+    return this.voiceCommandHandler!.join({
+      guildId,
+      requesterId: interaction.user.id,
+      voiceChannelId,
     });
   }
 
