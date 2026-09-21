@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { isAbsolute, resolve } from "node:path";
 
 import { OpenCode } from "@opencode/client";
+import { Service } from "@opencode/client/service";
 
 import type { CodingProject, CodingProjectId, CodingProjectState } from "../domain/coding-project";
 import type {
@@ -28,7 +29,7 @@ interface MutableCodingRun {
 }
 
 export interface OpenCodeCodingHarnessOptions {
-  readonly serverUrl: string;
+  readonly serverUrl?: string;
   readonly projects: Readonly<Record<string, string>>;
   readonly username?: string;
   readonly password?: string;
@@ -55,17 +56,32 @@ function runSnapshot(run: MutableCodingRun): CodingRun {
   };
 }
 
-export function createOpenCodeCodingHarness(
+export async function createOpenCodeCodingHarness(
   options: OpenCodeCodingHarnessOptions,
-): OpenCodeCodingHarness {
-  const headers = options.password
-    ? {
-        Authorization: `Basic ${Buffer.from(
-          `${options.username ?? "opencode"}:${options.password}`,
-        ).toString("base64")}`,
-      }
-    : undefined;
-  const client = OpenCode.make({ baseUrl: options.serverUrl, headers });
+): Promise<OpenCodeCodingHarness> {
+  let client: OpenCodeClient;
+  if (options.serverUrl) {
+    const headers = options.password
+      ? {
+          Authorization: `Basic ${Buffer.from(
+            `${options.username ?? "opencode"}:${options.password}`,
+          ).toString("base64")}`,
+        }
+      : undefined;
+    client = OpenCode.make({ baseUrl: options.serverUrl, headers });
+  } else {
+    const endpoint = await Service.discover();
+    if (!endpoint) {
+      throw new Error(
+        "No compatible local OpenCode service found; configure features.coding.serverUrl to connect directly",
+      );
+    }
+    client = OpenCode.make({
+      baseUrl: endpoint.url,
+      headers: Service.headers(endpoint),
+    });
+  }
+
   return new OpenCodeCodingHarness(client, options.projects);
 }
 

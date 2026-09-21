@@ -98,8 +98,8 @@ export async function bootstrap(): Promise<void> {
     : undefined;
   const codingConfiguration = config.features.coding;
   const codingHarness = codingConfiguration?.enabled
-    ? createOpenCodeCodingHarness({
-        serverUrl: codingConfiguration.serverUrl ?? "http://127.0.0.1:4096",
+    ? await createOpenCodeCodingHarness({
+        serverUrl: codingConfiguration.serverUrl,
         projects: codingConfiguration.projects ?? {},
         username: process.env.OPENCODE_SERVER_USERNAME,
         password: process.env.OPENCODE_SERVER_PASSWORD,
@@ -110,7 +110,7 @@ export async function bootstrap(): Promise<void> {
     logger.info(
       {
         event: "coding_harness_connected",
-        serverUrl: codingConfiguration?.serverUrl ?? "http://127.0.0.1:4096",
+        serverUrl: codingConfiguration?.serverUrl,
         projects: Object.keys(codingConfiguration?.projects ?? {}),
       },
       "Connected to OpenCode coding server",
