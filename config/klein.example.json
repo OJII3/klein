@@ -58,7 +58,7 @@
     },
     "coding": {
       "enabled": false,
-      "projects": {}
+      "projects": []
     },
     "webui": {
       "enabled": false,

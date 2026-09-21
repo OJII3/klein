@@ -1,10 +1,12 @@
 import type { CodingRun } from "./coding-run";
 
-/** Canonical repository identity in host/owner/repository form, such as github.com/owner/repo. */
-export type CodingProjectId = `${string}/${string}/${string}`;
+/** Opaque project ID supplied by the connected coding harness. */
+export type CodingProjectId = string;
 
 export interface CodingProject {
   readonly id: CodingProjectId;
+  readonly directory: string;
+  readonly name?: string;
 }
 
 export interface CodingProjectState {

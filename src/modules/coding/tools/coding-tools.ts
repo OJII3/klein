@@ -12,20 +12,6 @@ export const CODING_AGENT_TOOL_NAMES = [
   "coding_cancel_run",
 ] as const;
 
-const CodingProjectIdSchema = Type.String({
-  minLength: 5,
-  pattern: "^[^/]+/[^/]+/[^/]+$",
-});
-
-function asCodingProjectId(value: string): CodingProjectId {
-  const parts = value.split("/");
-  if (parts.length !== 3 || parts.some((part) => part.length === 0)) {
-    throw new Error("Project ID must use host/owner/repo format");
-  }
-
-  return value as CodingProjectId;
-}
-
 function jsonResult(value: unknown) {
   return {
     content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) ?? "null" }],
@@ -38,10 +24,10 @@ export function createCodingTools(harness: CodingHarness) {
     defineTool({
       name: "coding_list_projects",
       label: "List coding projects",
-      description: "List repositories available to the coding harness.",
-      promptSnippet: "List repositories available for coding work.",
+      description: "List projects available to the coding harness.",
+      promptSnippet: "List projects available for coding work.",
       promptGuidelines: [
-        "Use this tool to discover valid host/owner/repo project IDs before starting work.",
+        "Use this tool to discover projects allowed by Klein and pass their harness project ID to other coding tools.",
       ],
       parameters: Type.Object({}),
       async execute() {
@@ -51,37 +37,35 @@ export function createCodingTools(harness: CodingHarness) {
     defineTool({
       name: "coding_get_project_state",
       label: "Get coding project state",
-      description: "Get a repository's current coding activity and active runs.",
-      promptSnippet: "Check the current coding activity for a repository.",
-      promptGuidelines: [
-        "Use the canonical host/owner/repo repository ID, not a local filesystem path.",
-      ],
+      description: "Get a project's current coding activity and active runs.",
+      promptSnippet: "Check the current coding activity for a project.",
+      promptGuidelines: ["Use the project ID returned by coding_list_projects."],
       parameters: Type.Object({
-        projectId: CodingProjectIdSchema,
+        projectId: Type.String({ minLength: 1 }),
       }),
       async execute(_toolCallId, params) {
-        return jsonResult(await harness.getProjectState(asCodingProjectId(params.projectId)));
+        return jsonResult(await harness.getProjectState(params.projectId as CodingProjectId));
       },
     }),
     defineTool({
       name: "coding_start_run",
       label: "Start coding run",
-      description: "Ask the coding harness to work on a repository task.",
-      promptSnippet: "Delegate a repository task to the coding harness.",
+      description: "Ask the coding harness to work on a project task.",
+      promptSnippet: "Delegate a project task to the coding harness.",
       promptGuidelines: [
         "Start a run only when the user has requested coding work.",
         "Reuse sessionId to continue an existing coding conversation when appropriate.",
         "Use the returned run ID to check progress with coding_get_run.",
       ],
       parameters: Type.Object({
-        projectId: CodingProjectIdSchema,
+        projectId: Type.String({ minLength: 1 }),
         prompt: Type.String({ minLength: 1 }),
         sessionId: Type.Optional(Type.String({ minLength: 1 })),
       }),
       async execute(_toolCallId, params) {
         return jsonResult(
           await harness.startRun({
-            projectId: asCodingProjectId(params.projectId),
+            projectId: params.projectId as CodingProjectId,
             prompt: params.prompt,
             sessionId: params.sessionId,
           }),

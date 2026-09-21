@@ -100,7 +100,7 @@ export async function bootstrap(): Promise<void> {
   const codingHarness = codingConfiguration?.enabled
     ? await createOpenCodeCodingHarness({
         serverUrl: codingConfiguration.serverUrl,
-        projects: codingConfiguration.projects ?? {},
+        projects: codingConfiguration.projects ?? [],
         username: process.env.OPENCODE_SERVER_USERNAME,
         password: process.env.OPENCODE_SERVER_PASSWORD,
       })
@@ -111,7 +111,7 @@ export async function bootstrap(): Promise<void> {
       {
         event: "coding_harness_connected",
         serverUrl: codingConfiguration?.serverUrl,
-        projects: Object.keys(codingConfiguration?.projects ?? {}),
+        projects: codingConfiguration?.projects ?? [],
       },
       "Connected to OpenCode coding server",
     );

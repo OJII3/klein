@@ -76,18 +76,19 @@ registered local OpenCode background service and uses its registered
 authentication. Set `features.coding.serverUrl` to connect to a specific server
 instead.
 
-Add each allowed repository ID and its absolute directory on the OpenCode
-server to `features.coding.projects`. Only configured repositories are
-available to the Discord agent. For example:
+Add each allowed absolute directory on the OpenCode server to
+`features.coding.projects`. OpenCode manages project IDs and metadata; Klein
+only filters the server's known projects by this path allowlist. For example:
 
 ```json
 "coding": {
   "enabled": true,
-  "projects": {
-    "github.com/owner/repo": "/work/owner/repo"
-  }
+  "projects": ["/work/owner/repo"]
 }
 ```
+
+The path must be absolute; `~` and `$HOME` are not expanded. A path appears in
+the tool's project list after OpenCode knows that project.
 
 For a specific server URL protected by Basic authentication, set
 `OPENCODE_SERVER_PASSWORD` in `.env`; the username defaults to `opencode` and

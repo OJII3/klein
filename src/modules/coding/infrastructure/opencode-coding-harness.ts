@@ -30,7 +30,7 @@ interface MutableCodingRun {
 
 export interface OpenCodeCodingHarnessOptions {
   readonly serverUrl?: string;
-  readonly projects: Readonly<Record<string, string>>;
+  readonly projects: readonly string[];
   readonly username?: string;
   readonly password?: string;
 }
@@ -86,24 +86,24 @@ export async function createOpenCodeCodingHarness(
 }
 
 export class OpenCodeCodingHarness implements CodingHarness {
-  private readonly projects = new Map<CodingProjectId, string>();
+  private readonly allowedDirectories = new Set<string>();
   private readonly runs = new Map<CodingRunId, MutableCodingRun>();
   private readonly startingSessions = new Set<CodingSessionId>();
 
   constructor(
     private readonly client: OpenCodeClient,
-    projects: Readonly<Record<string, string>>,
+    projects: readonly string[],
   ) {
-    for (const [projectId, directory] of Object.entries(projects)) {
+    for (const directory of projects) {
       if (!isAbsolute(directory)) {
-        throw new Error(`Coding project directory must be absolute: ${projectId}`);
+        throw new Error(`Allowed coding project path must be absolute: ${directory}`);
       }
 
-      this.projects.set(projectId as CodingProjectId, resolve(directory));
+      this.allowedDirectories.add(resolve(directory));
     }
 
-    if (this.projects.size === 0) {
-      throw new Error("At least one coding project must be configured when coding is enabled");
+    if (this.allowedDirectories.size === 0) {
+      throw new Error("At least one coding project path must be allowed when coding is enabled");
     }
   }
 
@@ -112,11 +112,11 @@ export class OpenCodeCodingHarness implements CodingHarness {
   }
 
   async listProjects(): Promise<readonly CodingProject[]> {
-    return [...this.projects.keys()].map((id) => ({ id }));
+    return this.allowedProjects();
   }
 
   async getProjectState(projectId: CodingProjectId): Promise<CodingProjectState> {
-    const project = this.project(projectId);
+    const project = await this.project(projectId);
     const activeRuns = [...this.runs.values()]
       .filter((run) => run.projectId === projectId && !isTerminal(run.status))
       .map(runSnapshot);
@@ -125,10 +125,10 @@ export class OpenCodeCodingHarness implements CodingHarness {
   }
 
   async startRun(input: StartCodingRunInput): Promise<CodingRun> {
-    const directory = this.directory(input.projectId);
+    const project = await this.project(input.projectId);
     const session = input.sessionId
-      ? await this.sessionForProject(input.sessionId, directory)
-      : await this.client.session.create({ location: { directory } });
+      ? await this.sessionForProject(input.sessionId, project)
+      : await this.client.session.create({ location: { directory: project.directory } });
 
     if (
       this.startingSessions.has(session.id) ||
@@ -240,22 +240,35 @@ export class OpenCodeCodingHarness implements CodingHarness {
     }
   }
 
-  private async sessionForProject(sessionId: string, directory: string) {
+  private async sessionForProject(sessionId: string, project: CodingProject) {
     const session = await this.client.session.get({ sessionID: sessionId });
-    if (resolve(session.location.directory) !== directory) {
+    if (
+      session.projectID !== project.id ||
+      resolve(session.location.directory) !== project.directory
+    ) {
       throw new Error("OpenCode session does not belong to the selected coding project");
     }
     return session;
   }
 
-  private project(projectId: CodingProjectId): CodingProject {
-    this.directory(projectId);
-    return { id: projectId };
+  private async project(projectId: CodingProjectId): Promise<CodingProject> {
+    const project = (await this.allowedProjects()).find(({ id }) => id === projectId);
+    if (!project)
+      throw new Error(`Coding project is not allowed or known to OpenCode: ${projectId}`);
+    return project;
   }
 
-  private directory(projectId: CodingProjectId): string {
-    const directory = this.projects.get(projectId);
-    if (!directory) throw new Error(`Coding project is not configured: ${projectId}`);
-    return directory;
+  private async allowedProjects(): Promise<readonly CodingProject[]> {
+    const projects = await this.client.project.list();
+    return projects
+      .filter(
+        (project) =>
+          isAbsolute(project.canonical) && this.allowedDirectories.has(resolve(project.canonical)),
+      )
+      .map((project) => ({
+        id: project.id as CodingProjectId,
+        directory: resolve(project.canonical),
+        name: project.name,
+      }));
   }
 }

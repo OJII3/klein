@@ -8,8 +8,8 @@ export interface StartCodingRunInput {
 }
 
 /**
- * Coding operations keyed by repository identity. Implementations resolve local roots and
- * harness-native project/session handles internally.
+ * Coding operations keyed by opaque harness-native project IDs. Implementations resolve
+ * local roots and harness-native session handles internally.
  */
 export interface CodingHarness {
   listProjects(): Promise<readonly CodingProject[]>;
