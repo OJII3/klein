@@ -9,7 +9,6 @@ import { loadPromptFile } from "./prompt";
 import { TaskCoordinator } from "./task-coordinator";
 import type { AgentRuntime } from "@agents/core/agent-runtime";
 import { DiscordAgent } from "@agents/discord/discord-agent";
-import { createCodexTools } from "@agents/discord/tools/codex-delegate";
 import {
   createPiAgentFactory,
   createPiModelRuntime,
@@ -96,18 +95,6 @@ export async function bootstrap(): Promise<void> {
         taskCoordinator,
       })
     : undefined;
-  const codexConfiguration = config.features.codexAppServer;
-  const codexToolOptions = codexConfiguration?.enabled
-    ? {
-        defaultWorkspace: resolve(codexConfiguration.workspace),
-        codexHome: codexConfiguration.codexHome ? resolve(codexConfiguration.codexHome) : undefined,
-        logger,
-        model: codexConfiguration.model,
-        socketPath: resolve(codexConfiguration.socketPath),
-        taskScheduler: taskCoordinator,
-        timeoutMs: (codexConfiguration.timeoutSeconds ?? 900) * 1_000,
-      }
-    : undefined;
   const liveVoiceSessionFactory = new OpenAiLiveVoiceSessionFactory(openAiApiKey, logger);
   const discordVoiceService = new DiscordVoiceService(
     discordService,
@@ -159,13 +146,6 @@ export async function bootstrap(): Promise<void> {
         discordService,
         channelId,
         systemPrompt,
-        codexToolOptions
-          ? createCodexTools({
-              ...codexToolOptions,
-              channelId,
-              discordService,
-            })
-          : undefined,
       ),
     discordService,
     logger,
