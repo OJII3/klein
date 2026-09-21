@@ -91,9 +91,16 @@ const WebUiConfigurationSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const CodingProjectIdSchema = Type.String({
+  minLength: 5,
+  pattern: "^[^/]+/[^/]+/[^/]+$",
+});
+
 const CodingConfigurationSchema = Type.Object(
   {
     enabled: Type.Boolean(),
+    serverUrl: Type.Optional(Type.String({ minLength: 1 })),
+    projects: Type.Optional(Type.Record(CodingProjectIdSchema, Type.String({ minLength: 1 }))),
   },
   { additionalProperties: false },
 );
