@@ -57,7 +57,9 @@
       "enabled": false
     },
     "coding": {
-      "enabled": false
+      "enabled": false,
+      "serverUrl": "http://127.0.0.1:4096",
+      "projects": {}
     },
     "webui": {
       "enabled": false,

@@ -4,6 +4,14 @@ import { Type } from "typebox";
 import type { CodingProjectId } from "../domain/coding-project";
 import type { CodingHarness } from "../ports/coding-harness";
 
+export const CODING_AGENT_TOOL_NAMES = [
+  "coding_list_projects",
+  "coding_get_project_state",
+  "coding_start_run",
+  "coding_get_run",
+  "coding_cancel_run",
+] as const;
+
 const CodingProjectIdSchema = Type.String({
   minLength: 5,
   pattern: "^[^/]+/[^/]+/[^/]+$",

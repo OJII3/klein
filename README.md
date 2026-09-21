@@ -67,6 +67,33 @@ requires the bot to have access to the network.
 The Discord agent's personality and behavior are loaded from the Markdown file
 configured by `agents.discord.systemPromptFile` (`config/SOUL.md` by default).
 
+## Coding projects through an OpenCode server
+
+When `features.coding.enabled` is true, Klein connects to an existing OpenCode
+server using `@opencode/client`. Klein does not start or stop the server. The
+server must be reachable when Klein starts; its URL defaults to
+`http://127.0.0.1:4096`.
+
+Add each allowed repository ID and its absolute directory on the OpenCode
+server to `features.coding.projects`. Only configured repositories are
+available to the Discord agent. For example:
+
+```json
+"coding": {
+  "enabled": true,
+  "serverUrl": "http://127.0.0.1:4096",
+  "projects": {
+    "github.com/owner/repo": "/work/owner/repo"
+  }
+}
+```
+
+If the OpenCode server uses Basic authentication, set
+`OPENCODE_SERVER_PASSWORD` in `.env`; the username defaults to `opencode` and
+can be changed with `OPENCODE_SERVER_USERNAME`. Discord coding tools are only
+registered while the coding feature is enabled. Runs created by Klein are
+tracked in memory until Klein exits.
+
 When `features.memory.enabled` is true, Klein periodically extracts durable
 guild-wide facts, rules, decisions, and procedures from recent Discord
 messages in the background. The default path is

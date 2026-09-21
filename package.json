@@ -23,6 +23,7 @@
     "@earendil-works/pi-coding-agent": "^0.85.1",
     "@elysia/eden": "^1.4.10",
     "@elysia/static": "^1.4.11",
+    "@opencode/client": "2.0.8",
     "discord.js": "^14.27.0",
     "elysia": "^1.4.30",
     "ky": "^2.1.0",
