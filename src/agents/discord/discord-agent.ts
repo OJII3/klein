@@ -3,7 +3,6 @@ import type { AgentPrompt, AgentRuntime } from "../core/agent-runtime";
 import { formatDiscordMessage, type DiscordMessage } from "@modules/discord/domain/discord-message";
 import type { DiscordService } from "@modules/discord/ports/discord-service";
 import { DISCORD_AGENT_TOOL_NAMES } from "./prompt-policy";
-import type { CodexTools } from "./tools/codex-delegate";
 import { createDiscordReadTool } from "./tools/discord-read";
 import { createDiscordSendTool } from "./tools/discord-send";
 
@@ -24,7 +23,6 @@ export class DiscordAgent {
     discordService: DiscordService,
     channelId: string,
     systemPrompt: string,
-    codexTools?: CodexTools,
   ): Promise<DiscordAgent> {
     let runtime: AgentRuntime | undefined;
     const analyzeImages = async (message: DiscordMessage): Promise<string | undefined> => {
@@ -37,26 +35,15 @@ export class DiscordAgent {
       return runtime.analyzeImage(prompt);
     };
 
-    const toolNames = codexTools
-      ? [...DISCORD_AGENT_TOOL_NAMES, ...codexTools.map((tool) => tool.name)]
-      : DISCORD_AGENT_TOOL_NAMES;
-    const tools = codexTools
-      ? [
-          createDiscordReadTool(discordService, channelId, analyzeImages),
-          createDiscordSendTool(discordService, channelId),
-          ...codexTools,
-        ]
-      : [
-          createDiscordReadTool(discordService, channelId, analyzeImages),
-          createDiscordSendTool(discordService, channelId),
-        ];
-
     runtime = await agentFactory.create(
       {
         systemPrompt,
-        toolNames,
+        toolNames: DISCORD_AGENT_TOOL_NAMES,
       },
-      tools,
+      [
+        createDiscordReadTool(discordService, channelId, analyzeImages),
+        createDiscordSendTool(discordService, channelId),
+      ],
       { sessionKey: `discord-channel:${channelId}` },
     );
 
