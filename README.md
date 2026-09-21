@@ -110,6 +110,9 @@ required sections are omitted here):
     "minecraft": {
       "enabled": false
     },
+    "coding": {
+      "enabled": false
+    },
     "webui": {
       "enabled": true,
       "host": "127.0.0.1",
