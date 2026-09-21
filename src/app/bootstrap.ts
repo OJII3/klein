@@ -141,12 +141,7 @@ export async function bootstrap(): Promise<void> {
   discordService.setVoiceCommandHandler(discordVoiceService);
   const agentCoordinator = new AgentCoordinator({
     createDiscordAgent: (channelId) =>
-      DiscordAgent.create(
-        piAgentFactory,
-        discordService,
-        channelId,
-        systemPrompt,
-      ),
+      DiscordAgent.create(piAgentFactory, discordService, channelId, systemPrompt),
     discordService,
     logger,
     memoryCoordinator,
