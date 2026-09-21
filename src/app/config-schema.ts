@@ -91,6 +91,13 @@ const WebUiConfigurationSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const CodingConfigurationSchema = Type.Object(
+  {
+    enabled: Type.Boolean(),
+  },
+  { additionalProperties: false },
+);
+
 export const KleinConfigSchema = Type.Object(
   {
     $schema: Type.Optional(Type.String({ minLength: 1 })),
@@ -133,6 +140,7 @@ export const KleinConfigSchema = Type.Object(
           },
           { additionalProperties: false },
         ),
+        coding: Type.Optional(CodingConfigurationSchema),
         webui: Type.Optional(WebUiConfigurationSchema),
       },
       { additionalProperties: false },

@@ -332,6 +332,16 @@
           },
           "additionalProperties": false
         },
+        "coding": {
+          "type": "object",
+          "required": ["enabled"],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        },
         "webui": {
           "type": "object",
           "required": ["enabled"],
