@@ -50,6 +50,7 @@
             packages = [
               bun
               inputs'.llm-agents.packages.pi
+              inputs'.llm-agents.packages.opencode2
             ];
             shellHook = ''
               bun --version > .bun-version
