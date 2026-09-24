@@ -54,6 +54,11 @@
             }
           ]
         },
+        "contextWindowRatio": {
+          "type": "number",
+          "minimum": 0.01,
+          "maximum": 1
+        },
         "image": {
           "type": "object",
           "required": ["provider", "model"],

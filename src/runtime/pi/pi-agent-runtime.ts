@@ -30,6 +30,7 @@ export interface PiAgentFactoryOptions {
     readonly provider: string;
     readonly model: string;
     readonly thinkingLevel?: NonNullable<CreateAgentSessionOptions["thinkingLevel"]>;
+    readonly contextWindowRatio?: number;
     readonly image?: {
       readonly provider: string;
       readonly model: string;
@@ -230,6 +231,15 @@ export function withOpenCodeSessionHeader(model: Model<Api>, sessionId: string):
   };
 }
 
+export function withContextWindowRatio(model: Model<Api>, ratio?: number): Model<Api> {
+  if (ratio === undefined || ratio === 1) return model;
+
+  return {
+    ...model,
+    contextWindow: Math.max(1, Math.floor(model.contextWindow * ratio)),
+  };
+}
+
 export function resolveConfiguredImageModel(
   provider: string,
   modelId: string,
@@ -274,7 +284,10 @@ export function createPiAgentFactory({
       const sessionManager = createPiSessionManager(agentDir, options.sessionKey, sessionMode);
       const sessionId = sessionManager.getSessionId();
       const model = withOpenCodeSessionHeader(
-        resolveConfiguredModel(llm.provider, llm.model, modelRuntime),
+        withContextWindowRatio(
+          resolveConfiguredModel(llm.provider, llm.model, modelRuntime),
+          llm.contextWindowRatio,
+        ),
         sessionId,
       );
       const sessionImageModel = imageModel
