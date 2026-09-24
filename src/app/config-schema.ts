@@ -56,6 +56,7 @@ const LlmModelConfigurationSchema = Type.Object(LlmModelConfigurationProperties,
 const LlmConfigurationSchema = Type.Object(
   {
     ...LlmModelConfigurationProperties,
+    contextWindowRatio: Type.Optional(Type.Number({ minimum: 0.01, maximum: 1 })),
     image: Type.Optional(LlmModelConfigurationSchema),
   },
   { additionalProperties: false },

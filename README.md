@@ -43,11 +43,14 @@ be reached. Set `KLEIN_CONFIG_PATH` only when you need to use a different
 configuration file.
 
 The `llm.model` and optional `llm.thinkingLevel` settings are used by the main
-Pi session. The optional `llm.image` setting configures a separate, one-shot
-image analysis model. When it is configured, image attachments are sent only
-to that model; its text analysis is provided to the main session as context,
-which keeps the final response in the main model's voice. The image model must
-support image input.
+Pi session. Set `llm.contextWindowRatio` between `0.01` and `1` to limit the
+model's context window; for example, `0.5` uses half of the model's published
+window. Pi's automatic compaction and Klein's background compaction both use
+this reduced limit. The setting defaults to `1` when omitted. The optional
+`llm.image` setting configures a separate, one-shot image analysis model. When
+it is configured, image attachments are sent only to that model; its text
+analysis is provided to the main session as context, which keeps the final
+response in the main model's voice. The image model must support image input.
 
 To use an Exa API key with `pi-web-access`, optionally set `EXA_API_KEY` in `.env`.
 
