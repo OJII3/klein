@@ -7,6 +7,7 @@ test("returns the sent content in the tool result", async () => {
   let sentMessage: { channelId: string; content: string } | undefined;
   const tool = createDiscordSendTool(
     {
+      async sendTyping() {},
       async sendMessage(channelId, content) {
         sentMessage = { channelId, content };
       },

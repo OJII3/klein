@@ -4,7 +4,7 @@ import { Type } from "typebox";
 import type { DiscordService } from "@modules/discord/ports/discord-service";
 
 export function createDiscordSendTool(
-  discordService: Pick<DiscordService, "sendMessage">,
+  discordService: Pick<DiscordService, "sendMessage" | "sendTyping">,
   channelId: Parameters<DiscordService["sendMessage"]>[0],
 ) {
   return defineTool({
@@ -20,6 +20,8 @@ export function createDiscordSendTool(
       content: Type.String({ minLength: 1 }),
     }),
     async execute(_toolCallId, params) {
+      await discordService.sendTyping(channelId);
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
       await discordService.sendMessage(channelId, params.content);
 
       return {

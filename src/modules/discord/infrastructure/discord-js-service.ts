@@ -62,6 +62,7 @@ const OPERATING_MODE_COMMANDS: readonly ApplicationCommandDataResolvable[] = [
 
 interface SendableChannel {
   send(content: string): Promise<unknown>;
+  sendTyping?(): Promise<void>;
 }
 
 function isSendableChannel(value: unknown): value is SendableChannel {
@@ -278,6 +279,11 @@ export class DiscordJsService implements DiscordService {
       { event: "discord_operating_mode_changed", mode },
       "Changed Discord operating mode",
     );
+  }
+
+  async sendTyping(channelId: string): Promise<void> {
+    const channel = await this.getChannel(channelId);
+    await channel.sendTyping?.();
   }
 
   async sendMessage(channelId: string, content: string): Promise<void> {
