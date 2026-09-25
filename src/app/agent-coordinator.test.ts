@@ -42,6 +42,7 @@ function createHarness(createGate?: Promise<void>): TestHarness {
     async start() {},
     stopAccepting() {},
     setActivity() {},
+    async sendTyping() {},
     async sendMessage() {},
     async readMessage() {
       return message;
