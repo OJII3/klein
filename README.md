@@ -1,6 +1,6 @@
 # Klein
 
-Pi Coding Agent Based Communication Agent.
+Pi-based communication agent.
 
 ## Run the Discord bot
 
@@ -70,35 +70,6 @@ requires the bot to have access to the network.
 The Discord agent's personality and behavior are loaded from the Markdown file
 configured by `agents.discord.systemPromptFile` (`config/SOUL.md` by default).
 
-## Coding projects through an OpenCode server
-
-When `features.coding.enabled` is true, Klein connects to an existing OpenCode
-server using `@opencode/client`. Klein does not start or stop the server. The
-server must be reachable when Klein starts. By default, Klein discovers the
-registered local OpenCode background service and uses its registered
-authentication. Set `features.coding.serverUrl` to connect to a specific server
-instead.
-
-Add each allowed absolute directory on the OpenCode server to
-`features.coding.projects`. OpenCode manages project IDs and metadata; Klein
-only filters the server's known projects by this path allowlist. For example:
-
-```json
-"coding": {
-  "enabled": true,
-  "projects": ["/work/owner/repo"]
-}
-```
-
-The path must be absolute; `~` and `$HOME` are not expanded. A path appears in
-the tool's project list after OpenCode knows that project.
-
-For a specific server URL protected by Basic authentication, set
-`OPENCODE_SERVER_PASSWORD` in `.env`; the username defaults to `opencode` and
-can be changed with `OPENCODE_SERVER_USERNAME`. Discord coding tools are only
-registered while the coding feature is enabled. Runs created by Klein are
-tracked in memory until Klein exits.
-
 When `features.memory.enabled` is true, Klein periodically extracts durable
 guild-wide facts, rules, decisions, and procedures from recent Discord
 messages in the background. The default path is
@@ -140,9 +111,6 @@ required sections are omitted here):
       "maxBatchMessages": 32
     },
     "minecraft": {
-      "enabled": false
-    },
-    "coding": {
       "enabled": false
     },
     "webui": {

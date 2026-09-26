@@ -29,7 +29,6 @@ import { resolveLogDirectory, resolveWebUiConfig } from "@modules/webui/domain/w
 import { startWebUi } from "@modules/webui/infrastructure/elysia-webui-app";
 import { PinoJsonlReader } from "@modules/webui/infrastructure/pino-jsonl-reader";
 import { PiSessionReader } from "@modules/webui/infrastructure/pi-session-reader";
-import { createOpenCodeCodingHarness } from "@modules/coding/infrastructure/opencode-coding-harness";
 
 const DISCORD_USAGE_STATUS_REFRESH_INTERVAL_MS = 60 * 60 * 1_000;
 
@@ -96,26 +95,6 @@ export async function bootstrap(): Promise<void> {
         taskCoordinator,
       })
     : undefined;
-  const codingConfiguration = config.features.coding;
-  const codingHarness = codingConfiguration?.enabled
-    ? await createOpenCodeCodingHarness({
-        serverUrl: codingConfiguration.serverUrl,
-        projects: codingConfiguration.projects ?? [],
-        username: process.env.OPENCODE_SERVER_USERNAME,
-        password: process.env.OPENCODE_SERVER_PASSWORD,
-      })
-    : undefined;
-  if (codingHarness) {
-    await codingHarness.checkConnection();
-    logger.info(
-      {
-        event: "coding_harness_connected",
-        serverUrl: codingConfiguration?.serverUrl,
-        projects: codingConfiguration?.projects ?? [],
-      },
-      "Connected to OpenCode coding server",
-    );
-  }
   const liveVoiceSessionFactory = new OpenAiLiveVoiceSessionFactory(openAiApiKey, logger);
   const discordVoiceService = new DiscordVoiceService(
     discordService,
@@ -162,7 +141,7 @@ export async function bootstrap(): Promise<void> {
   discordService.setVoiceCommandHandler(discordVoiceService);
   const agentCoordinator = new AgentCoordinator({
     createDiscordAgent: (channelId) =>
-      DiscordAgent.create(piAgentFactory, discordService, channelId, systemPrompt, codingHarness),
+      DiscordAgent.create(piAgentFactory, discordService, channelId, systemPrompt),
     discordService,
     logger,
     memoryCoordinator,
