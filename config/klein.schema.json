@@ -337,27 +337,6 @@
           },
           "additionalProperties": false
         },
-        "coding": {
-          "type": "object",
-          "required": ["enabled"],
-          "properties": {
-            "enabled": {
-              "type": "boolean"
-            },
-            "serverUrl": {
-              "type": "string",
-              "minLength": 1
-            },
-            "projects": {
-              "type": "array",
-              "items": {
-                "type": "string",
-                "minLength": 1
-              }
-            }
-          },
-          "additionalProperties": false
-        },
         "webui": {
           "type": "object",
           "required": ["enabled"],

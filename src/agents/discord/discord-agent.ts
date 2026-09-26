@@ -5,8 +5,6 @@ import type { DiscordService } from "@modules/discord/ports/discord-service";
 import { DISCORD_AGENT_TOOL_NAMES } from "./prompt-policy";
 import { createDiscordReadTool } from "./tools/discord-read";
 import { createDiscordSendTool } from "./tools/discord-send";
-import { createCodingTools, CODING_AGENT_TOOL_NAMES } from "@modules/coding/tools/coding-tools";
-import type { CodingHarness } from "@modules/coding/ports/coding-harness";
 
 const BOT_MESSAGE_GUIDANCE = `
 
@@ -25,7 +23,6 @@ export class DiscordAgent {
     discordService: DiscordService,
     channelId: string,
     systemPrompt: string,
-    codingHarness?: CodingHarness,
   ): Promise<DiscordAgent> {
     let runtime: AgentRuntime | undefined;
     const analyzeImages = async (message: DiscordMessage): Promise<string | undefined> => {
@@ -41,13 +38,12 @@ export class DiscordAgent {
     const tools = [
       createDiscordReadTool(discordService, channelId, analyzeImages),
       createDiscordSendTool(discordService, channelId),
-      ...(codingHarness ? createCodingTools(codingHarness) : []),
     ];
 
     runtime = await agentFactory.create(
       {
         systemPrompt,
-        toolNames: [...DISCORD_AGENT_TOOL_NAMES, ...(codingHarness ? CODING_AGENT_TOOL_NAMES : [])],
+        toolNames: DISCORD_AGENT_TOOL_NAMES,
       },
       tools,
       { sessionKey: `discord-channel:${channelId}` },
