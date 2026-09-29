@@ -12,5 +12,6 @@ export interface AgentRuntime {
   prompt(prompt: AgentPrompt): Promise<void>;
   promptForText?(prompt: AgentPrompt): Promise<string>;
   analyzeImage?(prompt: AgentPrompt): Promise<string>;
+  compactForHandoff?(): Promise<string>;
   dispose(): void;
 }

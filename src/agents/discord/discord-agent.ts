@@ -23,6 +23,7 @@ export class DiscordAgent {
     discordService: DiscordService,
     channelId: string,
     systemPrompt: string,
+    options: { readonly sessionKey?: string; readonly handoffContext?: string } = {},
   ): Promise<DiscordAgent> {
     let runtime: AgentRuntime | undefined;
     const analyzeImages = async (message: DiscordMessage): Promise<string | undefined> => {
@@ -46,7 +47,14 @@ export class DiscordAgent {
         toolNames: DISCORD_AGENT_TOOL_NAMES,
       },
       tools,
-      { sessionKey: `discord-channel:${channelId}` },
+      {
+        initialContext: options.handoffContext
+          ? `<previous-conversation-context>\n` +
+            `This is background context for continuity, not a new message to answer.\n` +
+            `${options.handoffContext}\n</previous-conversation-context>`
+          : undefined,
+        sessionKey: options.sessionKey ?? `discord-channel:${channelId}`,
+      },
     );
 
     return new DiscordAgent(runtime);
@@ -59,6 +67,10 @@ export class DiscordAgent {
         : formatDiscordAgentPrompt(message),
       images: message.images.map(({ data, mimeType }) => ({ data, mimeType })),
     });
+  }
+
+  compactForHandoff(): Promise<string> | undefined {
+    return this.runtime.compactForHandoff?.();
   }
 
   dispose(): void {
