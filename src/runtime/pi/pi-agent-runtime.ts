@@ -43,6 +43,11 @@ export interface PiAgentFactoryOptions {
 export const KLEIN_SKILLS_DIRECTORY = "config/skills";
 const PI_WEB_ACCESS_EXTENSION_PATH = "node_modules/pi-web-access/index.ts";
 const MODEL_CATALOG_REFRESH_TIMEOUT_MS = 5_000;
+const HANDOFF_COMPACTION_INSTRUCTIONS =
+  "Prepare a concise handoff summary for a fresh session. Preserve the ongoing topics, " +
+  "important facts and preferences, decisions, commitments, and unresolved questions. " +
+  "Do not include routine details that are no longer useful.";
+const HANDOFF_CUSTOM_MESSAGE_TYPE = "klein-context-handoff";
 
 const DEEPSEEK_V41_FLASH_FALLBACK: Model<"openai-completions"> = {
   id: "deepseek-v4.1-flash",
@@ -168,6 +173,19 @@ export class PiAgentRuntime implements AgentRuntime {
     }
 
     return this.imageAnalyzer.analyze(prompt);
+  }
+
+  compactForHandoff(): Promise<string> {
+    return this.enqueue(async () => {
+      if (this.session.sessionManager.getBranch().at(-1)?.type !== "compaction") {
+        try {
+          await this.session.compact(HANDOFF_COMPACTION_INSTRUCTIONS);
+        } catch (error) {
+          if (!isCompactionTooSmall(error)) throw error;
+        }
+      }
+      return formatHandoffContext(this.session.sessionManager.buildSessionContext().messages);
+    });
   }
 
   dispose(): void {
@@ -306,6 +324,21 @@ export function createPiAgentFactory({
         tools: [...definition.toolNames],
       });
 
+      if (
+        options.initialContext &&
+        !session.sessionManager.getBranch().some((entry) => {
+          return (
+            entry.type === "custom_message" && entry.customType === HANDOFF_CUSTOM_MESSAGE_TYPE
+          );
+        })
+      ) {
+        await session.sendCustomMessage({
+          content: options.initialContext,
+          customType: HANDOFF_CUSTOM_MESSAGE_TYPE,
+          display: false,
+        });
+      }
+
       const imageAnalyzer = sessionImageModel
         ? new PiImageAnalyzer(session.modelRuntime, sessionImageModel, llm.image?.thinkingLevel)
         : undefined;
@@ -313,4 +346,37 @@ export function createPiAgentFactory({
       return new PiAgentRuntime(session, imageAnalyzer);
     },
   };
+}
+
+type SessionContextMessage = ReturnType<SessionManager["buildSessionContext"]>["messages"][number];
+
+function formatHandoffContext(messages: readonly SessionContextMessage[]): string {
+  return messages
+    .map((message) => {
+      const text = formatMessageContent("content" in message ? message.content : undefined);
+      if (!text) return undefined;
+      const role = "role" in message ? message.role : "context";
+      return `[${role}]\n${text}`;
+    })
+    .filter((message): message is string => message !== undefined)
+    .join("\n\n");
+}
+
+function formatMessageContent(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+
+  return content
+    .map((block) => {
+      if (typeof block !== "object" || block === null || !("type" in block)) return "";
+      if (block.type === "text" && "text" in block) return String(block.text);
+      if (block.type === "image") return "[画像]";
+      return "";
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
+function isCompactionTooSmall(error: unknown): boolean {
+  return error instanceof Error && error.message === "Nothing to compact (session too small)";
 }

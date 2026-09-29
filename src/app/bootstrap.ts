@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 
 import { AgentCoordinator } from "./agent-coordinator";
+import { ChannelSessionStateStore } from "./channel-session-state-store";
 import { parseCliOptions } from "./cli-options";
 import { loadConfig } from "./config";
 import { createLogFilePath, createLogger, flushLogger } from "./logger";
@@ -31,6 +32,7 @@ import { PinoJsonlReader } from "@modules/webui/infrastructure/pino-jsonl-reader
 import { PiSessionReader } from "@modules/webui/infrastructure/pi-session-reader";
 
 const DISCORD_USAGE_STATUS_REFRESH_INTERVAL_MS = 60 * 60 * 1_000;
+const CHANNEL_CONTEXT_ROTATION_CHECK_INTERVAL_MS = 60 * 1_000;
 
 export async function bootstrap(): Promise<void> {
   const { sessionMode } = parseCliOptions(process.argv.slice(2));
@@ -63,6 +65,9 @@ export async function bootstrap(): Promise<void> {
   );
   const taskCoordinator = new TaskCoordinator();
   const agentDir = resolve(config.runtime.agentDir);
+  const channelSessionStateStore = new ChannelSessionStateStore(
+    resolve(agentDir, "channel-session-state"),
+  );
   const modelRuntime = await createPiModelRuntime(agentDir);
   const piAgentFactory = createPiAgentFactory({
     agentDir,
@@ -140,8 +145,12 @@ export async function bootstrap(): Promise<void> {
   );
   discordService.setVoiceCommandHandler(discordVoiceService);
   const agentCoordinator = new AgentCoordinator({
-    createDiscordAgent: (channelId) =>
-      DiscordAgent.create(piAgentFactory, discordService, channelId, systemPrompt),
+    createDiscordAgent: (channelId, sessionKey, handoffContext) =>
+      DiscordAgent.create(piAgentFactory, discordService, channelId, systemPrompt, {
+        handoffContext,
+        sessionKey,
+      }),
+    channelSessionStateStore,
     discordService,
     logger,
     memoryCoordinator,
@@ -177,6 +186,7 @@ export async function bootstrap(): Promise<void> {
     : undefined;
 
   let usageStatusInterval: ReturnType<typeof setInterval> | undefined;
+  let contextRotationInterval: ReturnType<typeof setInterval> | undefined;
   let shuttingDown = false;
   const shutdown = async (signal: string): Promise<void> => {
     if (shuttingDown) return;
@@ -186,6 +196,10 @@ export async function bootstrap(): Promise<void> {
     if (usageStatusInterval) {
       clearInterval(usageStatusInterval);
       usageStatusInterval = undefined;
+    }
+    if (contextRotationInterval) {
+      clearInterval(contextRotationInterval);
+      contextRotationInterval = undefined;
     }
     await webUi?.stop();
     discordService.stopAccepting();
@@ -206,6 +220,24 @@ export async function bootstrap(): Promise<void> {
   });
 
   await discordService.start((message) => agentCoordinator.handleDiscordMessage(message));
+  void taskCoordinator
+    .run(() => agentCoordinator.rotateIdleChannels())
+    .catch((error: unknown) => {
+      logger.error(
+        { err: error, event: "channel_context_rotation_check_failed" },
+        "Failed to check Discord channel context rotation",
+      );
+    });
+  contextRotationInterval = setInterval(() => {
+    void taskCoordinator
+      .run(() => agentCoordinator.rotateIdleChannels())
+      .catch((error: unknown) => {
+        logger.error(
+          { err: error, event: "channel_context_rotation_check_failed" },
+          "Failed to check Discord channel context rotation",
+        );
+      });
+  }, CHANNEL_CONTEXT_ROTATION_CHECK_INTERVAL_MS);
   await updateDiscordUsageStatus();
   usageStatusInterval = setInterval(() => {
     void updateDiscordUsageStatus();
