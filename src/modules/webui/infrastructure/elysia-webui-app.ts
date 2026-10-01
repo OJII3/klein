@@ -19,6 +19,7 @@ import {
 import type { PinoLogQuery } from "./pino-jsonl-reader";
 import { PinoJsonlReader } from "./pino-jsonl-reader";
 import { PiSessionReader } from "./pi-session-reader";
+import { startCloudflareTunnel, type CloudflareTunnel } from "./cloudflare-tunnel";
 
 const LOG_LEVELS = new Set(["trace", "debug", "info", "warn", "error", "fatal"]);
 
@@ -34,6 +35,7 @@ export interface WebUiServerOptions extends WebUiDependencies {
   readonly host: string;
   readonly port: number;
   readonly staticDirectory: string;
+  readonly tunnelToken?: string;
 }
 
 export interface WebUiServer {
@@ -156,6 +158,15 @@ export async function startWebUi(options: WebUiServerOptions): Promise<WebUiServ
   const app = createWebUiApp(options).use(staticApp);
 
   app.listen({ hostname: options.host, port: options.port });
+  let tunnel: CloudflareTunnel | undefined;
+  try {
+    if (options.tunnelToken) {
+      tunnel = await startCloudflareTunnel(options.tunnelToken, options.logger);
+    }
+  } catch (error) {
+    await app.stop();
+    throw error;
+  }
   options.logger?.info(
     {
       event: "webui_started",
@@ -167,6 +178,7 @@ export async function startWebUi(options: WebUiServerOptions): Promise<WebUiServ
 
   return {
     stop: async () => {
+      await tunnel?.stop();
       await app.stop();
       options.logger?.info({ event: "webui_stopped" }, "Web UI stopped");
     },

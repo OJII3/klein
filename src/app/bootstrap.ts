@@ -182,6 +182,7 @@ export async function bootstrap(): Promise<void> {
         pinoLogs: new PinoJsonlReader(logDirectory),
         port: webUiConfig.port,
         staticDirectory: resolve("dist/web"),
+        tunnelToken: process.env.TUNNEL_TOKEN,
       })
     : undefined;
 
@@ -219,7 +220,12 @@ export async function bootstrap(): Promise<void> {
     void shutdown("SIGTERM");
   });
 
-  await discordService.start((message) => agentCoordinator.handleDiscordMessage(message));
+  try {
+    await discordService.start((message) => agentCoordinator.handleDiscordMessage(message));
+  } catch (error) {
+    await shutdown("startup_failed");
+    throw error;
+  }
   void taskCoordinator
     .run(() => agentCoordinator.rotateIdleChannels())
     .catch((error: unknown) => {
