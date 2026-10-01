@@ -126,6 +126,33 @@ Start Klein, then open `http://127.0.0.1:4310`. Keep the host bound
 to loopback when exposing the viewer through a ZeroTrust tunnel. The UI is
 disabled by default and allows deleting individual persisted memories.
 
+### HTTPS through Cloudflare Tunnel
+
+Klein can start and stop `cloudflared` together with the Web UI. The Nix
+development shell includes `cloudflared`; when running outside the shell,
+install it separately and ensure it is on `PATH`, including for production bundles.
+
+1. Create a remotely-managed Cloudflare Tunnel and obtain its tunnel token.
+   This is the token for running that tunnel, rather than a Cloudflare API token.
+2. Configure a published application route, for example
+   `klein.example.com` to `http://127.0.0.1:4310`. Match the service address
+   to your Web UI host and port.
+3. Protect the hostname with Cloudflare Access and allow only your intended users.
+   Without Access, the logs, session history, and memory deletion API are public.
+4. Add `TUNNEL_TOKEN=...` to `.env`, enable the Web UI, and run `bun run start`.
+
+Open `https://klein.example.com`. Cloudflare handles the browser-facing TLS
+certificate; Klein continues serving HTTP on loopback. Tokens are passed to
+`cloudflared` through its environment, and other application secrets are excluded.
+See the [tunnel token documentation](https://developers.cloudflare.com/tunnel/reference/tunnel-tokens/)
+and [Access setup guide](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/self-hosted-public-app/).
+
+With no token, Klein starts only the local Web UI. With the Web UI disabled,
+it does not start `cloudflared`. A missing `cloudflared` executable fails startup;
+its process logs and unexpected exits appear in Klein's logs. The process-started
+log does not indicate that the tunnel has connected. `cloudflared` handles network
+reconnections; if its process exits, restart Klein after resolving the logged error.
+
 For an ahead-of-time production bundle, run `bun run build` and execute it with
 `bun dist/klein`, keeping the generated `dist/web/` directory available from
 the working directory. The frontend is not served with HMR:

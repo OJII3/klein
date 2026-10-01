@@ -49,6 +49,7 @@
           devShells.default = pkgs.mkShell {
             packages = [
               bun
+              pkgs.cloudflared
               inputs'.llm-agents.packages.pi
               inputs'.llm-agents.packages.opencode2
             ];
