@@ -2,6 +2,14 @@
 
 Pi-based communication agent.
 
+## GitHub Actions dependencies
+
+Workflow action versions are recorded in `.github/workflows/actions.lock`,
+which lets GitHub Actions verify the resolved commits at runtime. After adding,
+removing, or changing an action reference in a workflow, run `gh actions-lock`
+and commit the updated workflow and lockfile together. Install the CLI once with
+`gh extension install github/gh-actions-lock`.
+
 ## Run the Discord bot
 
 Enter the Nix development shell and install dependencies:
