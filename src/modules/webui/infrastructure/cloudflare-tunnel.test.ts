@@ -52,7 +52,7 @@ while :; do /bin/sleep 1; done
     process.env.PATH = originalPath;
 
     const [record] = await output;
-    assert.equal(record.output, "ready:[Redacted]:tunnel --no-autoupdate run --grace-period 5s");
+    assert.equal(record.output, "ready:[Redacted]:tunnel --no-autoupdate --grace-period 5s run");
     await tunnel.stop();
     await tunnel.stop();
     assert.ok(records.some((record) => record.output === "stopped"));

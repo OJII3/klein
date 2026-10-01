@@ -17,7 +17,7 @@ export async function startCloudflareTunnel(
     if (process.env[name] !== undefined) env[name] = process.env[name];
   }
 
-  const child = spawn("cloudflared", ["tunnel", "--no-autoupdate", "run", "--grace-period", "5s"], {
+  const child = spawn("cloudflared", ["tunnel", "--no-autoupdate", "--grace-period", "5s", "run"], {
     env,
     stdio: ["ignore", "pipe", "pipe"],
   });
