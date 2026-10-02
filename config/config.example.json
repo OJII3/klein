@@ -4,7 +4,7 @@
   "profile": "klein",
   "llm": {
     "provider": "opencode-go",
-    "model": "glm-5.2",
+    "model": "deepseek-v4.1-flash",
     "thinkingLevel": "high",
     "contextWindowRatio": 0.5,
     "image": {
