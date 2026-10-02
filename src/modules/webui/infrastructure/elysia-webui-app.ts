@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { readFile } from "node:fs/promises";
 
 import { staticPlugin } from "@elysia/static";
 import { Elysia } from "elysia";
@@ -181,7 +182,17 @@ export async function startWebUi(options: WebUiServerOptions): Promise<WebUiServ
     indexHTML: true,
     prefix: "/",
   });
-  const app = createWebUiApp(options).use(staticApp);
+  const app = createWebUiApp(options)
+    .get("/:view", async ({ params, set }) => {
+      if (params.view !== "logs" && params.view !== "sessions" && params.view !== "memory") {
+        set.status = 404;
+        return { error: "Not found" };
+      }
+      return new Response(await readFile(resolve(options.staticDirectory, "index.html")), {
+        headers: { "content-type": "text/html; charset=utf-8" },
+      });
+    })
+    .use(staticApp);
 
   app.listen({ hostname: options.host, port: options.port });
   let tunnel: CloudflareTunnel | undefined;
