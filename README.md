@@ -12,7 +12,8 @@ bun install
 ```
 
 The Web UI is bundled into `dist/web` and served as static files by Elysia.
-`bun run start` builds the frontend automatically before starting Klein.
+`bun run start` builds both the frontend and server, then runs `dist/klein`.
+Use `bun run build:web` or `bun run build:server` to build either separately.
 
 Copy the configuration and environment templates, fill in the Discord access
 rules, bot token, and OpenCode Go API key, then start it:
@@ -153,9 +154,11 @@ its process logs and unexpected exits appear in Klein's logs. The process-starte
 log does not indicate that the tunnel has connected. `cloudflared` handles network
 reconnections; if its process exits, restart Klein after resolving the logged error.
 
-For an ahead-of-time production bundle, run `bun run build` and execute it with
-`bun dist/klein`, keeping the generated `dist/web/` directory available from
-the working directory. The frontend is not served with HMR:
+To build ahead of time, run `bun run build` and then `bun dist/klein` from the
+project root. Configuration, runtime data, and `dist/web/` paths are resolved
+from the working directory. Keep the installed dependencies available as well:
+codemode loads its sandbox worker from `@earendil-works/pi-codemode` at runtime.
+The frontend is not served with HMR:
 
 bun run start
 The same Elysia server provides the API and the bundled UI.

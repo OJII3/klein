@@ -9,6 +9,7 @@ export function createDiscordSendTool(
 ) {
   return defineTool({
     name: "discord_send",
+    exposure: "model-only",
     label: "Send Discord message",
     description: "Send a user-visible message to the current Discord conversation.",
     promptSnippet: "Send a user-visible message to Discord.",

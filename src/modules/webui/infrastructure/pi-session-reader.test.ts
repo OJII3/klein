@@ -146,3 +146,59 @@ test("returns no Pi sessions when the session directory is absent", async () => 
     await rm(agentDirectory, { force: true, recursive: true });
   }
 });
+
+test("reads usage and context edits without exposing replacement image data", async () => {
+  const agentDirectory = await mkdtemp(join(tmpdir(), "klein-pi-reader-"));
+
+  try {
+    const sessionManager = createPiSessionManager(
+      agentDirectory,
+      "discord-channel:123",
+      "new",
+      process.cwd(),
+    );
+    const targetId = sessionManager.appendMessage({
+      role: "user",
+      content: "hello",
+      timestamp: Date.now(),
+    });
+    sessionManager.appendMessage({
+      role: "assistant",
+      content: "hello back",
+      timestamp: Date.now(),
+    } as never);
+    const usage = {
+      input: 10,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 10,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    };
+    sessionManager.appendUsage("cache_warm", "opencode-go", "kimi-k3", usage, "Warm cache");
+    sessionManager.appendContextEdit(targetId, {
+      content: [{ type: "image", data: "secret-image-data", mimeType: "image/png" }],
+    });
+    sessionManager.appendContextEdit(targetId, null);
+
+    const detail = await new PiSessionReader(agentDirectory).get(sessionManager.getSessionId());
+    assert.ok(detail);
+    assert.equal(detail.items[2]?.kind, "usage");
+    assert.equal(detail.items[2]?.summary, "Warm cache");
+    assert.deepEqual(detail.items[2]?.content, {
+      kind: "cache_warm",
+      provider: "opencode-go",
+      model: "kimi-k3",
+      usage,
+      note: "Warm cache",
+    });
+    assert.equal(detail.items[3]?.kind, "context_edit");
+    assert.deepEqual(detail.items[3]?.content, {
+      targetId,
+      replacement: { content: [{ type: "image", mimeType: "image/png", omitted: true }] },
+    });
+    assert.deepEqual(detail.items[4]?.content, { targetId, replacement: null });
+  } finally {
+    await rm(agentDirectory, { force: true, recursive: true });
+  }
+});
