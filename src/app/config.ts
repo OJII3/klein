@@ -11,7 +11,7 @@ function isNodeError(error: unknown): error is NodeJS.ErrnoException {
 }
 
 export async function loadConfig(
-  configPath = process.env.CONFIG_PATH ?? process.env.KLEIN_CONFIG_PATH ?? DEFAULT_CONFIG_PATH,
+  configPath = process.env.CONFIG_PATH ?? DEFAULT_CONFIG_PATH,
 ): Promise<AppConfig> {
   const resolvedConfigPath = resolve(configPath);
 

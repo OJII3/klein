@@ -32,8 +32,7 @@ default profile is `klein`, whose system prompt and skills live under
 `config/klein/`. Add another profile under `config/<profile>/` with its own
 `SOUL.md` and optional `skills/` directory, then change `profile` in
 `config/config.json` to switch characters. When `profile` is omitted, `klein`
-is used. Set `CONFIG_PATH` when a different configuration file is needed; the
-legacy `KLEIN_CONFIG_PATH` variable is also accepted.
+is used. Set `CONFIG_PATH` when a different configuration file is needed.
 
 By default, Klein resumes the latest Pi session for each Discord channel. Use
 `--new` to start fresh sessions for the next run, or `--resume` to make the
