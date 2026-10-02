@@ -6,14 +6,15 @@
   "author": "OJII3",
   "type": "module",
   "scripts": {
-    "build": "bun run build:web && bun build --target=bun --production --outfile=dist/klein --external @discordjs/voice --external opusscript --external @earendil-works/pi-codemode src/app/bootstrap.ts",
-    "build:web": "bun build web/index.html --outdir dist/web --minify",
+    "build": "bun run build:web && bun run build:server",
+    "build:web": "bun scripts/build-web.ts",
+    "build:server": "bun scripts/build-server.ts",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check",
     "generate:config-schema": "bun scripts/generate-config-schema.ts && bunx oxfmt config/klein.schema.json",
-    "start": "bun run build:web && bun src/app/bootstrap.ts",
+    "start": "bun run build && bun dist/klein",
     "test": "bun test",
     "typecheck": "tsc && tsc -p web/tsconfig.json"
   },
