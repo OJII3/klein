@@ -51,7 +51,11 @@ export async function bootstrap(): Promise<void> {
     throw new Error("DISCORD_BOT_TOKEN is required");
   }
   const openCodeGoApiKey = process.env.OPENCODE_API_KEY;
-  if (!openCodeGoApiKey) {
+  const memoryLlmConfiguration = config.features.memory.llm ?? config.llm;
+  const modelsInUse = [config.llm, config.llm.image];
+  if (config.features.memory.enabled) modelsInUse.push(memoryLlmConfiguration);
+  const usesOpenCodeGo = modelsInUse.some((model) => model?.provider === "opencode-go");
+  if (usesOpenCodeGo && !openCodeGoApiKey) {
     throw new Error("OPENCODE_API_KEY is required");
   }
   const openAiApiKey = process.env.OPENAI_API_KEY;
@@ -81,7 +85,7 @@ export async function bootstrap(): Promise<void> {
     sessionMode,
   });
   const memoryConfiguration = config.features.memory;
-  const memoryLlmConfiguration = memoryConfiguration.llm ?? config.llm;
+  const resolvedMemoryLlmConfiguration = memoryConfiguration.llm ?? config.llm;
   const memorySessionId = `memory-${randomUUID()}`;
   const memoryCoordinator = memoryConfiguration.enabled
     ? new MemoryCoordinator({
@@ -93,13 +97,13 @@ export async function bootstrap(): Promise<void> {
         processor: new PiMemoryProcessor(
           withOpenCodeSessionHeader(
             resolveConfiguredModel(
-              memoryLlmConfiguration.provider,
-              memoryLlmConfiguration.model,
+              resolvedMemoryLlmConfiguration.provider,
+              resolvedMemoryLlmConfiguration.model,
               modelRuntime,
             ),
             memorySessionId,
           ),
-          memoryLlmConfiguration.thinkingLevel,
+          resolvedMemoryLlmConfiguration.thinkingLevel,
         ),
         taskCoordinator,
       })
@@ -161,11 +165,12 @@ export async function bootstrap(): Promise<void> {
     operatingState: discordOperatingState,
     taskCoordinator,
   });
-  const getMonthlyUsageLimit = createGetMonthlyUsageLimit(
-    new OpenCodeGoUsageProvider(openCodeGoApiKey),
-  );
+  const getMonthlyUsageLimit = openCodeGoApiKey
+    ? createGetMonthlyUsageLimit(new OpenCodeGoUsageProvider(openCodeGoApiKey))
+    : undefined;
   const updateDiscordUsageStatus = async (): Promise<void> => {
     try {
+      if (!getMonthlyUsageLimit) return;
       const monthly = await getMonthlyUsageLimit();
       discordService.setActivity(formatMonthlyUsageStatus(monthly));
     } catch (error) {

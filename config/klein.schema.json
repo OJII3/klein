@@ -15,8 +15,16 @@
       "required": ["provider", "model"],
       "properties": {
         "provider": {
-          "type": "string",
-          "const": "opencode-go"
+          "anyOf": [
+            {
+              "type": "string",
+              "const": "opencode-go"
+            },
+            {
+              "type": "string",
+              "const": "google-vertex"
+            }
+          ]
         },
         "model": {
           "type": "string",
@@ -64,8 +72,16 @@
           "required": ["provider", "model"],
           "properties": {
             "provider": {
-              "type": "string",
-              "const": "opencode-go"
+              "anyOf": [
+                {
+                  "type": "string",
+                  "const": "opencode-go"
+                },
+                {
+                  "type": "string",
+                  "const": "google-vertex"
+                }
+              ]
             },
             "model": {
               "type": "string",
@@ -267,8 +283,16 @@
               "required": ["provider", "model"],
               "properties": {
                 "provider": {
-                  "type": "string",
-                  "minLength": 1
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "const": "opencode-go"
+                    },
+                    {
+                      "type": "string",
+                      "const": "google-vertex"
+                    }
+                  ]
                 },
                 "model": {
                   "type": "string",
