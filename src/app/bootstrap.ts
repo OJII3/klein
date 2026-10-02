@@ -26,7 +26,11 @@ import { OpenAiLiveVoiceSessionFactory } from "@modules/live/infrastructure/open
 import { createGetMonthlyUsageLimit } from "@modules/usage/application/get-monthly-usage-limit";
 import { formatMonthlyUsageStatus } from "@modules/usage/application/format-monthly-usage-status";
 import { OpenCodeGoUsageProvider } from "@modules/usage/infrastructure/opencode-go-usage-provider";
-import { resolveLogDirectory, resolveWebUiConfig } from "@modules/webui/domain/webui-config";
+import {
+  resolveLogDirectory,
+  resolveWebUiConfig,
+  resolveWebUiStaticDirectory,
+} from "@modules/webui/domain/webui-config";
 import { startWebUi } from "@modules/webui/infrastructure/elysia-webui-app";
 import { PinoJsonlReader } from "@modules/webui/infrastructure/pino-jsonl-reader";
 import { PiSessionReader } from "@modules/webui/infrastructure/pi-session-reader";
@@ -181,7 +185,7 @@ export async function bootstrap(): Promise<void> {
         piSessions: new PiSessionReader(agentDir),
         pinoLogs: new PinoJsonlReader(logDirectory),
         port: webUiConfig.port,
-        staticDirectory: resolve("dist/web"),
+        staticDirectory: resolveWebUiStaticDirectory(),
         tunnelToken: process.env.TUNNEL_TOKEN,
       })
     : undefined;

@@ -1,4 +1,5 @@
-import { resolve } from "node:path";
+import { existsSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 
 import type { KleinConfig } from "@app/config-schema";
 
@@ -14,6 +15,24 @@ export interface ResolvedWebUiConfig {
 
 export function resolveLogDirectory(config: KleinConfig): string {
   return resolve(config.runtime.logDir ?? DEFAULT_LOG_DIRECTORY);
+}
+
+export function resolveWebUiStaticDirectory(
+  executablePath = process.argv[1],
+  workingDirectory = process.cwd(),
+): string {
+  const executableDirectory = executablePath ? dirname(resolve(executablePath)) : undefined;
+  const candidates = [
+    ...(executableDirectory ? [resolve(executableDirectory, "web")] : []),
+    resolve(workingDirectory, "dist/web"),
+  ];
+  const staticDirectory = candidates.find((candidate) => existsSync(candidate));
+
+  if (!staticDirectory) {
+    throw new Error(`Web UI static directory was not found. Tried: ${candidates.join(", ")}`);
+  }
+
+  return staticDirectory;
 }
 
 export function resolveWebUiConfig(config: KleinConfig): ResolvedWebUiConfig {
