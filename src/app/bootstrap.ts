@@ -69,14 +69,12 @@ export async function bootstrap(): Promise<void> {
   );
   const taskCoordinator = new TaskCoordinator();
   const agentDir = resolve(config.runtime.agentDir);
-  const sessionDirectory = resolve(config.runtime.sessionDir ?? resolve(agentDir, "sessions"));
   const channelSessionStateStore = new ChannelSessionStateStore(
     resolve(agentDir, "channel-session-state"),
   );
   const modelRuntime = await createPiModelRuntime(agentDir);
   const piAgentFactory = createPiAgentFactory({
     agentDir,
-    sessionDirectory,
     llm: config.llm,
     logger,
     modelRuntime,
@@ -184,7 +182,7 @@ export async function bootstrap(): Promise<void> {
         logger,
         memory: memoryCoordinator,
         memoryEditor: memoryCoordinator,
-        piSessions: new PiSessionReader(agentDir, sessionDirectory),
+        piSessions: new PiSessionReader(agentDir),
         pinoLogs: new PinoJsonlReader(logDirectory),
         port: webUiConfig.port,
         staticDirectory: resolveWebUiStaticDirectory(),

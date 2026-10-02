@@ -120,10 +120,6 @@
         "logDir": {
           "type": "string",
           "minLength": 1
-        },
-        "sessionDir": {
-          "type": "string",
-          "minLength": 1
         }
       },
       "additionalProperties": false

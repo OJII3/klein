@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { AppShell, type View } from "./components/app-shell";
 import { useLogs } from "./hooks/use-logs";
@@ -9,9 +9,25 @@ import { MemoryView } from "./features/memory/memory-view";
 import { SessionsView } from "./features/sessions/sessions-view";
 
 export default function App() {
-  const [view, setView] = useState<View>("logs");
+  const [view, setView] = useState<View>(() => viewFromPath(window.location.pathname));
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const onUpdated = useCallback(() => setLastUpdated(new Date()), []);
+  const changeView = useCallback((nextView: View) => {
+    window.history.pushState(null, "", `/${nextView}`);
+    setView(nextView);
+  }, []);
+  useEffect(() => {
+    const syncView = () => {
+      const nextView = viewFromPath(window.location.pathname);
+      setView(nextView);
+      if (window.location.pathname !== `/${nextView}`) {
+        window.history.replaceState(null, "", `/${nextView}`);
+      }
+    };
+    window.addEventListener("popstate", syncView);
+    syncView();
+    return () => window.removeEventListener("popstate", syncView);
+  }, []);
   const logs = useLogs({ active: view === "logs", onUpdated });
   const sessions = useSessions({ active: view === "sessions", onUpdated });
   const memory = useMemory({ active: view === "memory", onUpdated });
@@ -26,7 +42,7 @@ export default function App() {
     <AppShell
       lastUpdated={lastUpdated}
       onRefresh={refreshCurrentView}
-      onViewChange={setView}
+      onViewChange={changeView}
       view={view}
     >
       {view === "logs" ? (
@@ -84,4 +100,9 @@ export default function App() {
       )}
     </AppShell>
   );
+}
+
+function viewFromPath(pathname: string): View {
+  const segment = pathname.split("/").filter(Boolean)[0];
+  return segment === "sessions" || segment === "memory" ? segment : "logs";
 }
