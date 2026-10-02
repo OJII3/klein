@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import {
   deleteMemory,
+  addMemoryRule,
   getMemory,
   listMemoryGuilds,
   type MemoryEntry,
@@ -25,6 +26,8 @@ export function useMemory({ active, onUpdated }: UseMemoryOptions) {
   const [detailReloadKey, setDetailReloadKey] = useState(0);
   const [deletingEntryId, setDeletingEntryId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [addRuleError, setAddRuleError] = useState<string | null>(null);
+  const [addingRule, setAddingRule] = useState(false);
 
   const load = useCallback(async () => {
     setGuildsLoading(true);
@@ -98,6 +101,26 @@ export function useMemory({ active, onUpdated }: UseMemoryOptions) {
     setDeleteError(null);
   }, []);
 
+  const createRule = useCallback(
+    async (title: string, content: string) => {
+      if (!selectedGuildId || addingRule) return;
+      setAddingRule(true);
+      setAddRuleError(null);
+      try {
+        await addMemoryRule(selectedGuildId, { title, content });
+        setDetailReloadKey((key) => key + 1);
+        void load();
+      } catch (requestError) {
+        setAddRuleError(
+          requestError instanceof Error ? requestError.message : "ルールの追加に失敗しました",
+        );
+      } finally {
+        setAddingRule(false);
+      }
+    },
+    [addingRule, load, selectedGuildId],
+  );
+
   const deleteEntry = useCallback(
     async (entryId: string) => {
       if (!selectedGuildId || deletingEntryId) return;
@@ -134,6 +157,9 @@ export function useMemory({ active, onUpdated }: UseMemoryOptions) {
     detailLoading,
     detailError,
     deleteEntry,
+    createRule,
+    addingRule,
+    addRuleError,
     deleteError,
     deletingEntryId,
     dismissDeleteError,

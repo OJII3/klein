@@ -156,3 +156,10 @@ export function getMemory(guildId: string): Promise<MemoryDetailResponse> {
 export function deleteMemory(guildId: string, entryId: string): Promise<{ deleted: boolean }> {
   return unwrap<{ deleted: boolean }>(client.api.memory({ guildId })({ entryId }).delete());
 }
+
+export function addMemoryRule(
+  guildId: string,
+  input: { title: string; content: string },
+): Promise<{ created: boolean }> {
+  return unwrap<{ created: boolean }>(client.api.memory({ guildId }).rules.post(input));
+}

@@ -13,6 +13,7 @@ import {
   LogsQuerySchema,
   MemoryEntryParamsSchema,
   MemoryParamsSchema,
+  MemoryRuleBodySchema,
   SessionParamsSchema,
   SessionQuerySchema,
 } from "../domain/api-schema";
@@ -142,6 +143,31 @@ export function createWebUiApp(dependencies: WebUiDependencies) {
         }
       },
       { params: MemoryEntryParamsSchema },
+    )
+    .post(
+      "/api/memory/:guildId/rules",
+      async ({ params, body, set }) => {
+        if (!dependencies.memory || !dependencies.memoryEditor) {
+          set.status = 404;
+          return { error: "Memory editing is disabled" };
+        }
+        try {
+          await dependencies.memoryEditor.addRule(
+            params.guildId,
+            body.title.trim(),
+            body.content.trim(),
+          );
+          return { created: true };
+        } catch (error) {
+          return handleRouteError(
+            set,
+            dependencies.logger,
+            error,
+            "Failed to add guild memory rule",
+          );
+        }
+      },
+      { params: MemoryParamsSchema, body: MemoryRuleBodySchema },
     );
 }
 

@@ -65,6 +65,8 @@ export default function App() {
           detailError={memory.detailError}
           deleteError={memory.deleteError}
           deletingEntryId={memory.deletingEntryId}
+          addingRule={memory.addingRule}
+          addRuleError={memory.addRuleError}
           enabled={memory.enabled}
           entries={memory.entries}
           error={memory.guildsError}
@@ -72,6 +74,7 @@ export default function App() {
           loading={memory.guildsLoading}
           loadingDetail={memory.detailLoading}
           onDelete={memory.deleteEntry}
+          onAddRule={memory.createRule}
           onDismissDeleteError={memory.dismissDeleteError}
           onRetry={() => void memory.reload()}
           onRetryDetail={memory.retryDetail}

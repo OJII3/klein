@@ -96,7 +96,8 @@ required sections are omitted here):
 {
   "runtime": {
     "agentDir": ".runtime/pi",
-    "logDir": ".runtime/logs"
+    "logDir": ".runtime/logs",
+    "sessionDir": ".runtime/sessions"
   },
   "features": {
     "memory": {

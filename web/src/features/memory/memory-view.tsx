@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { MemoryEntry, MemoryGuildSummary } from "../../api";
 import { EmptyState, ErrorNotice, LoadingState } from "../../components/feedback";
 import { formatTimestamp } from "../../lib/format";
@@ -13,8 +14,11 @@ interface MemoryViewProps {
   detailError: string | null;
   deleteError: string | null;
   deletingEntryId: string | null;
+  addingRule: boolean;
+  addRuleError: string | null;
   onSelect: (guildId: string) => void;
   onDelete: (entryId: string) => void;
+  onAddRule: (title: string, content: string) => void;
   onDismissDeleteError: () => void;
   onRetry: () => void;
   onRetryDetail: () => void;
@@ -31,8 +35,11 @@ export function MemoryView({
   detailError,
   deleteError,
   deletingEntryId,
+  addingRule,
+  addRuleError,
   onSelect,
   onDelete,
+  onAddRule,
   onDismissDeleteError,
   onRetry,
   onRetryDetail,
@@ -93,6 +100,9 @@ export function MemoryView({
                 entries={entries}
                 guildId={selectedGuildId}
                 onDelete={onDelete}
+                addingRule={addingRule}
+                addRuleError={addRuleError}
+                onAddRule={onAddRule}
               />
             ) : (
               <EmptyState>ギルドを選択してください</EmptyState>
@@ -109,12 +119,20 @@ function MemoryEntries({
   entries,
   guildId,
   onDelete,
+  addingRule,
+  addRuleError,
+  onAddRule,
 }: {
   deletingEntryId: string | null;
   entries: MemoryEntry[];
   guildId: string;
   onDelete: (entryId: string) => void;
+  addingRule: boolean;
+  addRuleError: string | null;
+  onAddRule: (title: string, content: string) => void;
 }) {
+  const [ruleTitle, setRuleTitle] = useState("");
+  const [ruleContent, setRuleContent] = useState("");
   return (
     <div className="memory-panel">
       <div className="memory-panel-heading">
@@ -124,6 +142,53 @@ function MemoryEntries({
         </div>
         <span className="result-count">{entries.length.toLocaleString("ja-JP")} 件</span>
       </div>
+      <form
+        className="memory-rule-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          const title = ruleTitle.trim();
+          const content = ruleContent.trim();
+          if (!title || !content) return;
+          onAddRule(title, content);
+          setRuleTitle("");
+          setRuleContent("");
+        }}
+      >
+        <h3>ルールを追加</h3>
+        <label>
+          タイトル
+          <input
+            maxLength={200}
+            value={ruleTitle}
+            onChange={(event) => setRuleTitle(event.target.value)}
+            required
+          />
+        </label>
+        <label>
+          内容
+          <textarea
+            maxLength={10000}
+            rows={3}
+            value={ruleContent}
+            onChange={(event) => setRuleContent(event.target.value)}
+            required
+          />
+        </label>
+        {addRuleError && (
+          <ErrorNotice
+            message={addRuleError}
+            onRetry={() => onAddRule(ruleTitle.trim(), ruleContent.trim())}
+            retryLabel="再試行"
+          />
+        )}
+        <button
+          className="button button-small"
+          disabled={addingRule || !ruleTitle.trim() || !ruleContent.trim()}
+          type="submit"
+        >
+          {addingRule ? "追加中…" : "ルールを追加"}
+        </button>
+      </form>
       {entries.length === 0 ? (
         <EmptyState>このギルドのメモリは空です</EmptyState>
       ) : (

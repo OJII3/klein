@@ -28,6 +28,7 @@ export interface MemoryReader {
 }
 
 export interface MemoryEditor {
+  addRule(guildId: string, title: string, content: string): Promise<void>;
   deleteEntry(guildId: string, entryId: string): Promise<void>;
 }
 
