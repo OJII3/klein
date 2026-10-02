@@ -66,6 +66,7 @@ test("serves health, logs, Pi sessions, and guild memory through Elysia", async 
         }),
       },
       memoryEditor: {
+        addRule: async () => {},
         deleteEntry: async (guildId, entryId) => {
           assert.equal(guildId, "guild-a");
           assert.equal(entryId, "mem-1");

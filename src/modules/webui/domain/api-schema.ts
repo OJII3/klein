@@ -38,3 +38,8 @@ export const MemoryEntryParamsSchema = t.Object({
     pattern: "^[A-Za-z0-9_-]+$",
   }),
 });
+
+export const MemoryRuleBodySchema = t.Object({
+  title: t.String({ minLength: 1, maxLength: 200 }),
+  content: t.String({ minLength: 1, maxLength: 10000 }),
+});

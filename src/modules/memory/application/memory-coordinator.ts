@@ -126,6 +126,14 @@ export class MemoryCoordinator implements MemoryReader, MemoryEditor {
     });
   }
 
+  addRule(guildId: string, title: string, content: string): Promise<void> {
+    if (this.disposed) return Promise.reject(new Error("Memory coordinator is disposed"));
+    return this.runGuildOperation(guildId, async () => {
+      const store = new MarkdownMemoryStore(resolveMemoryFilePath(this.options.filePath, guildId));
+      await store.apply([{ type: "add", kind: "rule", title, content }], []);
+    });
+  }
+
   dispose(): void {
     this.disposed = true;
     for (const queue of this.queues.values()) {

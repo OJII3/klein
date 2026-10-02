@@ -25,6 +25,7 @@ import { adaptPiTools } from "./pi-tool-adapter";
 
 export interface PiAgentFactoryOptions {
   readonly agentDir: string;
+  readonly sessionDirectory?: string;
   readonly modelRuntime: ModelRuntime;
   readonly sessionMode: SessionMode;
   readonly llm: {
@@ -99,8 +100,9 @@ export function createPiSessionManager(
   sessionKey: string,
   sessionMode: SessionMode,
   cwd = process.cwd(),
+  sessionDirectory = resolve(agentDir, "sessions"),
 ): SessionManager {
-  const sessionDir = resolve(agentDir, "sessions", encodeURIComponent(sessionKey));
+  const sessionDir = resolve(sessionDirectory, encodeURIComponent(sessionKey));
 
   return sessionMode === "resume"
     ? SessionManager.continueRecent(cwd, sessionDir)
@@ -277,6 +279,7 @@ export function resolveConfiguredImageModel(
 
 export function createPiAgentFactory({
   agentDir,
+  sessionDirectory,
   llm,
   logger,
   modelRuntime,
@@ -301,7 +304,13 @@ export function createPiAgentFactory({
       );
       await resourceLoader.reload();
 
-      const sessionManager = createPiSessionManager(agentDir, options.sessionKey, sessionMode);
+      const sessionManager = createPiSessionManager(
+        agentDir,
+        options.sessionKey,
+        sessionMode,
+        process.cwd(),
+        sessionDirectory,
+      );
       const sessionId = sessionManager.getSessionId();
       const model = withOpenCodeSessionHeader(
         withContextWindowRatio(
