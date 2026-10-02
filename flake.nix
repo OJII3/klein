@@ -50,6 +50,7 @@
             packages = [
               bun
               pkgs.cloudflared
+              pkgs.google-cloud-sdk
               inputs'.llm-agents.packages.opencode2
             ];
             shellHook = ''
