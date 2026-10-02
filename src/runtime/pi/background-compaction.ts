@@ -73,6 +73,13 @@ export function createBackgroundCompactionExtension(
 
   return (pi) => {
     pi.on("turn_end", (_event, context) => {
+      const branchEntries = context.sessionManager.getBranch();
+      // Pi's standard compaction projects context edits before summarizing.
+      // This raw-entry preparation must defer to it when edits are present.
+      if (branchEntries.some((entry) => entry.type === "context_edit")) {
+        if (state.pending) cancelPending(state, state.pending);
+        return;
+      }
       const compactionSettings = settingsManager.getCompactionSettings();
       const contextUsage = context.getContextUsage();
       if (
@@ -89,7 +96,6 @@ export function createBackgroundCompactionExtension(
         return;
       }
 
-      const branchEntries = context.sessionManager.getBranch();
       const preparation = prepareBackgroundCompaction(
         branchEntries,
         compactionSettings,
@@ -139,6 +145,7 @@ export function createBackgroundCompactionExtension(
       if (!pending) return;
 
       if (
+        event.branchEntries.some((entry) => entry.type === "context_edit") ||
         event.customInstructions !== undefined ||
         !pending.result ||
         !isCompatible(pending, event.preparation, event.branchEntries)

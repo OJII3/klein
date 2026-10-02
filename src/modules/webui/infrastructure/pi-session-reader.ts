@@ -190,6 +190,18 @@ function toViewerEvent(entry: SessionEntry, sessionId: string): PiViewerEvent {
         summary: `${entry.provider}/${entry.modelId}`,
         content: { provider: entry.provider, modelId: entry.modelId },
       };
+    case "usage":
+      return {
+        ...base,
+        summary: entry.note ?? entry.kind,
+        content: {
+          kind: entry.kind,
+          provider: entry.provider,
+          model: entry.model,
+          usage: entry.usage,
+          note: entry.note,
+        },
+      };
     case "compaction":
       return {
         ...base,
@@ -213,6 +225,12 @@ function toViewerEvent(entry: SessionEntry, sessionId: string): PiViewerEvent {
         ...base,
         summary: entry.customType,
         content: sanitizeContent(entry.content),
+      };
+    case "context_edit":
+      return {
+        ...base,
+        summary: entry.targetId,
+        content: { targetId: entry.targetId, replacement: sanitizeContent(entry.replacement) },
       };
     case "label":
       return {

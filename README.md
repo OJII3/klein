@@ -155,7 +155,9 @@ reconnections; if its process exits, restart Klein after resolving the logged er
 
 For an ahead-of-time production bundle, run `bun run build` and execute it with
 `bun dist/klein`, keeping the generated `dist/web/` directory available from
-the working directory. The frontend is not served with HMR:
+the working directory. Keep the installed dependencies available as well:
+codemode loads its sandbox worker from `@earendil-works/pi-codemode` at runtime.
+The frontend is not served with HMR:
 
 bun run start
 The same Elysia server provides the API and the bundled UI.

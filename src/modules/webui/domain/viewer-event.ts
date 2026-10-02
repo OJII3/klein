@@ -18,10 +18,12 @@ export type PiViewerEventKind =
   | "message"
   | "thinking_level_change"
   | "model_change"
+  | "usage"
   | "compaction"
   | "branch_summary"
   | "custom"
   | "custom_message"
+  | "context_edit"
   | "label"
   | "session_info";
 

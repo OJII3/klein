@@ -6,7 +6,7 @@
   "author": "OJII3",
   "type": "module",
   "scripts": {
-    "build": "bun run build:web && bun build --target=bun --production --outfile=dist/klein --external @discordjs/voice --external opusscript src/app/bootstrap.ts",
+    "build": "bun run build:web && bun build --target=bun --production --outfile=dist/klein --external @discordjs/voice --external opusscript --external @earendil-works/pi-codemode src/app/bootstrap.ts",
     "build:web": "bun build web/index.html --outdir dist/web --minify",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
@@ -19,8 +19,8 @@
   },
   "dependencies": {
     "@discordjs/voice": "0.19.2",
-    "@earendil-works/pi-ai": "^0.85.1",
-    "@earendil-works/pi-coding-agent": "^0.85.1",
+    "@earendil-works/pi-ai": "^1.0.0",
+    "@earendil-works/pi-coding-agent": "^1.0.0",
     "@elysia/eden": "^1.4.10",
     "@elysia/static": "^1.4.11",
     "discord.js": "^14.27.0",
