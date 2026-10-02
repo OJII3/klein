@@ -38,9 +38,9 @@ bun run start -- --resume
 
 The application supports OpenCode Go through Pi's `opencode-go` provider and
 Google Cloud Vertex AI through `google-vertex`. For Vertex AI, set
-`GOOGLE_CLOUD_API_KEY`, `GOOGLE_CLOUD_PROJECT`, and `GOOGLE_CLOUD_LOCATION` in
-`.env`. Set the selected provider on `llm` (and on optional image or memory
-models). Pi's
+`GOOGLE_CLOUD_API_KEY` in `.env` using a Vertex AI Express Mode API key; no
+project or location setting is needed. Set the selected provider on `llm` (and
+on optional image or memory models). Pi's
 runtime data is stored in the directory configured by `runtime.agentDir`
 (`.runtime/pi` by default), including the per-channel session history and the
 cached model catalog. Klein refreshes Pi's online model catalog when starting;
