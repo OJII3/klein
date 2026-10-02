@@ -20,12 +20,20 @@ rules and bot token, then start it. `OPENCODE_API_KEY` is required only when an
 active model uses `opencode-go`:
 
 ```sh
-cp config/klein.example.json config/klein.json
+cp config/config.example.json config/config.json
 cp .env.example .env
 ${EDITOR:-vi} .env
-${EDITOR:-vi} config/klein.json
+${EDITOR:-vi} config/config.json
 bun run start
 ```
+
+The configuration's `profile` selects the character loaded by the agent. The
+default profile is `klein`, whose system prompt and skills live under
+`config/klein/`. Add another profile under `config/<profile>/` with its own
+`SOUL.md` and optional `skills/` directory, then change `profile` in
+`config/config.json` to switch characters. When `profile` is omitted, `klein`
+is used. Set `CONFIG_PATH` when a different configuration file is needed; the
+legacy `KLEIN_CONFIG_PATH` variable is also accepted.
 
 By default, Klein resumes the latest Pi session for each Discord channel. Use
 `--new` to start fresh sessions for the next run, or `--resume` to make the
@@ -45,8 +53,7 @@ runtime data is stored in the directory configured by `runtime.agentDir`
 (`.runtime/pi` by default), including the per-channel session history and the
 cached model catalog. Klein refreshes Pi's online model catalog when starting;
 cached and built-in model definitions remain available when the catalog cannot
-be reached. Set `KLEIN_CONFIG_PATH` only when you need to use a different
-configuration file.
+be reached.
 
 The `llm.model` and optional `llm.thinkingLevel` settings are used by the main
 Pi session. Set `llm.contextWindowRatio` between `0.01` and `1` to limit the
@@ -73,8 +80,8 @@ configuration is needed. The bot needs the Discord `Connect`, `Speak`, and
 `Use Voice Activity` permissions in the voice channel. OpenAI Live voice also
 requires the bot to have access to the network.
 
-The Discord agent's personality and behavior are loaded from the Markdown file
-configured by `agents.discord.systemPromptFile` (`config/SOUL.md` by default).
+The Discord agent's personality and behavior are loaded from the selected
+profile's `SOUL.md` (`config/klein/SOUL.md` by default).
 
 When `features.memory.enabled` is true, Klein periodically extracts durable
 guild-wide facts, rules, decisions, and procedures from recent Discord
@@ -94,7 +101,7 @@ credentials.
 The optional Web UI shows persisted Pino logs, Pi session history, and
 guild memory contents. The memory tab lists guilds with persisted memory and
 shows each entry's kind, title, body, timestamps, and source message count.
-Update the `runtime` and `features` sections in `config/klein.json` (other
+Update the `runtime` and `features` sections in `config/config.json` (other
 required sections are omitted here):
 
 ```json

@@ -10,6 +10,11 @@
       "type": "number",
       "const": 1
     },
+    "profile": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
     "llm": {
       "type": "object",
       "required": ["provider", "model"],
@@ -247,22 +252,6 @@
       },
       "additionalProperties": false
     },
-    "agents": {
-      "type": "object",
-      "properties": {
-        "discord": {
-          "type": "object",
-          "properties": {
-            "systemPromptFile": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          "additionalProperties": false
-        }
-      },
-      "additionalProperties": false
-    },
     "features": {
       "type": "object",
       "required": ["memory", "minecraft"],
@@ -384,7 +373,7 @@
       "additionalProperties": false
     }
   },
-  "$id": "https://github.com/OJII3/klein/blob/main/config/klein.schema.json",
+  "$id": "https://github.com/OJII3/klein/blob/main/config/config.schema.json",
   "additionalProperties": false,
-  "title": "Klein configuration"
+  "title": "Application configuration"
 }

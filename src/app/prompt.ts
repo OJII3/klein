@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
-export const DEFAULT_SYSTEM_PROMPT_PATH = "config/SOUL.md";
+export const DEFAULT_SYSTEM_PROMPT_PATH = "config/klein/SOUL.md";
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && "code" in error;

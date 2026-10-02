@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
-import type { KleinConfig } from "@app/config-schema";
+import type { AppConfig } from "@app/config-schema";
 
 export const DEFAULT_WEBUI_HOST = "127.0.0.1";
 export const DEFAULT_WEBUI_PORT = 4310;
@@ -13,7 +13,7 @@ export interface ResolvedWebUiConfig {
   readonly port: number;
 }
 
-export function resolveLogDirectory(config: KleinConfig): string {
+export function resolveLogDirectory(config: AppConfig): string {
   return resolve(config.runtime.logDir ?? DEFAULT_LOG_DIRECTORY);
 }
 
@@ -35,7 +35,7 @@ export function resolveWebUiStaticDirectory(
   return staticDirectory;
 }
 
-export function resolveWebUiConfig(config: KleinConfig): ResolvedWebUiConfig {
+export function resolveWebUiConfig(config: AppConfig): ResolvedWebUiConfig {
   const webui = config.features.webui;
 
   return {

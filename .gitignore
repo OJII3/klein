@@ -7,6 +7,7 @@
 .runtime/
 
 # local configuration
+/config/config.json
 /config/klein.json
 
 # nodejs

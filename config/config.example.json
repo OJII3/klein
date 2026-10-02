@@ -1,6 +1,7 @@
 {
-  "$schema": "./klein.schema.json",
+  "$schema": "./config.schema.json",
   "version": 1,
+  "profile": "klein",
   "llm": {
     "provider": "opencode-go",
     "model": "glm-5.2",
@@ -14,11 +15,6 @@
   "runtime": {
     "agentDir": ".runtime/pi",
     "logDir": ".runtime/logs"
-  },
-  "agents": {
-    "discord": {
-      "systemPromptFile": "config/SOUL.md"
-    }
   },
   "discord": {
     "access": {
