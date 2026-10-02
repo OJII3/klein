@@ -155,8 +155,9 @@ log does not indicate that the tunnel has connected. `cloudflared` handles netwo
 reconnections; if its process exits, restart Klein after resolving the logged error.
 
 To build ahead of time, run `bun run build` and then `bun dist/klein` from the
-project root. Configuration, runtime data, and `dist/web/` paths are resolved
-from the working directory. Keep the installed dependencies available as well:
+project root. Configuration and runtime data paths are resolved from the working
+directory; the prebuilt server resolves `dist/web/` next to its executable.
+Keep the installed dependencies available as well:
 codemode loads its sandbox worker from `@earendil-works/pi-codemode` at runtime.
 The frontend is not served with HMR:
 
