@@ -1,5 +1,5 @@
 import { writeFile } from "node:fs/promises";
 
-import { KleinConfigSchema } from "../src/app/config-schema.ts";
+import { ConfigSchema } from "../src/app/config-schema.ts";
 
-await writeFile("config/klein.schema.json", `${JSON.stringify(KleinConfigSchema, null, 2)}\n`);
+await writeFile("config/config.schema.json", `${JSON.stringify(ConfigSchema, null, 2)}\n`);

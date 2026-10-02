@@ -7,6 +7,7 @@ import { parseCliOptions } from "./cli-options";
 import { loadConfig } from "./config";
 import { createLogFilePath, createLogger, flushLogger } from "./logger";
 import { loadPromptFile } from "./prompt";
+import { resolveProfile } from "./profile";
 import { TaskCoordinator } from "./task-coordinator";
 import type { AgentRuntime } from "@agents/core/agent-runtime";
 import { DiscordAgent } from "@agents/discord/discord-agent";
@@ -41,11 +42,12 @@ const CHANNEL_CONTEXT_ROTATION_CHECK_INTERVAL_MS = 60 * 1_000;
 export async function bootstrap(): Promise<void> {
   const { sessionMode } = parseCliOptions(process.argv.slice(2));
   const config = await loadConfig();
+  const profile = resolveProfile(config.profile);
   const logDirectory = resolveLogDirectory(config);
   const logger = createLogger({ filePath: createLogFilePath(logDirectory) });
   logger.info({ event: "application_starting" }, "Starting Klein");
 
-  const systemPrompt = await loadPromptFile(config.agents?.discord?.systemPromptFile);
+  const systemPrompt = await loadPromptFile(profile.systemPromptFile);
   const token = process.env.DISCORD_BOT_TOKEN;
   if (!token) {
     throw new Error("DISCORD_BOT_TOKEN is required");
@@ -80,6 +82,7 @@ export async function bootstrap(): Promise<void> {
   const piAgentFactory = createPiAgentFactory({
     agentDir,
     llm: config.llm,
+    skillsDirectory: profile.skillsDirectory,
     logger,
     modelRuntime,
     sessionMode,

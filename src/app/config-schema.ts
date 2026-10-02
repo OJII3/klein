@@ -36,13 +36,6 @@ const DiscordGuildAccessSchema = Type.Object(
   { additionalProperties: false },
 );
 
-const AgentPromptConfigurationSchema = Type.Object(
-  {
-    systemPromptFile: Type.Optional(Type.String({ minLength: 1 })),
-  },
-  { additionalProperties: false },
-);
-
 const LlmModelConfigurationProperties = {
   provider: Type.Union([Type.Literal("opencode-go"), Type.Literal("google-vertex")]),
   model: Type.String({ minLength: 1 }),
@@ -92,10 +85,16 @@ const WebUiConfigurationSchema = Type.Object(
   { additionalProperties: false },
 );
 
-export const KleinConfigSchema = Type.Object(
+const ProfileNameSchema = Type.String({
+  minLength: 1,
+  pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+});
+
+export const ConfigSchema = Type.Object(
   {
     $schema: Type.Optional(Type.String({ minLength: 1 })),
     version: Type.Literal(1),
+    profile: Type.Optional(ProfileNameSchema),
     llm: LlmConfigurationSchema,
     runtime: Type.Object(
       {
@@ -117,14 +116,6 @@ export const KleinConfigSchema = Type.Object(
       },
       { additionalProperties: false },
     ),
-    agents: Type.Optional(
-      Type.Object(
-        {
-          discord: Type.Optional(AgentPromptConfigurationSchema),
-        },
-        { additionalProperties: false },
-      ),
-    ),
     features: Type.Object(
       {
         memory: Type.Object(MemoryConfigurationSchema.properties, { additionalProperties: false }),
@@ -140,10 +131,10 @@ export const KleinConfigSchema = Type.Object(
     ),
   },
   {
-    $id: "https://github.com/OJII3/klein/blob/main/config/klein.schema.json",
+    $id: "https://github.com/OJII3/klein/blob/main/config/config.schema.json",
     additionalProperties: false,
-    title: "Klein configuration",
+    title: "Application configuration",
   },
 );
 
-export type KleinConfig = Static<typeof KleinConfigSchema>;
+export type AppConfig = Static<typeof ConfigSchema>;

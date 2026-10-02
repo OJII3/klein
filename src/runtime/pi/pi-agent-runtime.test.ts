@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import test from "node:test";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -190,7 +190,7 @@ test("rejects an unknown configured model", () => {
   );
 });
 
-test("loads Klein skills from the configured skill directory", async () => {
+test("loads skills from the default profile directory", async () => {
   const loader = createResourceLoader(
     resolve(".runtime/pi"),
     "Test system prompt",
@@ -207,6 +207,36 @@ test("loads Klein skills from the configured skill directory", async () => {
     ["honkai-character-dialogue"],
   );
   assert.deepEqual(loader.getSkills().diagnostics, []);
+});
+
+test("loads skills from a selected profile directory", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "klein-profile-skills-"));
+  const skillDirectory = join(directory, "skills");
+  await mkdir(join(skillDirectory, "selected-skill"), { recursive: true });
+  await writeFile(
+    join(skillDirectory, "selected-skill", "SKILL.md"),
+    "---\nname: selected-skill\ndescription: Selected profile skill\n---\n\nUse it.\n",
+    "utf8",
+  );
+
+  try {
+    const loader = createResourceLoader(
+      resolve(".runtime/pi"),
+      "Test system prompt",
+      SettingsManager.inMemory(),
+      undefined,
+      skillDirectory,
+    );
+
+    await loader.reload();
+
+    assert.deepEqual(
+      loader.getSkills().skills.map((skill) => skill.name),
+      ["selected-skill"],
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("loads Pi web access tools", async () => {

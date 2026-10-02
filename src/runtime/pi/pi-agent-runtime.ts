@@ -25,6 +25,7 @@ import { adaptPiTools } from "./pi-tool-adapter";
 
 export interface PiAgentFactoryOptions {
   readonly agentDir: string;
+  readonly skillsDirectory?: string;
   readonly modelRuntime: ModelRuntime;
   readonly sessionMode: SessionMode;
   readonly llm: {
@@ -41,7 +42,7 @@ export interface PiAgentFactoryOptions {
   readonly logger: Logger;
 }
 
-export const KLEIN_SKILLS_DIRECTORY = "config/skills";
+export const DEFAULT_SKILLS_DIRECTORY = "config/klein/skills";
 const PI_WEB_ACCESS_EXTENSION_PATH = "node_modules/pi-web-access/index.ts";
 const MODEL_CATALOG_REFRESH_TIMEOUT_MS = 5_000;
 const HANDOFF_COMPACTION_INSTRUCTIONS =
@@ -199,6 +200,7 @@ export function createResourceLoader(
   systemPrompt: string,
   settingsManager: SettingsManager,
   logger?: Logger,
+  skillsDirectory = DEFAULT_SKILLS_DIRECTORY,
 ): DefaultResourceLoader {
   return new DefaultResourceLoader({
     cwd: process.cwd(),
@@ -210,7 +212,7 @@ export function createResourceLoader(
     ],
     additionalExtensionPaths: [resolve(process.cwd(), PI_WEB_ACCESS_EXTENSION_PATH)],
     settingsManager,
-    additionalSkillPaths: [resolve(process.cwd(), KLEIN_SKILLS_DIRECTORY)],
+    additionalSkillPaths: [resolve(process.cwd(), skillsDirectory)],
     noContextFiles: true,
     noExtensions: true,
     noPromptTemplates: true,
@@ -281,6 +283,7 @@ export function createPiAgentFactory({
   logger,
   modelRuntime,
   sessionMode,
+  skillsDirectory = DEFAULT_SKILLS_DIRECTORY,
 }: PiAgentFactoryOptions): AgentFactory {
   const imageModel = llm.image
     ? resolveConfiguredImageModel(llm.image.provider, llm.image.model, modelRuntime)
@@ -298,6 +301,7 @@ export function createPiAgentFactory({
         definition.systemPrompt,
         settingsManager,
         logger,
+        skillsDirectory,
       );
       await resourceLoader.reload();
 
