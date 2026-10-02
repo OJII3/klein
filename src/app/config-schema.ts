@@ -44,7 +44,7 @@ const AgentPromptConfigurationSchema = Type.Object(
 );
 
 const LlmModelConfigurationProperties = {
-  provider: Type.Literal("opencode-go"),
+  provider: Type.Union([Type.Literal("opencode-go"), Type.Literal("google-vertex")]),
   model: Type.String({ minLength: 1 }),
   thinkingLevel: Type.Optional(ThinkingLevelSchema),
 };
@@ -64,7 +64,7 @@ const LlmConfigurationSchema = Type.Object(
 
 const MemoryModelConfigurationSchema = Type.Object(
   {
-    provider: Type.String({ minLength: 1 }),
+    provider: Type.Union([Type.Literal("opencode-go"), Type.Literal("google-vertex")]),
     model: Type.String({ minLength: 1 }),
     thinkingLevel: Type.Optional(ThinkingLevelSchema),
   },

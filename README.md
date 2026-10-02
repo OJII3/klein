@@ -16,7 +16,8 @@ The Web UI is bundled into `dist/web` and served as static files by Elysia.
 Use `bun run build:web` or `bun run build:server` to build either separately.
 
 Copy the configuration and environment templates, fill in the Discord access
-rules, bot token, and OpenCode Go API key, then start it:
+rules and bot token, then start it. `OPENCODE_API_KEY` is required only when an
+active model uses `opencode-go`:
 
 ```sh
 cp config/klein.example.json config/klein.json
@@ -35,7 +36,13 @@ bun run start -- --new
 bun run start -- --resume
 ```
 
-The application uses OpenCode Go through Pi's `opencode-go` provider. Pi's
+The application supports OpenCode Go through Pi's `opencode-go` provider and
+Google Cloud Vertex AI through `google-vertex`. For Vertex AI, set
+`GOOGLE_CLOUD_PROJECT` and authenticate with Application Default Credentials
+(for example, `gcloud auth application-default login`); alternatively set
+`GOOGLE_APPLICATION_CREDENTIALS` to a service-account key file, or use
+`GOOGLE_CLOUD_API_KEY`. Set the selected provider on `llm` (and on optional
+image or memory models). Pi's
 runtime data is stored in the directory configured by `runtime.agentDir`
 (`.runtime/pi` by default), including the per-channel session history and the
 cached model catalog. Klein refreshes Pi's online model catalog when starting;
