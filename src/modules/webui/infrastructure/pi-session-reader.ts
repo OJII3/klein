@@ -36,10 +36,7 @@ interface PiSessionListCursor {
 }
 
 export class PiSessionReader {
-  constructor(
-    private readonly agentDirectory: string,
-    private readonly sessionDirectory = resolve(agentDirectory, "sessions"),
-  ) {}
+  constructor(private readonly agentDirectory: string) {}
 
   async list(query: PiSessionQuery = {}): Promise<ViewerPage<ViewerSessionSummary>> {
     const sessionDirectories = await this.listSessionDirectories();
@@ -125,7 +122,7 @@ export class PiSessionReader {
   private async listSessionDirectories(): Promise<
     { readonly channelKey: string; readonly directory: string }[]
   > {
-    const sessionsDirectory = this.sessionDirectory;
+    const sessionsDirectory = resolve(this.agentDirectory, "sessions");
 
     let entries;
     try {

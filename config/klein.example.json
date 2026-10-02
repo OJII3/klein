@@ -13,8 +13,7 @@
   },
   "runtime": {
     "agentDir": ".runtime/pi",
-    "logDir": ".runtime/logs",
-    "sessionDir": ".runtime/sessions"
+    "logDir": ".runtime/logs"
   },
   "agents": {
     "discord": {
