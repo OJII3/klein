@@ -1,10 +1,11 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { Check, Errors } from "typebox/value";
+import { parse, type ParseError } from "jsonc-parser";
 
 import { ConfigSchema, type AppConfig } from "./config-schema";
 
-export const DEFAULT_CONFIG_PATH = "config/config.json";
+export const DEFAULT_CONFIG_PATH = "config/config.jsonc";
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && "code" in error;
@@ -22,7 +23,7 @@ export async function loadConfig(
     if (isNodeError(error) && error.code === "ENOENT") {
       throw new Error(
         `Configuration was not found: ${resolvedConfigPath}. ` +
-          `Copy config/config.example.json to config/config.json first.`,
+          `Copy config/config.example.json to config/config.jsonc first.`,
       );
     }
 
@@ -33,9 +34,11 @@ export async function loadConfig(
 
   let value: unknown;
   try {
-    value = JSON.parse(content);
+    const parseErrors: ParseError[] = [];
+    value = parse(content, parseErrors);
+    if (parseErrors.length > 0) throw new SyntaxError("Invalid JSONC syntax");
   } catch (error) {
-    throw new Error(`Configuration is not valid JSON: ${resolvedConfigPath}`, {
+    throw new Error(`Configuration is not valid JSONC: ${resolvedConfigPath}`, {
       cause: error,
     });
   }
