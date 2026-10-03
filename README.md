@@ -20,10 +20,10 @@ rules and bot token, then start it. `OPENCODE_API_KEY` is required only when an
 active model uses `opencode-go`:
 
 ```sh
-cp config/config.example.json config/config.json
+cp config/config.example.json config/config.jsonc
 cp .env.example .env
 ${EDITOR:-vi} .env
-${EDITOR:-vi} config/config.json
+${EDITOR:-vi} config/config.jsonc
 bun run start
 ```
 
@@ -31,14 +31,14 @@ The configuration's `profile` selects the character loaded by the agent. The
 default profile is `klein`, whose system prompt and skills live under
 `config/klein/`. Add another profile under `config/<profile>/` with its own
 `SOUL.md` and optional `skills/` directory, then change `profile` in
-`config/config.json` to switch characters. When `profile` is omitted, `klein`
+`config/config.jsonc` to switch characters. When `profile` is omitted, `klein`
 is used. Set `CONFIG_PATH` when a different configuration file is needed.
 
 The `yachiyo` profile in `config/yachiyo/` is based on
 [YacchoGPT's for GPTs prompts](https://github.com/tsukumijima/YacchoGPT)
 (CC0-1.0). It keeps Yachiyo's personality and voice in `SOUL.md`, with research,
 Discord participation, and story knowledge in separate skills.
-Set `"profile": "yachiyo"` in `config/config.json` to select it.
+Set `"profile": "yachiyo"` in `config/config.jsonc` to select it.
 
 By default, Klein resumes the latest Pi session for each Discord channel. Use
 `--new` to start fresh sessions for the next run, or `--resume` to make the
@@ -106,7 +106,7 @@ credentials.
 The optional Web UI shows persisted Pino logs, Pi session history, and
 guild memory contents. The memory tab lists guilds with persisted memory and
 shows each entry's kind, title, body, timestamps, and source message count.
-Update the `runtime` and `features` sections in `config/config.json` (other
+Update the `runtime` and `features` sections in `config/config.jsonc` (other
 required sections are omitted here):
 
 ```json
