@@ -34,6 +34,12 @@ default profile is `klein`, whose system prompt and skills live under
 `config/config.json` to switch characters. When `profile` is omitted, `klein`
 is used. Set `CONFIG_PATH` when a different configuration file is needed.
 
+The `yachiyo` profile in `config/yachiyo/` is based on
+[YacchoGPT's for GPTs prompts](https://github.com/tsukumijima/YacchoGPT)
+(CC0-1.0). It keeps Yachiyo's personality and voice in `SOUL.md`, with research,
+Discord participation, and story knowledge in separate skills.
+Set `"profile": "yachiyo"` in `config/config.json` to select it.
+
 By default, Klein resumes the latest Pi session for each Discord channel. Use
 `--new` to start fresh sessions for the next run, or `--resume` to make the
 default behavior explicit:
