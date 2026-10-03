@@ -33,4 +33,4 @@ for (const result of results) {
 }
 ```
 
-`text(...)` の結果はユーザーへの返信ではない。結果を確認してから、`codemode` の外で `discord_send({ content: "返信内容" })` を直接呼ぶ。送る文章では句点を改行に置き換える。
+`text(...)` の結果はユーザーへの返信ではない。結果を確認してから、`codemode` の外で `discord_send({ content: "確認したよ\nよきかなぁ〜" })` を直接呼ぶ。引数の文字列内では句点を `\n` に置き換える。
