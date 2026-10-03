@@ -37,8 +37,8 @@ is used. Set `CONFIG_PATH` when a different configuration file is needed.
 The `yachiyo` profile in `config/yachiyo/` is based on
 [YacchoGPT's for GPTs prompts](https://github.com/tsukumijima/YacchoGPT)
 (CC0-1.0). It keeps Yachiyo's personality and voice in `SOUL.md`, with research,
-supportive conversation, Discord participation, and story knowledge in separate
-skills. Set `"profile": "yachiyo"` in `config/config.json` to select it.
+Discord participation, and story knowledge in separate skills.
+Set `"profile": "yachiyo"` in `config/config.json` to select it.
 
 By default, Klein resumes the latest Pi session for each Discord channel. Use
 `--new` to start fresh sessions for the next run, or `--resume` to make the
