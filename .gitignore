@@ -8,6 +8,7 @@
 
 # local configuration
 /config/config.json
+/config/config.jsonc
 /config/klein.json
 
 # nodejs
