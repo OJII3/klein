@@ -76,7 +76,7 @@ export function SessionsView({
         <Grid>
           <Grid.Col span={{ base: 12, md: 4 }}>
             <Paper withBorder radius="md" p="xs">
-              <ScrollArea h={560} type="auto">
+              <ScrollArea.Autosize mah={560} type="auto">
                 <Stack gap="xs" aria-label="セッション一覧">
                   {sessions.map((session) => {
                     const selected = selectedSession?.id === session.id;
@@ -107,7 +107,7 @@ export function SessionsView({
                     );
                   })}
                 </Stack>
-              </ScrollArea>
+              </ScrollArea.Autosize>
               <Group justify="center" pt="sm">
                 {sessionsNextCursor ? (
                   <Button

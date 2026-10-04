@@ -89,7 +89,7 @@ export function MemoryView(props: MemoryViewProps) {
         <Grid>
           <Grid.Col span={{ base: 12, md: 4 }}>
             <Paper withBorder radius="md" p="xs">
-              <ScrollArea h={560} type="auto">
+              <ScrollArea.Autosize mah={360} type="auto">
                 <Stack gap="xs" role="list" aria-label="ギルドメモリ一覧">
                   {guilds.map((guild) => {
                     const selected = selectedGuildId === guild.guildId;
@@ -118,7 +118,7 @@ export function MemoryView(props: MemoryViewProps) {
                     );
                   })}
                 </Stack>
-              </ScrollArea>
+              </ScrollArea.Autosize>
             </Paper>
           </Grid.Col>
           <Grid.Col span={{ base: 12, md: 8 }}>
@@ -241,65 +241,67 @@ function MemoryEntries({
       {entries.length === 0 ? (
         <EmptyState>このギルドのメモリは空です</EmptyState>
       ) : (
-        <Stack>
-          {entries.map((entry) => (
-            <Paper key={entry.id} withBorder radius="md" p="md">
-              <Group justify="space-between" align="start" mb="sm">
-                <Stack gap="xs" align="start">
-                  <Badge
-                    variant="light"
-                    color={
-                      entry.kind === "rule" || entry.kind === "procedure"
-                        ? "yellow"
-                        : entry.kind === "decision"
-                          ? "blue"
-                          : "gray"
-                    }
-                  >
-                    {entry.kind}
-                  </Badge>
-                  <Title order={3} size="h5">
-                    {entry.title}
-                  </Title>
-                </Stack>
+        <ScrollArea.Autosize mah="70vh" type="auto">
+          <Stack>
+            {entries.map((entry) => (
+              <Paper key={entry.id} withBorder radius="md" p="md">
+                <Group justify="space-between" align="start" mb="sm">
+                  <Stack gap="xs" align="start">
+                    <Badge
+                      variant="light"
+                      color={
+                        entry.kind === "rule" || entry.kind === "procedure"
+                          ? "yellow"
+                          : entry.kind === "decision"
+                            ? "blue"
+                            : "gray"
+                      }
+                    >
+                      {entry.kind}
+                    </Badge>
+                    <Title order={3} size="h5">
+                      {entry.title}
+                    </Title>
+                  </Stack>
+                  <Group>
+                    <Text size="xs" c="dimmed">
+                      更新 {formatTimestamp(entry.updatedAt)}
+                    </Text>
+                    <Button
+                      size="xs"
+                      color="red"
+                      variant="light"
+                      disabled={deletingEntryId !== null}
+                      onClick={() => {
+                        if (
+                          window.confirm(
+                            `「${entry.title}」を削除しますか？\nこの操作は元に戻せません。`,
+                          )
+                        )
+                          onDelete(entry.id);
+                      }}
+                      type="button"
+                    >
+                      {deletingEntryId === entry.id ? "削除中…" : "削除"}
+                    </Button>
+                  </Group>
+                </Group>
+                <Text size="sm" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+                  {entry.content}
+                </Text>
+                <Divider my="sm" />
                 <Group>
                   <Text size="xs" c="dimmed">
-                    更新 {formatTimestamp(entry.updatedAt)}
+                    作成 {formatTimestamp(entry.createdAt)}
                   </Text>
-                  <Button
-                    size="xs"
-                    color="red"
-                    variant="light"
-                    disabled={deletingEntryId !== null}
-                    onClick={() => {
-                      if (
-                        window.confirm(
-                          `「${entry.title}」を削除しますか？\nこの操作は元に戻せません。`,
-                        )
-                      )
-                        onDelete(entry.id);
-                    }}
-                    type="button"
-                  >
-                    {deletingEntryId === entry.id ? "削除中…" : "削除"}
-                  </Button>
+                  <Text size="xs" c="dimmed">
+                    参照メッセージ {entry.sourceMessageIds.length.toLocaleString("ja-JP")} 件
+                  </Text>
                 </Group>
-              </Group>
-              <Text size="sm" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-                {entry.content}
-              </Text>
-              <Divider my="sm" />
-              <Group>
-                <Text size="xs" c="dimmed">
-                  作成 {formatTimestamp(entry.createdAt)}
-                </Text>
-                <Text size="xs" c="dimmed">
-                  参照メッセージ {entry.sourceMessageIds.length.toLocaleString("ja-JP")} 件
-                </Text>
-              </Group>
-            </Paper>
-          ))}
-        </Stack>
+              </Paper>
+            ))}
+          </Stack>
+        </ScrollArea.Autosize>
       )}
     </Stack>
   );
