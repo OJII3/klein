@@ -6,22 +6,23 @@ export function LogDetails({ log }: { log: PinoLog }) {
   const attributes = Object.keys(log.attributes ?? {}).length > 0 ? log.attributes : null;
 
   return (
-    <div className="log-details">
-      <dl className="detail-grid">
-        <div>
-          <dt>ID</dt>
-          <dd className="mono">{log.id}</dd>
-        </div>
-        <div>
-          <dt>レベル</dt>
-          <dd>{levelLabel(log.level)}</dd>
-        </div>
-      </dl>
+    <Stack gap="sm" p="md">
+      <Group gap="xl">
+        <Text size="sm">
+          ID <Code>{log.id}</Code>
+        </Text>
+        <Text size="sm">
+          レベル <Text span>{levelLabel(log.level)}</Text>
+        </Text>
+      </Group>
       {attributes ? (
-        <JsonValue className="json-block" value={attributes} />
+        <JsonValue value={attributes} />
       ) : (
-        <p className="muted">属性はありません</p>
+        <Text size="sm" c="dimmed">
+          属性はありません
+        </Text>
       )}
-    </div>
+    </Stack>
   );
 }
+import { Code, Group, Stack, Text } from "@mantine/core";

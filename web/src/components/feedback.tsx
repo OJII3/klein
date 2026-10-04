@@ -8,20 +8,20 @@ interface ErrorNoticeProps {
 
 export function ErrorNotice({ message, onRetry, retryLabel = "再試行" }: ErrorNoticeProps) {
   return (
-    <Alert color="red" className="notice notice-error" role="alert" icon={null}>
-      <div className="feedback-row">
-        <span>{message}</span>
+    <Alert color="red" role="alert" icon={null}>
+      <Stack gap="sm">
+        <Text size="sm">{message}</Text>
         <Button size="xs" variant="light" color="red" onClick={onRetry} type="button">
           {retryLabel}
         </Button>
-      </div>
+      </Stack>
     </Alert>
   );
 }
 
 export function EmptyState({ children }: { children: string }) {
   return (
-    <Center className="empty-state">
+    <Center mih={100} p="xl">
       <Text c="dimmed">{children}</Text>
     </Center>
   );
@@ -29,7 +29,7 @@ export function EmptyState({ children }: { children: string }) {
 
 export function LoadingState({ label = "読み込み中…" }: { label?: string }) {
   return (
-    <Center className="loading-state" role="status">
+    <Center mih={100} p="xl" role="status">
       <Stack align="center" gap="xs">
         <Loader size="sm" />
         <Text size="sm" c="dimmed">

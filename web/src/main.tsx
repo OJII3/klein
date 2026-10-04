@@ -4,7 +4,6 @@ import { MantineProvider, createTheme } from "@mantine/core";
 import "@mantine/core/styles.css";
 
 import App from "./App";
-import "./styles.css";
 
 const theme = createTheme({ primaryColor: "teal" });
 

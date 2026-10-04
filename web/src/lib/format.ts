@@ -24,11 +24,6 @@ export function levelLabel(level: number | string): string {
   return level;
 }
 
-export function levelClass(level: number | string): string {
-  const label = levelLabel(level);
-  return `level-${label.toLowerCase()}`;
-}
-
 export function stringify(value: unknown): string {
   if (typeof value === "string") return value;
   if (value === undefined || value === null) return "—";

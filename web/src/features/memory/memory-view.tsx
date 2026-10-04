@@ -1,5 +1,19 @@
 import { useState } from "react";
-import { Button, Textarea, TextInput } from "@mantine/core";
+import {
+  Badge,
+  Button,
+  Code,
+  Grid,
+  Group,
+  Paper,
+  ScrollArea,
+  Stack,
+  Text,
+  Textarea,
+  TextInput,
+  Title,
+} from "@mantine/core";
+
 import type { MemoryEntry, MemoryGuildSummary } from "../../api";
 import { EmptyState, ErrorNotice, LoadingState } from "../../components/feedback";
 import { formatTimestamp } from "../../lib/format";
@@ -25,36 +39,43 @@ interface MemoryViewProps {
   onRetryDetail: () => void;
 }
 
-export function MemoryView({
-  enabled,
-  guilds,
-  selectedGuildId,
-  entries,
-  loading,
-  loadingDetail,
-  error,
-  detailError,
-  deleteError,
-  deletingEntryId,
-  addingRule,
-  addRuleError,
-  onSelect,
-  onDelete,
-  onAddRule,
-  onDismissDeleteError,
-  onRetry,
-  onRetryDetail,
-}: MemoryViewProps) {
-  return (
-    <section className="view-section" aria-labelledby="memory-heading">
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">PERSISTED GUILD CONTEXT</p>
-          <h2 id="memory-heading">メモリ</h2>
-        </div>
-        <span className="result-count">{guilds.length.toLocaleString("ja-JP")} ギルド</span>
-      </div>
+export function MemoryView(props: MemoryViewProps) {
+  const {
+    enabled,
+    guilds,
+    selectedGuildId,
+    entries,
+    loading,
+    loadingDetail,
+    error,
+    detailError,
+    deleteError,
+    deletingEntryId,
+    addingRule,
+    addRuleError,
+    onSelect,
+    onDelete,
+    onAddRule,
+    onDismissDeleteError,
+    onRetry,
+    onRetryDetail,
+  } = props;
 
+  return (
+    <Stack component="section" gap="md" aria-labelledby="memory-heading">
+      <Group justify="space-between" align="end">
+        <Stack gap={0}>
+          <Text size="xs" c="teal">
+            PERSISTED GUILD CONTEXT
+          </Text>
+          <Title order={2} id="memory-heading">
+            メモリ
+          </Title>
+        </Stack>
+        <Text size="sm" c="dimmed">
+          {guilds.length.toLocaleString("ja-JP")} ギルド
+        </Text>
+      </Group>
       {error && <ErrorNotice message={error} onRetry={onRetry} />}
       {!error && !enabled ? (
         <EmptyState>メモリ機能が無効です</EmptyState>
@@ -63,57 +84,79 @@ export function MemoryView({
       ) : guilds.length === 0 ? (
         <EmptyState>保存されたメモリがまだありません</EmptyState>
       ) : (
-        <div className="memory-layout">
-          <div className="session-list" aria-label="ギルドメモリ一覧">
-            {guilds.map((guild) => (
-              <Button
-                variant={selectedGuildId === guild.guildId ? "light" : "subtle"}
-                color="teal"
-                className={`session-list-item${selectedGuildId === guild.guildId ? " is-selected" : ""}`}
-                key={guild.guildId}
-                onClick={() => onSelect(guild.guildId)}
-                type="button"
-              >
-                <span className="session-list-topline">
-                  <span className="session-channel">GUILD</span>
-                  <span className="session-count">{guild.entryCount} 件</span>
-                </span>
-                <strong className="mono">{guild.guildId}</strong>
-                <time dateTime={guild.updatedAt ?? undefined}>
-                  更新 {formatTimestamp(guild.updatedAt ?? undefined)}
-                </time>
-              </Button>
-            ))}
-          </div>
-
-          <div className="memory-detail">
-            {deleteError && (
-              <ErrorNotice
-                message={deleteError}
-                onRetry={onDismissDeleteError}
-                retryLabel="閉じる"
-              />
-            )}
-            {detailError && <ErrorNotice message={detailError} onRetry={onRetryDetail} />}
-            {loadingDetail ? (
-              <LoadingState label="メモリを読み込み中…" />
-            ) : selectedGuildId ? (
-              <MemoryEntries
-                deletingEntryId={deletingEntryId}
-                entries={entries}
-                guildId={selectedGuildId}
-                onDelete={onDelete}
-                addingRule={addingRule}
-                addRuleError={addRuleError}
-                onAddRule={onAddRule}
-              />
-            ) : (
-              <EmptyState>ギルドを選択してください</EmptyState>
-            )}
-          </div>
-        </div>
+        <Grid>
+          <Grid.Col span={{ base: 12, md: 4 }}>
+            <Paper withBorder radius="md" p="xs">
+              <ScrollArea h={560} type="auto">
+                <Stack gap="xs" role="list" aria-label="ギルドメモリ一覧">
+                  {guilds.map((guild) => {
+                    const selected = selectedGuildId === guild.guildId;
+                    return (
+                      <Button
+                        key={guild.guildId}
+                        role="listitem"
+                        fullWidth
+                        h="auto"
+                        py="sm"
+                        px="sm"
+                        justify="flex-start"
+                        variant={selected ? "light" : "subtle"}
+                        color="teal"
+                        onClick={() => onSelect(guild.guildId)}
+                        styles={{
+                          label: { whiteSpace: "normal", width: "100%" },
+                          inner: { width: "100%" },
+                        }}
+                      >
+                        <Stack gap={4} w="100%" align="stretch">
+                          <Group justify="space-between">
+                            <Badge variant="light">GUILD</Badge>
+                            <Text size="xs" c="dimmed">
+                              {guild.entryCount} 件
+                            </Text>
+                          </Group>
+                          <Code>{guild.guildId}</Code>
+                          <Text size="xs" c="dimmed" ta="left">
+                            更新 {formatTimestamp(guild.updatedAt ?? undefined)}
+                          </Text>
+                        </Stack>
+                      </Button>
+                    );
+                  })}
+                </Stack>
+              </ScrollArea>
+            </Paper>
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, md: 8 }}>
+            <Stack>
+              {deleteError && (
+                <ErrorNotice
+                  message={deleteError}
+                  onRetry={onDismissDeleteError}
+                  retryLabel="閉じる"
+                />
+              )}
+              {detailError && <ErrorNotice message={detailError} onRetry={onRetryDetail} />}
+              {loadingDetail ? (
+                <LoadingState label="メモリを読み込み中…" />
+              ) : selectedGuildId ? (
+                <MemoryEntries
+                  deletingEntryId={deletingEntryId}
+                  entries={entries}
+                  guildId={selectedGuildId}
+                  onDelete={onDelete}
+                  addingRule={addingRule}
+                  addRuleError={addRuleError}
+                  onAddRule={onAddRule}
+                />
+              ) : (
+                <EmptyState>ギルドを選択してください</EmptyState>
+              )}
+            </Stack>
+          </Grid.Col>
+        </Grid>
       )}
-    </section>
+    </Stack>
   );
 }
 
@@ -137,75 +180,98 @@ function MemoryEntries({
   const [ruleTitle, setRuleTitle] = useState("");
   const [ruleContent, setRuleContent] = useState("");
   return (
-    <div className="memory-panel">
-      <div className="memory-panel-heading">
-        <div>
-          <p className="eyebrow">GUILD ID</p>
-          <h3 className="mono">{guildId}</h3>
-        </div>
-        <span className="result-count">{entries.length.toLocaleString("ja-JP")} 件</span>
-      </div>
-      <form
-        className="memory-rule-form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          const title = ruleTitle.trim();
-          const content = ruleContent.trim();
-          if (!title || !content) return;
-          onAddRule(title, content);
-          setRuleTitle("");
-          setRuleContent("");
-        }}
-      >
-        <h3>ルールを追加</h3>
-        <div>
-          <TextInput
-            label="タイトル"
-            maxLength={200}
-            value={ruleTitle}
-            onChange={(event) => setRuleTitle(event.target.value)}
-            required
-          />
-        </div>
-        <div>
-          <Textarea
-            label="内容"
-            maxLength={10000}
-            rows={3}
-            value={ruleContent}
-            onChange={(event) => setRuleContent(event.target.value)}
-            required
-          />
-        </div>
-        {addRuleError && (
-          <ErrorNotice
-            message={addRuleError}
-            onRetry={() => onAddRule(ruleTitle.trim(), ruleContent.trim())}
-            retryLabel="再試行"
-          />
-        )}
-        <Button
-          size="xs"
-          color="teal"
-          disabled={addingRule || !ruleTitle.trim() || !ruleContent.trim()}
-          type="submit"
+    <Stack>
+      <Paper withBorder radius="md" p="md">
+        <Group justify="space-between" mb="md">
+          <Stack gap={0}>
+            <Text size="xs" c="teal">
+              GUILD ID
+            </Text>
+            <Code>{guildId}</Code>
+          </Stack>
+          <Text size="sm" c="dimmed">
+            {entries.length.toLocaleString("ja-JP")} 件
+          </Text>
+        </Group>
+        <Paper
+          component="form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const title = ruleTitle.trim();
+            const content = ruleContent.trim();
+            if (!title || !content) return;
+            onAddRule(title, content);
+            setRuleTitle("");
+            setRuleContent("");
+          }}
+          withBorder
+          p="md"
+          radius="md"
         >
-          {addingRule ? "追加中…" : "ルールを追加"}
-        </Button>
-      </form>
+          <Stack>
+            <Title order={3} size="h5">
+              ルールを追加
+            </Title>
+            <TextInput
+              label="タイトル"
+              maxLength={200}
+              value={ruleTitle}
+              onChange={(event) => setRuleTitle(event.target.value)}
+              required
+            />
+            <Textarea
+              label="内容"
+              maxLength={10000}
+              minRows={3}
+              value={ruleContent}
+              onChange={(event) => setRuleContent(event.target.value)}
+              required
+            />
+            {addRuleError && (
+              <ErrorNotice
+                message={addRuleError}
+                onRetry={() => onAddRule(ruleTitle.trim(), ruleContent.trim())}
+              />
+            )}
+            <Button
+              w="fit-content"
+              color="teal"
+              disabled={addingRule || !ruleTitle.trim() || !ruleContent.trim()}
+              type="submit"
+            >
+              {addingRule ? "追加中…" : "ルールを追加"}
+            </Button>
+          </Stack>
+        </Paper>
+      </Paper>
       {entries.length === 0 ? (
         <EmptyState>このギルドのメモリは空です</EmptyState>
       ) : (
-        <div className="memory-entries">
+        <Stack>
           {entries.map((entry) => (
-            <article className="memory-entry" key={entry.id}>
-              <div className="memory-entry-heading">
-                <div>
-                  <span className={`memory-kind memory-kind-${entry.kind}`}>{entry.kind}</span>
-                  <h3>{entry.title}</h3>
-                </div>
-                <div className="memory-entry-actions">
-                  <time dateTime={entry.updatedAt}>更新 {formatTimestamp(entry.updatedAt)}</time>
+            <Paper key={entry.id} withBorder radius="md" p="md">
+              <Group justify="space-between" align="start" mb="sm">
+                <Stack gap="xs" align="start">
+                  <Badge
+                    variant="light"
+                    color={
+                      entry.kind === "rule" || entry.kind === "procedure"
+                        ? "yellow"
+                        : entry.kind === "decision"
+                          ? "blue"
+                          : "gray"
+                    }
+                  >
+                    {entry.kind}
+                  </Badge>
+                  <Title order={3} size="h5">
+                    {entry.title}
+                  </Title>
+                </Stack>
+                <Group>
+                  <Text size="xs" c="dimmed">
+                    更新 {formatTimestamp(entry.updatedAt)}
+                  </Text>
                   <Button
                     size="xs"
                     color="red"
@@ -216,31 +282,34 @@ function MemoryEntries({
                         window.confirm(
                           `「${entry.title}」を削除しますか？\nこの操作は元に戻せません。`,
                         )
-                      ) {
+                      )
                         onDelete(entry.id);
-                      }
                     }}
                     type="button"
                   >
                     {deletingEntryId === entry.id ? "削除中…" : "削除"}
                   </Button>
-                </div>
-              </div>
-              <p className="memory-content">{entry.content}</p>
-              <dl className="memory-meta">
-                <div>
-                  <dt>作成</dt>
-                  <dd>{formatTimestamp(entry.createdAt)}</dd>
-                </div>
-                <div>
-                  <dt>参照メッセージ</dt>
-                  <dd>{entry.sourceMessageIds.length.toLocaleString("ja-JP")} 件</dd>
-                </div>
-              </dl>
-            </article>
+                </Group>
+              </Group>
+              <Text size="sm" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+                {entry.content}
+              </Text>
+              <Group
+                mt="md"
+                pt="sm"
+                style={{ borderTop: "1px solid var(--mantine-color-default-border)" }}
+              >
+                <Text size="xs" c="dimmed">
+                  作成 {formatTimestamp(entry.createdAt)}
+                </Text>
+                <Text size="xs" c="dimmed">
+                  参照メッセージ {entry.sourceMessageIds.length.toLocaleString("ja-JP")} 件
+                </Text>
+              </Group>
+            </Paper>
           ))}
-        </div>
+        </Stack>
       )}
-    </div>
+    </Stack>
   );
 }

@@ -1,5 +1,14 @@
 import type { ReactNode } from "react";
-import { ActionIcon, SegmentedControl, Text } from "@mantine/core";
+import {
+  ActionIcon,
+  Container,
+  Group,
+  SegmentedControl,
+  Stack,
+  Text,
+  ThemeIcon,
+  Title,
+} from "@mantine/core";
 
 import { formatTimestamp } from "../lib/format";
 
@@ -15,49 +24,55 @@ interface AppShellProps {
 
 export function AppShell({ view, lastUpdated, onViewChange, onRefresh, children }: AppShellProps) {
   return (
-    <div className="app-shell">
-      <header className="app-header">
-        <div className="brand-lockup">
-          <span className="brand-mark" aria-hidden="true">
-            ◒
-          </span>
-          <h1 className="eyebrow">KLEIN OBSERVATORY</h1>
-        </div>
-        <div className="header-status">
-          <span className="status-dot" aria-hidden="true" />
-          <Text size="xs">ローカル接続</Text>
-          {lastUpdated && (
-            <time dateTime={lastUpdated.toISOString()}>
-              更新 {formatTimestamp(lastUpdated.toISOString())}
-            </time>
-          )}
-          <ActionIcon
-            aria-label="再読み込み"
-            variant="light"
-            color="teal"
-            onClick={onRefresh}
-            type="button"
-          >
-            ↻
-          </ActionIcon>
-        </div>
-      </header>
+    <Container size={1440} py="xl">
+      <Stack gap="lg">
+        <Group component="header" justify="space-between" align="center">
+          <Group gap="sm">
+            <ThemeIcon size={42} radius="md" variant="light" color="teal" aria-hidden="true">
+              ◒
+            </ThemeIcon>
+            <Title order={1} size="h3">
+              KLEIN OBSERVATORY
+            </Title>
+          </Group>
+          <Group gap="sm">
+            <Text size="xs" c="dimmed">
+              ● ローカル接続
+            </Text>
+            {lastUpdated && (
+              <time dateTime={lastUpdated.toISOString()}>
+                更新 {formatTimestamp(lastUpdated.toISOString())}
+              </time>
+            )}
+            <ActionIcon
+              aria-label="再読み込み"
+              variant="light"
+              color="teal"
+              onClick={onRefresh}
+              type="button"
+            >
+              ↻
+            </ActionIcon>
+          </Group>
+        </Group>
 
-      <SegmentedControl
-        className="view-tabs"
-        aria-label="表示切り替え"
-        value={view}
-        onChange={(value) => onViewChange(value as View)}
-        data={[
-          { value: "logs", label: "▤ ログ" },
-          { value: "sessions", label: "◌ Piセッション" },
-          { value: "memory", label: "▣ メモリ" },
-        ]}
-      />
+        <SegmentedControl
+          aria-label="表示切り替え"
+          value={view}
+          onChange={(value) => onViewChange(value as View)}
+          data={[
+            { value: "logs", label: "▤ ログ" },
+            { value: "sessions", label: "◌ Piセッション" },
+            { value: "memory", label: "▣ メモリ" },
+          ]}
+        />
 
-      <main>{children}</main>
+        <main>{children}</main>
 
-      <footer className="app-footer">Klein / local viewer</footer>
-    </div>
+        <Text component="footer" size="xs" c="dimmed" ta="center">
+          Klein / local viewer
+        </Text>
+      </Stack>
+    </Container>
   );
 }

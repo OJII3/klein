@@ -1,22 +1,20 @@
 import { collapseAllNested, darkStyles, JsonView } from "react-json-view-lite";
 import "react-json-view-lite/dist/index.css";
+import { Code, Paper } from "@mantine/core";
 
 import { isJsonContainer, stringify } from "../lib/format";
 
 interface JsonValueProps {
   value: unknown;
-  className?: string;
 }
 
-export function JsonValue({ value, className = "" }: JsonValueProps) {
-  const classes = `json-value ${className}`.trim();
-
+export function JsonValue({ value }: JsonValueProps) {
   if (!isJsonContainer(value)) {
-    return <pre className={classes}>{stringify(value)}</pre>;
+    return <Code block>{stringify(value)}</Code>;
   }
 
   return (
-    <div className={classes}>
+    <Paper withBorder p="sm" radius="sm" style={{ overflowX: "auto" }}>
       <JsonView
         aria-label="JSON データ"
         compactTopLevel
@@ -24,6 +22,6 @@ export function JsonValue({ value, className = "" }: JsonValueProps) {
         shouldExpandNode={collapseAllNested}
         style={darkStyles}
       />
-    </div>
+    </Paper>
   );
 }
