@@ -7,6 +7,7 @@ import {
   Group,
   Paper,
   ScrollArea,
+  Select,
   Stack,
   Text,
   Title,
@@ -75,7 +76,28 @@ export function SessionsView({
       ) : (
         <Grid>
           <Grid.Col span={{ base: 12, md: 4 }}>
-            <Paper withBorder radius="md" p="xs">
+            <Select
+              hiddenFrom="md"
+              label="セッション"
+              placeholder="セッションを選択"
+              searchable
+              maxDropdownHeight={300}
+              data={[
+                ...(selectedSession &&
+                !sessions.some((session) => session.id === selectedSession.id)
+                  ? [selectedSession]
+                  : []),
+                ...sessions,
+              ].map((session) => ({
+                value: session.id,
+                label: `${session.channelKey} · ${session.firstMessage || "（メッセージなし）"}`,
+              }))}
+              value={selectedSession?.id ?? null}
+              onChange={(id) => {
+                if (id) onSelect(id);
+              }}
+            />
+            <Paper visibleFrom="md" withBorder radius="md" p="xs">
               <ScrollArea.Autosize mah={560} type="auto">
                 <Stack gap="xs" aria-label="セッション一覧">
                   {sessions.map((session) => {

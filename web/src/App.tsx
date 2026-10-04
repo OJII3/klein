@@ -10,10 +10,11 @@ import { SessionsView } from "./features/sessions/sessions-view";
 
 export default function App() {
   const [view, setView] = useState<View>(() => viewFromPath(window.location.pathname));
+  const [initialSearch] = useState(() => new URLSearchParams(window.location.search));
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const onUpdated = useCallback(() => setLastUpdated(new Date()), []);
   const changeView = useCallback((nextView: View) => {
-    window.history.pushState(null, "", `/${nextView}`);
+    window.history.pushState(null, "", `/${nextView}${window.location.search}`);
     setView(nextView);
   }, []);
   useEffect(() => {
@@ -21,7 +22,7 @@ export default function App() {
       const nextView = viewFromPath(window.location.pathname);
       setView(nextView);
       if (window.location.pathname !== `/${nextView}`) {
-        window.history.replaceState(null, "", `/${nextView}`);
+        window.history.replaceState(null, "", `/${nextView}${window.location.search}`);
       }
     };
     window.addEventListener("popstate", syncView);
@@ -29,8 +30,28 @@ export default function App() {
     return () => window.removeEventListener("popstate", syncView);
   }, []);
   const logs = useLogs({ active: view === "logs", onUpdated });
-  const sessions = useSessions({ active: view === "sessions", onUpdated });
-  const memory = useMemory({ active: view === "memory", onUpdated });
+  const sessions = useSessions({
+    active: view === "sessions",
+    onUpdated,
+    initialSessionId: initialSearch.get("session"),
+  });
+  const memory = useMemory({
+    active: view === "memory",
+    onUpdated,
+    initialGuildId: initialSearch.get("guild"),
+  });
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("session");
+    url.searchParams.delete("guild");
+    if (view === "sessions" && sessions.selectedSessionId) {
+      url.searchParams.set("session", sessions.selectedSessionId);
+    } else if (view === "memory" && memory.selectedGuildId) {
+      url.searchParams.set("guild", memory.selectedGuildId);
+    }
+    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  }, [memory.selectedGuildId, sessions.selectedSessionId, view]);
 
   const refreshCurrentView = useCallback(() => {
     if (view === "logs") logs.reload();

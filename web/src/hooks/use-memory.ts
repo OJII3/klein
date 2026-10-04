@@ -12,14 +12,15 @@ import {
 interface UseMemoryOptions {
   active: boolean;
   onUpdated: () => void;
+  initialGuildId: string | null;
 }
 
-export function useMemory({ active, onUpdated }: UseMemoryOptions) {
+export function useMemory({ active, onUpdated, initialGuildId }: UseMemoryOptions) {
   const [enabled, setEnabled] = useState(false);
   const [guilds, setGuilds] = useState<MemoryGuildSummary[]>([]);
   const [guildsLoading, setGuildsLoading] = useState(false);
   const [guildsError, setGuildsError] = useState<string | null>(null);
-  const [selectedGuildId, setSelectedGuildId] = useState<string | null>(null);
+  const [selectedGuildId, setSelectedGuildId] = useState<string | null>(initialGuildId);
   const [entries, setEntries] = useState<MemoryEntry[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);

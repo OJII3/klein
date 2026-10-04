@@ -9,6 +9,7 @@ import {
   Group,
   Paper,
   ScrollArea,
+  Select,
   Stack,
   Text,
   Textarea,
@@ -88,7 +89,22 @@ export function MemoryView(props: MemoryViewProps) {
       ) : (
         <Grid>
           <Grid.Col span={{ base: 12, md: 4 }}>
-            <Paper withBorder radius="md" p="xs">
+            <Select
+              hiddenFrom="md"
+              label="ギルド"
+              placeholder="ギルドを選択"
+              searchable
+              maxDropdownHeight={300}
+              data={guilds.map((guild) => ({
+                value: guild.guildId,
+                label: `${guild.guildId} · ${guild.entryCount} 件`,
+              }))}
+              value={selectedGuildId}
+              onChange={(guildId) => {
+                if (guildId) onSelect(guildId);
+              }}
+            />
+            <Paper visibleFrom="md" withBorder radius="md" p="xs">
               <ScrollArea.Autosize mah={360} type="auto">
                 <Stack gap="xs" role="list" aria-label="ギルドメモリ一覧">
                   {guilds.map((guild) => {
