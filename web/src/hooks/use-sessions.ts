@@ -11,15 +11,16 @@ import {
 interface UseSessionsOptions {
   active: boolean;
   onUpdated: () => void;
+  initialSessionId: string | null;
 }
 
-export function useSessions({ active, onUpdated }: UseSessionsOptions) {
+export function useSessions({ active, onUpdated, initialSessionId }: UseSessionsOptions) {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [sessionsLoadingMore, setSessionsLoadingMore] = useState(false);
   const [sessionsError, setSessionsError] = useState<string | null>(null);
   const [sessionsNextCursor, setSessionsNextCursor] = useState<string | null>(null);
-  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(initialSessionId);
   const [selectedSession, setSelectedSession] = useState<SessionSummary | null>(null);
   const [events, setEvents] = useState<PiSessionEvent[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);

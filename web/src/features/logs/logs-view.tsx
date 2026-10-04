@@ -1,4 +1,5 @@
 import { useEffect, useState, type SubmitEvent } from "react";
+import { Button, Grid, Group, Paper, Select, Stack, Text, TextInput, Title } from "@mantine/core";
 
 import type { LogsQuery, PinoLog } from "../../api";
 import { EmptyState, ErrorNotice, LoadingState } from "../../components/feedback";
@@ -47,9 +48,7 @@ export function LogsView({
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [draft, setDraft] = useState(() => draftFromFilters(filters));
 
-  useEffect(() => {
-    setDraft(draftFromFilters(filters));
-  }, [filters]);
+  useEffect(() => setDraft(draftFromFilters(filters)), [filters]);
 
   const submit = (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -68,70 +67,77 @@ export function LogsView({
   };
 
   return (
-    <section className="view-section" aria-labelledby="logs-heading">
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">PINO / JSONL</p>
-          <h2 id="logs-heading">アプリケーションログ</h2>
-        </div>
-        <span className="result-count">{logs.length.toLocaleString("ja-JP")} 件</span>
-      </div>
+    <Stack component="section" gap="md" aria-labelledby="logs-heading">
+      <Group justify="space-between" align="end">
+        <Stack gap={0}>
+          <Text size="xs" c="teal">
+            PINO / JSONL
+          </Text>
+          <Title order={2} id="logs-heading">
+            アプリケーションログ
+          </Title>
+        </Stack>
+        <Text size="sm" c="dimmed">
+          {logs.length.toLocaleString("ja-JP")} 件
+        </Text>
+      </Group>
 
-      <form className="filter-bar" onSubmit={submit}>
-        <label>
-          <span>レベル</span>
-          <select
-            aria-label="ログレベル"
-            onChange={(event) => setDraft((current) => ({ ...current, level: event.target.value }))}
-            value={draft.level}
-          >
-            <option value="">すべて</option>
-            {LEVEL_OPTIONS.map((level) => (
-              <option key={level} value={level}>
-                {level}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="filter-grow">
-          <span>検索</span>
-          <input
-            aria-label="ログを検索"
-            onChange={(event) => setDraft((current) => ({ ...current, q: event.target.value }))}
-            placeholder="概要、イベント名…"
-            type="search"
-            value={draft.q}
-          />
-        </label>
-        <label>
-          <span>チャンネル</span>
-          <input
-            aria-label="チャンネルID"
-            onChange={(event) =>
-              setDraft((current) => ({ ...current, channelId: event.target.value }))
-            }
-            placeholder="channel ID"
-            value={draft.channelId}
-          />
-        </label>
-        <label>
-          <span>イベント</span>
-          <input
-            aria-label="イベント名"
-            onChange={(event) => setDraft((current) => ({ ...current, event: event.target.value }))}
-            placeholder="event"
-            value={draft.event}
-          />
-        </label>
-        <div className="filter-actions">
-          <button className="button button-primary" type="submit">
-            絞り込む
-          </button>
-          <button className="button button-quiet" onClick={clear} type="button">
-            クリア
-          </button>
-        </div>
-      </form>
+      <Paper component="form" onSubmit={submit} withBorder p="md" radius="md">
+        <Grid align="end">
+          <Grid.Col span={{ base: 12, sm: 3 }}>
+            <Select
+              label="レベル"
+              aria-label="ログレベル"
+              data={LEVEL_OPTIONS}
+              clearable
+              placeholder="すべて"
+              onChange={(level) => setDraft((current) => ({ ...current, level: level ?? "" }))}
+              value={draft.level || null}
+            />
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, sm: 3 }}>
+            <TextInput
+              label="検索"
+              aria-label="ログを検索"
+              onChange={(event) => setDraft((current) => ({ ...current, q: event.target.value }))}
+              placeholder="概要、イベント名…"
+              value={draft.q}
+            />
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, sm: 2 }}>
+            <TextInput
+              label="チャンネル"
+              aria-label="チャンネルID"
+              onChange={(event) =>
+                setDraft((current) => ({ ...current, channelId: event.target.value }))
+              }
+              placeholder="channel ID"
+              value={draft.channelId}
+            />
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, sm: 2 }}>
+            <TextInput
+              label="イベント"
+              aria-label="イベント名"
+              onChange={(event) =>
+                setDraft((current) => ({ ...current, event: event.target.value }))
+              }
+              placeholder="event"
+              value={draft.event}
+            />
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, sm: 2 }}>
+            <Group justify="flex-end">
+              <Button color="teal" type="submit">
+                絞り込む
+              </Button>
+              <Button variant="subtle" color="gray" onClick={clear} type="button">
+                クリア
+              </Button>
+            </Group>
+          </Grid.Col>
+        </Grid>
+      </Paper>
 
       {error && <ErrorNotice message={error} onRetry={onRetry} />}
       {loading && logs.length === 0 ? (
@@ -139,23 +145,31 @@ export function LogsView({
       ) : logs.length === 0 ? (
         <EmptyState>条件に一致するログはありません</EmptyState>
       ) : (
-        <div className="data-panel">
+        <Paper withBorder radius="md" p={0}>
           <LogTable
             expandedId={expandedId}
             logs={logs}
             onToggle={(id) => setExpandedId((current) => (current === id ? null : id))}
           />
-          <div className="pagination-row">
+          <Group justify="center" p="md">
             {nextCursor ? (
-              <button className="button" disabled={loadingMore} onClick={onLoadMore} type="button">
+              <Button
+                variant="light"
+                color="teal"
+                disabled={loadingMore}
+                onClick={onLoadMore}
+                type="button"
+              >
                 {loadingMore ? "読み込み中…" : "次のログを読み込む"}
-              </button>
+              </Button>
             ) : (
-              <span className="muted">これより古いログはありません</span>
+              <Text size="sm" c="dimmed">
+                これより古いログはありません
+              </Text>
             )}
-          </div>
-        </div>
+          </Group>
+        </Paper>
       )}
-    </section>
+    </Stack>
   );
 }

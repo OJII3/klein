@@ -1,4 +1,17 @@
 import type { PiSessionEvent, SessionSummary } from "../../api";
+import {
+  Badge,
+  Button,
+  Card,
+  Grid,
+  Group,
+  Paper,
+  ScrollArea,
+  Select,
+  Stack,
+  Text,
+  Title,
+} from "@mantine/core";
 import { EmptyState, ErrorNotice, LoadingState } from "../../components/feedback";
 import { formatTimestamp } from "../../lib/format";
 import { SessionTimeline } from "./session-timeline";
@@ -41,72 +54,120 @@ export function SessionsView({
   onLoadMoreDetail,
 }: SessionsViewProps) {
   return (
-    <section className="view-section" aria-labelledby="sessions-heading">
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">PI / SESSION JSONL</p>
-          <h2 id="sessions-heading">Piセッション</h2>
-        </div>
-        <span className="result-count">{sessions.length.toLocaleString("ja-JP")} 件</span>
-      </div>
-
+    <Stack component="section" gap="md" aria-labelledby="sessions-heading">
+      <Group justify="space-between" align="end">
+        <Stack gap={0}>
+          <Text size="xs" c="teal">
+            PI / SESSION JSONL
+          </Text>
+          <Title order={2} id="sessions-heading">
+            Piセッション
+          </Title>
+        </Stack>
+        <Text size="sm" c="dimmed">
+          {sessions.length.toLocaleString("ja-JP")} 件
+        </Text>
+      </Group>
       {error && <ErrorNotice message={error} onRetry={onRetry} />}
       {loading && sessions.length === 0 ? (
         <LoadingState />
       ) : sessions.length === 0 ? (
         <EmptyState>セッションがまだありません</EmptyState>
       ) : (
-        <div className="sessions-layout">
-          <div className="session-list" aria-label="セッション一覧">
-            {sessions.map((session) => (
-              <button
-                className={`session-list-item${selectedSession?.id === session.id ? " is-selected" : ""}`}
-                key={session.id}
-                onClick={() => onSelect(session.id)}
-                type="button"
-              >
-                <span className="session-list-topline">
-                  <span className="session-channel">{session.channelKey}</span>
-                  <span className="session-count">{session.messageCount} msg</span>
-                </span>
-                <strong>{session.firstMessage || "（メッセージなし）"}</strong>
-                <time dateTime={session.modified}>更新 {formatTimestamp(session.modified)}</time>
-              </button>
-            ))}
-            <div className="pagination-row">
-              {sessionsNextCursor ? (
-                <button
-                  className="button"
-                  disabled={loadingMoreSessions}
-                  onClick={onLoadMoreSessions}
-                  type="button"
-                >
-                  {loadingMoreSessions ? "読み込み中…" : "古いセッションを読み込む"}
-                </button>
+        <Grid>
+          <Grid.Col span={{ base: 12, md: 4 }}>
+            <Select
+              hiddenFrom="md"
+              label="セッション"
+              placeholder="セッションを選択"
+              searchable
+              maxDropdownHeight={300}
+              data={[
+                ...(selectedSession &&
+                !sessions.some((session) => session.id === selectedSession.id)
+                  ? [selectedSession]
+                  : []),
+                ...sessions,
+              ].map((session) => ({
+                value: session.id,
+                label: `${session.channelKey} · ${session.firstMessage || "（メッセージなし）"}`,
+              }))}
+              value={selectedSession?.id ?? null}
+              onChange={(id) => {
+                if (id) onSelect(id);
+              }}
+            />
+            <Paper visibleFrom="md" withBorder radius="md" p="xs">
+              <ScrollArea.Autosize mah={560} type="auto">
+                <Stack gap="xs" aria-label="セッション一覧">
+                  {sessions.map((session) => {
+                    const selected = selectedSession?.id === session.id;
+                    return (
+                      <Card
+                        key={session.id}
+                        component="button"
+                        withBorder
+                        p="sm"
+                        bg={selected ? "teal.9" : undefined}
+                        onClick={() => onSelect(session.id)}
+                      >
+                        <Stack gap={4} w="100%" align="stretch">
+                          <Group justify="space-between">
+                            <Badge variant="light">{session.channelKey}</Badge>
+                            <Text size="xs" c="dimmed">
+                              {session.messageCount} msg
+                            </Text>
+                          </Group>
+                          <Text size="sm" fw={600} lineClamp={2} ta="left">
+                            {session.firstMessage || "（メッセージなし）"}
+                          </Text>
+                          <Text size="xs" c="dimmed" ta="left">
+                            更新 {formatTimestamp(session.modified)}
+                          </Text>
+                        </Stack>
+                      </Card>
+                    );
+                  })}
+                </Stack>
+              </ScrollArea.Autosize>
+              <Group justify="center" pt="sm">
+                {sessionsNextCursor ? (
+                  <Button
+                    variant="light"
+                    color="teal"
+                    disabled={loadingMoreSessions}
+                    onClick={onLoadMoreSessions}
+                  >
+                    {loadingMoreSessions ? "読み込み中…" : "古いセッションを読み込む"}
+                  </Button>
+                ) : (
+                  <Text size="xs" c="dimmed">
+                    これより古いセッションはありません
+                  </Text>
+                )}
+              </Group>
+            </Paper>
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, md: 8 }}>
+            <Stack>
+              {detailError && <ErrorNotice message={detailError} onRetry={onRetryDetail} />}
+              {loadingDetail ? (
+                <LoadingState label="セッションを読み込み中…" />
+              ) : selectedSession ? (
+                <SessionTimeline
+                  events={events}
+                  loadingMore={loadingMoreDetail}
+                  nextCursor={nextCursor}
+                  onLoadMore={onLoadMoreDetail}
+                  session={selectedSession}
+                />
               ) : (
-                <span className="muted">これより古いセッションはありません</span>
+                <EmptyState>セッションを選択してください</EmptyState>
               )}
-            </div>
-          </div>
-
-          <div className="session-detail">
-            {detailError && <ErrorNotice message={detailError} onRetry={onRetryDetail} />}
-            {loadingDetail ? (
-              <LoadingState label="セッションを読み込み中…" />
-            ) : selectedSession ? (
-              <SessionTimeline
-                events={events}
-                loadingMore={loadingMoreDetail}
-                nextCursor={nextCursor}
-                onLoadMore={onLoadMoreDetail}
-                session={selectedSession}
-              />
-            ) : (
-              <EmptyState>セッションを選択してください</EmptyState>
-            )}
-          </div>
-        </div>
+            </Stack>
+          </Grid.Col>
+        </Grid>
       )}
-    </section>
+    </Stack>
   );
 }

@@ -1,7 +1,8 @@
 import { Fragment } from "react";
+import { Badge, Code, Table, Text } from "@mantine/core";
 
 import type { PinoLog } from "../../api";
-import { formatTimestamp, levelClass, levelLabel } from "../../lib/format";
+import { formatTimestamp, levelLabel } from "../../lib/format";
 import { LogDetails } from "./log-details";
 
 interface LogTableProps {
@@ -10,86 +11,84 @@ interface LogTableProps {
   onToggle: (id: string) => void;
 }
 
+function levelColor(level: number | string): string {
+  switch (levelLabel(level).toLowerCase()) {
+    case "trace":
+    case "debug":
+      return "gray";
+    case "info":
+      return "blue";
+    case "warn":
+      return "yellow";
+    case "error":
+    case "fatal":
+      return "red";
+    default:
+      return "gray";
+  }
+}
+
 export function LogTable({ logs, expandedId, onToggle }: LogTableProps) {
   return (
-    <>
-      <div className="desktop-table-wrap">
-        <table className="log-table">
-          <thead>
-            <tr>
-              <th scope="col">時刻</th>
-              <th scope="col">レベル</th>
-              <th scope="col">イベント</th>
-              <th scope="col">概要</th>
-            </tr>
-          </thead>
-          <tbody>
-            {logs.map((log) => {
-              const isExpanded = expandedId === log.id;
-              return (
-                <Fragment key={log.id}>
-                  <tr
-                    aria-expanded={isExpanded}
-                    className={`log-row${isExpanded ? " is-expanded" : ""}`}
-                    onClick={() => onToggle(log.id)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        onToggle(log.id);
-                      }
-                    }}
-                    role="button"
-                    tabIndex={0}
-                  >
-                    <td>
-                      <time dateTime={log.timestamp}>{formatTimestamp(log.timestamp)}</time>
-                    </td>
-                    <td>
-                      <span className={`level-badge ${levelClass(log.level)}`}>
-                        {levelLabel(log.level)}
-                      </span>
-                    </td>
-                    <td>
-                      <code className="event-name">{log.kind}</code>
-                    </td>
-                    <td>
-                      <span className="summary-cell">{log.summary}</span>
-                    </td>
-                  </tr>
-                  {isExpanded && (
-                    <tr className="log-detail-row">
-                      <td colSpan={4}>
-                        <LogDetails log={log} />
-                      </td>
-                    </tr>
-                  )}
-                </Fragment>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="mobile-log-list">
-        {logs.map((log) => {
-          const isExpanded = expandedId === log.id;
-          return (
-            <article className={`log-card${isExpanded ? " is-expanded" : ""}`} key={log.id}>
-              <button className="log-card-trigger" onClick={() => onToggle(log.id)} type="button">
-                <span className="log-card-meta">
-                  <time dateTime={log.timestamp}>{formatTimestamp(log.timestamp)}</time>
-                  <span className={`level-badge ${levelClass(log.level)}`}>
-                    {levelLabel(log.level)}
-                  </span>
-                </span>
-                <code className="event-name">{log.kind}</code>
-                <span className="log-card-summary">{log.summary}</span>
-              </button>
-              {isExpanded && <LogDetails log={log} />}
-            </article>
-          );
-        })}
-      </div>
-    </>
+    <Table.ScrollContainer minWidth={800}>
+      <Table highlightOnHover verticalSpacing="sm">
+        <Table.Thead>
+          <Table.Tr>
+            <Table.Th>時刻</Table.Th>
+            <Table.Th>レベル</Table.Th>
+            <Table.Th>イベント</Table.Th>
+            <Table.Th>概要</Table.Th>
+          </Table.Tr>
+        </Table.Thead>
+        <Table.Tbody>
+          {logs.map((log) => {
+            const isExpanded = expandedId === log.id;
+            return (
+              <Fragment key={log.id}>
+                <Table.Tr
+                  aria-expanded={isExpanded}
+                  aria-label={`${log.kind}: ${log.summary}`}
+                  onClick={() => onToggle(log.id)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      onToggle(log.id);
+                    }
+                  }}
+                  role="button"
+                  tabIndex={0}
+                >
+                  <Table.Td>
+                    <Text size="sm" component="time" dateTime={log.timestamp}>
+                      {formatTimestamp(log.timestamp)}
+                    </Text>
+                  </Table.Td>
+                  <Table.Td>
+                    <Badge color={levelColor(log.level)} variant="light">
+                      {levelLabel(log.level)}
+                    </Badge>
+                  </Table.Td>
+                  <Table.Td>
+                    <Code>{log.kind}</Code>
+                  </Table.Td>
+                  <Table.Td>
+                    <Text size="sm" lineClamp={2}>
+                      {log.summary}
+                    </Text>
+                  </Table.Td>
+                </Table.Tr>
+                {isExpanded && (
+                  <Table.Tr>
+                    <Table.Td colSpan={4}>
+                      <LogDetails log={log} />
+                    </Table.Td>
+                  </Table.Tr>
+                )}
+              </Fragment>
+            );
+          })}
+        </Table.Tbody>
+      </Table>
+    </Table.ScrollContainer>
   );
 }
