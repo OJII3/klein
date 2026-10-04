@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Button, Textarea, TextInput } from "@mantine/core";
 import type { MemoryEntry, MemoryGuildSummary } from "../../api";
 import { EmptyState, ErrorNotice, LoadingState } from "../../components/feedback";
 import { formatTimestamp } from "../../lib/format";
@@ -65,7 +66,9 @@ export function MemoryView({
         <div className="memory-layout">
           <div className="session-list" aria-label="ギルドメモリ一覧">
             {guilds.map((guild) => (
-              <button
+              <Button
+                variant={selectedGuildId === guild.guildId ? "light" : "subtle"}
+                color="teal"
                 className={`session-list-item${selectedGuildId === guild.guildId ? " is-selected" : ""}`}
                 key={guild.guildId}
                 onClick={() => onSelect(guild.guildId)}
@@ -79,7 +82,7 @@ export function MemoryView({
                 <time dateTime={guild.updatedAt ?? undefined}>
                   更新 {formatTimestamp(guild.updatedAt ?? undefined)}
                 </time>
-              </button>
+              </Button>
             ))}
           </div>
 
@@ -155,25 +158,25 @@ function MemoryEntries({
         }}
       >
         <h3>ルールを追加</h3>
-        <label>
-          タイトル
-          <input
+        <div>
+          <TextInput
+            label="タイトル"
             maxLength={200}
             value={ruleTitle}
             onChange={(event) => setRuleTitle(event.target.value)}
             required
           />
-        </label>
-        <label>
-          内容
-          <textarea
+        </div>
+        <div>
+          <Textarea
+            label="内容"
             maxLength={10000}
             rows={3}
             value={ruleContent}
             onChange={(event) => setRuleContent(event.target.value)}
             required
           />
-        </label>
+        </div>
         {addRuleError && (
           <ErrorNotice
             message={addRuleError}
@@ -181,13 +184,14 @@ function MemoryEntries({
             retryLabel="再試行"
           />
         )}
-        <button
-          className="button button-small"
+        <Button
+          size="xs"
+          color="teal"
           disabled={addingRule || !ruleTitle.trim() || !ruleContent.trim()}
           type="submit"
         >
           {addingRule ? "追加中…" : "ルールを追加"}
-        </button>
+        </Button>
       </form>
       {entries.length === 0 ? (
         <EmptyState>このギルドのメモリは空です</EmptyState>
@@ -202,8 +206,10 @@ function MemoryEntries({
                 </div>
                 <div className="memory-entry-actions">
                   <time dateTime={entry.updatedAt}>更新 {formatTimestamp(entry.updatedAt)}</time>
-                  <button
-                    className="button button-danger button-small"
+                  <Button
+                    size="xs"
+                    color="red"
+                    variant="light"
                     disabled={deletingEntryId !== null}
                     onClick={() => {
                       if (
@@ -217,7 +223,7 @@ function MemoryEntries({
                     type="button"
                   >
                     {deletingEntryId === entry.id ? "削除中…" : "削除"}
-                  </button>
+                  </Button>
                 </div>
               </div>
               <p className="memory-content">{entry.content}</p>

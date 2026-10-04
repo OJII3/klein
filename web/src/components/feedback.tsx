@@ -1,3 +1,5 @@
+import { Alert, Button, Center, Loader, Stack, Text } from "@mantine/core";
+
 interface ErrorNoticeProps {
   message: string;
   onRetry: () => void;
@@ -6,24 +8,34 @@ interface ErrorNoticeProps {
 
 export function ErrorNotice({ message, onRetry, retryLabel = "再試行" }: ErrorNoticeProps) {
   return (
-    <div className="notice notice-error" role="alert">
-      <span>{message}</span>
-      <button className="button button-small" onClick={onRetry} type="button">
-        {retryLabel}
-      </button>
-    </div>
+    <Alert color="red" className="notice notice-error" role="alert" icon={null}>
+      <div className="feedback-row">
+        <span>{message}</span>
+        <Button size="xs" variant="light" color="red" onClick={onRetry} type="button">
+          {retryLabel}
+        </Button>
+      </div>
+    </Alert>
   );
 }
 
 export function EmptyState({ children }: { children: string }) {
-  return <div className="empty-state">{children}</div>;
+  return (
+    <Center className="empty-state">
+      <Text c="dimmed">{children}</Text>
+    </Center>
+  );
 }
 
 export function LoadingState({ label = "読み込み中…" }: { label?: string }) {
   return (
-    <div className="loading-state" role="status">
-      <span className="spinner" aria-hidden="true" />
-      {label}
-    </div>
+    <Center className="loading-state" role="status">
+      <Stack align="center" gap="xs">
+        <Loader size="sm" />
+        <Text size="sm" c="dimmed">
+          {label}
+        </Text>
+      </Stack>
+    </Center>
   );
 }

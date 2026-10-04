@@ -1,4 +1,5 @@
 import type { PiSessionEvent, SessionSummary } from "../../api";
+import { Button } from "@mantine/core";
 import { EmptyState } from "../../components/feedback";
 import { JsonValue } from "../../components/json-value";
 import { formatTimestamp } from "../../lib/format";
@@ -69,9 +70,15 @@ export function SessionTimeline({
       {events.length > 0 && (
         <div className="pagination-row">
           {nextCursor ? (
-            <button className="button" disabled={loadingMore} onClick={onLoadMore} type="button">
+            <Button
+              variant="light"
+              color="teal"
+              disabled={loadingMore}
+              onClick={onLoadMore}
+              type="button"
+            >
               {loadingMore ? "読み込み中…" : "古いイベントを読み込む"}
-            </button>
+            </Button>
           ) : (
             <span className="muted">これより古いイベントはありません</span>
           )}

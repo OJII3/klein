@@ -1,4 +1,5 @@
 import { useEffect, useState, type SubmitEvent } from "react";
+import { Button, Select, TextInput } from "@mantine/core";
 
 import type { LogsQuery, PinoLog } from "../../api";
 import { EmptyState, ErrorNotice, LoadingState } from "../../components/feedback";
@@ -78,34 +79,29 @@ export function LogsView({
       </div>
 
       <form className="filter-bar" onSubmit={submit}>
-        <label>
-          <span>レベル</span>
-          <select
+        <div className="filter-field">
+          <Select
+            label="レベル"
             aria-label="ログレベル"
-            onChange={(event) => setDraft((current) => ({ ...current, level: event.target.value }))}
-            value={draft.level}
-          >
-            <option value="">すべて</option>
-            {LEVEL_OPTIONS.map((level) => (
-              <option key={level} value={level}>
-                {level}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="filter-grow">
-          <span>検索</span>
-          <input
+            data={LEVEL_OPTIONS}
+            clearable
+            placeholder="すべて"
+            onChange={(level) => setDraft((current) => ({ ...current, level: level ?? "" }))}
+            value={draft.level || null}
+          />
+        </div>
+        <div className="filter-field filter-grow">
+          <TextInput
+            label="検索"
             aria-label="ログを検索"
             onChange={(event) => setDraft((current) => ({ ...current, q: event.target.value }))}
             placeholder="概要、イベント名…"
-            type="search"
             value={draft.q}
           />
-        </label>
-        <label>
-          <span>チャンネル</span>
-          <input
+        </div>
+        <div className="filter-field">
+          <TextInput
+            label="チャンネル"
             aria-label="チャンネルID"
             onChange={(event) =>
               setDraft((current) => ({ ...current, channelId: event.target.value }))
@@ -113,23 +109,23 @@ export function LogsView({
             placeholder="channel ID"
             value={draft.channelId}
           />
-        </label>
-        <label>
-          <span>イベント</span>
-          <input
+        </div>
+        <div className="filter-field">
+          <TextInput
+            label="イベント"
             aria-label="イベント名"
             onChange={(event) => setDraft((current) => ({ ...current, event: event.target.value }))}
             placeholder="event"
             value={draft.event}
           />
-        </label>
+        </div>
         <div className="filter-actions">
-          <button className="button button-primary" type="submit">
+          <Button color="teal" type="submit">
             絞り込む
-          </button>
-          <button className="button button-quiet" onClick={clear} type="button">
+          </Button>
+          <Button variant="subtle" color="gray" onClick={clear} type="button">
             クリア
-          </button>
+          </Button>
         </div>
       </form>
 
@@ -147,9 +143,15 @@ export function LogsView({
           />
           <div className="pagination-row">
             {nextCursor ? (
-              <button className="button" disabled={loadingMore} onClick={onLoadMore} type="button">
+              <Button
+                variant="light"
+                color="teal"
+                disabled={loadingMore}
+                onClick={onLoadMore}
+                type="button"
+              >
                 {loadingMore ? "読み込み中…" : "次のログを読み込む"}
-              </button>
+              </Button>
             ) : (
               <span className="muted">これより古いログはありません</span>
             )}

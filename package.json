@@ -24,6 +24,8 @@
     "@earendil-works/pi-coding-agent": "^1.0.0",
     "@elysia/eden": "^1.4.10",
     "@elysia/static": "^1.4.11",
+    "@mantine/core": "^9",
+    "@mantine/hooks": "^9",
     "discord.js": "^14.27.0",
     "elysia": "^1.4.30",
     "jsonc-parser": "^3.3.1",

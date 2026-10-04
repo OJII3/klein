@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { ActionIcon, SegmentedControl, Text } from "@mantine/core";
 
 import { formatTimestamp } from "../lib/format";
 
@@ -24,41 +25,35 @@ export function AppShell({ view, lastUpdated, onViewChange, onRefresh, children 
         </div>
         <div className="header-status">
           <span className="status-dot" aria-hidden="true" />
-          <span>ローカル接続</span>
+          <Text size="xs">ローカル接続</Text>
           {lastUpdated && (
             <time dateTime={lastUpdated.toISOString()}>
               更新 {formatTimestamp(lastUpdated.toISOString())}
             </time>
           )}
-          <button aria-label="再読み込み" className="icon-button" onClick={onRefresh} type="button">
+          <ActionIcon
+            aria-label="再読み込み"
+            variant="light"
+            color="teal"
+            onClick={onRefresh}
+            type="button"
+          >
             ↻
-          </button>
+          </ActionIcon>
         </div>
       </header>
 
-      <nav className="view-tabs" aria-label="表示切り替え">
-        <button
-          className={view === "logs" ? "is-active" : ""}
-          onClick={() => onViewChange("logs")}
-          type="button"
-        >
-          <span aria-hidden="true">▤</span> ログ
-        </button>
-        <button
-          className={view === "sessions" ? "is-active" : ""}
-          onClick={() => onViewChange("sessions")}
-          type="button"
-        >
-          <span aria-hidden="true">◌</span> Piセッション
-        </button>
-        <button
-          className={view === "memory" ? "is-active" : ""}
-          onClick={() => onViewChange("memory")}
-          type="button"
-        >
-          <span aria-hidden="true">▣</span> メモリ
-        </button>
-      </nav>
+      <SegmentedControl
+        className="view-tabs"
+        aria-label="表示切り替え"
+        value={view}
+        onChange={(value) => onViewChange(value as View)}
+        data={[
+          { value: "logs", label: "▤ ログ" },
+          { value: "sessions", label: "◌ Piセッション" },
+          { value: "memory", label: "▣ メモリ" },
+        ]}
+      />
 
       <main>{children}</main>
 

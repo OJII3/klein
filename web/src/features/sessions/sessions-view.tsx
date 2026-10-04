@@ -1,4 +1,5 @@
 import type { PiSessionEvent, SessionSummary } from "../../api";
+import { Button } from "@mantine/core";
 import { EmptyState, ErrorNotice, LoadingState } from "../../components/feedback";
 import { formatTimestamp } from "../../lib/format";
 import { SessionTimeline } from "./session-timeline";
@@ -59,7 +60,9 @@ export function SessionsView({
         <div className="sessions-layout">
           <div className="session-list" aria-label="セッション一覧">
             {sessions.map((session) => (
-              <button
+              <Button
+                variant={selectedSession?.id === session.id ? "light" : "subtle"}
+                color="teal"
                 className={`session-list-item${selectedSession?.id === session.id ? " is-selected" : ""}`}
                 key={session.id}
                 onClick={() => onSelect(session.id)}
@@ -71,18 +74,19 @@ export function SessionsView({
                 </span>
                 <strong>{session.firstMessage || "（メッセージなし）"}</strong>
                 <time dateTime={session.modified}>更新 {formatTimestamp(session.modified)}</time>
-              </button>
+              </Button>
             ))}
             <div className="pagination-row">
               {sessionsNextCursor ? (
-                <button
-                  className="button"
+                <Button
+                  variant="light"
+                  color="teal"
                   disabled={loadingMoreSessions}
                   onClick={onLoadMoreSessions}
                   type="button"
                 >
                   {loadingMoreSessions ? "読み込み中…" : "古いセッションを読み込む"}
-                </button>
+                </Button>
               ) : (
                 <span className="muted">これより古いセッションはありません</span>
               )}
