@@ -1,6 +1,6 @@
 import { collapseAllNested, darkStyles, JsonView } from "react-json-view-lite";
 import "react-json-view-lite/dist/index.css";
-import { Code, Paper } from "@mantine/core";
+import { Code, Paper, ScrollArea } from "@mantine/core";
 
 import { isJsonContainer, stringify } from "../lib/format";
 
@@ -14,14 +14,16 @@ export function JsonValue({ value }: JsonValueProps) {
   }
 
   return (
-    <Paper withBorder p="sm" radius="sm" style={{ overflowX: "auto" }}>
-      <JsonView
-        aria-label="JSON データ"
-        compactTopLevel
-        data={value}
-        shouldExpandNode={collapseAllNested}
-        style={darkStyles}
-      />
-    </Paper>
+    <ScrollArea type="auto">
+      <Paper withBorder p="sm" radius="sm">
+        <JsonView
+          aria-label="JSON データ"
+          compactTopLevel
+          data={value}
+          shouldExpandNode={collapseAllNested}
+          style={darkStyles}
+        />
+      </Paper>
+    </ScrollArea>
   );
 }

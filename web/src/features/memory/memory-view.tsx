@@ -2,7 +2,9 @@ import { useState } from "react";
 import {
   Badge,
   Button,
+  Card,
   Code,
+  Divider,
   Grid,
   Group,
   Paper,
@@ -92,21 +94,13 @@ export function MemoryView(props: MemoryViewProps) {
                   {guilds.map((guild) => {
                     const selected = selectedGuildId === guild.guildId;
                     return (
-                      <Button
+                      <Card
                         key={guild.guildId}
-                        role="listitem"
-                        fullWidth
-                        h="auto"
-                        py="sm"
-                        px="sm"
-                        justify="flex-start"
-                        variant={selected ? "light" : "subtle"}
-                        color="teal"
+                        component="button"
+                        withBorder
+                        p="sm"
+                        bg={selected ? "teal.9" : undefined}
                         onClick={() => onSelect(guild.guildId)}
-                        styles={{
-                          label: { whiteSpace: "normal", width: "100%" },
-                          inner: { width: "100%" },
-                        }}
                       >
                         <Stack gap={4} w="100%" align="stretch">
                           <Group justify="space-between">
@@ -120,7 +114,7 @@ export function MemoryView(props: MemoryViewProps) {
                             更新 {formatTimestamp(guild.updatedAt ?? undefined)}
                           </Text>
                         </Stack>
-                      </Button>
+                      </Card>
                     );
                   })}
                 </Stack>
@@ -294,11 +288,8 @@ function MemoryEntries({
               <Text size="sm" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
                 {entry.content}
               </Text>
-              <Group
-                mt="md"
-                pt="sm"
-                style={{ borderTop: "1px solid var(--mantine-color-default-border)" }}
-              >
+              <Divider my="sm" />
+              <Group>
                 <Text size="xs" c="dimmed">
                   作成 {formatTimestamp(entry.createdAt)}
                 </Text>

@@ -56,7 +56,6 @@ export function LogTable({ logs, expandedId, onToggle }: LogTableProps) {
                     }
                   }}
                   role="button"
-                  style={{ cursor: "pointer" }}
                   tabIndex={0}
                 >
                   <Table.Td>

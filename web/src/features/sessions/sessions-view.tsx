@@ -1,5 +1,16 @@
 import type { PiSessionEvent, SessionSummary } from "../../api";
-import { Badge, Button, Grid, Group, Paper, ScrollArea, Stack, Text, Title } from "@mantine/core";
+import {
+  Badge,
+  Button,
+  Card,
+  Grid,
+  Group,
+  Paper,
+  ScrollArea,
+  Stack,
+  Text,
+  Title,
+} from "@mantine/core";
 import { EmptyState, ErrorNotice, LoadingState } from "../../components/feedback";
 import { formatTimestamp } from "../../lib/format";
 import { SessionTimeline } from "./session-timeline";
@@ -70,20 +81,13 @@ export function SessionsView({
                   {sessions.map((session) => {
                     const selected = selectedSession?.id === session.id;
                     return (
-                      <Button
+                      <Card
                         key={session.id}
-                        fullWidth
-                        h="auto"
-                        py="sm"
-                        px="sm"
-                        justify="flex-start"
-                        variant={selected ? "light" : "subtle"}
-                        color="teal"
+                        component="button"
+                        withBorder
+                        p="sm"
+                        bg={selected ? "teal.9" : undefined}
                         onClick={() => onSelect(session.id)}
-                        styles={{
-                          label: { whiteSpace: "normal", width: "100%" },
-                          inner: { width: "100%" },
-                        }}
                       >
                         <Stack gap={4} w="100%" align="stretch">
                           <Group justify="space-between">
@@ -99,7 +103,7 @@ export function SessionsView({
                             更新 {formatTimestamp(session.modified)}
                           </Text>
                         </Stack>
-                      </Button>
+                      </Card>
                     );
                   })}
                 </Stack>
