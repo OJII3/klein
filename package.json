@@ -24,6 +24,7 @@
     "@earendil-works/pi-coding-agent": "^1.0.0",
     "@elysia/eden": "^1.4.10",
     "@elysia/static": "^1.4.11",
+    "@google-cloud/bigquery": "^9.1.0",
     "@mantine/core": "^9",
     "@mantine/hooks": "^9",
     "discord.js": "^14.27.0",

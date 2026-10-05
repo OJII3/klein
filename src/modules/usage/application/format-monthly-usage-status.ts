@@ -10,7 +10,10 @@ export function formatMonthlyUsageStatus(
   monthly: MonthlyUsageLimit,
   now: Date = new Date(),
 ): string {
-  const remainingPercentage = Math.max(0, 100 - monthly.usedPercentage);
+  const remainingPercentage = 100 - monthly.usedPercentage;
+  if (!monthly.resetsAt) {
+    return `${formatPercentage(remainingPercentage)}/month`;
+  }
   const resetInDays = Math.max(
     0,
     Math.ceil((monthly.resetsAt.getTime() - now.getTime()) / MILLISECONDS_PER_DAY),
