@@ -27,7 +27,7 @@ import { OpenAiLiveVoiceSessionFactory } from "@modules/live/infrastructure/open
 import { createGetMonthlyUsageLimit } from "@modules/usage/application/get-monthly-usage-limit";
 import { formatMonthlyUsageStatus } from "@modules/usage/application/format-monthly-usage-status";
 import { OpenCodeGoUsageProvider } from "@modules/usage/infrastructure/opencode-go-usage-provider";
-import { VertexAiUsageProvider } from "@modules/usage/infrastructure/vertex-ai-usage-provider";
+import { VertexAiEstimatedUsageProvider } from "@modules/usage/infrastructure/vertex-ai-estimated-usage-provider";
 import {
   resolveLogDirectory,
   resolveWebUiConfig,
@@ -169,13 +169,9 @@ export async function bootstrap(): Promise<void> {
     operatingState: discordOperatingState,
     taskCoordinator,
   });
-  const billingProjectId = process.env.GOOGLE_CLOUD_BILLING_PROJECT_ID;
-  const billingTable = process.env.GOOGLE_CLOUD_BILLING_TABLE;
   const usageProvider =
     config.llm.provider === "google-vertex"
-      ? billingProjectId && billingTable
-        ? new VertexAiUsageProvider(billingProjectId, billingTable)
-        : undefined
+      ? new VertexAiEstimatedUsageProvider(agentDir)
       : openCodeGoApiKey
         ? new OpenCodeGoUsageProvider(openCodeGoApiKey)
         : undefined;

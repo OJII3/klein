@@ -193,12 +193,8 @@ allowed to finish. The operating mode is kept in memory and starts as active
 after each restart.
 
 The bot's Discord activity displays remaining monthly usage and refreshes hourly.
-OpenCode Go includes its reset countdown. For Vertex AI, configure Cloud Billing
-usage export to BigQuery, then set `GOOGLE_CLOUD_BILLING_PROJECT_ID` to the
-project used for queries and `GOOGLE_CLOUD_BILLING_TABLE` to the fully qualified
-standard usage export table (`project.dataset.table`). The runtime must have
-Google Application Default Credentials with permission to run BigQuery jobs
-and read that table. Vertex AI's current UTC calendar-month net cost (cost plus
-credits) is compared with a $10 budget; the activity shows the percentage left,
-including negative values after exceeding the budget. Without those variables,
-Vertex AI usage is not displayed.
+OpenCode Go includes its reset countdown. For Vertex AI, Klein estimates current
+UTC calendar-month cost from token usage recorded in Pi sessions and the model
+pricing known to Pi. The estimate is compared with a $10 budget and may be
+negative after exceeding it. It does not include Vertex AI usage outside Klein,
+and the final billed cost may differ.
