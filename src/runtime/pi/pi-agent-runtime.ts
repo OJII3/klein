@@ -334,7 +334,10 @@ export function createPiAgentFactory({
         sessionManager,
         settingsManager,
         thinkingLevel: llm.thinkingLevel,
-        tools: [...definition.toolNames, ...(definition.toolNames.length > 0 ? ["tool_search"] : [])],
+        tools: [
+          ...definition.toolNames,
+          ...(definition.toolNames.length > 0 ? ["tool_search"] : []),
+        ],
       });
 
       if (
