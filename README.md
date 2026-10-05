@@ -193,8 +193,9 @@ allowed to finish. The operating mode is kept in memory and starts as active
 after each restart.
 
 The bot's Discord activity displays remaining monthly usage and refreshes hourly.
-OpenCode Go includes its reset countdown. For Vertex AI, Klein estimates current
-UTC calendar-month cost from token usage recorded in Pi sessions and the model
-pricing known to Pi. The estimate is compared with a $10 budget and may be
-negative after exceeding it. It does not include Vertex AI usage outside Klein,
-and the final billed cost may differ.
+It uses the provider configured on `llm` and labels the activity `OpenCode Go`
+or `Vertex AI`. OpenCode Go includes its reset countdown. For Vertex AI, Klein
+estimates current UTC calendar-month cost from token usage recorded in Pi
+sessions and the model pricing known to Pi. The estimate is compared with a $10
+budget and may be negative after exceeding it. It does not include Vertex AI
+usage outside Klein, and the final billed cost may differ.
