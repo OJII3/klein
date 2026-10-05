@@ -17,16 +17,15 @@ test("formats the remaining monthly usage and reset countdown", () => {
   );
 });
 
-test("does not show a negative remaining percentage or countdown", () => {
+test("shows negative remaining percentage and omits reset when unavailable", () => {
   assert.equal(
     formatMonthlyUsageStatus(
       {
-        resetsAt: new Date("2026-09-14T13:00:00.000Z"),
         status: "rate-limited",
-        usedPercentage: 100,
+        usedPercentage: 125,
       },
       new Date("2026-09-14T14:00:00.000Z"),
     ),
-    "0%/month (reset in 0 days)",
+    "-25%/month",
   );
 });
