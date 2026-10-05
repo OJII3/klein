@@ -102,7 +102,7 @@ test("runs codemode research while keeping Discord replies direct", async () => 
       getCurrentTools(requests[0].messages)
         .map((tool) => tool.name)
         .sort(),
-      [...DISCORD_AGENT_TOOL_NAMES].sort(),
+      [...DISCORD_AGENT_TOOL_NAMES, "tool_search"].sort(),
     );
     assert.match(getCurrentSystemPrompt(requests[0].messages), /You are クライン/);
     const result = requests[1].messages
