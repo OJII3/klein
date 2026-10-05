@@ -178,12 +178,11 @@ export async function bootstrap(): Promise<void> {
   const getMonthlyUsageLimit = usageProvider
     ? createGetMonthlyUsageLimit(usageProvider)
     : undefined;
-  const usageProviderLabel = config.llm.provider === "google-vertex" ? "Vertex AI" : "OpenCode Go";
   const updateDiscordUsageStatus = async (): Promise<void> => {
     try {
       if (!getMonthlyUsageLimit) return;
       const monthly = await getMonthlyUsageLimit();
-      discordService.setActivity(`${usageProviderLabel}: ${formatMonthlyUsageStatus(monthly)}`);
+      discordService.setActivity(formatMonthlyUsageStatus(monthly));
     } catch (error) {
       logger.warn(
         { err: error, event: "discord_usage_status_update_failed" },
