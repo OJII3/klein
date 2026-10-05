@@ -9,6 +9,7 @@ import {
   SettingsManager,
   createAgentSession,
   createCodemodeExtension,
+  createToolSearchExtension,
 } from "@earendil-works/pi-coding-agent";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { Api, Model, Models } from "@earendil-works/pi-ai";
@@ -207,6 +208,7 @@ export function createResourceLoader(
     agentDir,
     extensionFactories: [
       createCodemodeExtension({ mode: "on", models: false }),
+      createToolSearchExtension(),
       createBackgroundCompactionExtension(settingsManager, { logger }),
       createFxtwitterFetchExtension(),
     ],
@@ -332,7 +334,7 @@ export function createPiAgentFactory({
         sessionManager,
         settingsManager,
         thinkingLevel: llm.thinkingLevel,
-        tools: [...definition.toolNames],
+        tools: [...definition.toolNames, "tool_search"],
       });
 
       if (
