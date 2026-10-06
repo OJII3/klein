@@ -9,7 +9,6 @@ import { createLogFilePath, createLogger, flushLogger } from "./logger";
 import { loadPromptFile } from "./prompt";
 import { resolveProfile } from "./profile";
 import { TaskCoordinator } from "./task-coordinator";
-import type { AgentRuntime } from "@agents/core/agent-runtime";
 import { DiscordAgent } from "@agents/discord/discord-agent";
 import {
   createPiAgentFactory,
@@ -21,9 +20,7 @@ import { PiMemoryProcessor } from "@runtime/pi/pi-memory-processor";
 import { createDiscordAccessPolicy } from "@modules/discord/domain/discord-access-policy";
 import { DiscordOperatingState } from "@modules/discord/domain/discord-operating-state";
 import { DiscordJsService } from "@modules/discord/infrastructure/discord-js-service";
-import { DiscordVoiceService } from "@modules/discord/infrastructure/discord-voice-service";
 import { MemoryCoordinator } from "@modules/memory/application/memory-coordinator";
-import { OpenAiLiveVoiceSessionFactory } from "@modules/live/infrastructure/openai-live-voice-session";
 import { createGetMonthlyUsageLimit } from "@modules/usage/application/get-monthly-usage-limit";
 import { formatMonthlyUsageStatus } from "@modules/usage/application/format-monthly-usage-status";
 import { OpenCodeGoUsageProvider } from "@modules/usage/infrastructure/opencode-go-usage-provider";
@@ -61,11 +58,6 @@ export async function bootstrap(): Promise<void> {
   if (usesOpenCodeGo && !openCodeGoApiKey) {
     throw new Error("OPENCODE_API_KEY is required");
   }
-  const openAiApiKey = process.env.OPENAI_API_KEY;
-  if (!openAiApiKey) {
-    throw new Error("OPENAI_API_KEY is required for Discord voice conversations");
-  }
-
   const discordOperatingState = new DiscordOperatingState();
   const discordAccessPolicy = createDiscordAccessPolicy(config.discord.access);
   const discordService = new DiscordJsService(
@@ -112,50 +104,6 @@ export async function bootstrap(): Promise<void> {
         taskCoordinator,
       })
     : undefined;
-  const liveVoiceSessionFactory = new OpenAiLiveVoiceSessionFactory(openAiApiKey, logger);
-  const discordVoiceService = new DiscordVoiceService(
-    discordService,
-    discordAccessPolicy,
-    liveVoiceSessionFactory,
-    systemPrompt,
-    (request) =>
-      new Promise<string>((resolve, reject) => {
-        void taskCoordinator.run(async () => {
-          let runtime: AgentRuntime | undefined;
-          try {
-            runtime = await piAgentFactory.create(
-              {
-                systemPrompt:
-                  `${systemPrompt}\n\n` +
-                  "You are the backend reasoning model for a live Discord voice conversation. " +
-                  "Answer the delegated request in plain text for the voice front end. " +
-                  "Do not use Discord output tools and do not describe this internal delegation.",
-                toolNames: [],
-              },
-              [],
-              { sessionKey: `discord-voice:${request.guildId}` },
-            );
-            const guildMemory = await memoryCoordinator?.getContext(
-              request.guildId,
-              request.transcript,
-            );
-            const prompt = guildMemory
-              ? `<guild-memory>\n${guildMemory}\n</guild-memory>\n\n${request.transcript}`
-              : request.transcript;
-            if (!runtime.promptForText) {
-              throw new Error("Pi runtime does not support text responses");
-            }
-            resolve(await runtime.promptForText({ text: prompt, images: [] }));
-          } catch (error) {
-            reject(error);
-          } finally {
-            runtime?.dispose();
-          }
-        });
-      }),
-    logger,
-  );
-  discordService.setVoiceCommandHandler(discordVoiceService);
   const agentCoordinator = new AgentCoordinator({
     createDiscordAgent: (channelId, sessionKey, handoffContext) =>
       DiscordAgent.create(piAgentFactory, discordService, channelId, systemPrompt, {
@@ -223,7 +171,6 @@ export async function bootstrap(): Promise<void> {
     }
     await webUi?.stop();
     discordService.stopAccepting();
-    await discordVoiceService.stop();
     memoryCoordinator?.dispose();
     await taskCoordinator.waitForCompletion();
     await discordService.stop();

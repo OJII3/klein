@@ -123,13 +123,6 @@ export class PiAgentRuntime implements AgentRuntime {
     });
   }
 
-  promptForText(prompt: AgentPrompt): Promise<string> {
-    return this.enqueue(async () => {
-      await this.runPrompt(prompt);
-      return this.session.getLastAssistantText() ?? "";
-    });
-  }
-
   private enqueue<T>(work: () => Promise<T>): Promise<T> {
     const run = this.queue.then(work);
 

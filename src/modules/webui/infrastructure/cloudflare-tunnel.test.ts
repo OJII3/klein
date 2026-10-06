@@ -39,7 +39,7 @@ test("runs cloudflared without forwarding application secrets and stops its proc
       join(directory, "cloudflared"),
       `#!/bin/sh
 trap 'echo stopped; exit 0' TERM
-if [ -n "$KLEIN_TEST_SECRET$DISCORD_BOT_TOKEN$OPENAI_API_KEY" ]; then echo secrets-forwarded; fi
+if [ -n "$KLEIN_TEST_SECRET$DISCORD_BOT_TOKEN" ]; then echo secrets-forwarded; fi
 printf 'ready:%s:%s\n' "$TUNNEL_TOKEN" "$*"
 while :; do /bin/sleep 1; done
 `,

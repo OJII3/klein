@@ -5,6 +5,6 @@ await Bun.build({
   naming: "klein",
   minify: true,
   define: { "process.env.NODE_ENV": JSON.stringify("production") },
-  external: ["@discordjs/voice", "opusscript", "@earendil-works/pi-codemode"],
+  external: ["@earendil-works/pi-codemode"],
   throw: true,
 });

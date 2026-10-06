@@ -122,25 +122,6 @@ test("runs codemode research while keeping Discord replies direct", async () => 
     assert.deepEqual(readIds.sort(), ["first", "second"]);
     assert.deepEqual(sent, ["……確認したよ"]);
 
-    const voiceRuntime = await factory.create(
-      { systemPrompt: "Voice backend", toolNames: [] },
-      [],
-      { sessionKey: "voice-test" },
-    );
-    try {
-      provider.setResponses([
-        (context) => {
-          assert.deepEqual(getCurrentTools(context.messages), []);
-          return fauxAssistantMessage("Voice answer");
-        },
-      ]);
-      assert.equal(
-        await voiceRuntime.promptForText?.({ text: "Hello", images: [] }),
-        "Voice answer",
-      );
-    } finally {
-      voiceRuntime.dispose();
-    }
   } finally {
     runtime.dispose();
     await rm(agentDir, { force: true, recursive: true });
