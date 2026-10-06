@@ -121,7 +121,6 @@ test("runs codemode research while keeping Discord replies direct", async () => 
     assert.doesNotMatch(output, /Unfiltered research content/);
     assert.deepEqual(readIds.sort(), ["first", "second"]);
     assert.deepEqual(sent, ["……確認したよ"]);
-
   } finally {
     runtime.dispose();
     await rm(agentDir, { force: true, recursive: true });
