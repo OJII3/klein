@@ -72,19 +72,6 @@ response in the main model's voice. The image model must support image input.
 
 To use an Exa API key with `pi-web-access`, optionally set `EXA_API_KEY` in `.env`.
 
-## Discord voice conversations
-
-Set `OPENAI_API_KEY` in `.env`, join a Discord voice channel, and run `/join`.
-Klein uses GPT-Live-1 for the real-time voice conversation. Requests that need
-substantial reasoning or backend work are delegated to the existing Pi runtime;
-the result is returned to the voice conversation. Run `/leave` to disconnect.
-
-The existing `discord.access` rules are reused for voice channels: the voice
-channel ID is evaluated as the guild `channelId`, so no separate permission
-configuration is needed. The bot needs the Discord `Connect`, `Speak`, and
-`Use Voice Activity` permissions in the voice channel. OpenAI Live voice also
-requires the bot to have access to the network.
-
 The Discord agent's personality and behavior are loaded from the selected
 profile's `SOUL.md` (`config/klein/SOUL.md` by default).
 
