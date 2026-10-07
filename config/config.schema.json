@@ -368,6 +368,21 @@
             }
           },
           "additionalProperties": false
+        },
+        "tts": {
+          "type": "object",
+          "required": ["enabled", "serverUrl"],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "serverUrl": {
+              "type": "string",
+              "minLength": 1,
+              "format": "uri"
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false

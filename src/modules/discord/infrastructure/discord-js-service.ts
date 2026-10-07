@@ -6,6 +6,7 @@ import {
   Partials,
   PermissionFlagsBits,
   type Attachment,
+  AttachmentBuilder,
   type Message,
   type ApplicationCommandDataResolvable,
   type Interaction,
@@ -47,7 +48,7 @@ const OPERATING_MODE_COMMANDS: readonly ApplicationCommandDataResolvable[] = [
 ];
 
 interface SendableChannel {
-  send(content: string): Promise<unknown>;
+  send(content: string | { files: AttachmentBuilder[] }): Promise<unknown>;
   sendTyping?(): Promise<void>;
 }
 
@@ -237,6 +238,11 @@ export class DiscordJsService implements DiscordService {
     for (const chunk of splitMessage(content)) {
       await channel.send(chunk);
     }
+  }
+
+  async sendAudio(channelId: string, audio: Uint8Array, filename: string): Promise<void> {
+    const channel = await this.getChannel(channelId);
+    await channel.send({ files: [new AttachmentBuilder(Buffer.from(audio), { name: filename })] });
   }
 
   async readMessage(locator: DiscordMessageLocator): Promise<DiscordMessage> {
