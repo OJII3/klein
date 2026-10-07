@@ -383,6 +383,25 @@
             }
           },
           "additionalProperties": false
+        },
+        "voiceChat": {
+          "type": "object",
+          "required": ["enabled", "asrServerUrl"],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "asrServerUrl": {
+              "type": "string",
+              "minLength": 1,
+              "format": "uri"
+            },
+            "language": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false

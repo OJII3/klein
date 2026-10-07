@@ -93,6 +93,15 @@ const TtsConfigurationSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const VoiceChatConfigurationSchema = Type.Object(
+  {
+    enabled: Type.Boolean(),
+    asrServerUrl: Type.String({ minLength: 1, format: "uri" }),
+    language: Type.Optional(Type.String({ minLength: 1 })),
+  },
+  { additionalProperties: false },
+);
+
 const ProfileNameSchema = Type.String({
   minLength: 1,
   pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$",
@@ -135,6 +144,7 @@ export const ConfigSchema = Type.Object(
         ),
         webui: Type.Optional(WebUiConfigurationSchema),
         tts: Type.Optional(TtsConfigurationSchema),
+        voiceChat: Type.Optional(VoiceChatConfigurationSchema),
       },
       { additionalProperties: false },
     ),
