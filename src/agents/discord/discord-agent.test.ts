@@ -52,6 +52,7 @@ test("wires the runtime image analyzer into discord_read", async () => {
     setActivity() {},
     async sendTyping() {},
     async sendMessage() {},
+    async sendAudio() {},
     async readMessage() {
       return message;
     },
@@ -110,6 +111,7 @@ test("adds bot-specific conversation guidance only for bot messages", async () =
     setActivity() {},
     async sendTyping() {},
     async sendMessage() {},
+    async sendAudio() {},
     async readMessage() {
       return message;
     },
@@ -159,6 +161,7 @@ test("injects the current guild memory into the agent prompt", async () => {
     setActivity() {},
     async sendTyping() {},
     async sendMessage() {},
+    async sendAudio() {},
     async readMessage() {
       return message;
     },

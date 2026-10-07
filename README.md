@@ -122,6 +122,10 @@ required sections are omitted here):
       "enabled": true,
       "host": "127.0.0.1",
       "port": 4310
+    },
+    "tts": {
+      "enabled": false,
+      "serverUrl": "http://100.64.0.10:5000"
     }
   }
 }
@@ -130,6 +134,11 @@ required sections are omitted here):
 Start Klein, then open `http://127.0.0.1:4310`. Keep the host bound
 to loopback when exposing the viewer through a ZeroTrust tunnel. The UI is
 disabled by default and allows deleting individual persisted memories.
+
+Enable `features.tts` and set `serverUrl` to the SBV2 server address reachable
+through your private network to add the `discord_voice` tool. It synthesizes
+text through SBV2's `/voice` endpoint and sends the returned WAV as a Discord
+attachment.
 
 ### HTTPS through Cloudflare Tunnel
 

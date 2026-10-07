@@ -33,6 +33,7 @@ import {
 import { startWebUi } from "@modules/webui/infrastructure/elysia-webui-app";
 import { PinoJsonlReader } from "@modules/webui/infrastructure/pino-jsonl-reader";
 import { PiSessionReader } from "@modules/webui/infrastructure/pi-session-reader";
+import { Sbv2Tts } from "@modules/tts/infrastructure/sbv2-tts";
 
 const DISCORD_USAGE_STATUS_REFRESH_INTERVAL_MS = 60 * 60 * 1_000;
 const CHANNEL_CONTEXT_ROTATION_CHECK_INTERVAL_MS = 60 * 1_000;
@@ -67,6 +68,7 @@ export async function bootstrap(): Promise<void> {
     discordOperatingState,
   );
   const taskCoordinator = new TaskCoordinator();
+  const tts = config.features.tts?.enabled ? new Sbv2Tts(config.features.tts.serverUrl) : undefined;
   const agentDir = resolve(config.runtime.agentDir);
   const channelSessionStateStore = new ChannelSessionStateStore(
     resolve(agentDir, "channel-session-state"),
@@ -109,6 +111,7 @@ export async function bootstrap(): Promise<void> {
       DiscordAgent.create(piAgentFactory, discordService, channelId, systemPrompt, {
         handoffContext,
         sessionKey,
+        tts,
       }),
     channelSessionStateStore,
     discordService,

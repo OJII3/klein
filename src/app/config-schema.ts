@@ -85,6 +85,14 @@ const WebUiConfigurationSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const TtsConfigurationSchema = Type.Object(
+  {
+    enabled: Type.Boolean(),
+    serverUrl: Type.String({ minLength: 1, format: "uri" }),
+  },
+  { additionalProperties: false },
+);
+
 const ProfileNameSchema = Type.String({
   minLength: 1,
   pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$",
@@ -126,6 +134,7 @@ export const ConfigSchema = Type.Object(
           { additionalProperties: false },
         ),
         webui: Type.Optional(WebUiConfigurationSchema),
+        tts: Type.Optional(TtsConfigurationSchema),
       },
       { additionalProperties: false },
     ),

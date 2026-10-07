@@ -5,6 +5,8 @@ import type { DiscordService } from "@modules/discord/ports/discord-service";
 import { DISCORD_AGENT_TOOL_NAMES } from "./prompt-policy";
 import { createDiscordReadTool } from "./tools/discord-read";
 import { createDiscordSendTool } from "./tools/discord-send";
+import { createDiscordVoiceTool } from "./tools/discord-voice";
+import type { TextToSpeech } from "@modules/tts/infrastructure/sbv2-tts";
 
 const BOT_MESSAGE_GUIDANCE = `
 
@@ -23,7 +25,11 @@ export class DiscordAgent {
     discordService: DiscordService,
     channelId: string,
     systemPrompt: string,
-    options: { readonly sessionKey?: string; readonly handoffContext?: string } = {},
+    options: {
+      readonly sessionKey?: string;
+      readonly handoffContext?: string;
+      readonly tts?: TextToSpeech;
+    } = {},
   ): Promise<DiscordAgent> {
     let runtime: AgentRuntime | undefined;
     const analyzeImages = async (message: DiscordMessage): Promise<string | undefined> => {
@@ -39,12 +45,15 @@ export class DiscordAgent {
     const tools = [
       createDiscordReadTool(discordService, channelId, analyzeImages),
       createDiscordSendTool(discordService, channelId),
+      ...(options.tts ? [createDiscordVoiceTool(discordService, channelId, options.tts)] : []),
     ];
 
     runtime = await agentFactory.create(
       {
         systemPrompt,
-        toolNames: DISCORD_AGENT_TOOL_NAMES,
+        toolNames: options.tts
+          ? [...DISCORD_AGENT_TOOL_NAMES, "discord_voice"]
+          : DISCORD_AGENT_TOOL_NAMES,
       },
       tools,
       {

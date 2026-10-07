@@ -57,6 +57,10 @@
       "enabled": false,
       "host": "127.0.0.1",
       "port": 4310
+    },
+    "tts": {
+      "enabled": false,
+      "serverUrl": "http://100.64.0.10:5000"
     }
   }
 }
