@@ -61,6 +61,11 @@
     "tts": {
       "enabled": false,
       "serverUrl": "http://100.64.0.10:5000"
+    },
+    "voiceChat": {
+      "enabled": false,
+      "asrServerUrl": "ws://100.64.0.11:8000",
+      "language": "ja"
     }
   }
 }

@@ -34,6 +34,7 @@ import { startWebUi } from "@modules/webui/infrastructure/elysia-webui-app";
 import { PinoJsonlReader } from "@modules/webui/infrastructure/pino-jsonl-reader";
 import { PiSessionReader } from "@modules/webui/infrastructure/pi-session-reader";
 import { Sbv2Tts } from "@modules/tts/infrastructure/sbv2-tts";
+import { WebSocketStreamingAsr } from "@modules/asr/infrastructure/websocket-streaming-asr";
 
 const DISCORD_USAGE_STATUS_REFRESH_INTERVAL_MS = 60 * 60 * 1_000;
 const CHANNEL_CONTEXT_ROTATION_CHECK_INTERVAL_MS = 60 * 1_000;
@@ -61,11 +62,18 @@ export async function bootstrap(): Promise<void> {
   }
   const discordOperatingState = new DiscordOperatingState();
   const discordAccessPolicy = createDiscordAccessPolicy(config.discord.access);
+  const voiceChatConfiguration = config.features.voiceChat;
   const discordService = new DiscordJsService(
     token,
     discordAccessPolicy,
     logger,
     discordOperatingState,
+    voiceChatConfiguration?.enabled
+      ? {
+          asr: new WebSocketStreamingAsr(voiceChatConfiguration.asrServerUrl),
+          language: voiceChatConfiguration.language ?? "ja",
+        }
+      : undefined,
   );
   const taskCoordinator = new TaskCoordinator();
   const tts = config.features.tts?.enabled ? new Sbv2Tts(config.features.tts.serverUrl) : undefined;

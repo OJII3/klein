@@ -1,5 +1,17 @@
 # Voice chat ASR streaming protocol
 
+## Klein setup
+
+Set `features.voiceChat.enabled` to `true` and point `asrServerUrl` to the
+server's WebSocket base URL. `language` defaults to `ja`. In Discord, run
+`/voice join` from a text channel while connected to a voice channel; Klein
+captures only the command user's speech and posts final transcripts back to the
+text channel. Run `/voice leave` to stop.
+
+This first pass handles one active speaker per server and uses 900 ms of silence
+to end an utterance. Partial transcripts are available to the application but
+are not posted to Discord.
+
 Klein connects to an ASR server over WebSocket. The server owns model loading and
 GPU inference. The protocol does not expose model-specific settings.
 

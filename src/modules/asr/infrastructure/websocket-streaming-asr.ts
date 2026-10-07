@@ -24,6 +24,9 @@ export class WebSocketStreamingAsr implements StreamingAsr {
     readonly audio: AsrAudioFormat;
   }): Promise<StreamingAsrSession> {
     const url = new URL("/v1/stream", this.serverUrl);
+    if (url.protocol !== "ws:" && url.protocol !== "wss:") {
+      throw new Error("ASR server URL must use ws:// or wss://");
+    }
     const socket = new WebSocket(url);
     const updates = new Set<(update: AsrTranscriptUpdate) => void>();
     const errors = new Set<(error: Error) => void>();
