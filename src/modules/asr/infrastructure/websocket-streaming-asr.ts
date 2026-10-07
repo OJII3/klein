@@ -142,7 +142,8 @@ export class WebSocketStreamingAsr implements StreamingAsr {
         if (socket.readyState !== WebSocket.OPEN) {
           throw new Error("ASR session is not connected");
         }
-        socket.send(pcm);
+        const audioFrame = new Uint8Array(pcm);
+        socket.send(audioFrame.buffer);
       },
       finishUtterance(utteranceId) {
         sendControl(socket, { type: "utterance.end", utteranceId });
