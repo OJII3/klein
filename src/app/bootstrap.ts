@@ -9,6 +9,7 @@ import { createLogFilePath, createLogger, flushLogger } from "./logger";
 import { loadPromptFile } from "./prompt";
 import { resolveProfile } from "./profile";
 import { TaskCoordinator } from "./task-coordinator";
+import { VoiceChatCoordinator } from "./voice-chat-coordinator";
 import { DiscordAgent } from "@agents/discord/discord-agent";
 import {
   createPiAgentFactory,
@@ -63,18 +64,6 @@ export async function bootstrap(): Promise<void> {
   const discordOperatingState = new DiscordOperatingState();
   const discordAccessPolicy = createDiscordAccessPolicy(config.discord.access);
   const voiceChatConfiguration = config.features.voiceChat;
-  const discordService = new DiscordJsService(
-    token,
-    discordAccessPolicy,
-    logger,
-    discordOperatingState,
-    voiceChatConfiguration?.enabled
-      ? {
-          asr: new WebSocketStreamingAsr(voiceChatConfiguration.asrServerUrl),
-          language: voiceChatConfiguration.language ?? "ja",
-        }
-      : undefined,
-  );
   const taskCoordinator = new TaskCoordinator();
   const tts = config.features.tts?.enabled ? new Sbv2Tts(config.features.tts.serverUrl) : undefined;
   const agentDir = resolve(config.runtime.agentDir);
@@ -90,6 +79,31 @@ export async function bootstrap(): Promise<void> {
     modelRuntime,
     sessionMode,
   });
+  let discordService!: DiscordJsService;
+  const createDiscordAgent = (channelId: string, sessionKey: string, handoffContext?: string) =>
+    DiscordAgent.create(piAgentFactory, discordService, channelId, systemPrompt, {
+      handoffContext,
+      sessionKey,
+      tts,
+    });
+  const voiceChatCoordinator = new VoiceChatCoordinator({
+    createVoiceChatAgent: (channelId, sessionKey) => createDiscordAgent(channelId, sessionKey),
+    logger,
+    sendMessage: (channelId, content) => discordService.sendMessage(channelId, content),
+  });
+  discordService = new DiscordJsService(
+    token,
+    discordAccessPolicy,
+    logger,
+    discordOperatingState,
+    voiceChatConfiguration?.enabled
+      ? {
+          asr: new WebSocketStreamingAsr(voiceChatConfiguration.asrServerUrl),
+          conversationFactory: voiceChatCoordinator,
+          language: voiceChatConfiguration.language ?? "ja",
+        }
+      : undefined,
+  );
   const memoryConfiguration = config.features.memory;
   const resolvedMemoryLlmConfiguration = memoryConfiguration.llm ?? config.llm;
   const memorySessionId = `memory-${randomUUID()}`;
@@ -115,12 +129,7 @@ export async function bootstrap(): Promise<void> {
       })
     : undefined;
   const agentCoordinator = new AgentCoordinator({
-    createDiscordAgent: (channelId, sessionKey, handoffContext) =>
-      DiscordAgent.create(piAgentFactory, discordService, channelId, systemPrompt, {
-        handoffContext,
-        sessionKey,
-        tts,
-      }),
+    createDiscordAgent,
     channelSessionStateStore,
     discordService,
     logger,

@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { resizeImage } from "@earendil-works/pi-coding-agent";
 import {
   Client,
@@ -6,15 +5,12 @@ import {
   GatewayIntentBits,
   Partials,
   PermissionFlagsBits,
-  SlashCommandBuilder,
   type Attachment,
   AttachmentBuilder,
-  type ChatInputCommandInteraction,
   type Message,
   type ApplicationCommandDataResolvable,
   type Interaction,
 } from "discord.js";
-import type { StreamingAsr } from "@modules/asr/domain/streaming-asr";
 import type { Logger } from "pino";
 
 import type { DiscordAccessPolicy } from "../domain/discord-access-policy";
@@ -31,7 +27,11 @@ import {
   type DiscordUser,
 } from "../domain/discord-message";
 import type { DiscordMessageHandler, DiscordService } from "../ports/discord-service";
-import { DiscordVoiceChatSession } from "./discord-voice-chat-session";
+import {
+  DiscordVoiceChatController,
+  type DiscordVoiceChatControllerOptions,
+  VOICE_COMMAND,
+} from "./discord-voice-chat-controller";
 
 const DISCORD_MESSAGE_LIMIT = 2_000;
 const DISCORD_IMAGE_MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024;
@@ -51,23 +51,6 @@ const OPERATING_MODE_COMMANDS: readonly ApplicationCommandDataResolvable[] = [
     dmPermission: false,
   },
 ];
-
-const VOICE_COMMAND = new SlashCommandBuilder()
-  .setName("voice")
-  .setDescription("VC音声を使った会話を開始・終了します")
-  .addSubcommand((command) => command.setName("join").setDescription("VCに参加して会話を開始"))
-  .addSubcommand((command) => command.setName("leave").setDescription("VCから退出して会話を終了"))
-  .toJSON();
-
-interface VoiceChatOptions {
-  readonly asr: StreamingAsr;
-  readonly language: string;
-}
-
-interface ActiveVoiceChat {
-  readonly session: DiscordVoiceChatSession;
-  readonly userId: string;
-}
 
 interface SendableChannel {
   send(content: string | { files: AttachmentBuilder[] }): Promise<unknown>;
@@ -161,7 +144,7 @@ function toDiscordUser(message: Message): DiscordUser {
 export class DiscordJsService implements DiscordService {
   private readonly client: Client;
   private readonly channels = new Map<string, SendableChannel>();
-  private readonly voiceChatSessions = new Map<string, ActiveVoiceChat>();
+  private readonly voiceChatController?: DiscordVoiceChatController;
   private onMessage?: DiscordMessageHandler;
   private messageListener?: (message: Message) => void;
   private interactionListener?: (interaction: Interaction) => void;
@@ -173,16 +156,19 @@ export class DiscordJsService implements DiscordService {
     private readonly accessPolicy: DiscordAccessPolicy,
     logger?: Logger,
     private readonly operatingState = new DiscordOperatingState(),
-    private readonly voiceChat?: VoiceChatOptions,
+    voiceChat?: DiscordVoiceChatControllerOptions,
   ) {
     this.logger = logger?.child({ component: "discord-service" });
+    this.voiceChatController = voiceChat
+      ? new DiscordVoiceChatController(accessPolicy, logger, voiceChat)
+      : undefined;
     this.client = new Client({
       intents: [
         GatewayIntentBits.DirectMessages,
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
-        ...(voiceChat ? [GatewayIntentBits.GuildVoiceStates] : []),
+        ...(this.voiceChatController ? [GatewayIntentBits.GuildVoiceStates] : []),
       ],
       partials: [Partials.Channel],
     });
@@ -308,8 +294,7 @@ export class DiscordJsService implements DiscordService {
     this.onMessage = undefined;
     this.stopAccepting();
     this.channels.clear();
-    await Promise.all([...this.voiceChatSessions.values()].map(({ session }) => session.stop()));
-    this.voiceChatSessions.clear();
+    await this.voiceChatController?.stop();
     this.client.destroy();
   }
 
@@ -380,7 +365,7 @@ export class DiscordJsService implements DiscordService {
   private async synchronizeCommands(readyClient: Client<true>): Promise<void> {
     await readyClient.application.commands.set([
       ...OPERATING_MODE_COMMANDS,
-      ...(this.voiceChat ? [VOICE_COMMAND] : []),
+      ...(this.voiceChatController ? [VOICE_COMMAND] : []),
     ]);
   }
 
@@ -388,7 +373,16 @@ export class DiscordJsService implements DiscordService {
     if (!interaction.isChatInputCommand()) return;
 
     if (interaction.commandName === "voice") {
-      await this.handleVoiceChatCommand(interaction);
+      if (this.voiceChatController) {
+        await this.voiceChatController.handleCommand(interaction);
+      } else {
+        await interaction.reply({
+          content: interaction.inGuild()
+            ? "VC会話は無効です。"
+            : "このコマンドはサーバー内でのみ使用できます。",
+          ephemeral: true,
+        });
+      }
       return;
     }
 
@@ -421,118 +415,6 @@ export class DiscordJsService implements DiscordService {
       content: mode === "active" ? "Botを再開しました。" : "Botを一時停止しました。",
       ephemeral: true,
     });
-  }
-
-  private async handleVoiceChatCommand(interaction: ChatInputCommandInteraction): Promise<void> {
-    if (!interaction.inGuild()) {
-      await interaction.reply({
-        content: "このコマンドはサーバー内でのみ使用できます。",
-        ephemeral: true,
-      });
-      return;
-    }
-    if (!this.voiceChat) {
-      await interaction.reply({ content: "VC会話は無効です。", ephemeral: true });
-      return;
-    }
-
-    const guildId = interaction.guildId;
-    if (interaction.options.getSubcommand() === "leave") {
-      const active = this.voiceChatSessions.get(guildId);
-      if (!active) {
-        await interaction.reply({ content: "VC会話セッションはありません。", ephemeral: true });
-        return;
-      }
-      if (active.userId !== interaction.user.id) {
-        await interaction.reply({
-          content: "開始したユーザーだけが終了できます。",
-          ephemeral: true,
-        });
-        return;
-      }
-      this.voiceChatSessions.delete(guildId);
-      await active.session.stop();
-      await interaction.reply({ content: "VCから退出しました。", ephemeral: true });
-      return;
-    }
-
-    if (this.voiceChatSessions.has(guildId)) {
-      await interaction.reply({
-        content: "このサーバーでは既にVC会話中です。",
-        ephemeral: true,
-      });
-      return;
-    }
-    const guild = interaction.guild;
-    if (!guild) return;
-    const member = await guild.members.fetch(interaction.user.id);
-    const voiceChannel = member.voice.channel;
-    if (!voiceChannel) {
-      await interaction.reply({ content: "先にVCへ参加してください。", ephemeral: true });
-      return;
-    }
-    if (!interaction.channel || !isSendableChannel(interaction.channel)) {
-      await interaction.reply({ content: "VC会話の投稿先を取得できません。", ephemeral: true });
-      return;
-    }
-    const textThread = interaction.channel.isThread() ? interaction.channel : undefined;
-    const textChannelId = textThread?.parentId ?? interaction.channelId;
-    if (
-      !this.accessPolicy.canReceive({
-        guildId,
-        channelId: textChannelId,
-        threadId: textThread?.id,
-      })
-    ) {
-      await interaction.reply({
-        content: "このチャンネルではVC会話を利用できません。",
-        ephemeral: true,
-      });
-      return;
-    }
-
-    await interaction.deferReply({ ephemeral: true });
-    const session = new DiscordVoiceChatSession({
-      adapterCreator: guild.voiceAdapterCreator,
-      asr: this.voiceChat.asr,
-      guildId,
-      language: this.voiceChat.language,
-      logger: this.logger,
-      onTranscript: async (text) => {
-        await this.onMessage?.({
-          author: {
-            bot: false,
-            displayName: member.displayName,
-            id: interaction.user.id,
-            username: member.user.username,
-          },
-          channelId: interaction.channelId,
-          content: text,
-          guildId,
-          id: randomUUID(),
-          images: [],
-          parentChannelId: textThread?.parentId ?? undefined,
-          threadId: textThread?.id,
-        });
-      },
-      userId: interaction.user.id,
-      voiceChannelId: voiceChannel.id,
-    });
-    this.voiceChatSessions.set(guildId, { session, userId: interaction.user.id });
-    try {
-      await session.start();
-      await interaction.editReply("VCに参加しました。発話を会話セッションに送ります。");
-    } catch (error) {
-      this.voiceChatSessions.delete(guildId);
-      await session.stop();
-      this.logger?.warn(
-        { err: error, event: "discord_voice_chat_start_failed", guildId },
-        "Failed to start Discord voice transcription",
-      );
-      await interaction.editReply(
-        "VC会話を開始できませんでした。設定とASRサーバーを確認してください。",
-      );
-    }
   }
 
   private toDiscordMessage(message: Message): DiscordMessage {

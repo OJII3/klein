@@ -15,25 +15,26 @@ import type { StreamingAsr, StreamingAsrSession } from "@modules/asr/domain/stre
 const VOICE_READY_TIMEOUT_MS = 15_000;
 const SILENCE_DURATION_MS = 900;
 
-export interface DiscordVoiceChatSessionOptions {
+export interface DiscordVoiceCaptureSessionOptions {
   readonly adapterCreator: DiscordGatewayAdapterCreator;
   readonly asr: StreamingAsr;
   readonly guildId: string;
   readonly language: string;
   readonly logger?: Logger;
+  readonly onError?: (error: Error) => void;
   readonly onTranscript: (text: string) => Promise<void>;
   readonly userId: string;
   readonly voiceChannelId: string;
 }
 
-export class DiscordVoiceChatSession {
+export class DiscordVoiceCaptureSession {
   private connection?: VoiceConnection;
   private asrSession?: StreamingAsrSession;
   private activeUtteranceId?: string;
   private speakingListener?: (userId: string) => void;
   private stopped = false;
 
-  constructor(private readonly options: DiscordVoiceChatSessionOptions) {}
+  constructor(private readonly options: DiscordVoiceCaptureSessionOptions) {}
 
   async start(): Promise<void> {
     this.asrSession = await this.options.asr.connect({
@@ -54,6 +55,7 @@ export class DiscordVoiceChatSession {
         { err: error, event: "discord_voice_asr_failed" },
         "Streaming ASR session failed",
       );
+      this.options.onError?.(error);
       void this.stop();
     });
 
