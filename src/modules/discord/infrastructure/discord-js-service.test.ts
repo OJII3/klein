@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { Interaction, Message } from "discord.js";
+import type { StreamingAsr } from "@modules/asr/domain/streaming-asr";
 
 import { createDiscordAccessPolicy } from "../domain/discord-access-policy";
 import type { DiscordMessage } from "../domain/discord-message";
 import { DiscordOperatingState } from "../domain/discord-operating-state";
 import type { DiscordMessageHandler } from "../ports/discord-service";
 import { DiscordJsService } from "./discord-js-service";
+import { DiscordVoiceChatSession } from "./discord-voice-chat-session";
 
 type TestableDiscordJsService = {
   readonly client: {
@@ -21,6 +23,45 @@ type TestableDiscordJsService = {
   handleMessage(message: Message): Promise<void>;
   handleInteraction(interaction: Interaction): Promise<void>;
 };
+
+function createVoiceJoinInteraction(
+  options: {
+    readonly channelId?: string;
+    readonly isThread?: boolean;
+    readonly parentId?: string;
+  } = {},
+) {
+  const replies: string[] = [];
+  const interaction = {
+    channel: {
+      id: options.channelId ?? "channel-123",
+      isThread: () => options.isThread ?? false,
+      parentId: options.parentId ?? null,
+      send: async () => undefined,
+    },
+    channelId: options.channelId ?? "channel-123",
+    commandName: "voice",
+    deferReply: async () => undefined,
+    editReply: async (content: string) => replies.push(content),
+    guild: {
+      members: {
+        fetch: async () => ({
+          displayName: "さつき",
+          user: { username: "satsuki" },
+          voice: { channel: { id: "voice-channel-123" } },
+        }),
+      },
+      voiceAdapterCreator: {},
+    },
+    guildId: "guild-123",
+    inGuild: () => true,
+    isChatInputCommand: () => true,
+    options: { getSubcommand: () => "join" },
+    reply: async ({ content }: { content: string }) => replies.push(content),
+    user: { id: "user-123" },
+  } as unknown as Interaction;
+  return { interaction, replies };
+}
 
 function createMessage(
   options: {
@@ -266,6 +307,101 @@ test("handles idle and online slash commands for members with Manage Server", as
 
     assert.equal(operatingState.mode, "paused");
     assert.deepEqual(replies, [{ content: "Botを一時停止しました。", ephemeral: true }]);
+  } finally {
+    await service.stop();
+  }
+});
+
+test("forwards voice transcripts to the channel's LLM message handler", async () => {
+  const originalStart = DiscordVoiceChatSession.prototype.start;
+  let onTranscript: ((text: string) => Promise<void>) | undefined;
+  DiscordVoiceChatSession.prototype.start = async function () {
+    onTranscript = (
+      this as unknown as {
+        options: { onTranscript: (text: string) => Promise<void> };
+      }
+    ).options.onTranscript;
+  };
+
+  const service = new DiscordJsService(
+    "token",
+    createDiscordAccessPolicy({
+      default: "deny",
+      directMessages: "deny",
+      guilds: {
+        "guild-123": {
+          access: "deny",
+          channels: {
+            "channel-123": {
+              threads: { "thread-123": { access: "allow" } },
+            },
+          },
+        },
+      },
+    }),
+    undefined,
+    new DiscordOperatingState(),
+    { asr: {} as StreamingAsr, language: "ja" },
+  );
+  const testableService = service as unknown as TestableDiscordJsService;
+  const received: DiscordMessage[] = [];
+  testableService.onMessage = async (message) => {
+    received.push(message);
+  };
+  const { interaction } = createVoiceJoinInteraction({
+    channelId: "thread-123",
+    isThread: true,
+    parentId: "channel-123",
+  });
+
+  try {
+    await testableService.handleInteraction(interaction);
+    assert.ok(onTranscript);
+    await onTranscript("こんにちは");
+
+    assert.equal(received.length, 1);
+    assert.deepEqual(
+      {
+        author: received[0]?.author,
+        channelId: received[0]?.channelId,
+        content: received[0]?.content,
+        guildId: received[0]?.guildId,
+        parentChannelId: received[0]?.parentChannelId,
+        threadId: received[0]?.threadId,
+      },
+      {
+        author: {
+          bot: false,
+          displayName: "さつき",
+          id: "user-123",
+          username: "satsuki",
+        },
+        channelId: "thread-123",
+        content: "こんにちは",
+        guildId: "guild-123",
+        parentChannelId: "channel-123",
+        threadId: "thread-123",
+      },
+    );
+  } finally {
+    DiscordVoiceChatSession.prototype.start = originalStart;
+    await service.stop();
+  }
+});
+
+test("blocks voice conversations in channels denied by the access policy", async () => {
+  const service = new DiscordJsService(
+    "token",
+    createDiscordAccessPolicy({ default: "deny", directMessages: "deny" }),
+    undefined,
+    new DiscordOperatingState(),
+    { asr: {} as StreamingAsr, language: "ja" },
+  );
+  const { interaction, replies } = createVoiceJoinInteraction();
+
+  try {
+    await (service as unknown as TestableDiscordJsService).handleInteraction(interaction);
+    assert.deepEqual(replies, ["このチャンネルではVC会話を利用できません。"]);
   } finally {
     await service.stop();
   }

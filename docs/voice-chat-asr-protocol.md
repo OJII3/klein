@@ -5,8 +5,10 @@
 Set `features.voiceChat.enabled` to `true` and point `asrServerUrl` to the
 server's WebSocket base URL. `language` defaults to `ja`. In Discord, run
 `/voice join` from a text channel while connected to a voice channel; Klein
-captures only the command user's speech and posts final transcripts back to the
-text channel. Run `/voice leave` to stop.
+captures only the command user's speech and sends final transcripts to the
+existing LLM conversation session for the text channel. The assistant can
+respond in that text channel through its normal Discord messaging tool. Run
+`/voice leave` to stop.
 
 This first pass handles one active speaker per server and uses 900 ms of silence
 to end an utterance. Partial transcripts are available to the application but

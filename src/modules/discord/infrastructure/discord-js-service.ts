@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { resizeImage } from "@earendil-works/pi-coding-agent";
 import {
   Client,
@@ -53,13 +54,9 @@ const OPERATING_MODE_COMMANDS: readonly ApplicationCommandDataResolvable[] = [
 
 const VOICE_COMMAND = new SlashCommandBuilder()
   .setName("voice")
-  .setDescription("VCの文字起こしを開始・終了します")
-  .addSubcommand((command) =>
-    command.setName("join").setDescription("VCに参加して文字起こしを開始"),
-  )
-  .addSubcommand((command) =>
-    command.setName("leave").setDescription("VCから退出して文字起こしを終了"),
-  )
+  .setDescription("VC音声を使った会話を開始・終了します")
+  .addSubcommand((command) => command.setName("join").setDescription("VCに参加して会話を開始"))
+  .addSubcommand((command) => command.setName("leave").setDescription("VCから退出して会話を終了"))
   .toJSON();
 
 interface VoiceChatOptions {
@@ -435,7 +432,7 @@ export class DiscordJsService implements DiscordService {
       return;
     }
     if (!this.voiceChat) {
-      await interaction.reply({ content: "VC文字起こしは無効です。", ephemeral: true });
+      await interaction.reply({ content: "VC会話は無効です。", ephemeral: true });
       return;
     }
 
@@ -443,7 +440,7 @@ export class DiscordJsService implements DiscordService {
     if (interaction.options.getSubcommand() === "leave") {
       const active = this.voiceChatSessions.get(guildId);
       if (!active) {
-        await interaction.reply({ content: "文字起こしセッションはありません。", ephemeral: true });
+        await interaction.reply({ content: "VC会話セッションはありません。", ephemeral: true });
         return;
       }
       if (active.userId !== interaction.user.id) {
@@ -461,7 +458,7 @@ export class DiscordJsService implements DiscordService {
 
     if (this.voiceChatSessions.has(guildId)) {
       await interaction.reply({
-        content: "このサーバーでは既に文字起こし中です。",
+        content: "このサーバーでは既にVC会話中です。",
         ephemeral: true,
       });
       return;
@@ -475,7 +472,22 @@ export class DiscordJsService implements DiscordService {
       return;
     }
     if (!interaction.channel || !isSendableChannel(interaction.channel)) {
-      await interaction.reply({ content: "文字起こしの投稿先を取得できません。", ephemeral: true });
+      await interaction.reply({ content: "VC会話の投稿先を取得できません。", ephemeral: true });
+      return;
+    }
+    const textThread = interaction.channel.isThread() ? interaction.channel : undefined;
+    const textChannelId = textThread?.parentId ?? interaction.channelId;
+    if (
+      !this.accessPolicy.canReceive({
+        guildId,
+        channelId: textChannelId,
+        threadId: textThread?.id,
+      })
+    ) {
+      await interaction.reply({
+        content: "このチャンネルではVC会話を利用できません。",
+        ephemeral: true,
+      });
       return;
     }
 
@@ -486,15 +498,30 @@ export class DiscordJsService implements DiscordService {
       guildId,
       language: this.voiceChat.language,
       logger: this.logger,
-      onTranscript: (text) =>
-        this.sendMessage(interaction.channelId, `${member.displayName}: ${text}`),
+      onTranscript: async (text) => {
+        await this.onMessage?.({
+          author: {
+            bot: false,
+            displayName: member.displayName,
+            id: interaction.user.id,
+            username: member.user.username,
+          },
+          channelId: interaction.channelId,
+          content: text,
+          guildId,
+          id: randomUUID(),
+          images: [],
+          parentChannelId: textThread?.parentId ?? undefined,
+          threadId: textThread?.id,
+        });
+      },
       userId: interaction.user.id,
       voiceChannelId: voiceChannel.id,
     });
     this.voiceChatSessions.set(guildId, { session, userId: interaction.user.id });
     try {
       await session.start();
-      await interaction.editReply("VCに参加しました。発話を文字起こしします。");
+      await interaction.editReply("VCに参加しました。発話を会話セッションに送ります。");
     } catch (error) {
       this.voiceChatSessions.delete(guildId);
       await session.stop();
@@ -503,7 +530,7 @@ export class DiscordJsService implements DiscordService {
         "Failed to start Discord voice transcription",
       );
       await interaction.editReply(
-        "VC文字起こしを開始できませんでした。設定とASRサーバーを確認してください。",
+        "VC会話を開始できませんでした。設定とASRサーバーを確認してください。",
       );
     }
   }
