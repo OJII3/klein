@@ -41,11 +41,15 @@ export class WebSocketStreamingAsr implements StreamingAsr {
     });
 
     socket.addEventListener("open", () => {
-      sendControl(socket, {
-        type: "session.start",
-        language: options.language,
-        audio: options.audio,
-      });
+      try {
+        sendControl(socket, {
+          type: "session.start",
+          language: options.language,
+          audio: options.audio,
+        });
+      } catch (error) {
+        failSession(error instanceof Error ? error : new Error(String(error)));
+      }
     });
     socket.addEventListener("message", (event) => {
       let message: unknown;
@@ -100,6 +104,7 @@ export class WebSocketStreamingAsr implements StreamingAsr {
     });
 
     function failSession(error: Error): void {
+      if (closedByClient) return;
       if (!ready) {
         readyReject(error);
       } else if (!sessionFailed) {
@@ -151,8 +156,8 @@ export class WebSocketStreamingAsr implements StreamingAsr {
       close() {
         updates.clear();
         errors.clear();
+        closedByClient = true;
         if (socket.readyState < WebSocket.CLOSING) {
-          closedByClient = true;
           socket.close(1000, "Session finished");
         }
       },
