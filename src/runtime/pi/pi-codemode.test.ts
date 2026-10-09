@@ -23,6 +23,7 @@ import { createPiAgentFactory } from "./pi-agent-runtime";
 
 test("runs codemode research while keeping Discord replies direct", async () => {
   const agentDir = await mkdtemp(join(tmpdir(), "klein-codemode-"));
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
   const provider = fauxProvider({ tokensPerSecond: 100_000 });
   const model = provider.getModel();
   const modelRuntime = await ModelRuntime.create({
@@ -123,6 +124,8 @@ test("runs codemode research while keeping Discord replies direct", async () => 
     assert.deepEqual(sent, ["……確認したよ"]);
   } finally {
     runtime.dispose();
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
     await rm(agentDir, { force: true, recursive: true });
   }
 });
