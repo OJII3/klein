@@ -77,10 +77,11 @@ profile's `SOUL.md` (`config/klein/SOUL.md` by default).
 
 The Discord agent can read and search the Obsidian vault through the remote
 CF Sync MCP server at `https://obsidian.oiii3.dev/mcp`. Klein adds this server
-to `runtime.agentDir/mcp.json` on startup. Before using the tools, authorize the
-server once with Cloudflare Access:
+to `runtime.agentDir/mcp.json` on startup. To set it up before starting Klein,
+add the server and authorize it once with Cloudflare Access:
 
 ```sh
+PI_CODING_AGENT_DIR=.runtime/pi bunx pi mcp add obsidian --url https://obsidian.oiii3.dev/mcp --exposure codemode --description 'Read and search notes in the Obsidian vault'
 PI_CODING_AGENT_DIR=.runtime/pi bunx pi mcp login obsidian
 ```
 
