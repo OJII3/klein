@@ -282,6 +282,9 @@ export function createPiAgentFactory({
   sessionMode,
   skillsDirectory = DEFAULT_SKILLS_DIRECTORY,
 }: PiAgentFactoryOptions): AgentFactory {
+  // Pi's MCP extension resolves config, credentials, and logs through this environment variable.
+  process.env.PI_CODING_AGENT_DIR = resolve(agentDir);
+
   const imageModel = llm.image
     ? resolveConfiguredImageModel(llm.image.provider, llm.image.model, modelRuntime)
     : undefined;
@@ -301,6 +304,13 @@ export function createPiAgentFactory({
         skillsDirectory,
       );
       await resourceLoader.reload();
+      // Select the initial tools without restricting MCP tools registered after startup.
+      settingsManager.applyOverrides({
+        defaultTools: [
+          ...definition.toolNames,
+          ...(definition.toolNames.length > 0 ? ["tool_search"] : []),
+        ],
+      });
 
       const sessionManager = createPiSessionManager(
         agentDir,
@@ -329,11 +339,19 @@ export function createPiAgentFactory({
         sessionManager,
         settingsManager,
         thinkingLevel: llm.thinkingLevel,
-        tools: [
-          ...definition.toolNames,
-          ...(definition.toolNames.length > 0 ? ["tool_search"] : []),
+        excludeTools: [
+          "read",
+          "bash",
+          "edit",
+          "write",
+          "grep",
+          "find",
+          "ls",
+          "powershell",
+          "source_check",
         ],
       });
+      await session.bindExtensions({});
 
       if (
         options.initialContext &&
