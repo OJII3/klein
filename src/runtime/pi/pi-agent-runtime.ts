@@ -196,7 +196,6 @@ export function createResourceLoader(
   settingsManager: SettingsManager,
   logger?: Logger,
   skillsDirectory = DEFAULT_SKILLS_DIRECTORY,
-  enableMcp = false,
 ): DefaultResourceLoader {
   return new DefaultResourceLoader({
     cwd: process.cwd(),
@@ -204,7 +203,7 @@ export function createResourceLoader(
     extensionFactories: [
       createCodemodeExtension({ mode: "on", models: false }),
       createToolSearchExtension(),
-      ...(enableMcp ? [createMcpExtension()] : []),
+      createMcpExtension(),
       createBackgroundCompactionExtension(settingsManager, { logger }),
       createFxtwitterFetchExtension(),
     ],
@@ -300,7 +299,6 @@ export function createPiAgentFactory({
         settingsManager,
         logger,
         skillsDirectory,
-        definition.enableMcp,
       );
       await resourceLoader.reload();
 

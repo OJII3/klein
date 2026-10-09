@@ -51,7 +51,6 @@ export class DiscordAgent {
     runtime = await agentFactory.create(
       {
         systemPrompt,
-        enableMcp: true,
         toolNames: options.tts
           ? [...DISCORD_AGENT_TOOL_NAMES, "discord_voice"]
           : DISCORD_AGENT_TOOL_NAMES,

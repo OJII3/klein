@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { AgentCoordinator } from "./agent-coordinator";
@@ -41,8 +40,6 @@ import { WebSocketStreamingAsr } from "@modules/asr/infrastructure/websocket-str
 
 const DISCORD_USAGE_STATUS_REFRESH_INTERVAL_MS = 60 * 60 * 1_000;
 const CHANNEL_CONTEXT_ROTATION_CHECK_INTERVAL_MS = 60 * 1_000;
-const OBSIDIAN_MCP_SERVER_NAME = "obsidian";
-const OBSIDIAN_MCP_SERVER_URL = "https://obsidian.ojii3.dev/mcp";
 
 export async function bootstrap(): Promise<void> {
   const { sessionMode } = parseCliOptions(process.argv.slice(2));
@@ -71,7 +68,6 @@ export async function bootstrap(): Promise<void> {
   const taskCoordinator = new TaskCoordinator();
   const tts = config.features.tts?.enabled ? new Sbv2Tts(config.features.tts.serverUrl) : undefined;
   const agentDir = resolve(config.runtime.agentDir);
-  ensureObsidianMcpServer(agentDir);
   const channelSessionStateStore = new ChannelSessionStateStore(
     resolve(agentDir, "channel-session-state"),
   );
@@ -242,23 +238,6 @@ export async function bootstrap(): Promise<void> {
   usageStatusInterval = setInterval(() => {
     void updateDiscordUsageStatus();
   }, DISCORD_USAGE_STATUS_REFRESH_INTERVAL_MS);
-}
-
-function ensureObsidianMcpServer(agentDir: string): void {
-  const configPath = resolve(agentDir, "mcp.json");
-  mkdirSync(agentDir, { recursive: true });
-
-  const config = existsSync(configPath) ? JSON.parse(readFileSync(configPath, "utf8")) : {};
-  if (config.mcpServers?.[OBSIDIAN_MCP_SERVER_NAME]) return;
-
-  config.mcpServers ??= {};
-  config.mcpServers[OBSIDIAN_MCP_SERVER_NAME] = {
-    type: "http",
-    url: OBSIDIAN_MCP_SERVER_URL,
-    exposure: "deferred",
-    description: "Read and search notes in the Obsidian vault.",
-  };
-  writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
 }
 
 try {
