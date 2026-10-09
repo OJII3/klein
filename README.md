@@ -87,8 +87,10 @@ PI_CODING_AGENT_DIR=.runtime/pi bunx pi mcp login obsidian
 
 This opens the Cloudflare Access sign-in and note-read approval in a browser.
 The OAuth credentials are stored under `runtime.agentDir`; restart Klein after
-sign-in. On a host where the browser cannot open, complete the login on a
-machine with browser access and transfer the runtime's `mcp-auth.json` securely.
+sign-in. If the browser is on a different machine, open the printed sign-in URL
+there, complete approval, then paste the final `http://127.0.0.1:.../callback`
+URL from the browser address bar into the terminal prompt. Pi uses it to finish
+the sign-in on the machine running Klein.
 
 When `features.memory.enabled` is true, Klein periodically extracts durable
 guild-wide facts, rules, decisions, and procedures from recent Discord
