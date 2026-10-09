@@ -42,7 +42,7 @@ import { WebSocketStreamingAsr } from "@modules/asr/infrastructure/websocket-str
 const DISCORD_USAGE_STATUS_REFRESH_INTERVAL_MS = 60 * 60 * 1_000;
 const CHANNEL_CONTEXT_ROTATION_CHECK_INTERVAL_MS = 60 * 1_000;
 const OBSIDIAN_MCP_SERVER_NAME = "obsidian";
-const OBSIDIAN_MCP_SERVER_URL = "https://obsidian.oiii3.dev/mcp";
+const OBSIDIAN_MCP_SERVER_URL = "https://obsidian.ojii3.dev/mcp";
 
 export async function bootstrap(): Promise<void> {
   const { sessionMode } = parseCliOptions(process.argv.slice(2));
