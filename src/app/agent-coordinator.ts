@@ -4,7 +4,7 @@ import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import type { DiscordOperatingState } from "@modules/discord/domain/discord-operating-state";
 import type { DiscordService } from "@modules/discord/ports/discord-service";
 import type { MemoryCoordinator } from "@modules/memory/application/memory-coordinator";
-import type { DiscordChannelRuleStore } from "@modules/discord/infrastructure/discord-channel-rule-store";
+import type { DiscordChannelRuleStore } from "@modules/discord/ports/discord-channel-rule-store";
 import { DiscordAgent } from "@agents/discord/discord-agent";
 import type { TaskCoordinator } from "./task-coordinator";
 import {

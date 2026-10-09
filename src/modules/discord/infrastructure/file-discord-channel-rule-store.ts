@@ -2,7 +2,9 @@ import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { dirname, resolve } from "node:path";
 
-export class DiscordChannelRuleStore {
+import type { DiscordChannelRuleStore } from "../ports/discord-channel-rule-store";
+
+export class FileDiscordChannelRuleStore implements DiscordChannelRuleStore {
   constructor(private readonly directory: string) {}
 
   async get(guildId: string, channelId: string): Promise<string | undefined> {
