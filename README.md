@@ -76,8 +76,9 @@ The Discord agent's personality and behavior are loaded from the selected
 profile's `SOUL.md` (`config/klein/SOUL.md` by default).
 
 To connect remote MCP tools to the Discord agent, register the server in the
-Pi agent directory set by `runtime.agentDir` (default: `.runtime/pi`). If you
-use another path, set `PI_CODING_AGENT_DIR` to match it:
+Pi agent directory `.runtime/pi`, which matches Klein's `runtime.agentDir`.
+Prefix Pi CLI commands with `PI_CODING_AGENT_DIR=.runtime/pi` so both use the
+same MCP configuration:
 
 ```sh
 PI_CODING_AGENT_DIR=.runtime/pi bunx pi mcp add docs --url https://mcp.example.com/mcp --exposure deferred --description 'Search product documentation'
