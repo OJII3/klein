@@ -9,6 +9,7 @@ import {
   SettingsManager,
   createAgentSession,
   createCodemodeExtension,
+  createMcpExtension,
   createToolSearchExtension,
 } from "@earendil-works/pi-coding-agent";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
@@ -202,6 +203,7 @@ export function createResourceLoader(
     extensionFactories: [
       createCodemodeExtension({ mode: "on", models: false }),
       createToolSearchExtension(),
+      createMcpExtension(),
       createBackgroundCompactionExtension(settingsManager, { logger }),
       createFxtwitterFetchExtension(),
     ],

@@ -75,6 +75,21 @@ To use an Exa API key with `pi-web-access`, optionally set `EXA_API_KEY` in `.en
 The Discord agent's personality and behavior are loaded from the selected
 profile's `SOUL.md` (`config/klein/SOUL.md` by default).
 
+To connect remote MCP tools to the Discord agent, register the server in the
+Pi agent directory `.runtime/pi`, which matches Klein's `runtime.agentDir`.
+Prefix Pi CLI commands with `PI_CODING_AGENT_DIR=.runtime/pi` so both use the
+same MCP configuration:
+
+```sh
+PI_CODING_AGENT_DIR=.runtime/pi bunx pi mcp add docs --url https://mcp.example.com/mcp --exposure deferred --description 'Search product documentation'
+PI_CODING_AGENT_DIR=.runtime/pi bunx pi mcp login docs
+```
+
+`mcp add` writes the server configuration to Pi's `mcp.json`. Use `mcp login`
+when the server requires OAuth. MCP tools configured with `deferred` exposure
+are loaded through Pi's `tool_search` when needed. Restart Klein after changing
+the MCP configuration.
+
 When `features.memory.enabled` is true, Klein periodically extracts durable
 guild-wide facts, rules, decisions, and procedures from recent Discord
 messages in the background. The default path is
