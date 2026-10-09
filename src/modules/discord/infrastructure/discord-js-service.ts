@@ -498,7 +498,17 @@ export class DiscordJsService implements DiscordService {
     }
 
     const rule = interaction.fields.getTextInputValue(CHANNEL_RULE_INPUT_ID);
-    await this.channelRuleStore?.set(interaction.guildId, interaction.channelId, rule);
+    const guildId = interaction.guildId;
+    const channelId = interaction.channelId;
+    if (!guildId || !channelId) {
+      await interaction.reply({
+        content: "チャンネルを特定できませんでした。",
+        ephemeral: true,
+      });
+      return;
+    }
+
+    await this.channelRuleStore?.set(guildId, channelId, rule);
     await interaction.reply({
       content: rule.trim()
         ? "このチャンネル／スレッドのルールを保存しました。"
