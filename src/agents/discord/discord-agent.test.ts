@@ -31,6 +31,7 @@ const message: DiscordMessage = {
 
 test("wires the runtime image analyzer into discord_read", async () => {
   let tools: readonly ToolDefinition[] = [];
+  let enableMcp: boolean | undefined;
   let analyzedPrompt: unknown;
   const runtime: AgentRuntime = {
     async analyzeImage(prompt) {
@@ -41,7 +42,8 @@ test("wires the runtime image analyzer into discord_read", async () => {
     dispose() {},
   };
   const agentFactory: AgentFactory = {
-    async create(_definition, registeredTools) {
+    async create(definition, registeredTools) {
+      enableMcp = definition.enableMcp;
       tools = registeredTools as readonly ToolDefinition[];
       return runtime;
     },
@@ -67,6 +69,7 @@ test("wires the runtime image analyzer into discord_read", async () => {
   );
   const readTool = tools.find((tool) => tool.name === "discord_read");
   assert.ok(readTool);
+  assert.equal(enableMcp, true);
 
   const result = await readTool.execute(
     "tool-call",

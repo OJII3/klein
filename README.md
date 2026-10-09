@@ -75,6 +75,20 @@ To use an Exa API key with `pi-web-access`, optionally set `EXA_API_KEY` in `.en
 The Discord agent's personality and behavior are loaded from the selected
 profile's `SOUL.md` (`config/klein/SOUL.md` by default).
 
+The Discord agent can read and search the Obsidian vault through the remote
+CF Sync MCP server at `https://obsidian.oiii3.dev/mcp`. Klein adds this server
+to `runtime.agentDir/mcp.json` on startup. Before using the tools, authorize the
+server once with Cloudflare Access:
+
+```sh
+PI_CODING_AGENT_DIR=.runtime/pi ./node_modules/.bin/pi mcp login obsidian
+```
+
+This opens the Cloudflare Access sign-in and note-read approval in a browser.
+The OAuth credentials are stored under `runtime.agentDir`; restart Klein after
+sign-in. On a host where the browser cannot open, complete the login on a
+machine with browser access and transfer the runtime's `mcp-auth.json` securely.
+
 When `features.memory.enabled` is true, Klein periodically extracts durable
 guild-wide facts, rules, decisions, and procedures from recent Discord
 messages in the background. The default path is

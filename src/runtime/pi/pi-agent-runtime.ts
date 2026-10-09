@@ -9,6 +9,7 @@ import {
   SettingsManager,
   createAgentSession,
   createCodemodeExtension,
+  createMcpExtension,
   createToolSearchExtension,
 } from "@earendil-works/pi-coding-agent";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
@@ -195,6 +196,7 @@ export function createResourceLoader(
   settingsManager: SettingsManager,
   logger?: Logger,
   skillsDirectory = DEFAULT_SKILLS_DIRECTORY,
+  enableMcp = false,
 ): DefaultResourceLoader {
   return new DefaultResourceLoader({
     cwd: process.cwd(),
@@ -202,6 +204,7 @@ export function createResourceLoader(
     extensionFactories: [
       createCodemodeExtension({ mode: "on", models: false }),
       createToolSearchExtension(),
+      ...(enableMcp ? [createMcpExtension()] : []),
       createBackgroundCompactionExtension(settingsManager, { logger }),
       createFxtwitterFetchExtension(),
     ],
@@ -297,6 +300,7 @@ export function createPiAgentFactory({
         settingsManager,
         logger,
         skillsDirectory,
+        definition.enableMcp,
       );
       await resourceLoader.reload();
 
