@@ -2,6 +2,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 
 import type { PinoViewerEvent, ViewerPage } from "../domain/viewer-event";
+import type { ViewerLogQuery, ViewerLogReader } from "../ports/viewer-readers";
 
 const PinoLevelLabels: Readonly<Record<number, string>> = {
   10: "trace",
@@ -14,24 +15,15 @@ const PinoLevelLabels: Readonly<Record<number, string>> = {
 
 const PinoRecordKeys = new Set(["level", "time", "pid", "hostname", "name", "msg", "event"]);
 
-export interface PinoLogQuery {
-  readonly limit?: number;
-  readonly cursor?: string;
-  readonly level?: string;
-  readonly q?: string;
-  readonly channelId?: string;
-  readonly event?: string;
-}
-
 interface PinoLogCursor {
   readonly file: string;
   readonly line: number | null;
 }
 
-export class PinoJsonlReader {
+export class PinoJsonlReader implements ViewerLogReader {
   constructor(private readonly logDirectory: string) {}
 
-  async list(query: PinoLogQuery = {}): Promise<ViewerPage<PinoViewerEvent>> {
+  async list(query: ViewerLogQuery = {}): Promise<ViewerPage<PinoViewerEvent>> {
     const limit = normalizeLimit(query.limit);
     const files = await this.listFiles();
     const cursor = query.cursor ? decodeCursor(query.cursor) : undefined;
@@ -140,7 +132,7 @@ function parsePinoLine(
   };
 }
 
-function matchesQuery(event: PinoViewerEvent, query: PinoLogQuery): boolean {
+function matchesQuery(event: PinoViewerEvent, query: ViewerLogQuery): boolean {
   if (query.level && event.levelLabel !== query.level && String(event.level) !== query.level) {
     return false;
   }

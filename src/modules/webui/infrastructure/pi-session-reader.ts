@@ -9,48 +9,33 @@ import {
   type SessionInfo,
 } from "@earendil-works/pi-coding-agent";
 
-import type {
-  PiViewerEvent,
-  PiViewerEventKind,
-  ViewerPage,
-  ViewerSessionDetail,
-  ViewerSessionSummary,
-} from "../domain/viewer-event";
+import type { ViewerPage, ViewerSessionDetail, ViewerSessionSummary } from "../domain/viewer-event";
+import type { ViewerSessionQuery, ViewerSessionReader } from "../ports/viewer-readers";
+import {
+  decodeSessionCursor,
+  decodeSessionListCursor,
+  encodeSessionCursor,
+  encodeSessionListCursor,
+  normalizeSessionLimit,
+} from "./pi-session-cursor";
+import { toViewerEvent, toViewerSessionSummary } from "./pi-session-event-mapper";
 
-const FIRST_MESSAGE_MAX_LENGTH = 240;
-const EVENT_SUMMARY_MAX_LENGTH = 500;
-const DEFAULT_EVENT_LIMIT = 100;
-
-export interface PiSessionQuery {
-  readonly limit?: number;
-  readonly cursor?: string;
-}
-
-interface PiSessionCursor {
-  readonly sessionId: string;
-  readonly beforeEntryId: string;
-}
-
-interface PiSessionListCursor {
-  readonly beforeSessionId: string;
-}
-
-export class PiSessionReader {
+export class PiSessionReader implements ViewerSessionReader {
   constructor(private readonly agentDirectory: string) {}
 
-  async list(query: PiSessionQuery = {}): Promise<ViewerPage<ViewerSessionSummary>> {
+  async list(query: ViewerSessionQuery = {}): Promise<ViewerPage<ViewerSessionSummary>> {
     const sessionDirectories = await this.listSessionDirectories();
     const sessions: ViewerSessionSummary[] = [];
 
     for (const { channelKey, directory } of sessionDirectories) {
       const infos = await SessionManager.listAll(directory);
-      sessions.push(...infos.map((info) => toSessionSummary(info, channelKey)));
+      sessions.push(...infos.map((info) => toViewerSessionSummary(info, channelKey)));
     }
 
     sessions.sort((left, right) => right.modified.localeCompare(left.modified));
 
-    const limit = normalizeLimit(query.limit);
-    const cursor = query.cursor ? decodeListCursor(query.cursor) : undefined;
+    const limit = normalizeSessionLimit(query.limit);
+    const cursor = query.cursor ? decodeSessionListCursor(query.cursor) : undefined;
     const endIndex = cursor
       ? sessions.findIndex((session) => session.id === cursor.beforeSessionId)
       : sessions.length;
@@ -63,14 +48,14 @@ export class PiSessionReader {
       items: sessions.slice(pageStart, pageEnd),
       nextCursor:
         pageStart > 0
-          ? encodeListCursor({ beforeSessionId: sessions[pageStart - 1]?.id ?? "" })
+          ? encodeSessionListCursor({ beforeSessionId: sessions[pageStart - 1]?.id ?? "" })
           : null,
     };
   }
 
   async get(
     sessionId: string,
-    query: PiSessionQuery = {},
+    query: ViewerSessionQuery = {},
   ): Promise<ViewerSessionDetail | undefined> {
     const session = await this.findSession(sessionId);
     if (!session) return undefined;
@@ -84,8 +69,8 @@ export class PiSessionReader {
     const sessionEntries = entries.filter(
       (entry): entry is SessionEntry => entry.type !== "session",
     );
-    const limit = normalizeLimit(query.limit);
-    const cursor = query.cursor ? decodeCursor(query.cursor, sessionId) : undefined;
+    const limit = normalizeSessionLimit(query.limit);
+    const cursor = query.cursor ? decodeSessionCursor(query.cursor, sessionId) : undefined;
     const endIndex = cursor
       ? sessionEntries.findIndex((entry) => entry.id === cursor.beforeEntryId)
       : sessionEntries.length;
@@ -96,11 +81,14 @@ export class PiSessionReader {
     const pageEntries = sessionEntries.slice(pageStart, pageEnd);
 
     return {
-      session: toSessionSummary(session.info, session.channelKey),
+      session: toViewerSessionSummary(session.info, session.channelKey),
       items: pageEntries.map((entry) => toViewerEvent(entry, sessionId)),
       nextCursor:
         pageStart > 0
-          ? encodeCursor({ sessionId, beforeEntryId: sessionEntries[pageStart - 1]?.id ?? "" })
+          ? encodeSessionCursor({
+              sessionId,
+              beforeEntryId: sessionEntries[pageStart - 1]?.id ?? "",
+            })
           : null,
     };
   }
@@ -143,201 +131,12 @@ export class PiSessionReader {
   }
 }
 
-function toSessionSummary(info: SessionInfo, channelKey: string): ViewerSessionSummary {
-  return {
-    id: info.id,
-    channelKey,
-    created: info.created.toISOString(),
-    modified: info.modified.toISOString(),
-    messageCount: info.messageCount,
-    firstMessage: truncate(info.firstMessage, FIRST_MESSAGE_MAX_LENGTH),
-  };
-}
-
-function toViewerEvent(entry: SessionEntry, sessionId: string): PiViewerEvent {
-  const base = {
-    source: "pi" as const,
-    id: entry.id,
-    timestamp: entry.timestamp,
-    sessionId,
-    kind: entry.type as PiViewerEventKind,
-    parentId: entry.parentId,
-  };
-
-  switch (entry.type) {
-    case "message": {
-      const content = "content" in entry.message ? entry.message.content : undefined;
-      const errorMessage =
-        "errorMessage" in entry.message && typeof entry.message.errorMessage === "string"
-          ? entry.message.errorMessage
-          : undefined;
-      return {
-        ...base,
-        role: entry.message.role,
-        summary: truncate(
-          errorMessage ? `Error: ${errorMessage}` : extractText(content),
-          EVENT_SUMMARY_MAX_LENGTH,
-        ),
-        errorMessage,
-        content: sanitizeContent(content),
-      };
-    }
-    case "thinking_level_change":
-      return { ...base, summary: entry.thinkingLevel, content: entry.thinkingLevel };
-    case "model_change":
-      return {
-        ...base,
-        summary: `${entry.provider}/${entry.modelId}`,
-        content: { provider: entry.provider, modelId: entry.modelId },
-      };
-    case "usage":
-      return {
-        ...base,
-        summary: entry.note ?? entry.kind,
-        content: {
-          kind: entry.kind,
-          provider: entry.provider,
-          model: entry.model,
-          usage: entry.usage,
-          note: entry.note,
-        },
-      };
-    case "compaction":
-      return {
-        ...base,
-        summary: truncate(entry.summary, EVENT_SUMMARY_MAX_LENGTH),
-        content: entry.summary,
-      };
-    case "branch_summary":
-      return {
-        ...base,
-        summary: truncate(entry.summary, EVENT_SUMMARY_MAX_LENGTH),
-        content: entry.summary,
-      };
-    case "custom":
-      return {
-        ...base,
-        summary: entry.customType,
-        content: { customType: entry.customType, data: sanitizeContent(entry.data) },
-      };
-    case "custom_message":
-      return {
-        ...base,
-        summary: entry.customType,
-        content: sanitizeContent(entry.content),
-      };
-    case "context_edit":
-      return {
-        ...base,
-        summary: entry.targetId,
-        content: { targetId: entry.targetId, replacement: sanitizeContent(entry.replacement) },
-      };
-    case "label":
-      return {
-        ...base,
-        summary: entry.label ?? "",
-        content: { targetId: entry.targetId, label: entry.label },
-      };
-    case "session_info":
-      return { ...base, summary: entry.name ?? "", content: entry.name };
-  }
-}
-
-function extractText(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-
-  return content
-    .filter(isRecord)
-    .filter((block) => block.type === "text" || block.type === "thinking")
-    .map((block) => (typeof block.text === "string" ? block.text : ""))
-    .filter((text) => text.length > 0)
-    .join("\n");
-}
-
-function sanitizeContent(content: unknown): unknown {
-  if (Array.isArray(content)) return content.map((item) => sanitizeContent(item));
-  if (!isRecord(content)) return content;
-
-  if (content.type === "image" && "data" in content) {
-    const { data: _data, ...withoutImageData } = content;
-    return { ...withoutImageData, omitted: true };
-  }
-
-  return Object.fromEntries(
-    Object.entries(content).map(([key, value]) => [key, sanitizeContent(value)]),
-  );
-}
-
 function decodeChannelKey(directoryName: string): string | undefined {
   try {
     return decodeURIComponent(directoryName);
   } catch {
     return undefined;
   }
-}
-
-function truncate(value: string, maxLength: number): string {
-  return value.length > maxLength ? `${value.slice(0, maxLength - 1)}…` : value;
-}
-
-function encodeCursor(cursor: PiSessionCursor): string {
-  return Buffer.from(JSON.stringify(cursor), "utf8").toString("base64url");
-}
-
-function encodeListCursor(cursor: PiSessionListCursor): string {
-  return Buffer.from(JSON.stringify(cursor), "utf8").toString("base64url");
-}
-
-function decodeCursor(value: string, sessionId: string): PiSessionCursor {
-  let decoded: unknown;
-  try {
-    decoded = JSON.parse(Buffer.from(value, "base64url").toString("utf8"));
-  } catch {
-    throw new Error("Invalid session cursor");
-  }
-
-  if (
-    !isRecord(decoded) ||
-    decoded.sessionId !== sessionId ||
-    typeof decoded.beforeEntryId !== "string" ||
-    decoded.beforeEntryId.length === 0
-  ) {
-    throw new Error("Invalid session cursor");
-  }
-
-  return { beforeEntryId: decoded.beforeEntryId, sessionId: decoded.sessionId };
-}
-
-function decodeListCursor(value: string): PiSessionListCursor {
-  let decoded: unknown;
-  try {
-    decoded = JSON.parse(Buffer.from(value, "base64url").toString("utf8"));
-  } catch {
-    throw new Error("Invalid session list cursor");
-  }
-
-  if (
-    !isRecord(decoded) ||
-    typeof decoded.beforeSessionId !== "string" ||
-    decoded.beforeSessionId.length === 0
-  ) {
-    throw new Error("Invalid session list cursor");
-  }
-
-  return { beforeSessionId: decoded.beforeSessionId };
-}
-
-function normalizeLimit(value: number | undefined): number {
-  if (value === undefined) return DEFAULT_EVENT_LIMIT;
-  if (!Number.isInteger(value) || value < 1 || value > 200) {
-    throw new Error("Session event limit must be an integer between 1 and 200");
-  }
-  return value;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
