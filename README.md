@@ -81,7 +81,7 @@ to `runtime.agentDir/mcp.json` on startup. Before using the tools, authorize the
 server once with Cloudflare Access:
 
 ```sh
-PI_CODING_AGENT_DIR=.runtime/pi ./node_modules/.bin/pi mcp login obsidian
+PI_CODING_AGENT_DIR=.runtime/pi bunx pi mcp login obsidian
 ```
 
 This opens the Cloudflare Access sign-in and note-read approval in a browser.
