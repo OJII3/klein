@@ -75,20 +75,19 @@ To use an Exa API key with `pi-web-access`, optionally set `EXA_API_KEY` in `.en
 The Discord agent's personality and behavior are loaded from the selected
 profile's `SOUL.md` (`config/klein/SOUL.md` by default).
 
-The Discord agent can read and search the Obsidian vault through the remote
-CF Sync MCP server at `https://obsidian.ojii3.dev/mcp`. Configure the server
-and authorize it once with Cloudflare Access in the Pi agent directory set by
-`runtime.agentDir` (default: `.runtime/pi`). If you use another path, set
-`PI_CODING_AGENT_DIR` to match it in these commands:
+To connect remote MCP tools to the Discord agent, register the server in the
+Pi agent directory set by `runtime.agentDir` (default: `.runtime/pi`). If you
+use another path, set `PI_CODING_AGENT_DIR` to match it:
 
 ```sh
-PI_CODING_AGENT_DIR=.runtime/pi bunx pi mcp add obsidian --url https://obsidian.ojii3.dev/mcp --exposure deferred --description 'Read and search notes in the Obsidian vault'
-PI_CODING_AGENT_DIR=.runtime/pi bunx pi mcp login obsidian
+PI_CODING_AGENT_DIR=.runtime/pi bunx pi mcp add docs --url https://mcp.example.com/mcp --exposure deferred --description 'Search product documentation'
+PI_CODING_AGENT_DIR=.runtime/pi bunx pi mcp login docs
 ```
 
-This opens the Cloudflare Access sign-in and note-read approval in a browser.
-The OAuth credentials are stored under `runtime.agentDir`; restart Klein after
-sign-in.
+`mcp add` writes the server configuration to Pi's `mcp.json`. Use `mcp login`
+when the server requires OAuth. MCP tools configured with `deferred` exposure
+are loaded through Pi's `tool_search` when needed. Restart Klein after changing
+the MCP configuration.
 
 When `features.memory.enabled` is true, Klein periodically extracts durable
 guild-wide facts, rules, decisions, and procedures from recent Discord
