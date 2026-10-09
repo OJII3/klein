@@ -1,21 +1,10 @@
-import { resizeImage } from "@earendil-works/pi-coding-agent";
 import {
-  ActionRowBuilder,
   Client,
   Events,
   GatewayIntentBits,
-  ModalBuilder,
   Partials,
-  PermissionFlagsBits,
-  SlashCommandBuilder,
-  TextInputBuilder,
-  TextInputStyle,
-  type ChatInputCommandInteraction,
-  type ModalSubmitInteraction,
-  type Attachment,
   AttachmentBuilder,
   type Message,
-  type ApplicationCommandDataResolvable,
   type Interaction,
 } from "discord.js";
 import type { Logger } from "pino";
@@ -25,48 +14,17 @@ import {
   DiscordOperatingState,
   type DiscordOperatingMode,
 } from "../domain/discord-operating-state";
-import {
-  resolveDiscordMentions,
-  type DiscordImageAttachment,
-  type DiscordMessage,
-  type DiscordMessageLocator,
-  type DiscordReplyReference,
-  type DiscordUser,
-} from "../domain/discord-message";
+import { type DiscordMessage, type DiscordMessageLocator } from "../domain/discord-message";
 import type { DiscordMessageHandler, DiscordService } from "../ports/discord-service";
-import type { DiscordChannelRuleStore } from "./discord-channel-rule-store";
+import type { DiscordChannelRuleStore } from "../ports/discord-channel-rule-store";
 import {
   DiscordVoiceChatController,
   type DiscordVoiceChatControllerOptions,
-  VOICE_COMMAND,
 } from "./discord-voice-chat-controller";
+import { DiscordJsInteractionHandler } from "./discord-js-interaction-handler";
+import { DiscordJsMessageAdapter } from "./discord-js-message-adapter";
 
 const DISCORD_MESSAGE_LIMIT = 2_000;
-const DISCORD_IMAGE_MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024;
-const DISCORD_IMAGE_FETCH_TIMEOUT_MS = 15_000;
-const DISCORD_IMAGE_MIME_TYPES = new Set(["image/gif", "image/jpeg", "image/png", "image/webp"]);
-const OPERATING_MODE_COMMANDS: readonly ApplicationCommandDataResolvable[] = [
-  {
-    name: "idle",
-    description: "Botを一時停止します",
-    defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
-    dmPermission: false,
-  },
-  {
-    name: "online",
-    description: "Botを再開します",
-    defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
-    dmPermission: false,
-  },
-];
-const CHANNEL_RULE_COMMAND = new SlashCommandBuilder()
-  .setName("rule")
-  .setDescription("このチャンネルまたはスレッドのルールを編集します")
-  .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
-  .setDMPermission(false);
-const CHANNEL_RULE_MODAL_ID = "channel-rule-edit";
-const CHANNEL_RULE_INPUT_ID = "channel-rule";
-
 interface SendableChannel {
   send(content: string | { files: AttachmentBuilder[] }): Promise<unknown>;
   sendTyping?(): Promise<void>;
@@ -91,75 +49,12 @@ function splitMessage(content: string): string[] {
   return chunks;
 }
 
-function normalizeImageMimeType(contentType: string | null): string | undefined {
-  const mimeType = contentType?.split(";", 1)[0]?.trim().toLowerCase();
-  const normalizedMimeType = mimeType === "image/jpg" ? "image/jpeg" : mimeType;
-  if (!normalizedMimeType || !DISCORD_IMAGE_MIME_TYPES.has(normalizedMimeType)) {
-    return undefined;
-  }
-
-  return normalizedMimeType;
-}
-
-function hasSupportedImageAttachment(message: Message): boolean {
-  return [...message.attachments.values()].some(
-    (attachment) => normalizeImageMimeType(attachment.contentType) !== undefined,
-  );
-}
-
-async function readResponseBytes(response: Response): Promise<Uint8Array> {
-  const contentLength = response.headers.get("content-length");
-  if (contentLength && Number(contentLength) > DISCORD_IMAGE_MAX_DOWNLOAD_BYTES) {
-    throw new Error("Discord image attachment exceeds the download size limit");
-  }
-
-  if (!response.body) {
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    if (bytes.byteLength > DISCORD_IMAGE_MAX_DOWNLOAD_BYTES) {
-      throw new Error("Discord image attachment exceeds the download size limit");
-    }
-    return bytes;
-  }
-
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let totalBytes = 0;
-
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    totalBytes += value.byteLength;
-    if (totalBytes > DISCORD_IMAGE_MAX_DOWNLOAD_BYTES) {
-      await reader.cancel();
-      throw new Error("Discord image attachment exceeds the download size limit");
-    }
-    chunks.push(value);
-  }
-
-  const bytes = new Uint8Array(totalBytes);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-
-  return bytes;
-}
-
-function toDiscordUser(message: Message): DiscordUser {
-  return {
-    bot: message.author.bot,
-    id: message.author.id,
-    username: message.author.username,
-    displayName: message.member?.displayName ?? message.author.displayName,
-  };
-}
-
 export class DiscordJsService implements DiscordService {
   private readonly client: Client;
   private readonly channels = new Map<string, SendableChannel>();
   private readonly voiceChatController?: DiscordVoiceChatController;
+  private readonly interactionHandler: DiscordJsInteractionHandler;
+  private readonly messageAdapter: DiscordJsMessageAdapter;
   private onMessage?: DiscordMessageHandler;
   private messageListener?: (message: Message) => void;
   private interactionListener?: (interaction: Interaction) => void;
@@ -172,12 +67,18 @@ export class DiscordJsService implements DiscordService {
     logger?: Logger,
     private readonly operatingState = new DiscordOperatingState(),
     voiceChat?: DiscordVoiceChatControllerOptions,
-    private readonly channelRuleStore?: DiscordChannelRuleStore,
+    channelRuleStore?: DiscordChannelRuleStore,
   ) {
     this.logger = logger?.child({ component: "discord-service" });
+    this.messageAdapter = new DiscordJsMessageAdapter(this.logger);
     this.voiceChatController = voiceChat
       ? new DiscordVoiceChatController(accessPolicy, logger, voiceChat)
       : undefined;
+    this.interactionHandler = new DiscordJsInteractionHandler(
+      (mode) => this.setOperatingMode(mode),
+      this.voiceChatController,
+      channelRuleStore,
+    );
     this.client = new Client({
       intents: [
         GatewayIntentBits.DirectMessages,
@@ -279,10 +180,10 @@ export class DiscordJsService implements DiscordService {
     }
 
     const message = await channel.messages.fetch(locator.messageId);
-    const normalizedMessage = this.toDiscordMessage(message);
+    const normalizedMessage = this.messageAdapter.toDiscordMessage(message);
     const [images, replyTo] = await Promise.all([
-      this.fetchImages(message),
-      this.fetchReplyReference(message),
+      this.messageAdapter.fetchImages(message),
+      this.messageAdapter.fetchReplyReference(message),
     ]);
 
     return {
@@ -332,12 +233,12 @@ export class DiscordJsService implements DiscordService {
     if (message.author.id === this.client.user?.id) return;
 
     const content = message.content.trim();
-    if (!content && !hasSupportedImageAttachment(message)) return;
+    if (!content && !this.messageAdapter.hasSupportedImageAttachment(message)) return;
     if (!isSendableChannel(message.channel)) return;
 
     this.channels.set(message.channelId, message.channel);
 
-    const normalizedMessage = this.toDiscordMessage(message);
+    const normalizedMessage = this.messageAdapter.toDiscordMessage(message);
 
     if (!this.canAcceptMessages()) return;
 
@@ -354,8 +255,8 @@ export class DiscordJsService implements DiscordService {
     if (!this.canAcceptMessages()) return;
 
     const [images, replyTo] = await Promise.all([
-      this.fetchImages(message),
-      this.fetchReplyReference(message),
+      this.messageAdapter.fetchImages(message),
+      this.messageAdapter.fetchReplyReference(message),
     ]);
 
     if (!this.canAcceptMessages()) return;
@@ -379,258 +280,10 @@ export class DiscordJsService implements DiscordService {
   }
 
   private async synchronizeCommands(readyClient: Client<true>): Promise<void> {
-    await readyClient.application.commands.set([
-      ...OPERATING_MODE_COMMANDS,
-      CHANNEL_RULE_COMMAND,
-      ...(this.voiceChatController ? [VOICE_COMMAND] : []),
-    ]);
+    await readyClient.application.commands.set([...this.interactionHandler.commands]);
   }
 
   private async handleInteraction(interaction: Interaction): Promise<void> {
-    if (interaction.isModalSubmit()) {
-      if (interaction.customId === CHANNEL_RULE_MODAL_ID) {
-        await this.saveChannelRule(interaction);
-      }
-      return;
-    }
-    if (!interaction.isChatInputCommand()) return;
-
-    if (interaction.commandName === "rule") {
-      await this.openChannelRuleEditor(interaction);
-      return;
-    }
-
-    if (interaction.commandName === "voice") {
-      if (this.voiceChatController) {
-        await this.voiceChatController.handleCommand(interaction);
-      } else {
-        await interaction.reply({
-          content: interaction.inGuild()
-            ? "VC会話は無効です。"
-            : "このコマンドはサーバー内でのみ使用できます。",
-          ephemeral: true,
-        });
-      }
-      return;
-    }
-
-    const mode =
-      interaction.commandName === "idle"
-        ? ("paused" as const)
-        : interaction.commandName === "online"
-          ? ("active" as const)
-          : undefined;
-    if (!mode) return;
-
-    if (!interaction.inGuild()) {
-      await interaction.reply({
-        content: "このコマンドはサーバー内でのみ使用できます。",
-        ephemeral: true,
-      });
-      return;
-    }
-
-    if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
-      await interaction.reply({
-        content: "このコマンドを実行する権限がありません。",
-        ephemeral: true,
-      });
-      return;
-    }
-
-    this.setOperatingMode(mode);
-    await interaction.reply({
-      content: mode === "active" ? "Botを再開しました。" : "Botを一時停止しました。",
-      ephemeral: true,
-    });
-  }
-
-  private async openChannelRuleEditor(interaction: ChatInputCommandInteraction): Promise<void> {
-    if (!interaction.inGuild()) {
-      await interaction.reply({
-        content: "このコマンドはサーバー内でのみ使用できます。",
-        ephemeral: true,
-      });
-      return;
-    }
-    if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
-      await interaction.reply({
-        content: "このコマンドを実行する権限がありません。",
-        ephemeral: true,
-      });
-      return;
-    }
-
-    const existingRule = await this.channelRuleStore?.get(
-      interaction.guildId,
-      interaction.channelId,
-    );
-    const input = new TextInputBuilder()
-      .setCustomId(CHANNEL_RULE_INPUT_ID)
-      .setLabel("この場所のルール")
-      .setPlaceholder("このチャンネル／スレッドで守るルール")
-      .setStyle(TextInputStyle.Paragraph)
-      .setRequired(false)
-      .setMaxLength(4_000);
-    if (existingRule) input.setValue(existingRule);
-
-    const modal = new ModalBuilder()
-      .setCustomId(CHANNEL_RULE_MODAL_ID)
-      .setTitle("ルールを編集（空欄で削除）")
-      .addComponents(new ActionRowBuilder<TextInputBuilder>().addComponents(input));
-    await interaction.showModal(modal);
-  }
-
-  private async saveChannelRule(interaction: ModalSubmitInteraction): Promise<void> {
-    if (!interaction.inGuild()) {
-      await interaction.reply({
-        content: "この操作はサーバー内でのみ使用できます。",
-        ephemeral: true,
-      });
-      return;
-    }
-    if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
-      await interaction.reply({
-        content: "この操作を実行する権限がありません。",
-        ephemeral: true,
-      });
-      return;
-    }
-
-    const rule = interaction.fields.getTextInputValue(CHANNEL_RULE_INPUT_ID);
-    const guildId = interaction.guildId;
-    const channelId = interaction.channelId;
-    if (!guildId || !channelId) {
-      await interaction.reply({
-        content: "チャンネルを特定できませんでした。",
-        ephemeral: true,
-      });
-      return;
-    }
-
-    await this.channelRuleStore?.set(guildId, channelId, rule);
-    await interaction.reply({
-      content: rule.trim()
-        ? "このチャンネル／スレッドのルールを保存しました。"
-        : "このチャンネル／スレッドのルールを削除しました。",
-      ephemeral: true,
-    });
-  }
-
-  private toDiscordMessage(message: Message): DiscordMessage {
-    const thread = message.channel.isThread() ? message.channel : undefined;
-
-    return {
-      author: toDiscordUser(message),
-      channelId: message.channelId,
-      content: this.normalizeMessageContent(message),
-      guildId: message.guildId ?? undefined,
-      id: message.id,
-      images: [],
-      parentChannelId: thread?.parentId ?? undefined,
-      threadId: thread?.id,
-    };
-  }
-
-  private async fetchImages(message: Message): Promise<DiscordImageAttachment[]> {
-    const imageAttachments = [...message.attachments.values()].filter(
-      (attachment) => normalizeImageMimeType(attachment.contentType) !== undefined,
-    );
-
-    const images = await Promise.all(
-      imageAttachments.map(async (attachment) => {
-        try {
-          return await this.fetchImage(attachment);
-        } catch (error) {
-          this.logger?.warn(
-            {
-              attachmentId: attachment.id,
-              err: error,
-              event: "discord_image_attachment_fetch_failed",
-              messageId: message.id,
-            },
-            "Failed to fetch Discord image attachment",
-          );
-          return undefined;
-        }
-      }),
-    );
-
-    return images.filter((image): image is DiscordImageAttachment => image !== undefined);
-  }
-
-  private async fetchImage(attachment: Attachment): Promise<DiscordImageAttachment> {
-    const mimeType = normalizeImageMimeType(attachment.contentType);
-    if (!mimeType) {
-      throw new Error(`Unsupported Discord image type: ${attachment.contentType ?? "unknown"}`);
-    }
-    if (attachment.size > DISCORD_IMAGE_MAX_DOWNLOAD_BYTES) {
-      throw new Error("Discord image attachment exceeds the download size limit");
-    }
-
-    const response = await fetch(attachment.url, {
-      signal: AbortSignal.timeout(DISCORD_IMAGE_FETCH_TIMEOUT_MS),
-    });
-    if (!response.ok) {
-      throw new Error(`Discord image attachment returned HTTP ${response.status}`);
-    }
-
-    const processed = await resizeImage(await readResponseBytes(response), mimeType);
-    if (!processed) {
-      throw new Error("Discord image attachment could not be normalized");
-    }
-
-    return {
-      data: processed.data,
-      filename: attachment.name,
-      id: attachment.id,
-      mimeType: processed.mimeType,
-    };
-  }
-
-  private normalizeMessageContent(message: Message): string {
-    const content = message.content.trim();
-
-    return resolveDiscordMentions(content, {
-      user: (userId) => {
-        const user = message.mentions.users.get(userId);
-        if (!user) return undefined;
-
-        return {
-          bot: user.bot,
-          id: user.id,
-          username: user.username,
-          displayName: message.mentions.members?.get(userId)?.displayName ?? user.displayName,
-        };
-      },
-      role: (roleId) => {
-        const role = message.mentions.roles.get(roleId);
-        return role ? { id: role.id, name: role.name } : undefined;
-      },
-    });
-  }
-
-  private async fetchReplyReference(message: Message): Promise<DiscordReplyReference | undefined> {
-    const messageId = message.reference?.messageId;
-    if (!messageId) return undefined;
-
-    try {
-      const referencedMessage = await message.fetchReference();
-      return {
-        author: toDiscordUser(referencedMessage),
-        content: this.normalizeMessageContent(referencedMessage),
-        id: referencedMessage.id,
-      };
-    } catch (error) {
-      this.logger?.warn(
-        {
-          err: error,
-          event: "discord_reply_reference_fetch_failed",
-          messageId,
-        },
-        "Failed to fetch Discord reply reference",
-      );
-      return { id: messageId };
-    }
+    await this.interactionHandler.handle(interaction);
   }
 }
