@@ -21,6 +21,7 @@ import { PiMemoryProcessor } from "@runtime/pi/pi-memory-processor";
 import { createDiscordAccessPolicy } from "@modules/discord/domain/discord-access-policy";
 import { DiscordOperatingState } from "@modules/discord/domain/discord-operating-state";
 import { DiscordJsService } from "@modules/discord/infrastructure/discord-js-service";
+import { DiscordChannelRuleStore } from "@modules/discord/infrastructure/discord-channel-rule-store";
 import { MemoryCoordinator } from "@modules/memory/application/memory-coordinator";
 import { createGetMonthlyUsageLimit } from "@modules/usage/application/get-monthly-usage-limit";
 import { formatMonthlyUsageStatus } from "@modules/usage/application/format-monthly-usage-status";
@@ -70,6 +71,7 @@ export async function bootstrap(): Promise<void> {
   const channelSessionStateStore = new ChannelSessionStateStore(
     resolve(agentDir, "channel-session-state"),
   );
+  const channelRuleStore = new DiscordChannelRuleStore(resolve(agentDir, "channel-rules"));
   const modelRuntime = await createPiModelRuntime(agentDir);
   const piAgentFactory = createPiAgentFactory({
     agentDir,
@@ -103,6 +105,7 @@ export async function bootstrap(): Promise<void> {
           language: voiceChatConfiguration.language ?? "ja",
         }
       : undefined,
+    channelRuleStore,
   );
   const memoryConfiguration = config.features.memory;
   const resolvedMemoryLlmConfiguration = memoryConfiguration.llm ?? config.llm;
@@ -131,6 +134,7 @@ export async function bootstrap(): Promise<void> {
   const agentCoordinator = new AgentCoordinator({
     createDiscordAgent,
     channelSessionStateStore,
+    channelRuleStore,
     discordService,
     logger,
     memoryCoordinator,

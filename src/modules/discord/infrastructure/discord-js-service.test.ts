@@ -253,6 +253,7 @@ test("handles idle and online slash commands for members with Manage Server", as
     commandName: "idle",
     inGuild: () => true,
     isChatInputCommand: () => true,
+    isModalSubmit: () => false,
     memberPermissions: {
       has: () => true,
     },

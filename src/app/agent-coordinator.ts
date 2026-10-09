@@ -4,6 +4,7 @@ import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import type { DiscordOperatingState } from "@modules/discord/domain/discord-operating-state";
 import type { DiscordService } from "@modules/discord/ports/discord-service";
 import type { MemoryCoordinator } from "@modules/memory/application/memory-coordinator";
+import type { DiscordChannelRuleStore } from "@modules/discord/infrastructure/discord-channel-rule-store";
 import { DiscordAgent } from "@agents/discord/discord-agent";
 import type { TaskCoordinator } from "./task-coordinator";
 import {
@@ -22,6 +23,7 @@ export interface AgentCoordinatorDependencies {
     handoffContext?: string,
   ) => Promise<DiscordAgent>;
   readonly channelSessionStateStore?: ChannelSessionStateStore;
+  readonly channelRuleStore?: DiscordChannelRuleStore;
   readonly logger: Logger;
   readonly memoryCoordinator?: MemoryCoordinator;
   readonly operatingState: DiscordOperatingState;
@@ -140,7 +142,10 @@ export class AgentCoordinator {
             buildMemoryQuery(message),
           )
         : undefined;
-      await agent.prompt(message, guildMemory);
+      const channelRule = message.guildId
+        ? await this.dependencies.channelRuleStore?.get(message.guildId, message.channelId)
+        : undefined;
+      await agent.prompt(message, guildMemory, channelRule);
       logger.debug(
         {
           durationMs: Date.now() - startedAt,

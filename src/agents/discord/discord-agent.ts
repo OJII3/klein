@@ -69,11 +69,15 @@ export class DiscordAgent {
     return new DiscordAgent(runtime);
   }
 
-  prompt(message: DiscordMessage, guildMemory?: string): Promise<void> {
+  prompt(message: DiscordMessage, guildMemory?: string, channelRule?: string): Promise<void> {
     return this.runtime.prompt({
-      text: guildMemory
-        ? `<guild-memory>\n${guildMemory}\n</guild-memory>\n\n${formatDiscordAgentPrompt(message)}`
-        : formatDiscordAgentPrompt(message),
+      text: [
+        guildMemory ? `<guild-memory>\n${guildMemory}\n</guild-memory>` : undefined,
+        channelRule ? `<channel-rule>\n${channelRule}\n</channel-rule>` : undefined,
+        formatDiscordAgentPrompt(message),
+      ]
+        .filter((context): context is string => context !== undefined)
+        .join("\n\n"),
       images: message.images.map(({ data, mimeType }) => ({ data, mimeType })),
     });
   }
