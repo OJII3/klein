@@ -255,7 +255,7 @@ function ensureObsidianMcpServer(agentDir: string): void {
   config.mcpServers[OBSIDIAN_MCP_SERVER_NAME] = {
     type: "http",
     url: OBSIDIAN_MCP_SERVER_URL,
-    exposure: "codemode",
+    exposure: "deferred",
     description: "Read and search notes in the Obsidian vault.",
   };
   writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");

@@ -81,7 +81,7 @@ to `runtime.agentDir/mcp.json` on startup. To set it up before starting Klein,
 add the server and authorize it once with Cloudflare Access:
 
 ```sh
-PI_CODING_AGENT_DIR=.runtime/pi bunx pi mcp add obsidian --url https://obsidian.ojii3.dev/mcp --exposure codemode --description 'Read and search notes in the Obsidian vault'
+PI_CODING_AGENT_DIR=.runtime/pi bunx pi mcp add obsidian --url https://obsidian.ojii3.dev/mcp --exposure deferred --description 'Read and search notes in the Obsidian vault'
 PI_CODING_AGENT_DIR=.runtime/pi bunx pi mcp login obsidian
 ```
 
