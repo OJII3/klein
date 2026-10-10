@@ -191,13 +191,19 @@ Personal manifests and WAV files can be managed together in a separate private
 repository without a submodule. For example, store `klein/presets.json` and
 `klein/audio/*.wav` with `audioFile` values such as `audio/thinking.wav`. Clone the
 private repository separately, check out the tag or commit you want to use, then
-copy its preset directory into Klein (run these commands from Klein's root):
+symlink its entire preset directory into Klein (run these commands from Klein's
+root):
 
 ```bash
 gh repo clone OWNER/VOICE_PRESETS ../voice-presets
-mkdir -p .runtime/voice-presets
-cp -R ../voice-presets/klein/. .runtime/voice-presets/
+mkdir -p .runtime
+ln -s ../../voice-presets/klein .runtime/voice-presets
 ```
+
+If `.runtime/voice-presets` already exists as a copied directory, move it aside
+before creating the symlink. Link the entire directory, not just the manifest,
+so relative audio paths work. Editing or regenerating presets updates the
+private repository directly; restart Klein after changing the presets.
 
 Set `features.voiceChat.reactions.presetsFile` to
 `.runtime/voice-presets/presets.json` in your local configuration. The classifier
