@@ -65,7 +65,16 @@
     "voiceChat": {
       "enabled": false,
       "asrServerUrl": "ws://100.64.0.11:8000",
-      "language": "ja"
+      "language": "ja",
+      "reactions": {
+        "provider": "typesafe",
+        "model": "jev-latest",
+        "presets": {
+          "neutral": "うん",
+          "thinking": "ええと",
+          "empathetic": "そっか"
+        }
+      }
     }
   }
 }

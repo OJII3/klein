@@ -399,6 +399,40 @@
             "language": {
               "type": "string",
               "minLength": 1
+            },
+            "reactions": {
+              "type": "object",
+              "required": ["provider", "model", "presets"],
+              "properties": {
+                "provider": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "model": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "presets": {
+                  "type": "object",
+                  "required": ["neutral", "thinking", "empathetic"],
+                  "properties": {
+                    "neutral": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "thinking": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "empathetic": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
             }
           },
           "additionalProperties": false

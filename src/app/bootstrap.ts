@@ -18,6 +18,7 @@ import {
   withOpenCodeSessionHeader,
 } from "@runtime/pi/pi-agent-runtime";
 import { PiMemoryProcessor } from "@runtime/pi/pi-memory-processor";
+import { PiVoiceReactionSelector } from "@runtime/pi/pi-voice-reaction-selector";
 import { createDiscordAccessPolicy } from "@modules/discord/domain/discord-access-policy";
 import { DiscordOperatingState } from "@modules/discord/domain/discord-operating-state";
 import { DiscordJsService } from "@modules/discord/infrastructure/discord-js-service";
@@ -76,6 +77,24 @@ export async function bootstrap(): Promise<void> {
   );
   const channelRuleStore = new FileDiscordChannelRuleStore(resolve(agentDir, "channel-rules"));
   const modelRuntime = await createPiModelRuntime(agentDir);
+  const reactionConfiguration = voiceChatConfiguration?.enabled
+    ? voiceChatConfiguration.reactions
+    : undefined;
+  const reactionSelector = reactionConfiguration
+    ? (() => {
+        const model = modelRuntime.getModelOfType(
+          "classifier",
+          reactionConfiguration.provider,
+          reactionConfiguration.model,
+        );
+        if (!model) {
+          throw new Error(
+            `Voice chat classifier model was not found: ${reactionConfiguration.provider}/${reactionConfiguration.model}`,
+          );
+        }
+        return new PiVoiceReactionSelector(modelRuntime, model);
+      })()
+    : undefined;
   const piAgentFactory = createPiAgentFactory({
     agentDir,
     llm: config.llm,
@@ -101,6 +120,7 @@ export async function bootstrap(): Promise<void> {
               speak,
             }),
           logger,
+          reactionSelector,
         });
   discordService = new DiscordJsService(
     token,
@@ -113,6 +133,7 @@ export async function bootstrap(): Promise<void> {
           conversationFactory: voiceChatCoordinator,
           language: voiceChatConfiguration.language ?? "ja",
           tts,
+          ...(reactionConfiguration ? { reactionPresets: reactionConfiguration.presets } : {}),
         }
       : undefined,
     channelRuleStore,

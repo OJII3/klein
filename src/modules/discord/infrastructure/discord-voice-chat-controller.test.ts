@@ -56,6 +56,10 @@ function createController(
         readonly username: string;
       };
       readonly voiceChannelId: string;
+      readonly playReaction?: (
+        reaction: "neutral" | "thinking" | "empathetic",
+        signal: AbortSignal,
+      ) => Promise<boolean>;
     }): Promise<VoiceChatConversation>;
   },
   policy = createDiscordAccessPolicy({ default: "allow", directMessages: "deny" }),
@@ -102,8 +106,13 @@ test("sends final voice transcripts to the dedicated conversation", async () => 
     assert.ok(onTranscript);
     await onTranscript("こんにちは");
 
-    const { speak, ...contextWithoutSpeak } = contexts[0] as Record<string, unknown>;
+    const { speak, playReaction, onSpeechStart, ...contextWithoutSpeak } = contexts[0] as Record<
+      string,
+      unknown
+    >;
     assert.equal(typeof speak, "function");
+    assert.equal(typeof playReaction, "function");
+    assert.equal(typeof onSpeechStart, "function");
     assert.deepEqual(contextWithoutSpeak, {
       channelId: "thread-123",
       guildId: "guild-123",

@@ -93,7 +93,7 @@ test("delivers ASR results in utterance order when inference completes out of or
   await Promise.resolve();
   assert.deepEqual(transcripts, []);
   results[0]?.resolve({ text: "first" });
-  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setTimeout(resolve, 20));
   assert.deepEqual(transcripts, ["first", "second"]);
   assert.equal(decoders.length, 1);
   await capture.stop();
@@ -119,4 +119,100 @@ test("does not deliver queued transcripts after capture stops", async () => {
   results[0]?.resolve({ text: "too late" });
   await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(transcripts, []);
+});
+
+test("aborting a preset reaction stops only that playback", async () => {
+  const { capture } = createCapture();
+  let stopCalls = 0;
+  const played: unknown[] = [];
+  (capture as unknown as { audioPlayer: unknown }).audioPlayer = {
+    play: (resource: unknown) => played.push(resource),
+    stop: () => {
+      stopCalls += 1;
+    },
+  };
+  (capture as unknown as { reactionAudio: Map<string, Uint8Array> }).reactionAudio.set(
+    "neutral",
+    new Uint8Array([1]),
+  );
+  const controller = new AbortController();
+  const playback = capture.playReaction("neutral", controller.signal);
+  assert.equal(played.length, 1);
+  controller.abort();
+  assert.equal(await playback, false);
+  assert.equal(stopCalls, 1);
+  await capture.stop();
+});
+
+test("a ready reply preempts a reaction without allowing its stale completion to stop the reply", async () => {
+  const synthesis = deferred<Uint8Array>();
+  const { capture } = createCapture();
+  (
+    capture as unknown as { options: { tts: { synthesize(text: string): Promise<Uint8Array> } } }
+  ).options.tts = {
+    synthesize: () => synthesis.promise,
+  };
+  let stopCalls = 0;
+  const played: unknown[] = [];
+  (capture as unknown as { audioPlayer: unknown }).audioPlayer = {
+    play: (resource: unknown) => played.push(resource),
+    stop: () => {
+      stopCalls += 1;
+    },
+  };
+  (capture as unknown as { reactionAudio: Map<string, Uint8Array> }).reactionAudio.set(
+    "thinking",
+    new Uint8Array([1]),
+  );
+  const reactionController = new AbortController();
+  const reaction = capture.playReaction("thinking", reactionController.signal);
+  const reply = capture.speak("回答");
+  synthesis.resolve(new Uint8Array([2]));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(await reaction, false);
+  assert.equal(played.length, 2);
+  assert.equal(stopCalls, 1);
+  const current = (
+    capture as unknown as {
+      currentPlayback: { finish(played: boolean): void };
+    }
+  ).currentPlayback;
+  current.finish(true);
+  reactionController.abort();
+  await reply;
+  assert.equal(stopCalls, 1);
+  await capture.stop();
+});
+
+test("speech start cancels a playing reaction and suppresses reactions during speech", async () => {
+  const { capture } = createCapture();
+  let stopCalls = 0;
+  (capture as unknown as { audioPlayer: unknown }).audioPlayer = {
+    play: () => undefined,
+    stop: () => {
+      stopCalls += 1;
+    },
+  };
+  (capture as unknown as { reactionAudio: Map<string, Uint8Array> }).reactionAudio.set(
+    "neutral",
+    new Uint8Array([1]),
+  );
+  const reaction = capture.playReaction("neutral", new AbortController().signal);
+  const onSpeechStart = (
+    capture as unknown as {
+      handleVadEvents(
+        events: readonly { type: "speech-start"; pcm: Uint8Array }[],
+        connection: AsrConnection,
+      ): Promise<void>;
+    }
+  ).handleVadEvents.bind(capture);
+  await onSpeechStart([{ type: "speech-start", pcm: new Uint8Array([1]) }], {
+    onError: () => () => undefined,
+    start: () => ({ write: () => undefined, commit: async () => ({ text: "" }) }),
+    close: () => undefined,
+  });
+  assert.equal(await reaction, false);
+  assert.equal(stopCalls, 1);
+  assert.equal(await capture.playReaction("neutral", new AbortController().signal), false);
+  await capture.stop();
 });

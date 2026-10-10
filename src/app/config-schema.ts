@@ -98,6 +98,23 @@ const VoiceChatConfigurationSchema = Type.Object(
     enabled: Type.Boolean(),
     asrServerUrl: Type.String({ minLength: 1, format: "uri" }),
     language: Type.Optional(Type.String({ minLength: 1 })),
+    reactions: Type.Optional(
+      Type.Object(
+        {
+          provider: Type.String({ minLength: 1 }),
+          model: Type.String({ minLength: 1 }),
+          presets: Type.Object(
+            {
+              neutral: Type.String({ minLength: 1 }),
+              thinking: Type.String({ minLength: 1 }),
+              empathetic: Type.String({ minLength: 1 }),
+            },
+            { additionalProperties: false },
+          ),
+        },
+        { additionalProperties: false },
+      ),
+    ),
   },
   { additionalProperties: false },
 );

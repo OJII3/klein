@@ -141,3 +141,144 @@ test("serializes voice turns and speaks an error response after LLM failures", a
   ]);
   await conversation.stop();
 });
+
+test("selects and plays a preset reaction while the LLM is preparing its answer", async () => {
+  let releasePrompt: (() => void) | undefined;
+  let reactionStarted: (() => void) | undefined;
+  const reactionWasStarted = new Promise<void>((resolve) => {
+    reactionStarted = resolve;
+  });
+  let selectedInput: unknown;
+  let playedReaction: string | undefined;
+  let reactionSignal: AbortSignal | undefined;
+  const coordinator = new VoiceChatCoordinator({
+    createVoiceChatAgent: async () =>
+      ({
+        dispose: () => undefined,
+        prompt: async () =>
+          new Promise<void>((resolve) => {
+            releasePrompt = resolve;
+          }),
+      }) as unknown as DiscordAgent,
+    logger: createLogger(),
+    reactionSelector: {
+      select: async (input) => {
+        selectedInput = input;
+        return "neutral";
+      },
+    },
+  });
+  const conversation = await coordinator.create({
+    ...context,
+    playReaction: async (reaction, signal) => {
+      playedReaction = reaction;
+      reactionSignal = signal;
+      reactionStarted?.();
+      return true;
+    },
+    speak: async () => undefined,
+  });
+
+  const processing = conversation.handleTranscript("こんにちは");
+  await reactionWasStarted;
+  assert.deepEqual(selectedInput, {
+    text: "こんにちは",
+    recentTranscripts: [],
+    lastReaction: undefined,
+  });
+  assert.equal(playedReaction, "neutral");
+  await new Promise((resolve) => setTimeout(resolve, 610));
+  assert.equal(reactionSignal?.aborted, false);
+  releasePrompt?.();
+  await processing;
+  await conversation.stop();
+});
+
+test("does not wait for a selector that ignores cancellation", async () => {
+  let releasePrompt: (() => void) | undefined;
+  let selectorStarted: (() => void) | undefined;
+  const started = new Promise<void>((resolve) => {
+    selectorStarted = resolve;
+  });
+  const coordinator = new VoiceChatCoordinator({
+    createVoiceChatAgent: async () =>
+      ({
+        dispose: () => undefined,
+        prompt: async () =>
+          new Promise<void>((resolve) => {
+            releasePrompt = resolve;
+          }),
+      }) as unknown as DiscordAgent,
+    logger: createLogger(),
+    reactionSelector: {
+      select: async () => {
+        selectorStarted?.();
+        return new Promise<"none">(() => undefined);
+      },
+    },
+  });
+  const conversation = await coordinator.create({
+    ...context,
+    playReaction: async () => false,
+    speak: async () => undefined,
+  });
+
+  const processing = conversation.handleTranscript("質問");
+  await started;
+  releasePrompt?.();
+  await processing;
+  await conversation.stop();
+});
+
+test("speech start cancels a pending reaction decision", async () => {
+  let notifySpeechStart: (() => void) | undefined;
+  let releasePrompt: (() => void) | undefined;
+  let selectorStarted: (() => void) | undefined;
+  let selectorSignal: AbortSignal | undefined;
+  let played = false;
+  const started = new Promise<void>((resolve) => {
+    selectorStarted = resolve;
+  });
+  const coordinator = new VoiceChatCoordinator({
+    createVoiceChatAgent: async () =>
+      ({
+        dispose: () => undefined,
+        prompt: async () =>
+          new Promise<void>((resolve) => {
+            releasePrompt = resolve;
+          }),
+      }) as unknown as DiscordAgent,
+    logger: createLogger(),
+    reactionSelector: {
+      select: async (_input, signal) => {
+        selectorSignal = signal;
+        selectorStarted?.();
+        return new Promise<"neutral">((resolve) => {
+          setTimeout(() => resolve("neutral"), 10);
+        });
+      },
+    },
+  });
+  const conversation = await coordinator.create({
+    ...context,
+    onSpeechStart: (listener) => {
+      notifySpeechStart = listener;
+      return () => undefined;
+    },
+    playReaction: async () => {
+      played = true;
+      return true;
+    },
+    speak: async () => undefined,
+  });
+
+  const processing = conversation.handleTranscript("質問");
+  await started;
+  notifySpeechStart?.();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(selectorSignal?.aborted, true);
+  assert.equal(played, false);
+  releasePrompt?.();
+  await processing;
+  await conversation.stop();
+});

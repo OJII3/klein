@@ -20,6 +20,7 @@ export const VOICE_COMMAND = new SlashCommandBuilder()
 export interface DiscordVoiceChatControllerOptions {
   readonly asr: AsrClient;
   readonly language: string;
+  readonly reactionPresets?: Readonly<Record<"neutral" | "thinking" | "empathetic", string>>;
   readonly conversationFactory: VoiceChatConversationFactory;
   readonly tts?: TextToSpeech;
 }
@@ -134,6 +135,7 @@ export class DiscordVoiceChatController {
         language: this.options.language,
         logger: this.logger,
         onTranscript: (text) => conversation?.handleTranscript(text) ?? Promise.resolve(),
+        reactionPresets: this.options.reactionPresets,
         onError: (error) => {
           if (this.sessions.get(guildId)?.session !== session) return;
           this.sessions.delete(guildId);
@@ -158,6 +160,9 @@ export class DiscordVoiceChatController {
         guildId,
         parentChannelId: textThread?.parentId ?? undefined,
         speak: (text) => session?.speak(text) ?? Promise.resolve(),
+        playReaction: (reaction, signal) =>
+          session?.playReaction(reaction, signal) ?? Promise.resolve(false),
+        onSpeechStart: (listener) => session?.subscribeSpeechStart(listener) ?? (() => undefined),
         threadId: textThread?.id,
         user: {
           bot: false,
