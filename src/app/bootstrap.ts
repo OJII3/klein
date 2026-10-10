@@ -18,9 +18,11 @@ import {
   withOpenCodeSessionHeader,
 } from "@runtime/pi/pi-agent-runtime";
 import { PiMemoryProcessor } from "@runtime/pi/pi-memory-processor";
+import { PiVoiceReactionSelector } from "@runtime/pi/pi-voice-reaction-selector";
 import { createDiscordAccessPolicy } from "@modules/discord/domain/discord-access-policy";
 import { DiscordOperatingState } from "@modules/discord/domain/discord-operating-state";
 import { DiscordJsService } from "@modules/discord/infrastructure/discord-js-service";
+import { loadVoiceReactionPresets } from "@modules/discord/infrastructure/voice-reaction-presets";
 import { FileDiscordChannelRuleStore } from "@modules/discord/infrastructure/file-discord-channel-rule-store";
 import { MemoryCoordinator } from "@modules/memory/application/memory-coordinator";
 import { createGetMonthlyUsageLimit } from "@modules/usage/application/get-monthly-usage-limit";
@@ -76,6 +78,27 @@ export async function bootstrap(): Promise<void> {
   );
   const channelRuleStore = new FileDiscordChannelRuleStore(resolve(agentDir, "channel-rules"));
   const modelRuntime = await createPiModelRuntime(agentDir);
+  const reactionConfiguration = voiceChatConfiguration?.enabled
+    ? voiceChatConfiguration.reactions
+    : undefined;
+  const reactionPresets = reactionConfiguration
+    ? await loadVoiceReactionPresets(reactionConfiguration.presetsFile)
+    : undefined;
+  const reactionSelector = reactionConfiguration
+    ? (() => {
+        const model = modelRuntime.getModelOfType(
+          "classifier",
+          reactionConfiguration.provider,
+          reactionConfiguration.model,
+        );
+        if (!model) {
+          throw new Error(
+            `Voice chat classifier model was not found: ${reactionConfiguration.provider}/${reactionConfiguration.model}`,
+          );
+        }
+        return new PiVoiceReactionSelector(modelRuntime, model, reactionPresets ?? []);
+      })()
+    : undefined;
   const piAgentFactory = createPiAgentFactory({
     agentDir,
     llm: config.llm,
@@ -101,6 +124,7 @@ export async function bootstrap(): Promise<void> {
               speak,
             }),
           logger,
+          reactionSelector,
         });
   discordService = new DiscordJsService(
     token,
@@ -113,6 +137,7 @@ export async function bootstrap(): Promise<void> {
           conversationFactory: voiceChatCoordinator,
           language: voiceChatConfiguration.language ?? "ja",
           tts,
+          ...(reactionPresets ? { reactionPresets } : {}),
         }
       : undefined,
     channelRuleStore,

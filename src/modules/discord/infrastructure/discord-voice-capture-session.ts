@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import prism from "prism-media";
 import type { Logger } from "pino";
 import {
@@ -16,6 +18,7 @@ import {
 import { Readable } from "node:stream";
 
 import type { AsrClient, AsrConnection, AsrRequest } from "@modules/asr/domain/asr-client";
+import type { VoiceReactionPreset } from "@modules/discord/ports/voice-reaction-selector";
 import type { TextToSpeech } from "@modules/tts/infrastructure/sbv2-tts";
 import { VadStream, type VadEvent } from "@modules/vad/domain/vad-stream";
 import { SileroVadModel } from "@modules/vad/infrastructure/silero-vad-model";
@@ -55,6 +58,8 @@ export interface DiscordVoiceCaptureSessionOptions {
   readonly logger?: Logger;
   readonly onError?: (error: Error) => void;
   readonly onTranscript: (text: string) => Promise<void>;
+  readonly audioResourceFactory?: (audio: Uint8Array) => ReturnType<typeof createAudioResource>;
+  readonly reactionPresets?: readonly VoiceReactionPreset[];
   readonly tts: TextToSpeech;
   readonly userId: string;
   readonly voiceChannelId: string;
@@ -72,6 +77,13 @@ export class DiscordVoiceCaptureSession {
   private transcriptQueue: Promise<void> = Promise.resolve();
   private speakingListener?: (userId: string) => void;
   private stopped = false;
+  private userSpeechActive = false;
+  private readonly reactionAudio = new Map<string, Uint8Array>();
+  private currentPlayback?: {
+    kind: "reply" | "reaction";
+    finish: (played: boolean, error?: Error) => void;
+  };
+  private readonly speechStartListeners = new Set<() => void>();
 
   constructor(private readonly options: DiscordVoiceCaptureSessionOptions) {
     this.logger = options.logger?.child({
@@ -120,12 +132,22 @@ export class DiscordVoiceCaptureSession {
     await entersState(connection, VoiceConnectionStatus.Ready, VOICE_READY_TIMEOUT_MS);
     this.audioPlayer = createAudioPlayer();
     this.audioPlayer.on("error", (error) => {
+      const playback = this.currentPlayback;
+      if (playback) {
+        this.currentPlayback = undefined;
+        playback.finish(false, error);
+      }
       this.logger?.warn(
         { err: error, event: "discord_voice_tts_playback_failed" },
         "Failed to play synthesized voice audio",
       );
     });
     this.audioPlayer.on("stateChange", (previous, next) => {
+      if (next.status === AudioPlayerStatus.Idle && this.currentPlayback) {
+        const playback = this.currentPlayback;
+        this.currentPlayback = undefined;
+        playback.finish(true);
+      }
       this.logger?.info(
         {
           event: "discord_voice_playback_state_changed",
@@ -141,6 +163,7 @@ export class DiscordVoiceCaptureSession {
       if (userId === this.options.userId) this.receiveUtterance();
     };
     connection.receiver.speaking.on("start", this.speakingListener);
+    void this.loadReactionAudio();
     this.logger?.info(
       { event: "discord_voice_capture_ready" },
       "Listening for the session user's voice",
@@ -150,6 +173,12 @@ export class DiscordVoiceCaptureSession {
   async stop(): Promise<void> {
     if (this.stopped) return;
     this.stopped = true;
+    this.speechStartListeners.clear();
+    this.reactionAudio.clear();
+    this.stopReaction();
+    const playback = this.currentPlayback;
+    this.currentPlayback = undefined;
+    playback?.finish(false);
     this.activeAsrRequest?.resolveTranscript("");
     this.activeAsrRequest = undefined;
     if (this.activeInput) {
@@ -286,6 +315,9 @@ export class DiscordVoiceCaptureSession {
   ): Promise<void> {
     for (const event of events) {
       if (event.type === "speech-start") {
+        this.userSpeechActive = true;
+        this.stopReaction();
+        for (const listener of this.speechStartListeners) listener();
         if (this.activeAsrRequest) continue;
         const requestId = randomUUID();
         try {
@@ -335,6 +367,7 @@ export class DiscordVoiceCaptureSession {
           this.finishAsrRequest();
         }
       } else {
+        this.userSpeechActive = false;
         this.finishAsrRequest();
       }
     }
@@ -415,10 +448,9 @@ export class DiscordVoiceCaptureSession {
       "Synthesized a voice reply",
     );
     if (this.stopped) return;
-    audioPlayer.play(
-      createAudioResource(Readable.from([Buffer.from(audio)]), { inputType: StreamType.Arbitrary }),
-    );
-    await entersState(audioPlayer, AudioPlayerStatus.Idle, 5 * 60_000);
+    this.stopReaction();
+    this.replacePlayback(false);
+    await this.play(audio, "reply");
     this.logger?.info(
       {
         event: "discord_voice_speak_completed",
@@ -426,6 +458,103 @@ export class DiscordVoiceCaptureSession {
       },
       "Finished playing the voice reply",
     );
+  }
+
+  async playReaction(reaction: string, signal: AbortSignal): Promise<boolean> {
+    const audio = this.reactionAudio.get(reaction);
+    if (
+      !audio ||
+      signal.aborted ||
+      this.stopped ||
+      this.userSpeechActive ||
+      this.currentPlayback?.kind === "reply"
+    )
+      return false;
+    return this.play(audio, "reaction", signal);
+  }
+
+  private async loadReactionAudio(): Promise<void> {
+    await Promise.all(
+      (this.options.reactionPresets ?? []).map(async (preset) => {
+        try {
+          const audio = await readFile(resolve(preset.audioFile));
+          if (!this.stopped) this.reactionAudio.set(preset.id, audio);
+        } catch (error) {
+          this.logger?.warn(
+            {
+              err: error,
+              event: "discord_voice_reaction_preset_load_failed",
+              reaction: preset.id,
+              audioFile: preset.audioFile,
+            },
+            "Failed to load a voice reaction preset audio file",
+          );
+        }
+      }),
+    );
+  }
+
+  subscribeSpeechStart(listener: () => void): () => void {
+    this.speechStartListeners.add(listener);
+    return () => this.speechStartListeners.delete(listener);
+  }
+
+  private play(
+    audio: Uint8Array,
+    kind: "reply" | "reaction",
+    signal?: AbortSignal,
+  ): Promise<boolean> {
+    const player = this.audioPlayer;
+    if (!player || this.stopped || signal?.aborted) return Promise.resolve(false);
+    this.replacePlayback(false);
+    return new Promise<boolean>((resolve, reject) => {
+      let settled = false;
+      const finish = (played: boolean, error?: Error): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        signal?.removeEventListener("abort", onAbort);
+        if (this.currentPlayback?.finish === finish) this.currentPlayback = undefined;
+        if (error) reject(error);
+        else resolve(played);
+      };
+      const timeout = setTimeout(() => {
+        if (this.currentPlayback?.finish !== finish) return;
+        this.currentPlayback = undefined;
+        player.stop(true);
+        finish(false, new Error("Voice playback timed out"));
+      }, 5 * 60_000);
+      const onAbort = (): void => {
+        if (this.currentPlayback?.finish !== finish) return;
+        this.currentPlayback = undefined;
+        player.stop(true);
+        finish(false);
+      };
+      this.currentPlayback = { kind, finish };
+      signal?.addEventListener("abort", onAbort, { once: true });
+      try {
+        player.play(
+          this.options.audioResourceFactory?.(audio) ??
+            createAudioResource(Readable.from([Buffer.from(audio)]), {
+              inputType: StreamType.Arbitrary,
+            }),
+        );
+      } catch (error) {
+        finish(false, error instanceof Error ? error : new Error(String(error)));
+      }
+    });
+  }
+
+  private replacePlayback(played: boolean): void {
+    const playback = this.currentPlayback;
+    if (!playback) return;
+    this.currentPlayback = undefined;
+    playback.finish(played);
+    this.audioPlayer?.stop(true);
+  }
+
+  private stopReaction(): void {
+    if (this.currentPlayback?.kind === "reaction") this.replacePlayback(false);
   }
 
   private failVoiceCapture(error: unknown): void {

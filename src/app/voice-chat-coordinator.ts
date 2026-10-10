@@ -8,6 +8,7 @@ import type {
   VoiceChatConversationContext,
   VoiceChatConversationFactory,
 } from "@modules/discord/ports/voice-chat-conversation";
+import type { VoiceReactionSelector } from "@modules/discord/ports/voice-reaction-selector";
 
 export interface VoiceChatCoordinatorDependencies {
   readonly createVoiceChatAgent: (
@@ -16,6 +17,7 @@ export interface VoiceChatCoordinatorDependencies {
     speak: (text: string) => Promise<void>,
   ) => Promise<DiscordAgent>;
   readonly logger: Logger;
+  readonly reactionSelector?: VoiceReactionSelector;
 }
 
 export class VoiceChatCoordinator implements VoiceChatConversationFactory {
@@ -52,10 +54,16 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
     let stopped = false;
     let stopPromise: Promise<void> | undefined;
     let processing = Promise.resolve();
+    let activeReaction: AbortController | undefined;
+    let lastReaction: string | undefined;
+    const recentTranscripts: string[] = [];
+    const playReaction = context.playReaction;
+    const unsubscribeSpeechStart = context.onSpeechStart?.(() => activeReaction?.abort());
 
     return {
       handleTranscript: (text) => {
         if (stopped) return Promise.resolve();
+        activeReaction?.abort();
         logger.info(
           { event: "voice_chat_transcript_queued", textLength: text.length },
           "Queued a voice transcript for the agent",
@@ -80,7 +88,43 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
               { event: "voice_chat_message_processing_started", messageId: message.id },
               "Processing a voice transcript with the agent",
             );
-            await agent.prompt(message);
+            const reactionController = new AbortController();
+            activeReaction = reactionController;
+            const history = recentTranscripts.slice(-3);
+            recentTranscripts.push(text);
+            if (recentTranscripts.length > 3) recentTranscripts.shift();
+            if (this.dependencies.reactionSelector && playReaction) {
+              void (async () => {
+                const timeout = setTimeout(() => reactionController.abort(), 600);
+                try {
+                  let reaction: string | undefined;
+                  try {
+                    reaction = await this.dependencies.reactionSelector!.select(
+                      { text, recentTranscripts: history, lastReaction },
+                      reactionController.signal,
+                    );
+                  } finally {
+                    clearTimeout(timeout);
+                  }
+                  if (reactionController.signal.aborted || reaction === undefined) return;
+                  const played = await playReaction(reaction, reactionController.signal);
+                  if (played && !reactionController.signal.aborted) lastReaction = reaction;
+                } catch (error) {
+                  logger.warn(
+                    { err: error, event: "voice_chat_reaction_failed", messageId: message.id },
+                    "Failed to select or play a voice reaction",
+                  );
+                } finally {
+                  clearTimeout(timeout);
+                }
+              })();
+            }
+            try {
+              await agent.prompt(message);
+            } finally {
+              reactionController.abort();
+              if (activeReaction === reactionController) activeReaction = undefined;
+            }
             logger.info(
               {
                 event: "voice_chat_message_processed",
@@ -119,6 +163,8 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
       stop: () => {
         if (stopPromise) return stopPromise;
         stopped = true;
+        activeReaction?.abort();
+        unsubscribeSpeechStart?.();
         stopPromise = processing.finally(() => agent.dispose());
         return stopPromise;
       },

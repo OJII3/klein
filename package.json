@@ -20,8 +20,8 @@
   },
   "dependencies": {
     "@discordjs/voice": "^0.19.2",
-    "@earendil-works/pi-ai": "^1.0.0",
-    "@earendil-works/pi-coding-agent": "^1.0.0",
+    "@earendil-works/pi-ai": "^1.0.1",
+    "@earendil-works/pi-coding-agent": "^1.0.1",
     "@elysia/eden": "^1.4.10",
     "@elysia/static": "^1.4.11",
     "@mantine/core": "^9",

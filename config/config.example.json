@@ -65,7 +65,12 @@
     "voiceChat": {
       "enabled": false,
       "asrServerUrl": "ws://100.64.0.11:8000",
-      "language": "ja"
+      "language": "ja",
+      "reactions": {
+        "provider": "cloudflare-workers-ai",
+        "model": "@cf/cloudflare/clef-flash",
+        "presetsFile": "config/klein/voice-presets.json"
+      }
     }
   }
 }

@@ -168,6 +168,23 @@ ONNX Runtime Web's WASM backend and needs no model download at startup. See
 [`docs/voice-chat-asr-protocol.md`](docs/voice-chat-asr-protocol.md) for the ASR
 request protocol.
 
+Optional voice reactions can shorten the perceived wait while the full answer
+is being prepared. Configure `features.voiceChat.reactions` with the pi
+classifier provider and model, plus a preset manifest. For example,
+`cloudflare-workers-ai` / `@cf/cloudflare/clef-flash` uses pi's classifier
+support and the same pi runtime as the rest of Klein; no separate API client is
+needed. Set `CLOUDFLARE_API_KEY` and `CLOUDFLARE_ACCOUNT_ID` before enabling
+reactions. Enable `features.tts` and point it to the SBV2 server before
+generating audio. Define the reaction phrases and audio paths in the configured
+JSON manifest (`config/klein/voice-presets.json` in the example). Generate the audio
+with `bun scripts/generate-voice-presets.ts`; the script sends each manifest
+phrase to the configured SBV2 server and writes the result to its `audioFile`
+path. Runtime decisions select a preset by ID, then play its saved audio.
+Reactions are skipped while an audio file is unavailable.
+Reactions are disabled when this setting is omitted. The reaction is selected
+alongside the main LLM request, and the main answer still takes priority when
+its audio is ready.
+
 ### HTTPS through Cloudflare Tunnel
 
 Klein can start and stop `cloudflared` together with the Web UI. The Nix

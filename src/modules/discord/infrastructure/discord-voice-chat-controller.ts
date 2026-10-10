@@ -2,6 +2,7 @@ import type { Logger } from "pino";
 import { SlashCommandBuilder, type ChatInputCommandInteraction } from "discord.js";
 import type { AsrClient } from "@modules/asr/domain/asr-client";
 import type { TextToSpeech } from "@modules/tts/infrastructure/sbv2-tts";
+import type { VoiceReactionPreset } from "@modules/discord/ports/voice-reaction-selector";
 
 import type { DiscordAccessPolicy } from "../domain/discord-access-policy";
 import type {
@@ -20,6 +21,7 @@ export const VOICE_COMMAND = new SlashCommandBuilder()
 export interface DiscordVoiceChatControllerOptions {
   readonly asr: AsrClient;
   readonly language: string;
+  readonly reactionPresets?: readonly VoiceReactionPreset[];
   readonly conversationFactory: VoiceChatConversationFactory;
   readonly tts?: TextToSpeech;
 }
@@ -134,6 +136,7 @@ export class DiscordVoiceChatController {
         language: this.options.language,
         logger: this.logger,
         onTranscript: (text) => conversation?.handleTranscript(text) ?? Promise.resolve(),
+        reactionPresets: this.options.reactionPresets,
         onError: (error) => {
           if (this.sessions.get(guildId)?.session !== session) return;
           this.sessions.delete(guildId);
@@ -158,6 +161,9 @@ export class DiscordVoiceChatController {
         guildId,
         parentChannelId: textThread?.parentId ?? undefined,
         speak: (text) => session?.speak(text) ?? Promise.resolve(),
+        playReaction: (reaction, signal) =>
+          session?.playReaction(reaction, signal) ?? Promise.resolve(false),
+        onSpeechStart: (listener) => session?.subscribeSpeechStart(listener) ?? (() => undefined),
         threadId: textThread?.id,
         user: {
           bot: false,
