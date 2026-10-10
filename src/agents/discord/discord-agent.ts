@@ -29,6 +29,7 @@ export class DiscordAgent {
       readonly sessionKey?: string;
       readonly handoffContext?: string;
       readonly tts?: TextToSpeech;
+      readonly voiceResponse?: boolean;
     } = {},
   ): Promise<DiscordAgent> {
     let runtime: AgentRuntime | undefined;
@@ -44,16 +45,23 @@ export class DiscordAgent {
 
     const tools = [
       createDiscordReadTool(discordService, channelId, analyzeImages),
-      createDiscordSendTool(discordService, channelId),
-      ...(options.tts ? [createDiscordVoiceTool(discordService, channelId, options.tts)] : []),
+      ...(!options.voiceResponse ? [createDiscordSendTool(discordService, channelId)] : []),
+      ...(!options.voiceResponse && options.tts
+        ? [createDiscordVoiceTool(discordService, channelId, options.tts)]
+        : []),
     ];
+    const toolNames = options.voiceResponse
+      ? DISCORD_AGENT_TOOL_NAMES.filter((name) => name !== "discord_send")
+      : options.tts
+        ? [...DISCORD_AGENT_TOOL_NAMES, "discord_voice"]
+        : DISCORD_AGENT_TOOL_NAMES;
 
     runtime = await agentFactory.create(
       {
-        systemPrompt,
-        toolNames: options.tts
-          ? [...DISCORD_AGENT_TOOL_NAMES, "discord_voice"]
-          : DISCORD_AGENT_TOOL_NAMES,
+        systemPrompt: options.voiceResponse
+          ? `${systemPrompt}\n\n音声会話では、ユーザーへの返答を通常の文章として生成してください。Discordへのメッセージ送信ツールは使わないでください。`
+          : systemPrompt,
+        toolNames,
       },
       tools,
       {
@@ -70,7 +78,21 @@ export class DiscordAgent {
   }
 
   prompt(message: DiscordMessage, guildMemory?: string, channelRule?: string): Promise<void> {
-    return this.runtime.prompt({
+    return this.runtime.prompt(this.createPrompt(message, guildMemory, channelRule));
+  }
+
+  promptForResponse(
+    message: DiscordMessage,
+    guildMemory?: string,
+    channelRule?: string,
+  ): Promise<string | undefined> {
+    const prompt = this.createPrompt(message, guildMemory, channelRule);
+    if (this.runtime.promptWithResponse) return this.runtime.promptWithResponse(prompt);
+    return this.runtime.prompt(prompt).then(() => undefined);
+  }
+
+  private createPrompt(message: DiscordMessage, guildMemory?: string, channelRule?: string) {
+    return {
       text: [
         guildMemory ? `<guild-memory>\n${guildMemory}\n</guild-memory>` : undefined,
         channelRule ? `<channel-rule>\n${channelRule}\n</channel-rule>` : undefined,
@@ -79,7 +101,7 @@ export class DiscordAgent {
         .filter((context): context is string => context !== undefined)
         .join("\n\n"),
       images: message.images.map(({ data, mimeType }) => ({ data, mimeType })),
-    });
+    };
   }
 
   compactForHandoff(): Promise<string> | undefined {

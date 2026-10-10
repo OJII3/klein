@@ -29,6 +29,7 @@ function createLogger(): Logger {
 test("creates an isolated LLM session for each VC conversation", async () => {
   const sessionKeys: string[] = [];
   const promptedMessages: unknown[] = [];
+  const spokenResponses: string[] = [];
   let disposeCount = 0;
   const coordinator = new VoiceChatCoordinator({
     createVoiceChatAgent: async (channelId, sessionKey) => {
@@ -41,14 +42,20 @@ test("creates an isolated LLM session for each VC conversation", async () => {
         prompt: async (message: DiscordMessage) => {
           promptedMessages.push(message);
         },
+        promptForResponse: async (message: DiscordMessage) => {
+          promptedMessages.push(message);
+          return `返答: ${message.content}`;
+        },
       } as unknown as DiscordAgent;
     },
     logger: createLogger(),
-    sendMessage: async () => undefined,
   });
 
-  const first = await coordinator.create(context);
-  const second = await coordinator.create(context);
+  const first = await coordinator.create({
+    ...context,
+    speak: async (text) => void spokenResponses.push(text),
+  });
+  const second = await coordinator.create({ ...context, speak: async () => undefined });
   await first.handleTranscript("一つ目の発話");
   await first.stop();
   await first.handleTranscript("終了後の発話");
@@ -88,20 +95,21 @@ test("creates an isolated LLM session for each VC conversation", async () => {
       threadId: undefined,
     },
   );
+  assert.deepEqual(spokenResponses, ["返答: 一つ目の発話"]);
 
   await Promise.all([first.stop(), second.stop()]);
   assert.equal(disposeCount, 2);
 });
 
-test("serializes voice turns and reports LLM failures in the text channel", async () => {
+test("serializes voice turns and speaks an error response after LLM failures", async () => {
   const started: string[] = [];
-  const errorMessages: string[] = [];
+  const spokenResponses: string[] = [];
   let releaseFirst: (() => void) | undefined;
   const coordinator = new VoiceChatCoordinator({
     createVoiceChatAgent: async () =>
       ({
         dispose: () => undefined,
-        prompt: async (message: { content: string }) => {
+        promptForResponse: async (message: { content: string }) => {
           started.push(message.content);
           if (message.content === "一つ目") {
             await new Promise<void>((resolve) => {
@@ -109,14 +117,15 @@ test("serializes voice turns and reports LLM failures in the text channel", asyn
             });
           }
           if (message.content === "失敗") throw new Error("LLM failed");
+          return `返答: ${message.content}`;
         },
       }) as unknown as DiscordAgent,
     logger: createLogger(),
-    sendMessage: async (_channelId, content) => {
-      errorMessages.push(content);
-    },
   });
-  const conversation = await coordinator.create(context);
+  const conversation = await coordinator.create({
+    ...context,
+    speak: async (text) => void spokenResponses.push(text),
+  });
 
   const first = conversation.handleTranscript("一つ目");
   const second = conversation.handleTranscript("二つ目");
@@ -127,6 +136,10 @@ test("serializes voice turns and reports LLM failures in the text channel", asyn
   await conversation.handleTranscript("失敗");
 
   assert.deepEqual(started, ["一つ目", "二つ目", "失敗"]);
-  assert.deepEqual(errorMessages, ["ごめん、今はうまく返答できないみたい。"]);
+  assert.deepEqual(spokenResponses, [
+    "返答: 一つ目",
+    "返答: 二つ目",
+    "ごめん、今はうまく返答できないみたい。",
+  ]);
   await conversation.stop();
 });

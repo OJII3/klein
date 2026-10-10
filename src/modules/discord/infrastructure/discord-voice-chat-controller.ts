@@ -1,6 +1,7 @@
 import type { Logger } from "pino";
 import { SlashCommandBuilder, type ChatInputCommandInteraction } from "discord.js";
 import type { AsrClient } from "@modules/asr/domain/asr-client";
+import type { TextToSpeech } from "@modules/tts/infrastructure/sbv2-tts";
 
 import type { DiscordAccessPolicy } from "../domain/discord-access-policy";
 import type {
@@ -18,8 +19,9 @@ export const VOICE_COMMAND = new SlashCommandBuilder()
 
 export interface DiscordVoiceChatControllerOptions {
   readonly asr: AsrClient;
-  readonly conversationFactory: VoiceChatConversationFactory;
   readonly language: string;
+  readonly conversationFactory: VoiceChatConversationFactory;
+  readonly tts?: TextToSpeech;
 }
 
 interface ActiveVoiceChat {
@@ -75,6 +77,13 @@ export class DiscordVoiceChatController {
       });
       return;
     }
+    if (!this.options.tts) {
+      await interaction.reply({
+        content: "VC会話を利用するにはTTSサーバーを設定してください。",
+        ephemeral: true,
+      });
+      return;
+    }
 
     const guild = interaction.guild;
     if (!guild) return;
@@ -106,13 +115,40 @@ export class DiscordVoiceChatController {
     }
 
     await interaction.deferReply({ ephemeral: true });
-    let conversation: VoiceChatConversation | undefined;
     let session: DiscordVoiceCaptureSession | undefined;
+    let conversation: VoiceChatConversation | undefined;
     try {
-      const createdConversation = await this.options.conversationFactory.create({
+      session = new DiscordVoiceCaptureSession({
+        adapterCreator: guild.voiceAdapterCreator,
+        asr: this.options.asr,
+        guildId,
+        language: this.options.language,
+        logger: this.logger,
+        onTranscript: (text) => conversation?.handleTranscript(text) ?? Promise.resolve(),
+        onError: (error) => {
+          if (this.sessions.get(guildId)?.session !== session) return;
+          this.sessions.delete(guildId);
+          void session?.stop();
+          this.logger?.warn(
+            { err: error, event: "discord_voice_chat_session_ended", guildId },
+            "Stopped the voice conversation after an ASR failure",
+          );
+          void conversation?.stop().catch((stopError: unknown) => {
+            this.logger?.warn(
+              { err: stopError, event: "discord_voice_chat_cleanup_failed", guildId },
+              "Failed to clean up the voice conversation after an ASR failure",
+            );
+          });
+        },
+        tts: this.options.tts,
+        userId: interaction.user.id,
+        voiceChannelId: voiceChannel.id,
+      });
+      conversation = await this.options.conversationFactory.create({
         channelId: interaction.channelId,
         guildId,
         parentChannelId: textThread?.parentId ?? undefined,
+        speak: (text) => session?.speak(text) ?? Promise.resolve(),
         threadId: textThread?.id,
         user: {
           bot: false,
@@ -122,35 +158,9 @@ export class DiscordVoiceChatController {
         },
         voiceChannelId: voiceChannel.id,
       });
-      conversation = createdConversation;
-      session = new DiscordVoiceCaptureSession({
-        adapterCreator: guild.voiceAdapterCreator,
-        asr: this.options.asr,
-        guildId,
-        language: this.options.language,
-        logger: this.logger,
-        onError: (error) => {
-          if (this.sessions.get(guildId)?.session !== session) return;
-          this.sessions.delete(guildId);
-          void session?.stop();
-          this.logger?.warn(
-            { err: error, event: "discord_voice_chat_session_ended", guildId },
-            "Stopped the voice conversation after an ASR failure",
-          );
-          void createdConversation.stop().catch((stopError: unknown) => {
-            this.logger?.warn(
-              { err: stopError, event: "discord_voice_chat_cleanup_failed", guildId },
-              "Failed to clean up the voice conversation after an ASR failure",
-            );
-          });
-        },
-        onTranscript: (text) => createdConversation.handleTranscript(text),
-        userId: interaction.user.id,
-        voiceChannelId: voiceChannel.id,
-      });
       this.sessions.set(guildId, { conversation, session, userId: interaction.user.id });
       await session.start();
-      await interaction.editReply("VCに参加しました。発話を会話セッションに送ります。");
+      await interaction.editReply("VCに参加しました。返答を音声で読み上げます。");
     } catch (error) {
       this.sessions.delete(guildId);
       await Promise.allSettled([session?.stop(), conversation?.stop()]);
@@ -159,7 +169,7 @@ export class DiscordVoiceChatController {
         "Failed to start Discord voice chat",
       );
       await interaction.editReply(
-        "VC会話を開始できませんでした。設定とASRサーバーを確認してください。",
+        "VC会話を開始できませんでした。設定とASR・TTSサーバーを確認してください。",
       );
     }
   }

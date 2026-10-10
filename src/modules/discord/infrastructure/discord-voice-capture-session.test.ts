@@ -45,6 +45,7 @@ function createCapture() {
     onTranscript: async (text) => {
       transcripts.push(text);
     },
+    tts: { synthesize: async () => new Uint8Array() },
     userId: "user",
     voiceChannelId: "voice",
   });

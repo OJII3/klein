@@ -64,6 +64,7 @@ function createController(
     asr: {} as AsrClient,
     conversationFactory,
     language: "ja",
+    tts: { synthesize: async () => new Uint8Array() },
   });
 }
 
@@ -101,21 +102,21 @@ test("sends final voice transcripts to the dedicated conversation", async () => 
     assert.ok(onTranscript);
     await onTranscript("こんにちは");
 
-    assert.deepEqual(contexts, [
-      {
-        channelId: "thread-123",
-        guildId: "guild-123",
-        parentChannelId: "channel-123",
-        threadId: "thread-123",
-        user: {
-          bot: false,
-          displayName: "さつき",
-          id: "user-123",
-          username: "satsuki",
-        },
-        voiceChannelId: "voice-channel-123",
+    const { speak, ...contextWithoutSpeak } = contexts[0] as Record<string, unknown>;
+    assert.equal(typeof speak, "function");
+    assert.deepEqual(contextWithoutSpeak, {
+      channelId: "thread-123",
+      guildId: "guild-123",
+      parentChannelId: "channel-123",
+      threadId: "thread-123",
+      user: {
+        bot: false,
+        displayName: "さつき",
+        id: "user-123",
+        username: "satsuki",
       },
-    ]);
+      voiceChannelId: "voice-channel-123",
+    });
     assert.deepEqual(transcripts, ["こんにちは"]);
   } finally {
     DiscordVoiceCaptureSession.prototype.start = originalStart;

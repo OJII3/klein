@@ -12,7 +12,6 @@ import type {
 export interface VoiceChatCoordinatorDependencies {
   readonly createVoiceChatAgent: (channelId: string, sessionKey: string) => Promise<DiscordAgent>;
   readonly logger: Logger;
-  readonly sendMessage: (channelId: string, content: string) => Promise<void>;
 }
 
 export class VoiceChatCoordinator implements VoiceChatConversationFactory {
@@ -46,7 +45,8 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
           };
 
           try {
-            await agent.prompt(message);
+            const response = await agent.promptForResponse(message);
+            if (response?.trim()) await context.speak(response);
           } catch (error) {
             this.logger.error(
               {
@@ -57,18 +57,15 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
               "Failed to process a voice chat message",
             );
             try {
-              await this.dependencies.sendMessage(
-                context.channelId,
-                "ごめん、今はうまく返答できないみたい。",
-              );
+              await context.speak("ごめん、今はうまく返答できないみたい。");
             } catch (sendError) {
               this.logger.error(
                 {
                   channelId: context.channelId,
                   err: sendError,
-                  event: "voice_chat_error_message_send_failed",
+                  event: "voice_chat_error_response_failed",
                 },
-                "Failed to send a voice chat error message",
+                "Failed to speak a voice chat error response",
               );
             }
           }

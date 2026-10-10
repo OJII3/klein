@@ -7,6 +7,7 @@ export interface VoiceChatConversationContext {
   readonly threadId?: string;
   readonly user: DiscordUser;
   readonly voiceChannelId: string;
+  readonly speak: (text: string) => Promise<void>;
 }
 
 export interface VoiceChatConversation {

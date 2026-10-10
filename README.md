@@ -153,7 +153,9 @@ disabled by default and allows deleting individual persisted memories.
 Enable `features.tts` and set `serverUrl` to the SBV2 server address reachable
 through your private network to add the `discord_voice` tool. It synthesizes
 text through SBV2's `/voice` endpoint and sends the returned WAV as a Discord
-attachment.
+attachment. Voice chat also requires TTS: it sends each final ASR transcript to
+the LLM, then sends the LLM's response to SBV2 and plays the returned audio in
+the voice channel.
 
 Voice chat uses a bundled Silero VAD model locally in Klein, then sends each
 detected utterance to the configured WebSocket ASR server. The model runs with

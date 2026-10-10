@@ -89,9 +89,12 @@ export async function bootstrap(): Promise<void> {
       tts,
     });
   const voiceChatCoordinator = new VoiceChatCoordinator({
-    createVoiceChatAgent: (channelId, sessionKey) => createDiscordAgent(channelId, sessionKey),
+    createVoiceChatAgent: (channelId, sessionKey) =>
+      DiscordAgent.create(piAgentFactory, discordService, channelId, systemPrompt, {
+        sessionKey,
+        voiceResponse: true,
+      }),
     logger,
-    sendMessage: (channelId, content) => discordService.sendMessage(channelId, content),
   });
   discordService = new DiscordJsService(
     token,
@@ -103,6 +106,7 @@ export async function bootstrap(): Promise<void> {
           asr: new WebSocketAsrClient(voiceChatConfiguration.asrServerUrl),
           conversationFactory: voiceChatCoordinator,
           language: voiceChatConfiguration.language ?? "ja",
+          tts,
         }
       : undefined,
     channelRuleStore,
