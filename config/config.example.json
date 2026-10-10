@@ -67,8 +67,8 @@
       "asrServerUrl": "ws://100.64.0.11:8000",
       "language": "ja",
       "reactions": {
-        "provider": "typesafe",
-        "model": "jev-latest",
+        "provider": "cloudflare-workers-ai",
+        "model": "@cf/cloudflare/clef-flash",
         "presets": {
           "neutral": "うん",
           "thinking": "ええと",

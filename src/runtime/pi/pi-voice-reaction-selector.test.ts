@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { ClassifierApi, ClassifierModel } from "@earendil-works/pi-ai";
+import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
 
 import {
@@ -10,6 +11,16 @@ import {
 } from "./pi-voice-reaction-selector";
 
 const model = { id: "jev", provider: "test" } as ClassifierModel<ClassifierApi>;
+
+test("pi includes the configured Workers AI Clef Flash classifier", () => {
+  const model = builtinModels().getModelOfType(
+    "classifier",
+    "cloudflare-workers-ai",
+    "@cf/cloudflare/clef-flash",
+  );
+
+  assert.equal(model?.api, "cloudflare-workers-ai-system-one");
+});
 
 function result(choice: string, confidence = 0.9, stopReason = "stop") {
   return {

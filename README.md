@@ -171,10 +171,10 @@ request protocol.
 Optional voice reactions can shorten the perceived wait while the full answer
 is being prepared. Configure `features.voiceChat.reactions` with the pi
 classifier provider and model, plus three preset phrases. For example,
-`typesafe` / `jev-latest` uses pi's classifier support and the same pi credentials
-and model configuration as the rest of Klein; no separate API client is
-needed. Configure pi authentication for the provider in the usual way before
-enabling reactions. The three preset values are short phrases, which Klein
+`cloudflare-workers-ai` / `@cf/cloudflare/clef-flash` uses pi's classifier
+support and the same pi runtime as the rest of Klein; no separate API client is
+needed. Set `CLOUDFLARE_API_KEY` and `CLOUDFLARE_ACCOUNT_ID` before enabling
+reactions. The three preset values are short phrases, which Klein
 synthesizes in the background when a voice session starts and caches for that
 session; reactions are skipped until their audio is ready.
 Reactions are disabled when this setting is omitted. The reaction is selected
