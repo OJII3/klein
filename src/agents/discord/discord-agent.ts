@@ -61,9 +61,7 @@ export class DiscordAgent {
 
     runtime = await agentFactory.create(
       {
-        systemPrompt: options.speak
-          ? `${systemPrompt}\n\nYou are in a Discord voice conversation. Use discord_speak for replies; normal assistant text is not audible to the user.`
-          : systemPrompt,
+        systemPrompt,
         toolNames,
       },
       tools,

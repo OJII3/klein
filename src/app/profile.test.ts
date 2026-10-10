@@ -8,6 +8,7 @@ test("resolves the Klein profile by default", () => {
   assert.equal(DEFAULT_PROFILE, "klein");
   assert.deepEqual(resolveProfile(), {
     systemPromptFile: resolve("config/klein/SOUL.md"),
+    voiceSystemPromptFile: resolve("config/klein/SOUL.voice.md"),
     skillsDirectory: resolve("config/klein/skills"),
   });
 });
@@ -15,6 +16,7 @@ test("resolves the Klein profile by default", () => {
 test("resolves a named profile", () => {
   assert.deepEqual(resolveProfile("elysia"), {
     systemPromptFile: resolve("config/elysia/SOUL.md"),
+    voiceSystemPromptFile: resolve("config/elysia/SOUL.voice.md"),
     skillsDirectory: resolve("config/elysia/skills"),
   });
 });

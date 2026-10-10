@@ -43,6 +43,7 @@ test("routes voice replies through discord_speak using the existing runtime prom
   };
   const agentFactory: AgentFactory = {
     async create(definition, registeredTools) {
+      assert.equal(definition.systemPrompt, "voice system prompt");
       tools = registeredTools as readonly ToolDefinition[];
       toolNames = definition.toolNames;
       return runtime;
@@ -52,7 +53,7 @@ test("routes voice replies through discord_speak using the existing runtime prom
     agentFactory,
     {} as DiscordService,
     "channel-123",
-    "system prompt",
+    "voice system prompt",
     {
       speak: async (text) => {
         spoken.push(text);

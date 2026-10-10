@@ -32,7 +32,9 @@ default profile is `klein`, whose system prompt and skills live under
 `config/klein/`. Add another profile under `config/<profile>/` with its own
 `SOUL.md` and optional `skills/` directory, then change `profile` in
 `config/config.jsonc` to switch characters. When `profile` is omitted, `klein`
-is used. Set `CONFIG_PATH` when a different configuration file is needed.
+is used. Voice chat loads the same profile's `SOUL.voice.md` instead of `SOUL.md`.
+Provide that file when enabling `features.voiceChat` for a custom profile.
+Set `CONFIG_PATH` when a different configuration file is needed.
 
 The `yachiyo` profile in `config/yachiyo/` is based on
 [YacchoGPT's for GPTs prompts](https://github.com/tsukumijima/YacchoGPT)
@@ -74,6 +76,9 @@ To use an Exa API key with `pi-web-access`, optionally set `EXA_API_KEY` in `.en
 
 The Discord agent's personality and behavior are loaded from the selected
 profile's `SOUL.md` (`config/klein/SOUL.md` by default).
+Voice chat uses `SOUL.voice.md` (`config/klein/SOUL.voice.md` by default), with
+instructions for `discord_speak`, responding without mentions, and brief spoken
+replies to reduce TTS latency. Edit the two files independently for each mode.
 
 To connect remote MCP tools to the Discord agent, register the server in the
 Pi agent directory `.runtime/pi`, which matches Klein's `runtime.agentDir`.
