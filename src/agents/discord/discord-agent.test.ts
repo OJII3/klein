@@ -29,6 +29,47 @@ const message: DiscordMessage = {
   ],
 };
 
+test("routes voice replies through discord_speak using the existing runtime prompt", async () => {
+  let tools: readonly ToolDefinition[] = [];
+  let toolNames: readonly string[] = [];
+  const spoken: string[] = [];
+  const runtime: AgentRuntime = {
+    async prompt() {
+      const tool = tools.find((tool) => tool.name === "discord_speak");
+      assert.ok(tool);
+      await tool.execute("tool-call", { text: "LLMの返答" }, undefined, undefined, {} as never);
+    },
+    dispose() {},
+  };
+  const agentFactory: AgentFactory = {
+    async create(definition, registeredTools) {
+      assert.equal(definition.systemPrompt, "voice system prompt");
+      tools = registeredTools as readonly ToolDefinition[];
+      toolNames = definition.toolNames;
+      return runtime;
+    },
+  };
+  const agent = await DiscordAgent.create(
+    agentFactory,
+    {} as DiscordService,
+    "channel-123",
+    "voice system prompt",
+    {
+      speak: async (text) => {
+        spoken.push(text);
+      },
+    },
+  );
+
+  assert.ok(toolNames.includes("discord_speak"));
+  assert.ok(!toolNames.includes("discord_send"));
+  assert.ok(!toolNames.includes("discord_voice"));
+  assert.ok(!tools.some((tool) => tool.name === "discord_send" || tool.name === "discord_voice"));
+  await agent.prompt(message);
+  assert.deepEqual(spoken, ["LLMの返答"]);
+  agent.dispose();
+});
+
 test("wires the runtime image analyzer into discord_read", async () => {
   let tools: readonly ToolDefinition[] = [];
   let analyzedPrompt: unknown;

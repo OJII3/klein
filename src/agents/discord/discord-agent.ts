@@ -6,6 +6,7 @@ import { DISCORD_AGENT_TOOL_NAMES } from "./prompt-policy";
 import { createDiscordReadTool } from "./tools/discord-read";
 import { createDiscordSendTool } from "./tools/discord-send";
 import { createDiscordVoiceTool } from "./tools/discord-voice";
+import { createDiscordSpeakTool } from "./tools/discord-speak";
 import type { TextToSpeech } from "@modules/tts/infrastructure/sbv2-tts";
 
 const BOT_MESSAGE_GUIDANCE = `
@@ -29,6 +30,7 @@ export class DiscordAgent {
       readonly sessionKey?: string;
       readonly handoffContext?: string;
       readonly tts?: TextToSpeech;
+      readonly speak?: (text: string) => Promise<void>;
     } = {},
   ): Promise<DiscordAgent> {
     let runtime: AgentRuntime | undefined;
@@ -44,16 +46,23 @@ export class DiscordAgent {
 
     const tools = [
       createDiscordReadTool(discordService, channelId, analyzeImages),
-      createDiscordSendTool(discordService, channelId),
-      ...(options.tts ? [createDiscordVoiceTool(discordService, channelId, options.tts)] : []),
+      ...(options.speak
+        ? [createDiscordSpeakTool(options.speak)]
+        : [createDiscordSendTool(discordService, channelId)]),
+      ...(!options.speak && options.tts
+        ? [createDiscordVoiceTool(discordService, channelId, options.tts)]
+        : []),
     ];
+    const toolNames = options.speak
+      ? [...DISCORD_AGENT_TOOL_NAMES.filter((name) => name !== "discord_send"), "discord_speak"]
+      : options.tts
+        ? [...DISCORD_AGENT_TOOL_NAMES, "discord_voice"]
+        : DISCORD_AGENT_TOOL_NAMES;
 
     runtime = await agentFactory.create(
       {
         systemPrompt,
-        toolNames: options.tts
-          ? [...DISCORD_AGENT_TOOL_NAMES, "discord_voice"]
-          : DISCORD_AGENT_TOOL_NAMES,
+        toolNames,
       },
       tools,
       {

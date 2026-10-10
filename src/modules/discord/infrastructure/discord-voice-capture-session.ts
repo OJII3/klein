@@ -2,15 +2,21 @@ import { randomUUID } from "node:crypto";
 import prism from "prism-media";
 import type { Logger } from "pino";
 import {
+  AudioPlayerStatus,
+  createAudioPlayer,
+  createAudioResource,
   EndBehaviorType,
+  StreamType,
   VoiceConnectionStatus,
   entersState,
   joinVoiceChannel,
   type DiscordGatewayAdapterCreator,
   type VoiceConnection,
 } from "@discordjs/voice";
+import { Readable } from "node:stream";
 
 import type { AsrClient, AsrConnection, AsrRequest } from "@modules/asr/domain/asr-client";
+import type { TextToSpeech } from "@modules/tts/infrastructure/sbv2-tts";
 import { VadStream, type VadEvent } from "@modules/vad/domain/vad-stream";
 import { SileroVadModel } from "@modules/vad/infrastructure/silero-vad-model";
 
@@ -47,12 +53,14 @@ export interface DiscordVoiceCaptureSessionOptions {
   readonly logger?: Logger;
   readonly onError?: (error: Error) => void;
   readonly onTranscript: (text: string) => Promise<void>;
+  readonly tts: TextToSpeech;
   readonly userId: string;
   readonly voiceChannelId: string;
 }
 
 export class DiscordVoiceCaptureSession {
   private connection?: VoiceConnection;
+  private audioPlayer?: ReturnType<typeof createAudioPlayer>;
   private asrConnection?: AsrConnection;
   private vad?: VadStream;
   private vadModel?: SileroVadModel;
@@ -85,6 +93,14 @@ export class DiscordVoiceCaptureSession {
     });
     this.connection = connection;
     await entersState(connection, VoiceConnectionStatus.Ready, VOICE_READY_TIMEOUT_MS);
+    this.audioPlayer = createAudioPlayer();
+    this.audioPlayer.on("error", (error) => {
+      this.options.logger?.warn(
+        { err: error, event: "discord_voice_tts_playback_failed" },
+        "Failed to play synthesized voice audio",
+      );
+    });
+    connection.subscribe(this.audioPlayer);
 
     this.speakingListener = (userId) => {
       if (userId === this.options.userId) this.receiveUtterance();
@@ -109,6 +125,8 @@ export class DiscordVoiceCaptureSession {
     }
     this.connection?.destroy();
     this.connection = undefined;
+    this.audioPlayer?.stop(true);
+    this.audioPlayer = undefined;
     this.asrConnection?.close();
     this.asrConnection = undefined;
     await this.vadModel?.close();
@@ -228,8 +246,8 @@ export class DiscordVoiceCaptureSession {
               await this.options.onTranscript(text);
             } catch (error) {
               this.options.logger?.warn(
-                { err: error, event: "discord_voice_transcript_send_failed" },
-                "Failed to send a voice transcript",
+                { err: error, event: "discord_voice_transcript_processing_failed" },
+                "Failed to process a voice transcript",
               );
             }
           });
@@ -271,6 +289,17 @@ export class DiscordVoiceCaptureSession {
           "ASR request failed",
         );
       });
+  }
+
+  async speak(text: string): Promise<void> {
+    const audioPlayer = this.audioPlayer;
+    if (!audioPlayer || this.stopped) return;
+    const audio = await this.options.tts.synthesize(text);
+    if (this.stopped) return;
+    audioPlayer.play(
+      createAudioResource(Readable.from([Buffer.from(audio)]), { inputType: StreamType.Arbitrary }),
+    );
+    await entersState(audioPlayer, AudioPlayerStatus.Idle, 5 * 60_000);
   }
 
   private failVoiceCapture(error: unknown): void {

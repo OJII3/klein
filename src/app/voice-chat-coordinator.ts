@@ -10,9 +10,12 @@ import type {
 } from "@modules/discord/ports/voice-chat-conversation";
 
 export interface VoiceChatCoordinatorDependencies {
-  readonly createVoiceChatAgent: (channelId: string, sessionKey: string) => Promise<DiscordAgent>;
+  readonly createVoiceChatAgent: (
+    channelId: string,
+    sessionKey: string,
+    speak: (text: string) => Promise<void>,
+  ) => Promise<DiscordAgent>;
   readonly logger: Logger;
-  readonly sendMessage: (channelId: string, content: string) => Promise<void>;
 }
 
 export class VoiceChatCoordinator implements VoiceChatConversationFactory {
@@ -24,7 +27,11 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
 
   async create(context: VoiceChatConversationContext): Promise<VoiceChatConversation> {
     const sessionKey = `discord-voice:${context.guildId}:${context.voiceChannelId}:${randomUUID()}`;
-    const agent = await this.dependencies.createVoiceChatAgent(context.channelId, sessionKey);
+    const agent = await this.dependencies.createVoiceChatAgent(
+      context.channelId,
+      sessionKey,
+      context.speak,
+    );
     let stopped = false;
     let stopPromise: Promise<void> | undefined;
     let processing = Promise.resolve();
@@ -57,18 +64,15 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
               "Failed to process a voice chat message",
             );
             try {
-              await this.dependencies.sendMessage(
-                context.channelId,
-                "ごめん、今はうまく返答できないみたい。",
-              );
+              await context.speak("ごめん、今はうまく返答できないみたい。");
             } catch (sendError) {
               this.logger.error(
                 {
                   channelId: context.channelId,
                   err: sendError,
-                  event: "voice_chat_error_message_send_failed",
+                  event: "voice_chat_error_response_failed",
                 },
-                "Failed to send a voice chat error message",
+                "Failed to speak a voice chat error response",
               );
             }
           }

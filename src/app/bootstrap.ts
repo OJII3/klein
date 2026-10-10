@@ -65,6 +65,9 @@ export async function bootstrap(): Promise<void> {
   const discordOperatingState = new DiscordOperatingState();
   const discordAccessPolicy = createDiscordAccessPolicy(config.discord.access);
   const voiceChatConfiguration = config.features.voiceChat;
+  const voiceSystemPrompt = voiceChatConfiguration?.enabled
+    ? await loadPromptFile(profile.voiceSystemPromptFile)
+    : undefined;
   const taskCoordinator = new TaskCoordinator();
   const tts = config.features.tts?.enabled ? new Sbv2Tts(config.features.tts.serverUrl) : undefined;
   const agentDir = resolve(config.runtime.agentDir);
@@ -88,21 +91,28 @@ export async function bootstrap(): Promise<void> {
       sessionKey,
       tts,
     });
-  const voiceChatCoordinator = new VoiceChatCoordinator({
-    createVoiceChatAgent: (channelId, sessionKey) => createDiscordAgent(channelId, sessionKey),
-    logger,
-    sendMessage: (channelId, content) => discordService.sendMessage(channelId, content),
-  });
+  const voiceChatCoordinator =
+    voiceSystemPrompt === undefined
+      ? undefined
+      : new VoiceChatCoordinator({
+          createVoiceChatAgent: (channelId, sessionKey, speak) =>
+            DiscordAgent.create(piAgentFactory, discordService, channelId, voiceSystemPrompt, {
+              sessionKey,
+              speak,
+            }),
+          logger,
+        });
   discordService = new DiscordJsService(
     token,
     discordAccessPolicy,
     logger,
     discordOperatingState,
-    voiceChatConfiguration?.enabled
+    voiceChatConfiguration?.enabled && voiceChatCoordinator
       ? {
           asr: new WebSocketAsrClient(voiceChatConfiguration.asrServerUrl),
           conversationFactory: voiceChatCoordinator,
           language: voiceChatConfiguration.language ?? "ja",
+          tts,
         }
       : undefined,
     channelRuleStore,

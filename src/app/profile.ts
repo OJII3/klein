@@ -4,6 +4,7 @@ export const DEFAULT_PROFILE = "klein";
 
 export interface ProfilePaths {
   readonly systemPromptFile: string;
+  readonly voiceSystemPromptFile: string;
   readonly skillsDirectory: string;
 }
 
@@ -15,6 +16,7 @@ export function resolveProfile(profile = DEFAULT_PROFILE): ProfilePaths {
   const profileDirectory = resolve(process.cwd(), "config", profile);
   return {
     systemPromptFile: resolve(profileDirectory, "SOUL.md"),
+    voiceSystemPromptFile: resolve(profileDirectory, "SOUL.voice.md"),
     skillsDirectory: resolve(profileDirectory, "skills"),
   };
 }
