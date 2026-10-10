@@ -8,9 +8,13 @@ server's WebSocket base URL. `language` defaults to `ja`. In Discord, run
 command user's speech and sends final transcripts to a dedicated LLM
 conversation session. Context continues between utterances until `/voice leave`.
 
-Klein owns voice activity detection and utterance boundaries. The ASR server
-owns model loading and inference. Its model and decoding settings are not part
-of this protocol.
+Klein runs a local Silero VAD on each voice-chat speaker stream. It frames
+16 kHz mono PCM into 512-sample, 32 ms frames, keeps 224 ms of pre-roll, and
+ends speech after 512 ms of detected silence. Discord packet gaps feed zero
+frames into the same VAD state so silence detection continues without packets.
+The ONNX model is bundled with Klein. The ASR server owns transcription model
+loading and inference; its model and decoding settings are not part of this
+protocol.
 
 ## Connection and audio
 
@@ -46,8 +50,7 @@ after a timeout, are ignored.
 
 An upload may contain at most 30 seconds of PCM. The client limits queued
 inference requests to eight and times out a result after 120 seconds. The
-server should return one terminal response for each committed request. If a
-timed-out result arrives late, the client ignores it.
+server should return one terminal response for each committed request.
 
 ## Results and errors
 

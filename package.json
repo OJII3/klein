@@ -30,6 +30,7 @@
     "elysia": "^1.4.30",
     "jsonc-parser": "^3.3.1",
     "ky": "^2.1.0",
+    "onnxruntime-web": "1.30.0",
     "opusscript": "^0.1.1",
     "pi-web-access": "0.28.0",
     "pino": "^10.3.1",
