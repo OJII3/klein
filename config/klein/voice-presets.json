@@ -3,48 +3,48 @@
     "id": "thinking_short",
     "text": "ええと……。",
     "description": "迷ったときにも使える短い思考の間。内容への同意や理解を断定しない。",
-    "audioFile": "config/klein/voice/thinking-short.wav"
+    "audioFile": ".runtime/voice-presets/thinking-short.wav"
   },
   {
     "id": "thinking_hmm",
     "text": "うーん……。",
     "description": "答えや意見を少し考えている、眠そうで落ち着いた間。",
-    "audioFile": "config/klein/voice/thinking-hmm.wav"
+    "audioFile": ".runtime/voice-presets/thinking-hmm.wav"
   },
   {
     "id": "thinking_order",
     "text": "うん……順番に考える。",
     "description": "技術的な質問や複数の条件について、順序立てて答えを考えるとき。",
-    "audioFile": "config/klein/voice/thinking-order.wav"
+    "audioFile": ".runtime/voice-presets/thinking-order.wav"
   },
   {
     "id": "thinking_wait",
     "text": "少し待って。考えを整理する。",
     "description": "説明が長い質問や込み入った相談で、考えを整理する時間が必要なとき。調査や作業の実行を約束しない。",
-    "audioFile": "config/klein/voice/thinking-wait.wav"
+    "audioFile": ".runtime/voice-presets/thinking-wait.wav"
   },
   {
     "id": "listening",
     "text": "うん。聞いてる。",
     "description": "日常の出来事や近況を淡々と受け止める。話の主張への同意ではなく、耳を傾けていることを伝える。",
-    "audioFile": "config/klein/voice/listening.wav"
+    "audioFile": ".runtime/voice-presets/listening.wav"
   },
   {
     "id": "reflect",
     "text": "そう……。少し考えてみる。",
     "description": "相手の考えや提案を受けて、自分の意見を考えるとき。正しさを断定しない。",
-    "audioFile": "config/klein/voice/reflect.wav"
+    "audioFile": ".runtime/voice-presets/reflect.wav"
   },
   {
     "id": "soft_listening",
     "text": "そっか……。聞いてるよ。",
     "description": "落ち込んだ気持ちやつらい出来事を話されたときの、静かな受け止め。励ましや解決を押し付けない。",
-    "audioFile": "config/klein/voice/soft-listening.wav"
+    "audioFile": ".runtime/voice-presets/soft-listening.wav"
   },
   {
     "id": "surprise",
     "text": "あっ……。ちょっと意外だった。",
     "description": "予想外の近況や意外な出来事への、小さく控えめな驚き。悲しい相談や深刻な話には使わない。",
-    "audioFile": "config/klein/voice/surprise.wav"
+    "audioFile": ".runtime/voice-presets/surprise.wav"
   }
 ]

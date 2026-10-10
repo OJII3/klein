@@ -180,6 +180,10 @@ JSON manifest (`config/klein/voice-presets.json` in the example). Generate the a
 with `bun scripts/generate-voice-presets.ts`; the script sends each manifest
 phrase to the configured SBV2 server and writes the result to its `audioFile`
 path. Runtime decisions select a preset by ID, then play its saved audio.
+The example saves WAV files under `.runtime/voice-presets/`, which is excluded
+from Git. Generate them on each runtime host or copy them privately from another
+host; the repository contains the phrase manifest, not the audio files. Paths
+are relative to the working directory.
 Reactions are skipped while an audio file is unavailable.
 Reactions are disabled when this setting is omitted. The reaction is selected
 alongside the main LLM request, and the main answer still takes priority when
