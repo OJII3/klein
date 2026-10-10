@@ -69,7 +69,7 @@
       "reactions": {
         "provider": "cloudflare-workers-ai",
         "model": "@cf/cloudflare/clef-flash",
-        "presetsFile": "config/klein/voice-presets.json"
+        "presetsFile": "config/voice-presets.example.json"
       }
     }
   }

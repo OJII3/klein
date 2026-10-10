@@ -1,0 +1,8 @@
+[
+  {
+    "id": "thinking",
+    "text": "少し考えます。",
+    "description": "返答を考えている間の短い一言。",
+    "audioFile": "../.runtime/voice-presets/example/thinking.wav"
+  }
+]
