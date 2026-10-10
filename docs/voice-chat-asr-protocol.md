@@ -1,67 +1,65 @@
-# Voice chat ASR protocol
+# ASR WebSocket protocol
 
-## Klein setup
+This document defines the WebSocket protocol between Klein and an ASR server.
+The ASR server owns model loading and inference. Model and decoding settings
+are outside this protocol.
 
-Set `features.voiceChat.enabled` to `true` and point `asrServerUrl` to the
-server's WebSocket base URL. `language` defaults to `ja`. In Discord, run
-`/voice join` while connected to a voice channel. Klein captures only the
-command user's speech and sends final transcripts to a dedicated LLM
-conversation session. Context continues between utterances until `/voice leave`.
+## Connection
 
-Klein runs a local Silero VAD on each voice-chat speaker stream. It frames
-16 kHz mono PCM into 512-sample, 32 ms frames, keeps 224 ms of pre-roll, and
-ends speech after 512 ms of detected silence. Discord packet gaps feed zero
-frames into the same VAD state so silence detection continues without packets.
-The ONNX model is bundled with Klein. The ASR server owns transcription model
-loading and inference; its model and decoding settings are not part of this
-protocol.
+Connect to the server's `/v1/asr` endpoint using `ws://` on a trusted private
+network or `wss://` when TLS is available. Klein uses the configured server
+URL's scheme and host with the `/v1/asr` path. Each connection represents one
+ASR session.
 
-## Connection and audio
+The server accepts a connection only when its ASR model is ready. There is no
+session initialization or ready message. The client may send `asr.start` as
+soon as the WebSocket opens. Control messages are UTF-8 JSON text frames. Audio
+is sent in binary WebSocket frames.
 
-Connect to `/v1/asr` using `ws://` on a trusted private network or `wss://` when
-TLS is available. Each connection represents one voice-chat session. Audio is
-always signed 16-bit little-endian PCM, 16 kHz, mono; no format negotiation is
-sent. Control frames are UTF-8 JSON objects. Audio frames are binary WebSocket
-frames containing ordered PCM samples.
+## Audio format
 
-The server accepts connections only when its ASR model is ready. There is no
-session initialization or ready message; the client may send `asr.start` as
-soon as the WebSocket opens. The protocol has no partial transcript events.
+Audio is signed 16-bit little-endian PCM, 16 kHz, mono. Each binary frame must
+contain a positive number of complete PCM samples. Frames for a request are
+sent in order.
 
-For each utterance, send a start frame:
+## Requests
+
+Start an utterance with a JSON text frame containing a non-empty `requestId`
+and language string:
 
 ```json
 { "type": "asr.start", "requestId": "unique-id", "language": "ja" }
 ```
 
-Send one or more binary PCM frames, then commit the request:
+Send the request's binary audio frames, then commit it with:
 
 ```json
 { "type": "asr.commit", "requestId": "unique-id" }
 ```
 
-Only one request may be uploading at a time on a connection. After commit, its
-inference can remain pending while the next request starts and uploads. The
-server returns results by `requestId`; responses may arrive out of order. The
-client preserves utterance order when passing transcripts to conversation
-processing. Callers must use a unique `requestId` for each request on a
-connection. Responses for IDs that are not pending, including late results
-after a timeout, are ignored.
+Only one request may be uploading at a time on a connection. After committing
+it, the client may start uploading the next request while inference for earlier
+requests is still pending. The server may return results out of order; match
+each response to its request by `requestId`. A request ID must be unique among
+pending requests. Avoid reusing IDs on a connection so a late response cannot
+be mistaken for a newer request.
 
-An upload may contain at most 30 seconds of PCM. The client limits queued
-inference requests to eight and times out a result after 120 seconds. The
-server should return one terminal response for each committed request.
+An upload may contain at most 30 seconds of PCM. The client permits at most
+eight pending requests per connection and waits up to 120 seconds for a result
+after commit. The server should return exactly one terminal response for each
+committed request.
 
 ## Results and errors
 
-A successful request returns exactly one completed message. An empty `text`
-means no speech was recognized:
+A successful request returns one completed message. An empty `text` means no
+speech was recognized:
 
 ```json
 { "type": "asr.completed", "requestId": "unique-id", "text": "こんにちは。" }
 ```
 
-A request-level failure rejects only that request; the connection remains open:
+A request-level failure rejects only that request; the connection remains
+open:
 
 ```json
 {
@@ -72,5 +70,10 @@ A request-level failure rejects only that request; the connection remains open:
 }
 ```
 
-Malformed protocol messages or an unexpected connection close fail all pending
-requests. Klein closes the WebSocket when the voice-chat session ends.
+All control messages must contain only the fields shown for their message
+type. `requestId` and `code` must be non-empty strings; `text` may be empty.
+Malformed or unsupported server messages, a response for a request that has
+not been committed, or an unexpected connection close fail all pending
+requests. Responses for IDs that are no longer pending, such as late results
+after a timeout, are ignored. Klein closes the WebSocket when the ASR session
+ends.
