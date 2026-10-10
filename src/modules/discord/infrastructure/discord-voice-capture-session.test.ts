@@ -80,13 +80,48 @@ function createCapture() {
     source.emit("data");
     const decoder = decoders.at(-1);
     decoder?.emit("data", Buffer.alloc(1024));
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    const input = (
+      capture as unknown as {
+        activeInput?: {
+          processing: Promise<void>;
+          silenceTimer: ReturnType<typeof setInterval>;
+        };
+      }
+    ).activeInput;
+    assert.ok(input);
+    clearInterval(input.silenceTimer);
+    await input.processing;
+    const handleVadEvents = (
+      capture as unknown as {
+        handleVadEvents(events: readonly unknown[], connection: AsrConnection): Promise<void>;
+      }
+    ).handleVadEvents.bind(capture);
+    await handleVadEvents([{ type: "speech-end" }], connection);
   };
-  return { capture, decoders, emitUtterance, results, startInput, transcripts };
+  const waitForTranscriptQueue = async (): Promise<void> => {
+    await (capture as unknown as { transcriptQueue: Promise<void> }).transcriptQueue;
+  };
+  return {
+    capture,
+    decoders,
+    emitUtterance,
+    results,
+    startInput,
+    transcripts,
+    waitForTranscriptQueue,
+  };
 }
 
 test("delivers ASR results in utterance order when inference completes out of order", async () => {
-  const { capture, decoders, emitUtterance, results, startInput, transcripts } = createCapture();
+  const {
+    capture,
+    decoders,
+    emitUtterance,
+    results,
+    startInput,
+    transcripts,
+    waitForTranscriptQueue,
+  } = createCapture();
   startInput();
   await emitUtterance();
   await emitUtterance();
@@ -94,31 +129,33 @@ test("delivers ASR results in utterance order when inference completes out of or
   await Promise.resolve();
   assert.deepEqual(transcripts, []);
   results[0]?.resolve({ text: "first" });
-  await new Promise((resolve) => setTimeout(resolve, 20));
+  await waitForTranscriptQueue();
   assert.deepEqual(transcripts, ["first", "second"]);
   assert.equal(decoders.length, 1);
   await capture.stop();
 });
 
 test("continues delivering later results after a request fails", async () => {
-  const { capture, emitUtterance, results, startInput, transcripts } = createCapture();
+  const { capture, emitUtterance, results, startInput, transcripts, waitForTranscriptQueue } =
+    createCapture();
   startInput();
   await emitUtterance();
   await emitUtterance();
   results[0]?.reject(new Error("request failed"));
   results[1]?.resolve({ text: "next utterance" });
-  await new Promise((resolve) => setImmediate(resolve));
+  await waitForTranscriptQueue();
   assert.deepEqual(transcripts, ["next utterance"]);
   await capture.stop();
 });
 
 test("does not deliver queued transcripts after capture stops", async () => {
-  const { capture, emitUtterance, results, startInput, transcripts } = createCapture();
+  const { capture, emitUtterance, results, startInput, transcripts, waitForTranscriptQueue } =
+    createCapture();
   startInput();
   await emitUtterance();
   await capture.stop();
   results[0]?.resolve({ text: "too late" });
-  await new Promise((resolve) => setImmediate(resolve));
+  await waitForTranscriptQueue();
   assert.deepEqual(transcripts, []);
 });
 
