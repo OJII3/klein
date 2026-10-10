@@ -208,6 +208,29 @@ test("notifies idle disconnect once", async () => {
   }
 });
 
+test("ignores results for IDs that are not pending without disturbing active requests", async () => {
+  const restore = useFakeWebSocket();
+  try {
+    const { connection, socket } = await connectReady();
+    const errors: Error[] = [];
+    connection.onError((error) => errors.push(error));
+    const first = connection.start({ requestId: "r1", language: "ja" });
+    const firstResult = first.commit();
+    const second = connection.start({ requestId: "r2", language: "ja" });
+    socket.message('{"type":"asr.completed","requestId":"late","text":"ignored"}');
+    socket.message('{"type":"asr.completed","requestId":"r1","text":"first"}');
+    assert.deepEqual(await firstResult, { text: "first" });
+    const secondResult = second.commit();
+    socket.message('{"type":"asr.completed","requestId":"r1","text":"duplicate"}');
+    socket.message('{"type":"asr.completed","requestId":"r2","text":"second"}');
+    assert.deepEqual(await secondResult, { text: "second" });
+    assert.deepEqual(errors, []);
+    connection.close();
+  } finally {
+    restore();
+  }
+});
+
 test("closes the connection if sending commit fails", async () => {
   const restore = useFakeWebSocket();
   try {

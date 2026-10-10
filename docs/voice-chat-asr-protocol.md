@@ -40,13 +40,14 @@ Only one request may be uploading at a time on a connection. After commit, its
 inference can remain pending while the next request starts and uploads. The
 server returns results by `requestId`; responses may arrive out of order. The
 client preserves utterance order when passing transcripts to conversation
-processing.
+processing. Callers must use a unique `requestId` for each request on a
+connection. Responses for IDs that are not pending, including late results
+after a timeout, are ignored.
 
 An upload may contain at most 30 seconds of PCM. The client limits queued
 inference requests to eight and times out a result after 120 seconds. The
 server should return one terminal response for each committed request. If a
-timed-out result arrives late, the client ignores it. A timed-out `requestId`
-cannot be reused on that connection.
+timed-out result arrives late, the client ignores it.
 
 ## Results and errors
 

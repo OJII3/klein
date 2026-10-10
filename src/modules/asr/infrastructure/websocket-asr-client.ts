@@ -66,7 +66,6 @@ export class WebSocketAsrClient implements AsrClient {
     });
 
     const requests = new Map<string, PendingRequest>();
-    const expiredRequestIds = new Set<string>();
     const errorHandlers = new Set<(error: Error) => void>();
     let uploadingRequestId: string | undefined;
     let closedByClient = false;
@@ -98,8 +97,8 @@ export class WebSocketAsrClient implements AsrClient {
       }
       const response = message as AsrServerMessage;
       const request = requests.get(response.requestId);
-      if (!request && expiredRequestIds.delete(response.requestId)) return;
-      if (!request?.committed) {
+      if (!request) return;
+      if (!request.committed) {
         failConnection(
           new Error(`ASR server replied to an unknown request (${response.requestId})`),
         );
@@ -141,8 +140,6 @@ export class WebSocketAsrClient implements AsrClient {
         if (failed || socket.readyState !== WebSocket.OPEN)
           throw new Error("ASR connection is not available");
         if (uploadingRequestId) throw new Error("An ASR request is already uploading");
-        if (expiredRequestIds.has(requestId))
-          throw new Error(`ASR request ID has already timed out (${requestId})`);
         if (requests.has(requestId)) throw new Error(`Duplicate ASR request ID (${requestId})`);
         if (requests.size >= MAX_PENDING_REQUESTS)
           throw new Error("ASR pending request limit exceeded");
@@ -179,10 +176,6 @@ export class WebSocketAsrClient implements AsrClient {
               state.resolve = resolve;
               state.reject = reject;
               state.timer = setTimeout(() => {
-                expiredRequestIds.add(requestId);
-                if (expiredRequestIds.size > MAX_PENDING_REQUESTS * 8) {
-                  expiredRequestIds.delete(expiredRequestIds.values().next().value!);
-                }
                 rejectRequest(requestId, new Error("Timed out waiting for ASR result"));
               }, REQUEST_TIMEOUT_MS);
             });
