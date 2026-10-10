@@ -141,6 +141,8 @@ export class WebSocketAsrClient implements AsrClient {
         if (failed || socket.readyState !== WebSocket.OPEN)
           throw new Error("ASR connection is not available");
         if (uploadingRequestId) throw new Error("An ASR request is already uploading");
+        if (expiredRequestIds.has(requestId))
+          throw new Error(`ASR request ID has already timed out (${requestId})`);
         if (requests.has(requestId)) throw new Error(`Duplicate ASR request ID (${requestId})`);
         if (requests.size >= MAX_PENDING_REQUESTS)
           throw new Error("ASR pending request limit exceeded");
@@ -187,7 +189,9 @@ export class WebSocketAsrClient implements AsrClient {
             try {
               sendControl(socket, { type: "asr.commit", requestId });
             } catch (error) {
-              rejectRequest(requestId, error instanceof Error ? error : new Error(String(error)));
+              const sendError = error instanceof Error ? error : new Error(String(error));
+              failConnection(sendError);
+              socket.close(1011, "Failed to commit ASR request");
             }
             return commitPromise;
           },

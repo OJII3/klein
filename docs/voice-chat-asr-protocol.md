@@ -20,6 +20,10 @@ always signed 16-bit little-endian PCM, 16 kHz, mono; no format negotiation is
 sent. Control frames are UTF-8 JSON objects. Audio frames are binary WebSocket
 frames containing ordered PCM samples.
 
+The server accepts connections only when its ASR model is ready. There is no
+session initialization or ready message; the client may send `asr.start` as
+soon as the WebSocket opens. The protocol has no partial transcript events.
+
 For each utterance, send a start frame:
 
 ```json
@@ -40,7 +44,9 @@ processing.
 
 An upload may contain at most 30 seconds of PCM. The client limits queued
 inference requests to eight and times out a result after 120 seconds. The
-server should return one terminal response for each committed request.
+server should return one terminal response for each committed request. If a
+timed-out result arrives late, the client ignores it. A timed-out `requestId`
+cannot be reused on that connection.
 
 ## Results and errors
 

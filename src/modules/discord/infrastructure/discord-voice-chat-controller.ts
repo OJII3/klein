@@ -132,6 +132,7 @@ export class DiscordVoiceChatController {
         onError: (error) => {
           if (this.sessions.get(guildId)?.session !== session) return;
           this.sessions.delete(guildId);
+          void session?.stop();
           this.logger?.warn(
             { err: error, event: "discord_voice_chat_session_ended", guildId },
             "Stopped the voice conversation after an ASR failure",

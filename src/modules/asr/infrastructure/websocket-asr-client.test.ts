@@ -14,6 +14,7 @@ class FakeWebSocket {
   bufferedAmount = 0;
   readyState = FakeWebSocket.CONNECTING;
   readonly sent: Array<string | ArrayBufferLike | Blob | ArrayBufferView> = [];
+  failNextSend = false;
   private readonly listeners = new Map<string, Listener[]>();
   constructor(readonly url: URL) {
     FakeWebSocket.latest = this;
@@ -24,6 +25,10 @@ class FakeWebSocket {
     this.listeners.set(type, list);
   }
   send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void {
+    if (this.failNextSend) {
+      this.failNextSend = false;
+      throw new Error("send failed");
+    }
     this.sent.push(data);
   }
   open(): void {
@@ -36,6 +41,9 @@ class FakeWebSocket {
   serverClose(code = 1006): void {
     this.readyState = FakeWebSocket.CLOSED;
     this.emit("close", { code });
+  }
+  fail(): void {
+    this.emit("error", new Event("error"));
   }
   close(code = 1000): void {
     this.readyState = FakeWebSocket.CLOSED;
@@ -114,6 +122,103 @@ test("rejects pending requests when the socket disconnects", async () => {
     const result = request.commit();
     socket.serverClose();
     await assert.rejects(result, /closed unexpectedly/);
+  } finally {
+    restore();
+  }
+});
+
+test("rejects a second upload while one request is still uploading", async () => {
+  const restore = useFakeWebSocket();
+  try {
+    const { connection } = await connectReady();
+    connection.start({ requestId: "r1", language: "ja" });
+    assert.throws(() => connection.start({ requestId: "r2", language: "ja" }), /already uploading/);
+    connection.close();
+  } finally {
+    restore();
+  }
+});
+
+test("keeps an oversized upload commit-able and accepts the next request", async () => {
+  const restore = useFakeWebSocket();
+  try {
+    const { connection, socket } = await connectReady();
+    const first = connection.start({ requestId: "r1", language: "ja" });
+    first.write(new Uint8Array(30 * 16_000 * 2));
+    assert.throws(() => first.write(new Uint8Array([0, 0])), /exceeded 30 seconds/);
+    const firstResult = first.commit();
+    const second = connection.start({ requestId: "r2", language: "ja" });
+    const secondResult = second.commit();
+    socket.message('{"type":"asr.completed","requestId":"r1","text":"first"}');
+    socket.message('{"type":"asr.completed","requestId":"r2","text":"second"}');
+    assert.deepEqual(await firstResult, { text: "first" });
+    assert.deepEqual(await secondResult, { text: "second" });
+    connection.close();
+  } finally {
+    restore();
+  }
+});
+
+test("rejects every committed request when the connection closes", async () => {
+  const restore = useFakeWebSocket();
+  try {
+    const { connection } = await connectReady();
+    const first = connection.start({ requestId: "r1", language: "ja" }).commit();
+    const second = connection.start({ requestId: "r2", language: "ja" }).commit();
+    connection.close();
+    await Promise.all([
+      assert.rejects(first, /connection closed/),
+      assert.rejects(second, /connection closed/),
+    ]);
+  } finally {
+    restore();
+  }
+});
+
+test("fails the connection on invalid JSON or unsupported response schema", async () => {
+  for (const payload of ["{", '{"type":"asr.completed","requestId":"r1"}']) {
+    const restore = useFakeWebSocket();
+    try {
+      const { connection, socket } = await connectReady();
+      const errors: Error[] = [];
+      connection.onError((error) => errors.push(error));
+      const result = connection.start({ requestId: "r1", language: "ja" }).commit();
+      socket.message(payload);
+      await assert.rejects(result, /ASR server sent/);
+      assert.equal(errors.length, 1);
+      assert.equal(socket.readyState, FakeWebSocket.CLOSED);
+    } finally {
+      restore();
+    }
+  }
+});
+
+test("notifies idle disconnect once", async () => {
+  const restore = useFakeWebSocket();
+  try {
+    const { connection, socket } = await connectReady();
+    const errors: Error[] = [];
+    connection.onError((error) => errors.push(error));
+    socket.serverClose();
+    socket.fail();
+    assert.equal(errors.length, 1);
+    assert.match(errors[0]?.message ?? "", /closed unexpectedly/);
+  } finally {
+    restore();
+  }
+});
+
+test("closes the connection if sending commit fails", async () => {
+  const restore = useFakeWebSocket();
+  try {
+    const { connection, socket } = await connectReady();
+    const errors: Error[] = [];
+    connection.onError((error) => errors.push(error));
+    const request = connection.start({ requestId: "r1", language: "ja" });
+    socket.failNextSend = true;
+    await assert.rejects(request.commit(), /send failed/);
+    assert.equal(socket.readyState, FakeWebSocket.CLOSED);
+    assert.equal(errors.length, 1);
   } finally {
     restore();
   }
