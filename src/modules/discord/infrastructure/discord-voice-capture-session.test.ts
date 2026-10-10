@@ -45,6 +45,7 @@ function createCapture() {
     onTranscript: async (text) => {
       transcripts.push(text);
     },
+    audioResourceFactory: () => ({}) as never,
     tts: { synthesize: async () => new Uint8Array() },
     userId: "user",
     voiceChannelId: "voice",
@@ -214,5 +215,40 @@ test("speech start cancels a playing reaction and suppresses reactions during sp
   assert.equal(await reaction, false);
   assert.equal(stopCalls, 1);
   assert.equal(await capture.playReaction("neutral", new AbortController().signal), false);
+  await capture.stop();
+});
+
+test("resource creation failure clears playback state for a later reaction", async () => {
+  const { capture } = createCapture();
+  let playCalls = 0;
+  (capture as unknown as { audioPlayer: unknown }).audioPlayer = {
+    play: () => {
+      playCalls += 1;
+    },
+    stop: () => undefined,
+  };
+  (capture as unknown as { reactionAudio: Map<string, Uint8Array> }).reactionAudio.set(
+    "neutral",
+    new Uint8Array([1]),
+  );
+  const options = (
+    capture as unknown as {
+      options: { audioResourceFactory: (audio: Uint8Array) => unknown };
+    }
+  ).options;
+  options.audioResourceFactory = () => {
+    throw new Error("resource creation failed");
+  };
+  await assert.rejects(
+    capture.playReaction("neutral", new AbortController().signal),
+    /resource creation failed/,
+  );
+  assert.equal((capture as unknown as { currentPlayback?: unknown }).currentPlayback, undefined);
+  options.audioResourceFactory = () => ({});
+  const controller = new AbortController();
+  const playback = capture.playReaction("neutral", controller.signal);
+  assert.equal(playCalls, 1);
+  controller.abort();
+  assert.equal(await playback, false);
   await capture.stop();
 });

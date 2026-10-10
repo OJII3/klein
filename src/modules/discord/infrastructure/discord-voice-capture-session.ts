@@ -55,6 +55,7 @@ export interface DiscordVoiceCaptureSessionOptions {
   readonly logger?: Logger;
   readonly onError?: (error: Error) => void;
   readonly onTranscript: (text: string) => Promise<void>;
+  readonly audioResourceFactory?: (audio: Uint8Array) => ReturnType<typeof createAudioResource>;
   readonly reactionPresets?: Readonly<Record<"neutral" | "thinking" | "empathetic", string>>;
   readonly tts: TextToSpeech;
   readonly userId: string;
@@ -530,9 +531,10 @@ export class DiscordVoiceCaptureSession {
       signal?.addEventListener("abort", onAbort, { once: true });
       try {
         player.play(
-          createAudioResource(Readable.from([Buffer.from(audio)]), {
-            inputType: StreamType.Arbitrary,
-          }),
+          this.options.audioResourceFactory?.(audio) ??
+            createAudioResource(Readable.from([Buffer.from(audio)]), {
+              inputType: StreamType.Arbitrary,
+            }),
         );
       } catch (error) {
         finish(false, error instanceof Error ? error : new Error(String(error)));
