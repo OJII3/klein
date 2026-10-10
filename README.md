@@ -161,6 +161,8 @@ text through SBV2's `/voice` endpoint and sends the returned WAV as a Discord
 attachment. Voice chat also requires TTS: it sends each final ASR transcript to
 the LLM, then sends the LLM's response to SBV2 and plays the returned audio in
 the voice channel.
+See [`docs/sbv2-tts-protocol.md`](docs/sbv2-tts-protocol.md) for the TTS
+request and response protocol.
 
 Voice chat uses a bundled Silero VAD model locally in Klein, then sends each
 detected utterance to the configured WebSocket ASR server. The model runs with
