@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import type { AsrConnection, AsrRequest } from "@modules/asr/domain/asr-client";
 
@@ -288,4 +291,70 @@ test("resource creation failure clears playback state for a later reaction", asy
   controller.abort();
   assert.equal(await playback, false);
   await capture.stop();
+});
+
+test("loads saved reaction audio without synthesizing it", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "klein-reaction-"));
+  const audioFile = join(directory, "neutral.pcm");
+  const expectedAudio = new Uint8Array([4, 5, 6]);
+  await writeFile(audioFile, expectedAudio);
+  const { capture } = createCapture();
+  let synthesizeCalls = 0;
+  let resourceAudio: Uint8Array | undefined;
+  const options = (
+    capture as unknown as {
+      options: {
+        reactionPresets: readonly {
+          id: string;
+          text: string;
+          description: string;
+          audioFile: string;
+        }[];
+        tts: { synthesize(text: string): Promise<Uint8Array> };
+        audioResourceFactory(audio: Uint8Array): unknown;
+      };
+    }
+  ).options;
+  options.reactionPresets = [
+    { id: "neutral", text: "うん", description: "相槌", audioFile },
+    {
+      id: "missing",
+      text: "missing",
+      description: "missing file",
+      audioFile: join(directory, "missing.pcm"),
+    },
+  ];
+  options.tts = {
+    synthesize: async () => {
+      synthesizeCalls += 1;
+      return new Uint8Array();
+    },
+  };
+  options.audioResourceFactory = (audio) => {
+    resourceAudio = audio;
+    return {};
+  };
+  (capture as unknown as { audioPlayer: unknown }).audioPlayer = {
+    play: () => undefined,
+    stop: () => undefined,
+  };
+
+  try {
+    await (capture as unknown as { loadReactionAudio(): Promise<void> }).loadReactionAudio();
+    const controller = new AbortController();
+    const playback = capture.playReaction("neutral", controller.signal);
+    assert.deepEqual(Array.from(resourceAudio ?? []), Array.from(expectedAudio));
+    assert.equal(synthesizeCalls, 0);
+    controller.abort();
+    assert.equal(await playback, false);
+    assert.equal(
+      (capture as unknown as { reactionAudio: Map<string, Uint8Array> }).reactionAudio.has(
+        "missing",
+      ),
+      false,
+    );
+  } finally {
+    await capture.stop();
+    await rm(directory, { recursive: true, force: true });
+  }
 });

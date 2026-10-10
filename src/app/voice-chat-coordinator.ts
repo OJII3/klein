@@ -8,10 +8,7 @@ import type {
   VoiceChatConversationContext,
   VoiceChatConversationFactory,
 } from "@modules/discord/ports/voice-chat-conversation";
-import type {
-  VoiceReaction,
-  VoiceReactionSelector,
-} from "@modules/discord/ports/voice-reaction-selector";
+import type { VoiceReactionSelector } from "@modules/discord/ports/voice-reaction-selector";
 
 export interface VoiceChatCoordinatorDependencies {
   readonly createVoiceChatAgent: (
@@ -58,7 +55,7 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
     let stopPromise: Promise<void> | undefined;
     let processing = Promise.resolve();
     let activeReaction: AbortController | undefined;
-    let lastReaction: VoiceReaction | undefined;
+    let lastReaction: string | undefined;
     const recentTranscripts: string[] = [];
     const playReaction = context.playReaction;
     const unsubscribeSpeechStart = context.onSpeechStart?.(() => activeReaction?.abort());
@@ -100,7 +97,7 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
               void (async () => {
                 const timeout = setTimeout(() => reactionController.abort(), 600);
                 try {
-                  let reaction: VoiceReaction;
+                  let reaction: string | undefined;
                   try {
                     reaction = await this.dependencies.reactionSelector!.select(
                       { text, recentTranscripts: history, lastReaction },
@@ -109,12 +106,7 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
                   } finally {
                     clearTimeout(timeout);
                   }
-                  if (
-                    reactionController.signal.aborted ||
-                    reaction === "none" ||
-                    reaction === lastReaction
-                  )
-                    return;
+                  if (reactionController.signal.aborted || reaction === undefined) return;
                   const played = await playReaction(reaction, reactionController.signal);
                   if (played && !reactionController.signal.aborted) lastReaction = reaction;
                 } catch (error) {

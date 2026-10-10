@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import prism from "prism-media";
 import type { Logger } from "pino";
 import {
@@ -16,6 +18,7 @@ import {
 import { Readable } from "node:stream";
 
 import type { AsrClient, AsrConnection, AsrRequest } from "@modules/asr/domain/asr-client";
+import type { VoiceReactionPreset } from "@modules/discord/ports/voice-reaction-selector";
 import type { TextToSpeech } from "@modules/tts/infrastructure/sbv2-tts";
 import { VadStream, type VadEvent } from "@modules/vad/domain/vad-stream";
 import { SileroVadModel } from "@modules/vad/infrastructure/silero-vad-model";
@@ -56,7 +59,7 @@ export interface DiscordVoiceCaptureSessionOptions {
   readonly onError?: (error: Error) => void;
   readonly onTranscript: (text: string) => Promise<void>;
   readonly audioResourceFactory?: (audio: Uint8Array) => ReturnType<typeof createAudioResource>;
-  readonly reactionPresets?: Readonly<Record<"neutral" | "thinking" | "empathetic", string>>;
+  readonly reactionPresets?: readonly VoiceReactionPreset[];
   readonly tts: TextToSpeech;
   readonly userId: string;
   readonly voiceChannelId: string;
@@ -75,7 +78,7 @@ export class DiscordVoiceCaptureSession {
   private speakingListener?: (userId: string) => void;
   private stopped = false;
   private userSpeechActive = false;
-  private readonly reactionAudio = new Map<"neutral" | "thinking" | "empathetic", Uint8Array>();
+  private readonly reactionAudio = new Map<string, Uint8Array>();
   private currentPlayback?: {
     kind: "reply" | "reaction";
     finish: (played: boolean, error?: Error) => void;
@@ -156,29 +159,11 @@ export class DiscordVoiceCaptureSession {
     });
     connection.subscribe(this.audioPlayer);
 
-    const presetWarmup = Promise.all(
-      (
-        Object.entries(this.options.reactionPresets ?? {}) as Array<
-          ["neutral" | "thinking" | "empathetic", string]
-        >
-      ).map(async ([reaction, text]) => {
-        try {
-          const audio = await this.options.tts.synthesize(text);
-          if (!this.stopped) this.reactionAudio.set(reaction, audio);
-        } catch (error) {
-          this.logger?.warn(
-            { err: error, event: "discord_voice_reaction_preset_failed", reaction },
-            "Failed to synthesize a voice reaction preset",
-          );
-        }
-      }),
-    );
-
     this.speakingListener = (userId) => {
       if (userId === this.options.userId) this.receiveUtterance();
     };
     connection.receiver.speaking.on("start", this.speakingListener);
-    void presetWarmup;
+    void this.loadReactionAudio();
     this.logger?.info(
       { event: "discord_voice_capture_ready" },
       "Listening for the session user's voice",
@@ -475,10 +460,7 @@ export class DiscordVoiceCaptureSession {
     );
   }
 
-  async playReaction(
-    reaction: "neutral" | "thinking" | "empathetic",
-    signal: AbortSignal,
-  ): Promise<boolean> {
+  async playReaction(reaction: string, signal: AbortSignal): Promise<boolean> {
     const audio = this.reactionAudio.get(reaction);
     if (
       !audio ||
@@ -489,6 +471,27 @@ export class DiscordVoiceCaptureSession {
     )
       return false;
     return this.play(audio, "reaction", signal);
+  }
+
+  private async loadReactionAudio(): Promise<void> {
+    await Promise.all(
+      (this.options.reactionPresets ?? []).map(async (preset) => {
+        try {
+          const audio = await readFile(resolve(preset.audioFile));
+          if (!this.stopped) this.reactionAudio.set(preset.id, audio);
+        } catch (error) {
+          this.logger?.warn(
+            {
+              err: error,
+              event: "discord_voice_reaction_preset_load_failed",
+              reaction: preset.id,
+              audioFile: preset.audioFile,
+            },
+            "Failed to load a voice reaction preset audio file",
+          );
+        }
+      }),
+    );
   }
 
   subscribeSpeechStart(listener: () => void): () => void {

@@ -2,6 +2,7 @@ import type { Logger } from "pino";
 import { SlashCommandBuilder, type ChatInputCommandInteraction } from "discord.js";
 import type { AsrClient } from "@modules/asr/domain/asr-client";
 import type { TextToSpeech } from "@modules/tts/infrastructure/sbv2-tts";
+import type { VoiceReactionPreset } from "@modules/discord/ports/voice-reaction-selector";
 
 import type { DiscordAccessPolicy } from "../domain/discord-access-policy";
 import type {
@@ -20,7 +21,7 @@ export const VOICE_COMMAND = new SlashCommandBuilder()
 export interface DiscordVoiceChatControllerOptions {
   readonly asr: AsrClient;
   readonly language: string;
-  readonly reactionPresets?: Readonly<Record<"neutral" | "thinking" | "empathetic", string>>;
+  readonly reactionPresets?: readonly VoiceReactionPreset[];
   readonly conversationFactory: VoiceChatConversationFactory;
   readonly tts?: TextToSpeech;
 }

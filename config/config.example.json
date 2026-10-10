@@ -69,11 +69,7 @@
       "reactions": {
         "provider": "cloudflare-workers-ai",
         "model": "@cf/cloudflare/clef-flash",
-        "presets": {
-          "neutral": "うん",
-          "thinking": "ええと",
-          "empathetic": "そっか"
-        }
+        "presetsFile": "config/klein/voice-presets.json"
       }
     }
   }

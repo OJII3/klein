@@ -56,10 +56,7 @@ function createController(
         readonly username: string;
       };
       readonly voiceChannelId: string;
-      readonly playReaction?: (
-        reaction: "neutral" | "thinking" | "empathetic",
-        signal: AbortSignal,
-      ) => Promise<boolean>;
+      readonly playReaction?: (reaction: string, signal: AbortSignal) => Promise<boolean>;
     }): Promise<VoiceChatConversation>;
   },
   policy = createDiscordAccessPolicy({ default: "allow", directMessages: "deny" }),

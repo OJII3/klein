@@ -1,12 +1,17 @@
-export type VoiceReaction = "none" | "neutral" | "thinking" | "empathetic";
+export interface VoiceReactionPreset {
+  readonly id: string;
+  readonly text: string;
+  readonly description: string;
+  readonly audioFile: string;
+}
 
 export interface VoiceReactionSelector {
   select(
     input: {
       text: string;
       recentTranscripts: readonly string[];
-      lastReaction?: VoiceReaction;
+      lastReaction?: string;
     },
     signal: AbortSignal,
-  ): Promise<VoiceReaction>;
+  ): Promise<string | undefined>;
 }
