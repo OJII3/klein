@@ -155,6 +155,12 @@ through your private network to add the `discord_voice` tool. It synthesizes
 text through SBV2's `/voice` endpoint and sends the returned WAV as a Discord
 attachment.
 
+Voice chat uses a bundled Silero VAD model locally in Klein, then sends each
+detected utterance to the configured WebSocket ASR server. The model runs with
+ONNX Runtime Web's WASM backend and needs no model download at startup. See
+[`docs/voice-chat-asr-protocol.md`](docs/voice-chat-asr-protocol.md) for the ASR
+request protocol.
+
 ### HTTPS through Cloudflare Tunnel
 
 Klein can start and stop `cloudflared` together with the Web UI. The Nix

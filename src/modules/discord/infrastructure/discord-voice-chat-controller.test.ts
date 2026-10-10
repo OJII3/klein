@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { ChatInputCommandInteraction } from "discord.js";
-import type { StreamingAsr } from "@modules/asr/domain/streaming-asr";
+import type { AsrClient } from "@modules/asr/domain/asr-client";
 
 import { createDiscordAccessPolicy } from "../domain/discord-access-policy";
 import type { VoiceChatConversation } from "../ports/voice-chat-conversation";
@@ -61,7 +61,7 @@ function createController(
   policy = createDiscordAccessPolicy({ default: "allow", directMessages: "deny" }),
 ) {
   return new DiscordVoiceChatController(policy, undefined, {
-    asr: {} as StreamingAsr,
+    asr: {} as AsrClient,
     conversationFactory,
     language: "ja",
   });

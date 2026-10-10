@@ -1,95 +1,76 @@
-# Voice chat ASR streaming protocol
+# Voice chat ASR protocol
 
 ## Klein setup
 
 Set `features.voiceChat.enabled` to `true` and point `asrServerUrl` to the
 server's WebSocket base URL. `language` defaults to `ja`. In Discord, run
-`/voice join` from a text channel while connected to a voice channel; Klein
-captures only the command user's speech and sends final transcripts to a
-dedicated LLM conversation session for that VC session. Context continues
-between utterances until `/voice leave`; the session is separate from the text
-channel's conversation. The assistant can respond in the invoking text channel
-through its normal Discord messaging tool.
+`/voice join` while connected to a voice channel. Klein captures only the
+command user's speech and sends final transcripts to a dedicated LLM
+conversation session. Context continues between utterances until `/voice leave`.
 
-This first pass handles one active speaker per server and uses 900 ms of silence
-to end an utterance. Partial transcripts are available to the application but
-are not posted to Discord.
+Klein runs a local Silero VAD on each voice-chat speaker stream. It frames
+16 kHz mono PCM into 512-sample, 32 ms frames, keeps 224 ms of pre-roll, and
+ends speech after 512 ms of detected silence. Discord packet gaps feed zero
+frames into the same VAD state so silence detection continues without packets.
+The ONNX model is bundled with Klein. The ASR server owns transcription model
+loading and inference; its model and decoding settings are not part of this
+protocol.
 
-Klein connects to an ASR server over WebSocket. The server owns model loading and
-GPU inference. The protocol does not expose model-specific settings.
+## Connection and audio
 
-## Connection
+Connect to `/v1/asr` using `ws://` on a trusted private network or `wss://` when
+TLS is available. Each connection represents one voice-chat session. Audio is
+always signed 16-bit little-endian PCM, 16 kHz, mono; no format negotiation is
+sent. Control frames are UTF-8 JSON objects. Audio frames are binary WebSocket
+frames containing ordered PCM samples.
 
-Connect to `/v1/stream` using `ws://` on a trusted private network or `wss://`
-when TLS is available. Each connection represents one Discord voice-chat
-session and one recognized speaker.
+The server accepts connections only when its ASR model is ready. There is no
+session initialization or ready message; the client may send `asr.start` as
+soon as the WebSocket opens. The protocol has no partial transcript events.
 
-The client starts a session with a JSON text frame:
+For each utterance, send a start frame:
+
+```json
+{ "type": "asr.start", "requestId": "unique-id", "language": "ja" }
+```
+
+Send one or more binary PCM frames, then commit the request:
+
+```json
+{ "type": "asr.commit", "requestId": "unique-id" }
+```
+
+Only one request may be uploading at a time on a connection. After commit, its
+inference can remain pending while the next request starts and uploads. The
+server returns results by `requestId`; responses may arrive out of order. The
+client preserves utterance order when passing transcripts to conversation
+processing. Callers must use a unique `requestId` for each request on a
+connection. Responses for IDs that are not pending, including late results
+after a timeout, are ignored.
+
+An upload may contain at most 30 seconds of PCM. The client limits queued
+inference requests to eight and times out a result after 120 seconds. The
+server should return one terminal response for each committed request.
+
+## Results and errors
+
+A successful request returns exactly one completed message. An empty `text`
+means no speech was recognized:
+
+```json
+{ "type": "asr.completed", "requestId": "unique-id", "text": "こんにちは。" }
+```
+
+A request-level failure rejects only that request; the connection remains open:
 
 ```json
 {
-  "type": "session.start",
-  "language": "ja",
-  "audio": {
-    "encoding": "pcm_s16le",
-    "sampleRateHz": 16000,
-    "channels": 1
-  }
+  "type": "asr.failed",
+  "requestId": "unique-id",
+  "code": "audio_too_long",
+  "message": "..."
 }
 ```
 
-The server replies with `{"type":"session.ready"}` after it is ready to accept
-audio.
-
-The server may reject an unsupported language or audio format with an `error`
-message, then close the connection. Control frames are UTF-8 JSON objects and
-must not contain fields beyond those shown here.
-
-## Audio and utterances
-
-The client marks the start of an utterance with a JSON text frame:
-
-```json
-{ "type": "utterance.start", "utteranceId": "unique-id" }
-```
-
-It then sends ordered binary WebSocket frames containing signed 16-bit little
-endian, 16 kHz, mono PCM samples. A frame can contain any positive number of
-whole samples. The client ends the utterance with:
-
-```json
-{ "type": "utterance.end", "utteranceId": "unique-id" }
-```
-
-The connection stays open for later utterances. Audio for different utterances
-must not overlap on one connection.
-
-Each utterance has exactly one start and one end frame. The client sends audio
-only between those frames and waits for the final transcript before starting
-the next utterance on the same connection.
-
-## Transcript events
-
-The server may send zero or more partial results while an utterance is active.
-Each partial replaces the previous partial for that utterance:
-
-```json
-{ "type": "transcript.partial", "utteranceId": "unique-id", "text": "こんにちは" }
-```
-
-After the client ends an utterance, the server sends its final transcript:
-
-```json
-{ "type": "transcript.final", "utteranceId": "unique-id", "text": "こんにちは。" }
-```
-
-The final result is immutable. An empty final transcript means the utterance
-contained no recognized speech.
-
-Errors use this shape and end the current session:
-
-```json
-{ "type": "error", "code": "unsupported_audio_format", "message": "..." }
-```
-
-The client closes the WebSocket when the Discord voice session ends.
+Malformed protocol messages or an unexpected connection close fail all pending
+requests. Klein closes the WebSocket when the voice-chat session ends.
