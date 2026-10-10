@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
 
 import type { VoiceReactionPreset } from "../ports/voice-reaction-selector";
 
@@ -31,7 +32,7 @@ export async function loadVoiceReactionPresets(
       id,
       text: preset.text as string,
       description: preset.description as string,
-      audioFile: preset.audioFile as string,
+      audioFile: resolve(dirname(filePath), preset.audioFile as string),
     };
   });
 }

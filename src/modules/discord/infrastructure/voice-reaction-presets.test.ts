@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import test from "node:test";
 
 import { loadVoiceReactionPresets } from "./voice-reaction-presets";
 
-test("loads voice reaction presets from a JSON array", async () => {
+test("resolves audio paths relative to the manifest outside the working directory", async () => {
   const directory = await mkdtemp(join(tmpdir(), "klein-voice-presets-"));
   const path = join(directory, "presets.json");
   try {
@@ -22,14 +22,33 @@ test("loads voice reaction presets from a JSON array", async () => {
       ]),
     );
 
-    assert.deepEqual(await loadVoiceReactionPresets(path), [
+    const expected = [
       {
         id: "neutral",
         text: "うん",
         description: "軽い相槌",
-        audioFile: "audio/neutral.wav",
+        audioFile: join(directory, "audio/neutral.wav"),
       },
-    ]);
+    ];
+    assert.deepEqual(await loadVoiceReactionPresets(path), expected);
+    assert.deepEqual(await loadVoiceReactionPresets(relative(process.cwd(), path)), expected);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("preserves absolute audio paths", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "klein-voice-presets-"));
+  const path = join(directory, "presets.json");
+  const preset = {
+    id: "neutral",
+    text: "うん",
+    description: "軽い相槌",
+    audioFile: join(directory, "neutral.wav"),
+  };
+  try {
+    await writeFile(path, JSON.stringify([preset]));
+    assert.deepEqual(await loadVoiceReactionPresets(path), [preset]);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

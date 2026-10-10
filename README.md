@@ -176,14 +176,41 @@ support and the same pi runtime as the rest of Klein; no separate API client is
 needed. Set `CLOUDFLARE_API_KEY` and `CLOUDFLARE_ACCOUNT_ID` before enabling
 reactions. Enable `features.tts` and point it to the SBV2 server before
 generating audio. Define the reaction phrases and audio paths in the configured
-JSON manifest (`config/klein/voice-presets.json` in the example). Generate the audio
+JSON manifest (`config/voice-presets.example.json` in the example). Generate the audio
 with `bun scripts/generate-voice-presets.ts`; the script sends each manifest
 phrase to the configured SBV2 server and writes the result to its `audioFile`
-path. Runtime decisions select a preset by ID, then play its saved audio.
-The example saves WAV files under `.runtime/voice-presets/`, which is excluded
-from Git. Generate them on each runtime host or copy them privately from another
-host; the repository contains the phrase manifest, not the audio files. Paths
-are relative to the working directory.
+path. To generate directly in a separate preset repository, pass its manifest
+path as the first argument; this overrides the configured `presetsFile`.
+Runtime decisions select a preset by ID, then play its saved audio.
+The example saves WAV files under `.runtime/voice-presets/example/`, which is
+excluded from Git. Relative `audioFile` paths are resolved from the manifest's
+directory; absolute paths are also supported. `presetsFile` is relative to the
+working directory unless it is absolute.
+
+Personal manifests and WAV files can be managed together in a separate private
+repository without a submodule. For example, store `klein/presets.json` and
+`klein/audio/*.wav` with `audioFile` values such as `audio/thinking.wav`. Clone the
+private repository separately, check out the tag or commit you want to use, then
+symlink its entire preset directory into Klein (run these commands from Klein's
+root):
+
+```bash
+gh repo clone OWNER/VOICE_PRESETS ../voice-presets
+mkdir -p .runtime
+ln -s ../../voice-presets/klein .runtime/voice-presets
+```
+
+If `.runtime/voice-presets` already exists as a copied directory, move it aside
+before creating the symlink. Link the entire directory, not just the manifest,
+so relative audio paths work. Editing or regenerating presets updates the
+private repository directly; restart Klein after changing the presets.
+
+Set `features.voiceChat.reactions.presetsFile` to
+`.runtime/voice-presets/presets.json` in your local configuration. The classifier
+receives each preset's Japanese `text` and `description` and returns its `id`;
+audio filenames are not sent to the classifier. Public builds and tests do not
+require access to the private repository.
+
 Reactions are skipped while an audio file is unavailable.
 Reactions are disabled when this setting is omitted. The reaction is selected
 alongside the main LLM request, and the main answer still takes priority when

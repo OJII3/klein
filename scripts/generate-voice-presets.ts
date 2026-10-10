@@ -14,7 +14,9 @@ if (!ttsConfiguration?.enabled) {
 }
 
 const presetsFile =
-  config.features.voiceChat?.reactions?.presetsFile ?? "config/klein/voice-presets.json";
+  process.argv[2] ??
+  config.features.voiceChat?.reactions?.presetsFile ??
+  "config/voice-presets.example.json";
 const presets = await loadVoiceReactionPresets(presetsFile);
 const tts = new Sbv2Tts(ttsConfiguration.serverUrl);
 
