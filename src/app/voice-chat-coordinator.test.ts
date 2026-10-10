@@ -21,6 +21,7 @@ const context = {
 function createLogger(): Logger {
   const logger = {
     child: () => logger,
+    info: () => undefined,
     error: () => undefined,
   };
   return logger as unknown as Logger;

@@ -65,6 +65,15 @@ export class DiscordVoiceChatController {
     }
 
     const guildId = interaction.guildId;
+    this.logger?.info(
+      {
+        event: "discord_voice_chat_command_received",
+        guildId,
+        userId: interaction.user.id,
+        subcommand: interaction.options.getSubcommand(),
+      },
+      "Received a voice chat command",
+    );
     if (interaction.options.getSubcommand() === "leave") {
       await this.leave(interaction, guildId);
       return;
@@ -160,6 +169,15 @@ export class DiscordVoiceChatController {
       });
       this.sessions.set(guildId, { conversation, session, userId: interaction.user.id });
       await session.start();
+      this.logger?.info(
+        {
+          event: "discord_voice_chat_started",
+          guildId,
+          voiceChannelId: voiceChannel.id,
+          userId: interaction.user.id,
+        },
+        "Started the voice conversation",
+      );
       await interaction.editReply("VCに参加しました。返答を音声で読み上げます。");
     } catch (error) {
       this.sessions.delete(guildId);
@@ -200,6 +218,10 @@ export class DiscordVoiceChatController {
 
     this.sessions.delete(guildId);
     await Promise.all([active.session.stop(), active.conversation.stop()]);
+    this.logger?.info(
+      { event: "discord_voice_chat_stopped", guildId, userId: active.userId },
+      "Stopped the voice conversation",
+    );
     await interaction.reply({ content: "VCから退出しました。", ephemeral: true });
   }
 }
