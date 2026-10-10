@@ -89,10 +89,10 @@ export async function bootstrap(): Promise<void> {
       tts,
     });
   const voiceChatCoordinator = new VoiceChatCoordinator({
-    createVoiceChatAgent: (channelId, sessionKey) =>
+    createVoiceChatAgent: (channelId, sessionKey, speak) =>
       DiscordAgent.create(piAgentFactory, discordService, channelId, systemPrompt, {
         sessionKey,
-        voiceResponse: true,
+        speak,
       }),
     logger,
   });

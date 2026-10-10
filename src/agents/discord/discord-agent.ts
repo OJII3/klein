@@ -6,6 +6,7 @@ import { DISCORD_AGENT_TOOL_NAMES } from "./prompt-policy";
 import { createDiscordReadTool } from "./tools/discord-read";
 import { createDiscordSendTool } from "./tools/discord-send";
 import { createDiscordVoiceTool } from "./tools/discord-voice";
+import { createDiscordSpeakTool } from "./tools/discord-speak";
 import type { TextToSpeech } from "@modules/tts/infrastructure/sbv2-tts";
 
 const BOT_MESSAGE_GUIDANCE = `
@@ -29,7 +30,7 @@ export class DiscordAgent {
       readonly sessionKey?: string;
       readonly handoffContext?: string;
       readonly tts?: TextToSpeech;
-      readonly voiceResponse?: boolean;
+      readonly speak?: (text: string) => Promise<void>;
     } = {},
   ): Promise<DiscordAgent> {
     let runtime: AgentRuntime | undefined;
@@ -45,21 +46,23 @@ export class DiscordAgent {
 
     const tools = [
       createDiscordReadTool(discordService, channelId, analyzeImages),
-      ...(!options.voiceResponse ? [createDiscordSendTool(discordService, channelId)] : []),
-      ...(!options.voiceResponse && options.tts
+      ...(options.speak
+        ? [createDiscordSpeakTool(options.speak)]
+        : [createDiscordSendTool(discordService, channelId)]),
+      ...(!options.speak && options.tts
         ? [createDiscordVoiceTool(discordService, channelId, options.tts)]
         : []),
     ];
-    const toolNames = options.voiceResponse
-      ? DISCORD_AGENT_TOOL_NAMES.filter((name) => name !== "discord_send")
+    const toolNames = options.speak
+      ? [...DISCORD_AGENT_TOOL_NAMES.filter((name) => name !== "discord_send"), "discord_speak"]
       : options.tts
         ? [...DISCORD_AGENT_TOOL_NAMES, "discord_voice"]
         : DISCORD_AGENT_TOOL_NAMES;
 
     runtime = await agentFactory.create(
       {
-        systemPrompt: options.voiceResponse
-          ? `${systemPrompt}\n\n音声会話では、ユーザーへの返答を通常の文章として生成してください。Discordへのメッセージ送信ツールは使わないでください。`
+        systemPrompt: options.speak
+          ? `${systemPrompt}\n\nYou are in a Discord voice conversation. Use discord_speak for replies; normal assistant text is not audible to the user.`
           : systemPrompt,
         toolNames,
       },
@@ -78,21 +81,7 @@ export class DiscordAgent {
   }
 
   prompt(message: DiscordMessage, guildMemory?: string, channelRule?: string): Promise<void> {
-    return this.runtime.prompt(this.createPrompt(message, guildMemory, channelRule));
-  }
-
-  promptForResponse(
-    message: DiscordMessage,
-    guildMemory?: string,
-    channelRule?: string,
-  ): Promise<string | undefined> {
-    const prompt = this.createPrompt(message, guildMemory, channelRule);
-    if (this.runtime.promptWithResponse) return this.runtime.promptWithResponse(prompt);
-    return this.runtime.prompt(prompt).then(() => undefined);
-  }
-
-  private createPrompt(message: DiscordMessage, guildMemory?: string, channelRule?: string) {
-    return {
+    return this.runtime.prompt({
       text: [
         guildMemory ? `<guild-memory>\n${guildMemory}\n</guild-memory>` : undefined,
         channelRule ? `<channel-rule>\n${channelRule}\n</channel-rule>` : undefined,
@@ -101,7 +90,7 @@ export class DiscordAgent {
         .filter((context): context is string => context !== undefined)
         .join("\n\n"),
       images: message.images.map(({ data, mimeType }) => ({ data, mimeType })),
-    };
+    });
   }
 
   compactForHandoff(): Promise<string> | undefined {

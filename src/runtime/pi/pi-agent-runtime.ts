@@ -124,28 +124,6 @@ export class PiAgentRuntime implements AgentRuntime {
     });
   }
 
-  promptWithResponse(prompt: AgentPrompt): Promise<string | undefined> {
-    return this.enqueue(async () => {
-      let response: string | undefined;
-      const unsubscribe = this.session.subscribe((event) => {
-        if (event.type !== "agent_end") return;
-        const assistantMessages = event.messages.filter(
-          (message) => "role" in message && message.role === "assistant",
-        );
-        const lastMessage = assistantMessages.at(-1);
-        if (lastMessage && "content" in lastMessage) {
-          response = formatMessageContent(lastMessage.content).trim() || undefined;
-        }
-      });
-      try {
-        await this.runPrompt(prompt);
-      } finally {
-        unsubscribe();
-      }
-      return response;
-    });
-  }
-
   private enqueue<T>(work: () => Promise<T>): Promise<T> {
     const run = this.queue.then(work);
 

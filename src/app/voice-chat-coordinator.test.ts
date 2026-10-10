@@ -32,7 +32,7 @@ test("creates an isolated LLM session for each VC conversation", async () => {
   const spokenResponses: string[] = [];
   let disposeCount = 0;
   const coordinator = new VoiceChatCoordinator({
-    createVoiceChatAgent: async (channelId, sessionKey) => {
+    createVoiceChatAgent: async (channelId, sessionKey, speak) => {
       assert.equal(channelId, context.channelId);
       sessionKeys.push(sessionKey);
       return {
@@ -41,10 +41,7 @@ test("creates an isolated LLM session for each VC conversation", async () => {
         },
         prompt: async (message: DiscordMessage) => {
           promptedMessages.push(message);
-        },
-        promptForResponse: async (message: DiscordMessage) => {
-          promptedMessages.push(message);
-          return `返答: ${message.content}`;
+          await speak(`返答: ${message.content}`);
         },
       } as unknown as DiscordAgent;
     },
@@ -106,10 +103,10 @@ test("serializes voice turns and speaks an error response after LLM failures", a
   const spokenResponses: string[] = [];
   let releaseFirst: (() => void) | undefined;
   const coordinator = new VoiceChatCoordinator({
-    createVoiceChatAgent: async () =>
+    createVoiceChatAgent: async (_channelId, _sessionKey, speak) =>
       ({
         dispose: () => undefined,
-        promptForResponse: async (message: { content: string }) => {
+        prompt: async (message: { content: string }) => {
           started.push(message.content);
           if (message.content === "一つ目") {
             await new Promise<void>((resolve) => {
@@ -117,7 +114,7 @@ test("serializes voice turns and speaks an error response after LLM failures", a
             });
           }
           if (message.content === "失敗") throw new Error("LLM failed");
-          return `返答: ${message.content}`;
+          await speak(`返答: ${message.content}`);
         },
       }) as unknown as DiscordAgent,
     logger: createLogger(),

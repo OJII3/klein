@@ -10,7 +10,11 @@ import type {
 } from "@modules/discord/ports/voice-chat-conversation";
 
 export interface VoiceChatCoordinatorDependencies {
-  readonly createVoiceChatAgent: (channelId: string, sessionKey: string) => Promise<DiscordAgent>;
+  readonly createVoiceChatAgent: (
+    channelId: string,
+    sessionKey: string,
+    speak: (text: string) => Promise<void>,
+  ) => Promise<DiscordAgent>;
   readonly logger: Logger;
 }
 
@@ -23,7 +27,11 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
 
   async create(context: VoiceChatConversationContext): Promise<VoiceChatConversation> {
     const sessionKey = `discord-voice:${context.guildId}:${context.voiceChannelId}:${randomUUID()}`;
-    const agent = await this.dependencies.createVoiceChatAgent(context.channelId, sessionKey);
+    const agent = await this.dependencies.createVoiceChatAgent(
+      context.channelId,
+      sessionKey,
+      context.speak,
+    );
     let stopped = false;
     let stopPromise: Promise<void> | undefined;
     let processing = Promise.resolve();
@@ -45,8 +53,7 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
           };
 
           try {
-            const response = await agent.promptForResponse(message);
-            if (response?.trim()) await context.speak(response);
+            await agent.prompt(message);
           } catch (error) {
             this.logger.error(
               {
