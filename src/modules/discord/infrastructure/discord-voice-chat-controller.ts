@@ -1,6 +1,6 @@
 import type { Logger } from "pino";
 import { SlashCommandBuilder, type ChatInputCommandInteraction } from "discord.js";
-import type { StreamingAsr } from "@modules/asr/domain/streaming-asr";
+import type { AsrClient } from "@modules/asr/domain/asr-client";
 
 import type { DiscordAccessPolicy } from "../domain/discord-access-policy";
 import type {
@@ -17,7 +17,7 @@ export const VOICE_COMMAND = new SlashCommandBuilder()
   .toJSON();
 
 export interface DiscordVoiceChatControllerOptions {
-  readonly asr: StreamingAsr;
+  readonly asr: AsrClient;
   readonly conversationFactory: VoiceChatConversationFactory;
   readonly language: string;
 }

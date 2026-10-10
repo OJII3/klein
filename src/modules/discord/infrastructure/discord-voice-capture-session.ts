@@ -10,14 +10,14 @@ import {
   type VoiceConnection,
 } from "@discordjs/voice";
 
-import type { StreamingAsr, StreamingAsrSession } from "@modules/asr/domain/streaming-asr";
+import type { AsrClient, AsrConnection, AsrRequest } from "@modules/asr/domain/asr-client";
 
 const VOICE_READY_TIMEOUT_MS = 15_000;
 const SILENCE_DURATION_MS = 900;
 
 export interface DiscordVoiceCaptureSessionOptions {
   readonly adapterCreator: DiscordGatewayAdapterCreator;
-  readonly asr: StreamingAsr;
+  readonly asr: AsrClient;
   readonly guildId: string;
   readonly language: string;
   readonly logger?: Logger;
@@ -29,31 +29,20 @@ export interface DiscordVoiceCaptureSessionOptions {
 
 export class DiscordVoiceCaptureSession {
   private connection?: VoiceConnection;
-  private asrSession?: StreamingAsrSession;
+  private asrConnection?: AsrConnection;
   private activeUtteranceId?: string;
+  private transcriptQueue: Promise<void> = Promise.resolve();
   private speakingListener?: (userId: string) => void;
   private stopped = false;
 
   constructor(private readonly options: DiscordVoiceCaptureSessionOptions) {}
 
   async start(): Promise<void> {
-    this.asrSession = await this.options.asr.connect({
-      language: this.options.language,
-      audio: { encoding: "pcm_s16le", sampleRateHz: 16_000, channels: 1 },
-    });
-    this.asrSession.onTranscript((update) => {
-      if (!update.final || !update.text.trim()) return;
-      void this.options.onTranscript(update.text).catch((error: unknown) => {
-        this.options.logger?.warn(
-          { err: error, event: "discord_voice_transcript_send_failed" },
-          "Failed to send a voice transcript",
-        );
-      });
-    });
-    this.asrSession.onError((error) => {
+    this.asrConnection = await this.options.asr.connect();
+    this.asrConnection.onError((error) => {
       this.options.logger?.error(
-        { err: error, event: "discord_voice_asr_failed" },
-        "Streaming ASR session failed",
+        { err: error, event: "discord_voice_asr_connection_failed" },
+        "ASR connection failed",
       );
       this.options.onError?.(error);
       void this.stop();
@@ -82,25 +71,61 @@ export class DiscordVoiceCaptureSession {
     }
     this.connection?.destroy();
     this.connection = undefined;
-    this.asrSession?.close();
-    this.asrSession = undefined;
+    this.asrConnection?.close();
+    this.asrConnection = undefined;
   }
 
   private receiveUtterance(): void {
     const connection = this.connection;
-    const asrSession = this.asrSession;
-    if (!connection || !asrSession || this.stopped || this.activeUtteranceId) return;
+    const asrConnection = this.asrConnection;
+    if (!connection || !asrConnection || this.stopped || this.activeUtteranceId) return;
 
     const utteranceId = randomUUID();
     this.activeUtteranceId = utteranceId;
+    let request: AsrRequest;
+    try {
+      request = asrConnection.start({ requestId: utteranceId, language: this.options.language });
+    } catch (error) {
+      this.activeUtteranceId = undefined;
+      this.options.onError?.(error instanceof Error ? error : new Error(String(error)));
+      return;
+    }
+    let resolveTranscript!: (text: string) => void;
+    const transcriptResult = new Promise<string>((resolve) => {
+      resolveTranscript = resolve;
+    });
+    this.transcriptQueue = this.transcriptQueue.then(async () => {
+      const text = await transcriptResult;
+      if (this.stopped || !text.trim()) return;
+      try {
+        await this.options.onTranscript(text);
+      } catch (error) {
+        this.options.logger?.warn(
+          { err: error, event: "discord_voice_transcript_send_failed" },
+          "Failed to send a voice transcript",
+        );
+      }
+    });
     let utteranceFinished = false;
     const finishUtterance = (): void => {
       if (utteranceFinished) return;
       utteranceFinished = true;
       if (this.activeUtteranceId === utteranceId) this.activeUtteranceId = undefined;
-      if (!this.stopped) asrSession.finishUtterance(utteranceId);
+      if (this.stopped) {
+        resolveTranscript("");
+        return;
+      }
+      void request
+        .commit()
+        .then(({ text }) => resolveTranscript(text))
+        .catch((error: unknown) => {
+          resolveTranscript("");
+          this.options.logger?.warn(
+            { err: error, event: "discord_voice_asr_request_failed", requestId: utteranceId },
+            "ASR request failed",
+          );
+        });
     };
-    asrSession.startUtterance(utteranceId);
     const receivedAudio = connection.receiver.subscribe(this.options.userId, {
       end: { behavior: EndBehaviorType.AfterSilence, duration: SILENCE_DURATION_MS },
     });
@@ -108,7 +133,7 @@ export class DiscordVoiceCaptureSession {
     receivedAudio.pipe(decoder);
     decoder.on("data", (pcm: Buffer) => {
       try {
-        asrSession.sendAudio(downsampleTo16KhzMono(pcm));
+        request.write(downsampleTo16KhzMono(pcm));
       } catch (error) {
         this.options.logger?.warn(
           { err: error, event: "discord_voice_audio_send_failed" },
