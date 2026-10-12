@@ -97,7 +97,10 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
       return reactionController;
     };
 
-    const processTranscript = async (message: DiscordMessage): Promise<void> => {
+    const processTranscript = async (
+      message: DiscordMessage,
+      reactionController: AbortController,
+    ): Promise<void> => {
       const startedAt = performance.now();
       const previousSpeakCallCount = speakCallCount;
       try {
@@ -137,9 +140,18 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
           );
         }
       } finally {
-        activeReaction?.abort();
+        reactionController.abort();
+        if (activeReaction !== reactionController) activeReaction?.abort();
         activeReaction = undefined;
       }
+    };
+
+    const trackProcessing = (next: Promise<void>): Promise<void> => {
+      processing = next;
+      void next.finally(() => {
+        if (processing === next) processing = undefined;
+      });
+      return next;
     };
 
     return {
@@ -155,13 +167,20 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
           parentChannelId: context.parentChannelId,
           threadId: context.threadId,
         };
-        startReaction(text, message.id);
+        if (processing && typeof agent.steer !== "function") {
+          const next = processing.then(() =>
+            processTranscript(message, startReaction(text, message.id)),
+          );
+          return trackProcessing(next);
+        }
+
+        const reactionController = startReaction(text, message.id);
         if (processing) {
           logger.info(
             { event: "voice_chat_transcript_steered", textLength: text.length },
             "Steering the active voice response with a new transcript",
           );
-          const steer = agent.steer(message).catch((error: unknown) => {
+          const steer = agent.steer!(message).catch((error: unknown) => {
             logger.error(
               { channelId: context.channelId, err: error, event: "voice_chat_steer_failed" },
               "Failed to steer the active voice response",
@@ -173,12 +192,9 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
           return steer;
         }
 
-        const next = processTranscript(message);
-        processing = next;
-        void next.finally(() => {
-          if (processing === next) processing = undefined;
-        });
-        return Promise.resolve();
+        const next = processTranscript(message, reactionController);
+        trackProcessing(next);
+        return typeof agent.steer === "function" ? Promise.resolve() : next;
       },
       stop: () => {
         if (stopPromise) return stopPromise;
