@@ -79,6 +79,8 @@ profile's `SOUL.md` (`config/klein/SOUL.md` by default).
 Voice chat uses `SOUL.voice.md` (`config/klein/SOUL.voice.md` by default), with
 instructions for `discord_speak`, responding without mentions, and brief spoken
 replies to reduce TTS latency. Edit the two files independently for each mode.
+The optional `features.voiceChat.llm` setting selects a separate provider,
+model, and thinking level for voice chat; when omitted, voice chat uses `llm`.
 
 To connect remote MCP tools to the Discord agent, register the server in the
 Pi agent directory `.runtime/pi`, which matches Klein's `runtime.agentDir`.

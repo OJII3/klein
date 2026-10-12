@@ -98,6 +98,7 @@ const VoiceChatConfigurationSchema = Type.Object(
     enabled: Type.Boolean(),
     asrServerUrl: Type.String({ minLength: 1, format: "uri" }),
     language: Type.Optional(Type.String({ minLength: 1 })),
+    llm: Type.Optional(LlmModelConfigurationSchema),
     reactions: Type.Optional(
       Type.Object(
         {

@@ -57,8 +57,12 @@ export async function bootstrap(): Promise<void> {
     throw new Error("DISCORD_BOT_TOKEN is required");
   }
   const openCodeGoApiKey = process.env.OPENCODE_API_KEY;
+  const voiceChatConfiguration = config.features.voiceChat;
+  const voiceChatLlmConfiguration = voiceChatConfiguration?.enabled
+    ? voiceChatConfiguration.llm
+    : undefined;
   const memoryLlmConfiguration = config.features.memory.llm ?? config.llm;
-  const modelsInUse = [config.llm, config.llm.image];
+  const modelsInUse = [config.llm, config.llm.image, voiceChatLlmConfiguration];
   if (config.features.memory.enabled) modelsInUse.push(memoryLlmConfiguration);
   const usesOpenCodeGo = modelsInUse.some((model) => model?.provider === "opencode-go");
   if (usesOpenCodeGo && !openCodeGoApiKey) {
@@ -66,7 +70,6 @@ export async function bootstrap(): Promise<void> {
   }
   const discordOperatingState = new DiscordOperatingState();
   const discordAccessPolicy = createDiscordAccessPolicy(config.discord.access);
-  const voiceChatConfiguration = config.features.voiceChat;
   const voiceSystemPrompt = voiceChatConfiguration?.enabled
     ? await loadPromptFile(profile.voiceSystemPromptFile)
     : undefined;
@@ -107,6 +110,16 @@ export async function bootstrap(): Promise<void> {
     modelRuntime,
     sessionMode,
   });
+  const voiceChatAgentFactory = voiceChatLlmConfiguration
+    ? createPiAgentFactory({
+        agentDir,
+        llm: voiceChatLlmConfiguration,
+        skillsDirectory: profile.skillsDirectory,
+        logger,
+        modelRuntime,
+        sessionMode,
+      })
+    : piAgentFactory;
   let discordService!: DiscordJsService;
   const createDiscordAgent = (channelId: string, sessionKey: string, handoffContext?: string) =>
     DiscordAgent.create(piAgentFactory, discordService, channelId, systemPrompt, {
@@ -119,10 +132,16 @@ export async function bootstrap(): Promise<void> {
       ? undefined
       : new VoiceChatCoordinator({
           createVoiceChatAgent: (channelId, sessionKey, speak) =>
-            DiscordAgent.create(piAgentFactory, discordService, channelId, voiceSystemPrompt, {
-              sessionKey,
-              speak,
-            }),
+            DiscordAgent.create(
+              voiceChatAgentFactory,
+              discordService,
+              channelId,
+              voiceSystemPrompt,
+              {
+                sessionKey,
+                speak,
+              },
+            ),
           logger,
           reactionSelector,
         });
