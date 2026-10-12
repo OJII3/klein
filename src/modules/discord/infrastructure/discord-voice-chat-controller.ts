@@ -135,7 +135,8 @@ export class DiscordVoiceChatController {
         guildId,
         language: this.options.language,
         logger: this.logger,
-        onTranscript: (text) => conversation?.handleTranscript(text) ?? Promise.resolve(),
+        onTranscript: (text, requestId) =>
+          conversation?.handleTranscript(text, requestId) ?? Promise.resolve(),
         reactionPresets: this.options.reactionPresets,
         onError: (error) => {
           if (this.sessions.get(guildId)?.session !== session) return;
@@ -160,7 +161,7 @@ export class DiscordVoiceChatController {
         channelId: interaction.channelId,
         guildId,
         parentChannelId: textThread?.parentId ?? undefined,
-        speak: (text) => session?.speak(text) ?? Promise.resolve(),
+        speak: (text, toolCallId) => session?.speak(text, toolCallId) ?? Promise.resolve(),
         playReaction: (reaction, signal) =>
           session?.playReaction(reaction, signal) ?? Promise.resolve(false),
         onSpeechStart: (listener) => session?.subscribeSpeechStart(listener) ?? (() => undefined),

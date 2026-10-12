@@ -34,7 +34,8 @@ test("routes voice replies through discord_speak using the existing runtime prom
   let toolNames: readonly string[] = [];
   const spoken: string[] = [];
   const runtime: AgentRuntime = {
-    async prompt() {
+    async prompt(prompt) {
+      assert.equal(prompt.traceId, message.id);
       const tool = tools.find((tool) => tool.name === "discord_speak");
       assert.ok(tool);
       await tool.execute("tool-call", { text: "LLMの返答" }, undefined, undefined, {} as never);
@@ -55,7 +56,8 @@ test("routes voice replies through discord_speak using the existing runtime prom
     "channel-123",
     "voice system prompt",
     {
-      speak: async (text) => {
+      speak: async (text, toolCallId) => {
+        assert.equal(toolCallId, "tool-call");
         spoken.push(text);
       },
     },

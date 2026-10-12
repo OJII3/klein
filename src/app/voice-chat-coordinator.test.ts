@@ -335,3 +335,48 @@ test("speech start cancels a pending reaction decision", async () => {
   await processing;
   await conversation.stop();
 });
+
+test("preserves ASR request IDs for prompted and steered transcripts", async () => {
+  let releasePrompt!: () => void;
+  const prompted: DiscordMessage[] = [];
+  const steered: DiscordMessage[] = [];
+  const logs: Array<Record<string, unknown>> = [];
+  const logger = {
+    child: () => logger,
+    info: (fields: Record<string, unknown>) => logs.push(fields),
+    error: () => undefined,
+  };
+  const coordinator = new VoiceChatCoordinator({
+    logger: logger as unknown as Logger,
+    createVoiceChatAgent: async () =>
+      ({
+        dispose: () => undefined,
+        prompt: async (message: DiscordMessage) => {
+          prompted.push(message);
+          await new Promise<void>((resolve) => {
+            releasePrompt = resolve;
+          });
+        },
+        steer: async (message: DiscordMessage) => {
+          steered.push(message);
+        },
+      }) as unknown as DiscordAgent,
+  });
+  const conversation = await coordinator.create({ ...context, speak: async () => undefined });
+  await conversation.handleTranscript("private first transcript", "asr-first");
+  await conversation.handleTranscript("private next transcript", "asr-next");
+  assert.equal(prompted[0]?.id, "asr-first");
+  assert.equal(steered[0]?.id, "asr-next");
+  assert.deepEqual(
+    logs
+      .filter((log) => log.event === "voice_chat_transcript_received")
+      .map((log) => log.messageId),
+    ["asr-first", "asr-next"],
+  );
+  const steer = logs.find((log) => log.event === "voice_chat_transcript_steered");
+  assert.equal(steer?.messageId, "asr-next");
+  assert.equal(typeof steer?.durationMs, "number");
+  assert.equal(JSON.stringify(logs).includes("private"), false);
+  releasePrompt();
+  await conversation.stop();
+});

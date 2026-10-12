@@ -14,7 +14,7 @@ export interface VoiceChatCoordinatorDependencies {
   readonly createVoiceChatAgent: (
     channelId: string,
     sessionKey: string,
-    speak: (text: string) => Promise<void>,
+    speak: (text: string, toolCallId?: string) => Promise<void>,
   ) => Promise<DiscordAgent>;
   readonly logger: Logger;
   readonly reactionSelector?: VoiceReactionSelector;
@@ -41,13 +41,13 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
     const agent = await this.dependencies.createVoiceChatAgent(
       context.channelId,
       sessionKey,
-      async (text) => {
+      async (text, toolCallId) => {
         speakCallCount += 1;
         logger.info(
-          { event: "voice_chat_speak_called", textLength: text.length },
+          { event: "voice_chat_speak_called", toolCallId, textLength: text.length },
           "The voice agent requested a spoken reply",
         );
-        await context.speak(text);
+        await context.speak(text, toolCallId);
       },
     );
     logger.info({ event: "voice_chat_agent_ready" }, "Voice conversation agent is ready");
@@ -124,6 +124,7 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
             channelId: context.channelId,
             err: error,
             event: "voice_chat_message_processing_failed",
+            messageId: message.id,
           },
           "Failed to process a voice chat message",
         );
@@ -155,18 +156,27 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
     };
 
     return {
-      handleTranscript: (text) => {
+      handleTranscript: (text, requestId) => {
         if (stopped) return Promise.resolve();
         const message: DiscordMessage = {
           author: context.user,
           channelId: context.channelId,
           content: text,
           guildId: context.guildId,
-          id: randomUUID(),
+          id: requestId ?? randomUUID(),
           images: [],
           parentChannelId: context.parentChannelId,
           threadId: context.threadId,
         };
+        logger.info(
+          {
+            event: "voice_chat_transcript_received",
+            messageId: message.id,
+            textLength: text.length,
+            processing: processing !== undefined,
+          },
+          "Received a voice transcript",
+        );
         if (processing && typeof agent.steer !== "function") {
           const next = processing.then(() =>
             processTranscript(message, startReaction(text, message.id)),
@@ -177,16 +187,37 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
         const reactionController = startReaction(text, message.id);
         if (processing) {
           logger.info(
-            { event: "voice_chat_transcript_steered", textLength: text.length },
+            {
+              event: "voice_chat_transcript_steer_started",
+              messageId: message.id,
+              textLength: text.length,
+            },
             "Steering the active voice response with a new transcript",
           );
-          const steer = agent.steer!(message).catch((error: unknown) => {
-            logger.error(
-              { channelId: context.channelId, err: error, event: "voice_chat_steer_failed" },
-              "Failed to steer the active voice response",
-            );
-            activeReaction?.abort();
-          });
+          const steerStartedAt = performance.now();
+          const steer = agent.steer!(message)
+            .then(() => {
+              logger.info(
+                {
+                  event: "voice_chat_transcript_steered",
+                  messageId: message.id,
+                  durationMs: Math.round(performance.now() - steerStartedAt),
+                },
+                "Enqueued a transcript to steer the active voice response",
+              );
+            })
+            .catch((error: unknown) => {
+              logger.error(
+                {
+                  channelId: context.channelId,
+                  err: error,
+                  event: "voice_chat_steer_failed",
+                  messageId: message.id,
+                },
+                "Failed to steer the active voice response",
+              );
+              activeReaction?.abort();
+            });
           pendingSteers.add(steer);
           void steer.finally(() => pendingSteers.delete(steer));
           return steer;

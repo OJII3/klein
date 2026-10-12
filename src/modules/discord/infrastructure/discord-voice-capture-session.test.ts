@@ -4,6 +4,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import type { Logger } from "pino";
 import type { AsrConnection, AsrRequest } from "@modules/asr/domain/asr-client";
 
 import { DiscordVoiceCaptureSession } from "./discord-voice-capture-session";
@@ -25,12 +26,22 @@ function deferred<T>(): Deferred<T> {
 }
 
 function createCapture() {
+  const logs: Array<Record<string, unknown>> = [];
+  const logger = {
+    child: () => logger,
+    info: (fields: Record<string, unknown>) => logs.push(fields),
+    warn: (fields: Record<string, unknown>) => logs.push(fields),
+    error: (fields: Record<string, unknown>) => logs.push(fields),
+  };
+  const requestIds: string[] = [];
+  const deliveredRequestIds: Array<string | undefined> = [];
   const results: Deferred<{ readonly text: string }>[] = [];
   const decoders: Array<{ emit(type: string, value?: unknown): boolean }> = [];
   const transcripts: string[] = [];
   const connection: AsrConnection = {
     onError: () => () => undefined,
-    start: (): AsrRequest => {
+    start: ({ requestId }): AsrRequest => {
+      requestIds.push(requestId);
       const result = deferred<{ readonly text: string }>();
       results.push(result);
       return {
@@ -45,8 +56,10 @@ function createCapture() {
     asr: { connect: async () => connection },
     guildId: "guild",
     language: "ja",
-    onTranscript: async (text) => {
+    logger: logger as unknown as Logger,
+    onTranscript: async (text, requestId) => {
       transcripts.push(text);
+      deliveredRequestIds.push(requestId);
     },
     audioResourceFactory: () => ({}) as never,
     tts: { synthesize: async () => new Uint8Array() },
@@ -105,6 +118,9 @@ function createCapture() {
     await (capture as unknown as { transcriptQueue: Promise<void> }).transcriptQueue;
   };
   return {
+    logs,
+    requestIds,
+    deliveredRequestIds,
     capture,
     decoders,
     emitUtterance,
@@ -357,4 +373,71 @@ test("loads saved reaction audio without synthesizing it", async () => {
     await capture.stop();
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test("traces out-of-order ASR results through ordered transcript delivery without logging text", async () => {
+  const fixture = createCapture();
+  fixture.startInput();
+  await fixture.emitUtterance();
+  await fixture.emitUtterance();
+  fixture.results[1]?.resolve({ text: "private second transcript" });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(
+    fixture.logs.some((log) => log.event === "discord_voice_transcript_delivery_started"),
+    false,
+  );
+  fixture.results[0]?.resolve({ text: "private first transcript" });
+  await fixture.waitForTranscriptQueue();
+  assert.deepEqual(fixture.deliveredRequestIds, fixture.requestIds);
+  for (const requestId of fixture.requestIds) {
+    const related = fixture.logs.filter((log) => log.requestId === requestId);
+    assert.ok(related.some((log) => log.event === "discord_voice_asr_completed"));
+    const delivery = related.find(
+      (log) => log.event === "discord_voice_transcript_delivery_started",
+    );
+    assert.ok(delivery);
+    assert.equal(typeof delivery.asrResultWaitMs, "number");
+    assert.equal(typeof delivery.resultQueueWaitMs, "number");
+    assert.ok(
+      related.some(
+        (log) =>
+          log.event === "discord_voice_transcript_delivery_completed" && log.failed === false,
+      ),
+    );
+  }
+  assert.equal(JSON.stringify(fixture.logs).includes("private"), false);
+  await fixture.capture.stop();
+});
+
+test("distinguishes synthesis completion from playback interrupted by session stop", async () => {
+  const { capture, logs } = createCapture();
+  const played = deferred<void>();
+  (capture as unknown as { audioPlayer: unknown }).audioPlayer = {
+    play: () => played.resolve(),
+    stop: () => undefined,
+  };
+  const reply = capture.speak("private reply text", "speak-tool-call-123");
+  await played.promise;
+  assert.equal(
+    logs.some((log) => log.event === "discord_voice_speak_completed"),
+    false,
+  );
+  await capture.stop();
+  await reply;
+  const completion = logs.find((log) => log.event === "discord_voice_speak_completed");
+  assert.ok(completion);
+  assert.equal(completion.speakId, "speak-tool-call-123");
+  assert.equal(completion.toolCallId, "speak-tool-call-123");
+  assert.equal(completion.played, false);
+  assert.equal(completion.stopped, true);
+  assert.equal(typeof completion.synthesisDurationMs, "number");
+  assert.equal(typeof completion.playbackDurationMs, "number");
+  for (const event of [
+    "discord_voice_tts_started",
+    "discord_voice_tts_completed",
+    "discord_voice_speak_playback_started",
+  ]) {
+    assert.equal(logs.find((log) => log.event === event)?.speakId, completion.speakId);
+  }
+  assert.equal(JSON.stringify(logs).includes("private reply text"), false);
 });

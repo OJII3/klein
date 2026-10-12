@@ -7,13 +7,13 @@ export interface VoiceChatConversationContext {
   readonly threadId?: string;
   readonly user: DiscordUser;
   readonly voiceChannelId: string;
-  readonly speak: (text: string) => Promise<void>;
+  readonly speak: (text: string, toolCallId?: string) => Promise<void>;
   readonly playReaction?: (reaction: string, signal: AbortSignal) => Promise<boolean>;
   readonly onSpeechStart?: (listener: () => void) => () => void;
 }
 
 export interface VoiceChatConversation {
-  handleTranscript(text: string): Promise<void>;
+  handleTranscript(text: string, requestId?: string): Promise<void>;
   stop(): Promise<void>;
 }
 
