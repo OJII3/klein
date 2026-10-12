@@ -66,6 +66,11 @@
       "enabled": false,
       "asrServerUrl": "ws://100.64.0.11:8000",
       "language": "ja",
+      "llm": {
+        "provider": "opencode-go",
+        "model": "qwen3.8-flash",
+        "thinkingLevel": "low"
+      },
       "reactions": {
         "provider": "cloudflare-workers-ai",
         "model": "@cf/cloudflare/clef-flash",
