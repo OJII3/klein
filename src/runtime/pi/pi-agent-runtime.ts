@@ -181,6 +181,10 @@ export class PiAgentRuntime implements AgentRuntime {
     }
   }
 
+  abort(): Promise<void> {
+    return this.session.abort();
+  }
+
   private enqueue<T>(work: () => Promise<T>): Promise<T> {
     const run = this.queue.then(work);
 
