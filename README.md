@@ -197,7 +197,11 @@ request protocol.
 
 Optional voice reactions can shorten the perceived wait while the full answer
 is being prepared. Configure `features.voiceChat.reactions` with the pi
-classifier provider and model, plus a preset manifest. For example,
+classifier provider and model, plus a preset manifest. The same classifier
+reviews the full queue of ASR transcripts received while an answer is in
+progress and chooses whether to discard the oldest transcript, steer the
+current answer, keep it as a separate turn, or merge it with the next queued
+transcript. For example,
 `cloudflare-workers-ai` / `@cf/cloudflare/clef-flash` uses pi's classifier
 support and the same pi runtime as the rest of Klein; no separate API client is
 needed. Set `CLOUDFLARE_API_KEY` and `CLOUDFLARE_ACCOUNT_ID` before enabling
