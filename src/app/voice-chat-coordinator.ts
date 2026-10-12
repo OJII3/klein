@@ -185,7 +185,7 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
         stopped = true;
         activeReaction?.abort();
         unsubscribeSpeechStart?.();
-        stopPromise = Promise.allSettled([...pendingSteers])
+        stopPromise = Promise.allSettled(pendingSteers)
           .then(() => processing)
           .then(() => agent.dispose());
         return stopPromise;
