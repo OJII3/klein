@@ -18,7 +18,7 @@ export function createDiscordSpeakTool(
     async execute(toolCallId, params) {
       await speak(params.text, toolCallId);
       return {
-        content: [{ type: "text", text: `Spoke in the voice channel:\n${params.text}` }],
+        content: [{ type: "text", text: `Started preparing a voice reply:\n${params.text}` }],
         details: {},
       };
     },

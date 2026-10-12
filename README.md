@@ -124,12 +124,12 @@ For voice chat, follow an ASR `requestId` through the matching conversation
 `messageId`, runtime `traceId`, and consumed `inputId`. Pi records `sessionKey`,
 `sessionId`, `runId`, and `llmCallId` to connect an input to its model request and
 tool calls. A spoken tool's `toolCallId` is also its `speakId` in the TTS and
-playback logs. Transcript delivery logs separate ASR result time from ordered
-delivery wait; playback completion records synthesis time, playback time, and
-whether audio actually played. Reading a `pi_tool_started` event for
-`discord_speak` followed by TTS/playback events shows why the next model turn
-waits: the tool completes after synthesis and playback. Audio capture and ASR
-continue independently during that wait.
+playback logs. `discord_speak` starts TTS in the background and returns without
+waiting for synthesis or playback, so later model turns can proceed while audio
+is being prepared or played. A newer reply stops the current playback and
+supersedes any older reply still being synthesized. Transcript delivery logs
+separate ASR result time from ordered delivery wait; playback completion records
+synthesis time, playback time, and whether audio actually played.
 
 ## Run the Web UI viewer
 

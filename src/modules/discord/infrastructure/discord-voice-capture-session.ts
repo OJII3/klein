@@ -77,6 +77,7 @@ export class DiscordVoiceCaptureSession {
   private transcriptQueue: Promise<void> = Promise.resolve();
   private speakingListener?: (userId: string) => void;
   private stopped = false;
+  private replyGeneration = 0;
   private userSpeechActive = false;
   private readonly reactionAudio = new Map<string, Uint8Array>();
   private currentPlayback?: {
@@ -173,6 +174,7 @@ export class DiscordVoiceCaptureSession {
   async stop(): Promise<void> {
     if (this.stopped) return;
     this.stopped = true;
+    this.replyGeneration += 1;
     this.speechStartListeners.clear();
     this.reactionAudio.clear();
     this.stopReaction();
@@ -447,6 +449,9 @@ export class DiscordVoiceCaptureSession {
       );
       return;
     }
+    const replyGeneration = ++this.replyGeneration;
+    this.stopReaction();
+    this.replacePlayback(false);
     const startedAt = performance.now();
     this.logger?.info(
       { event: "discord_voice_tts_started", speakId, toolCallId, textLength: text.length },
@@ -480,7 +485,7 @@ export class DiscordVoiceCaptureSession {
     let played = false;
     let failed = false;
     try {
-      if (this.stopped) return;
+      if (this.stopped || replyGeneration !== this.replyGeneration) return;
       this.stopReaction();
       this.replacePlayback(false);
       this.logger?.info(
@@ -506,11 +511,22 @@ export class DiscordVoiceCaptureSession {
           playbackDurationMs: Math.round(performance.now() - playbackStartedAt),
           played,
           stopped: this.stopped,
+          superseded: replyGeneration !== this.replyGeneration,
           failed,
         },
         "Finished the voice reply playback request",
       );
     }
+  }
+
+  speakInBackground(text: string, toolCallId?: string): Promise<void> {
+    void this.speak(text, toolCallId).catch((error: unknown) => {
+      this.logger?.warn(
+        { err: error, event: "discord_voice_speak_background_failed", toolCallId },
+        "Failed to complete a background voice reply",
+      );
+    });
+    return Promise.resolve();
   }
 
   async playReaction(reaction: string, signal: AbortSignal): Promise<boolean> {
