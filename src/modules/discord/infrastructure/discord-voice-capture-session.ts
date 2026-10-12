@@ -77,7 +77,13 @@ export class DiscordVoiceCaptureSession {
   private transcriptQueue: Promise<void> = Promise.resolve();
   private speakingListener?: (userId: string) => void;
   private stopped = false;
-  private replyGeneration = 0;
+  private replyActive = false;
+  private pendingReply?: {
+    readonly text: string;
+    readonly toolCallId?: string;
+    readonly resolve: () => void;
+    readonly reject: (error: unknown) => void;
+  };
   private userSpeechActive = false;
   private readonly reactionAudio = new Map<string, Uint8Array>();
   private currentPlayback?: {
@@ -174,7 +180,8 @@ export class DiscordVoiceCaptureSession {
   async stop(): Promise<void> {
     if (this.stopped) return;
     this.stopped = true;
-    this.replyGeneration += 1;
+    this.pendingReply?.resolve();
+    this.pendingReply = undefined;
     this.speechStartListeners.clear();
     this.reactionAudio.clear();
     this.stopReaction();
@@ -440,6 +447,36 @@ export class DiscordVoiceCaptureSession {
   }
 
   async speak(text: string, toolCallId?: string): Promise<void> {
+    if (this.replyActive && !this.stopped) {
+      return new Promise<void>((resolve, reject) => {
+        this.pendingReply?.resolve();
+        this.pendingReply = { text, toolCallId, resolve, reject };
+      });
+    }
+
+    this.replyActive = true;
+    return this.playReplyAndDrain(text, toolCallId);
+  }
+
+  private async playReplyAndDrain(text: string, toolCallId?: string): Promise<void> {
+    try {
+      await this.playReply(text, toolCallId);
+    } finally {
+      const pendingReply = this.pendingReply;
+      this.pendingReply = undefined;
+      if (pendingReply && !this.stopped) {
+        void this.playReplyAndDrain(pendingReply.text, pendingReply.toolCallId).then(
+          pendingReply.resolve,
+          pendingReply.reject,
+        );
+      } else {
+        this.replyActive = false;
+        pendingReply?.resolve();
+      }
+    }
+  }
+
+  private async playReply(text: string, toolCallId?: string): Promise<void> {
     const speakId = toolCallId ?? randomUUID();
     const audioPlayer = this.audioPlayer;
     if (!audioPlayer || this.stopped) {
@@ -449,9 +486,7 @@ export class DiscordVoiceCaptureSession {
       );
       return;
     }
-    const replyGeneration = ++this.replyGeneration;
     this.stopReaction();
-    this.replacePlayback(false);
     const startedAt = performance.now();
     this.logger?.info(
       { event: "discord_voice_tts_started", speakId, toolCallId, textLength: text.length },
@@ -485,9 +520,8 @@ export class DiscordVoiceCaptureSession {
     let played = false;
     let failed = false;
     try {
-      if (this.stopped || replyGeneration !== this.replyGeneration) return;
+      if (this.stopped) return;
       this.stopReaction();
-      this.replacePlayback(false);
       this.logger?.info(
         { event: "discord_voice_speak_playback_started", speakId, toolCallId },
         "Starting playback of the synthesized voice reply",
@@ -511,7 +545,6 @@ export class DiscordVoiceCaptureSession {
           playbackDurationMs: Math.round(performance.now() - playbackStartedAt),
           played,
           stopped: this.stopped,
-          superseded: replyGeneration !== this.replyGeneration,
           failed,
         },
         "Finished the voice reply playback request",
