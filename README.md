@@ -128,10 +128,11 @@ For voice chat, follow an ASR `requestId` through the matching conversation
 tool calls. A spoken tool's `toolCallId` is also its `speakId` in the TTS and
 playback logs. `discord_speak` starts TTS in the background and returns without
 waiting for synthesis or playback, so later model turns can proceed while audio
-is being prepared or played. A newer reply stops the current playback and
-supersedes any older reply still being synthesized. Transcript delivery logs
-separate ASR result time from ordered delivery wait; playback completion records
-synthesis time, playback time, and whether audio actually played.
+is being prepared or played. A new reply does not interrupt an active reply.
+While one is being prepared or played, only the newest waiting reply is kept;
+later model turns can continue. Transcript delivery logs separate ASR result
+time from ordered delivery wait; playback completion records synthesis time,
+playback time, and whether audio actually played.
 
 ## Run the Web UI viewer
 
