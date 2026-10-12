@@ -161,7 +161,8 @@ export class DiscordVoiceChatController {
         channelId: interaction.channelId,
         guildId,
         parentChannelId: textThread?.parentId ?? undefined,
-        speak: (text, toolCallId) => session?.speak(text, toolCallId) ?? Promise.resolve(),
+        speak: (text, toolCallId) =>
+          session?.speakInBackground(text, toolCallId) ?? Promise.resolve(),
         playReaction: (reaction, signal) =>
           session?.playReaction(reaction, signal) ?? Promise.resolve(false),
         onSpeechStart: (listener) => session?.subscribeSpeechStart(listener) ?? (() => undefined),
