@@ -19,6 +19,7 @@ import {
 } from "@runtime/pi/pi-agent-runtime";
 import { PiMemoryProcessor } from "@runtime/pi/pi-memory-processor";
 import { PiVoiceReactionSelector } from "@runtime/pi/pi-voice-reaction-selector";
+import { PiVoiceTranscriptQueueSelector } from "@runtime/pi/pi-voice-transcript-queue-selector";
 import { createDiscordAccessPolicy } from "@modules/discord/domain/discord-access-policy";
 import { DiscordOperatingState } from "@modules/discord/domain/discord-operating-state";
 import { DiscordJsService } from "@modules/discord/infrastructure/discord-js-service";
@@ -87,20 +88,23 @@ export async function bootstrap(): Promise<void> {
   const reactionPresets = reactionConfiguration
     ? await loadVoiceReactionPresets(reactionConfiguration.presetsFile)
     : undefined;
-  const reactionSelector = reactionConfiguration
-    ? (() => {
-        const model = modelRuntime.getModelOfType(
-          "classifier",
-          reactionConfiguration.provider,
-          reactionConfiguration.model,
-        );
-        if (!model) {
-          throw new Error(
-            `Voice chat classifier model was not found: ${reactionConfiguration.provider}/${reactionConfiguration.model}`,
-          );
-        }
-        return new PiVoiceReactionSelector(modelRuntime, model, reactionPresets ?? []);
-      })()
+  const reactionClassifierModel = reactionConfiguration
+    ? modelRuntime.getModelOfType(
+        "classifier",
+        reactionConfiguration.provider,
+        reactionConfiguration.model,
+      )
+    : undefined;
+  if (reactionConfiguration && !reactionClassifierModel) {
+    throw new Error(
+      `Voice chat classifier model was not found: ${reactionConfiguration.provider}/${reactionConfiguration.model}`,
+    );
+  }
+  const reactionSelector = reactionClassifierModel
+    ? new PiVoiceReactionSelector(modelRuntime, reactionClassifierModel, reactionPresets ?? [])
+    : undefined;
+  const transcriptQueueSelector = reactionClassifierModel
+    ? new PiVoiceTranscriptQueueSelector(modelRuntime, reactionClassifierModel)
     : undefined;
   const piAgentFactory = createPiAgentFactory({
     agentDir,
@@ -144,6 +148,7 @@ export async function bootstrap(): Promise<void> {
             ),
           logger,
           reactionSelector,
+          transcriptQueueSelector,
         });
   discordService = new DiscordJsService(
     token,
