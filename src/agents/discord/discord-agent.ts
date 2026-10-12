@@ -79,7 +79,20 @@ export class DiscordAgent {
   }
 
   prompt(message: DiscordMessage, guildMemory?: string, channelRule?: string): Promise<void> {
-    return this.runtime.prompt({
+    return this.runtime.prompt(this.createPrompt(message, guildMemory, channelRule));
+  }
+
+  steer(message: DiscordMessage, guildMemory?: string, channelRule?: string): Promise<void> {
+    const prompt = this.createPrompt(message, guildMemory, channelRule);
+    return this.runtime.steer ? this.runtime.steer(prompt) : this.runtime.prompt(prompt);
+  }
+
+  private createPrompt(
+    message: DiscordMessage,
+    guildMemory?: string,
+    channelRule?: string,
+  ): AgentPrompt {
+    return {
       text: [
         guildMemory ? `<guild-memory>\n${guildMemory}\n</guild-memory>` : undefined,
         channelRule ? `<channel-rule>\n${channelRule}\n</channel-rule>` : undefined,
@@ -88,7 +101,7 @@ export class DiscordAgent {
         .filter((context): context is string => context !== undefined)
         .join("\n\n"),
       images: message.images.map(({ data, mimeType }) => ({ data, mimeType })),
-    });
+    };
   }
 
   compactForHandoff(): Promise<string> | undefined {

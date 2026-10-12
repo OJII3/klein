@@ -124,6 +124,19 @@ export class PiAgentRuntime implements AgentRuntime {
     });
   }
 
+  async steer(prompt: AgentPrompt): Promise<void> {
+    if (!this.session.isStreaming) {
+      await this.prompt(prompt);
+      return;
+    }
+
+    await this.session.steer(
+      prompt.text,
+      prompt.images.map((image) => ({ type: "image", ...image })),
+      { source: "rpc" },
+    );
+  }
+
   private enqueue<T>(work: () => Promise<T>): Promise<T> {
     const run = this.queue.then(work);
 
