@@ -53,119 +53,157 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
     logger.info({ event: "voice_chat_agent_ready" }, "Voice conversation agent is ready");
     let stopped = false;
     let stopPromise: Promise<void> | undefined;
-    let processing = Promise.resolve();
+    let processing: Promise<void> | undefined;
+    const pendingSteers = new Set<Promise<void>>();
     let activeReaction: AbortController | undefined;
     let lastReaction: string | undefined;
     const recentTranscripts: string[] = [];
     const playReaction = context.playReaction;
     const unsubscribeSpeechStart = context.onSpeechStart?.(() => activeReaction?.abort());
 
+    const startReaction = (text: string, messageId: string): AbortController => {
+      activeReaction?.abort();
+      const reactionController = new AbortController();
+      activeReaction = reactionController;
+      const history = recentTranscripts.slice(-3);
+      recentTranscripts.push(text);
+      if (recentTranscripts.length > 3) recentTranscripts.shift();
+      if (!this.dependencies.reactionSelector || !playReaction) return reactionController;
+
+      void (async () => {
+        const timeout = setTimeout(() => reactionController.abort(), 600);
+        try {
+          let reaction: string | undefined;
+          try {
+            reaction = await this.dependencies.reactionSelector!.select(
+              { text, recentTranscripts: history, lastReaction },
+              reactionController.signal,
+            );
+          } finally {
+            clearTimeout(timeout);
+          }
+          if (reactionController.signal.aborted || reaction === undefined) return;
+          const played = await playReaction(reaction, reactionController.signal);
+          if (played && !reactionController.signal.aborted) lastReaction = reaction;
+        } catch (error) {
+          logger.warn(
+            { err: error, event: "voice_chat_reaction_failed", messageId },
+            "Failed to select or play a voice reaction",
+          );
+        } finally {
+          clearTimeout(timeout);
+        }
+      })();
+      return reactionController;
+    };
+
+    const processTranscript = async (
+      message: DiscordMessage,
+      reactionController: AbortController,
+    ): Promise<void> => {
+      const startedAt = performance.now();
+      const previousSpeakCallCount = speakCallCount;
+      try {
+        logger.info(
+          { event: "voice_chat_message_processing_started", messageId: message.id },
+          "Processing a voice transcript with the agent",
+        );
+        await agent.prompt(message);
+        logger.info(
+          {
+            event: "voice_chat_message_processed",
+            messageId: message.id,
+            durationMs: Math.round(performance.now() - startedAt),
+            speakCallCount: speakCallCount - previousSpeakCallCount,
+          },
+          "Processed a voice transcript",
+        );
+      } catch (error) {
+        logger.error(
+          {
+            channelId: context.channelId,
+            err: error,
+            event: "voice_chat_message_processing_failed",
+          },
+          "Failed to process a voice chat message",
+        );
+        try {
+          await context.speak("ごめん、今はうまく返答できないみたい。");
+        } catch (sendError) {
+          logger.error(
+            {
+              channelId: context.channelId,
+              err: sendError,
+              event: "voice_chat_error_response_failed",
+            },
+            "Failed to speak a voice chat error response",
+          );
+        }
+      } finally {
+        reactionController.abort();
+        if (activeReaction !== reactionController) activeReaction?.abort();
+        activeReaction = undefined;
+      }
+    };
+
+    const trackProcessing = (next: Promise<void>): Promise<void> => {
+      processing = next;
+      void next.finally(() => {
+        if (processing === next) processing = undefined;
+      });
+      return next;
+    };
+
     return {
       handleTranscript: (text) => {
         if (stopped) return Promise.resolve();
-        activeReaction?.abort();
-        logger.info(
-          { event: "voice_chat_transcript_queued", textLength: text.length },
-          "Queued a voice transcript for the agent",
-        );
-        const next = processing.then(async () => {
-          if (stopped) return;
-          const startedAt = performance.now();
-          const previousSpeakCallCount = speakCallCount;
-          const message: DiscordMessage = {
-            author: context.user,
-            channelId: context.channelId,
-            content: text,
-            guildId: context.guildId,
-            id: randomUUID(),
-            images: [],
-            parentChannelId: context.parentChannelId,
-            threadId: context.threadId,
-          };
+        const message: DiscordMessage = {
+          author: context.user,
+          channelId: context.channelId,
+          content: text,
+          guildId: context.guildId,
+          id: randomUUID(),
+          images: [],
+          parentChannelId: context.parentChannelId,
+          threadId: context.threadId,
+        };
+        if (processing && typeof agent.steer !== "function") {
+          const next = processing.then(() =>
+            processTranscript(message, startReaction(text, message.id)),
+          );
+          return trackProcessing(next);
+        }
 
-          try {
-            logger.info(
-              { event: "voice_chat_message_processing_started", messageId: message.id },
-              "Processing a voice transcript with the agent",
-            );
-            const reactionController = new AbortController();
-            activeReaction = reactionController;
-            const history = recentTranscripts.slice(-3);
-            recentTranscripts.push(text);
-            if (recentTranscripts.length > 3) recentTranscripts.shift();
-            if (this.dependencies.reactionSelector && playReaction) {
-              void (async () => {
-                const timeout = setTimeout(() => reactionController.abort(), 600);
-                try {
-                  let reaction: string | undefined;
-                  try {
-                    reaction = await this.dependencies.reactionSelector!.select(
-                      { text, recentTranscripts: history, lastReaction },
-                      reactionController.signal,
-                    );
-                  } finally {
-                    clearTimeout(timeout);
-                  }
-                  if (reactionController.signal.aborted || reaction === undefined) return;
-                  const played = await playReaction(reaction, reactionController.signal);
-                  if (played && !reactionController.signal.aborted) lastReaction = reaction;
-                } catch (error) {
-                  logger.warn(
-                    { err: error, event: "voice_chat_reaction_failed", messageId: message.id },
-                    "Failed to select or play a voice reaction",
-                  );
-                } finally {
-                  clearTimeout(timeout);
-                }
-              })();
-            }
-            try {
-              await agent.prompt(message);
-            } finally {
-              reactionController.abort();
-              if (activeReaction === reactionController) activeReaction = undefined;
-            }
-            logger.info(
-              {
-                event: "voice_chat_message_processed",
-                messageId: message.id,
-                durationMs: Math.round(performance.now() - startedAt),
-                speakCallCount: speakCallCount - previousSpeakCallCount,
-              },
-              "Processed a voice transcript",
-            );
-          } catch (error) {
+        const reactionController = startReaction(text, message.id);
+        if (processing) {
+          logger.info(
+            { event: "voice_chat_transcript_steered", textLength: text.length },
+            "Steering the active voice response with a new transcript",
+          );
+          const steer = agent.steer!(message).catch((error: unknown) => {
             logger.error(
-              {
-                channelId: context.channelId,
-                err: error,
-                event: "voice_chat_message_processing_failed",
-              },
-              "Failed to process a voice chat message",
+              { channelId: context.channelId, err: error, event: "voice_chat_steer_failed" },
+              "Failed to steer the active voice response",
             );
-            try {
-              await context.speak("ごめん、今はうまく返答できないみたい。");
-            } catch (sendError) {
-              logger.error(
-                {
-                  channelId: context.channelId,
-                  err: sendError,
-                  event: "voice_chat_error_response_failed",
-                },
-                "Failed to speak a voice chat error response",
-              );
-            }
-          }
-        });
-        processing = next;
-        return next;
+            activeReaction?.abort();
+          });
+          pendingSteers.add(steer);
+          void steer.finally(() => pendingSteers.delete(steer));
+          return steer;
+        }
+
+        const next = processTranscript(message, reactionController);
+        trackProcessing(next);
+        return typeof agent.steer === "function" ? Promise.resolve() : next;
       },
       stop: () => {
         if (stopPromise) return stopPromise;
         stopped = true;
         activeReaction?.abort();
         unsubscribeSpeechStart?.();
-        stopPromise = processing.finally(() => agent.dispose());
+        stopPromise = Promise.allSettled(pendingSteers)
+          .then(() => processing)
+          .then(() => agent.dispose());
         return stopPromise;
       },
     };

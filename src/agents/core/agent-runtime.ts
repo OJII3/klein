@@ -10,6 +10,7 @@ export interface AgentPrompt {
 
 export interface AgentRuntime {
   prompt(prompt: AgentPrompt): Promise<void>;
+  steer?(prompt: AgentPrompt): Promise<void>;
   analyzeImage?(prompt: AgentPrompt): Promise<string>;
   compactForHandoff?(): Promise<string>;
   dispose(): void;
