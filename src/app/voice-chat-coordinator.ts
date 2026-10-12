@@ -130,6 +130,7 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
           "Processed a voice transcript",
         );
       } catch (error) {
+        if (stopped) return;
         logger.error(
           {
             channelId: context.channelId,
@@ -429,9 +430,15 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
         pendingTranscripts.length = 0;
         activeReaction?.abort();
         unsubscribeSpeechStart?.();
-        stopPromise = Promise.allSettled(pendingSteers)
-          .then(() => processing)
-          .then(() => agent.dispose());
+        stopPromise = (async () => {
+          try {
+            await agent.abort?.();
+            await Promise.allSettled(pendingSteers);
+            await processing;
+          } finally {
+            agent.dispose();
+          }
+        })();
         return stopPromise;
       },
     };

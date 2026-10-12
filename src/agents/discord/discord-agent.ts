@@ -109,6 +109,10 @@ export class DiscordAgent {
     return this.runtime.compactForHandoff?.();
   }
 
+  abort(): Promise<void> {
+    return this.runtime.abort?.() ?? Promise.resolve();
+  }
+
   dispose(): void {
     this.runtime.dispose();
   }
