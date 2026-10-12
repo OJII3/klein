@@ -432,7 +432,7 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
         unsubscribeSpeechStart?.();
         stopPromise = (async () => {
           try {
-            await agent.abort();
+            await agent.abort?.();
             await Promise.allSettled(pendingSteers);
             await processing;
           } finally {
