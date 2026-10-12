@@ -1,7 +1,9 @@
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
-export function createDiscordSpeakTool(speak: (text: string) => Promise<void>) {
+export function createDiscordSpeakTool(
+  speak: (text: string, toolCallId?: string) => Promise<void>,
+) {
   return defineTool({
     name: "discord_speak",
     exposure: "model-only",
@@ -13,8 +15,8 @@ export function createDiscordSpeakTool(speak: (text: string) => Promise<void>) {
       "Do not call this tool when intentionally staying silent.",
     ],
     parameters: Type.Object({ text: Type.String({ minLength: 1 }) }),
-    async execute(_toolCallId, params) {
-      await speak(params.text);
+    async execute(toolCallId, params) {
+      await speak(params.text, toolCallId);
       return {
         content: [{ type: "text", text: `Spoke in the voice channel:\n${params.text}` }],
         details: {},

@@ -108,6 +108,29 @@ under `runtime.logDir` (`.runtime/logs/pino` by default). Set
 is `info`. Log records do not include Discord message content, prompts, or API
 credentials.
 
+The default `info` level records Pi prompt queue time, provider setup and payload
+preparation, HTTP response time, the first provider stream event, the first reasoning/text/tool
+delta, generation completion, tool execution, steering queue depth, retries, and
+compaction. `KLEIN_LOG_LEVEL=debug` additionally records stream progress counts
+at most once every five seconds while deltas arrive; it does not log token text.
+No progress event during a stalled stream is expected. `providerRequestId` identifies
+a provider dispatch, not each HTTP attempt. `requestWaitMs` measures from prepared
+payload to response and includes adapter retries/backoff; intermediate failed HTTP
+attempts may not invoke Pi's hooks. If cache warming reuses the provider callbacks,
+`pi_provider_timing_ambiguous` marks provider timing unavailable for the rest of that
+run; normalized generation progress and tool timings remain available.
+
+For voice chat, follow an ASR `requestId` through the matching conversation
+`messageId`, runtime `traceId`, and consumed `inputId`. Pi records `sessionKey`,
+`sessionId`, `runId`, and `llmCallId` to connect an input to its model request and
+tool calls. A spoken tool's `toolCallId` is also its `speakId` in the TTS and
+playback logs. Transcript delivery logs separate ASR result time from ordered
+delivery wait; playback completion records synthesis time, playback time, and
+whether audio actually played. Reading a `pi_tool_started` event for
+`discord_speak` followed by TTS/playback events shows why the next model turn
+waits: the tool completes after synthesis and playback. Audio capture and ASR
+continue independently during that wait.
+
 ## Run the Web UI viewer
 
 The optional Web UI shows persisted Pino logs, Pi session history, and

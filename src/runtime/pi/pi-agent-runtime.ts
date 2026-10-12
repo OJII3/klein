@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import type { Logger } from "pino";
 
@@ -24,6 +25,7 @@ import { createBackgroundCompactionExtension } from "./background-compaction";
 import { createFxtwitterFetchExtension } from "./fxtwitter-fetch";
 import { PiImageAnalyzer, type ImageAnalyzer } from "./pi-image-analyzer";
 import { adaptPiTools } from "./pi-tool-adapter";
+import { PiRuntimeTrace } from "./pi-runtime-trace";
 
 export interface PiAgentFactoryOptions {
   readonly agentDir: string;
@@ -116,25 +118,67 @@ export class PiAgentRuntime implements AgentRuntime {
   constructor(
     private readonly session: AgentSession,
     private readonly imageAnalyzer?: ImageAnalyzer,
-  ) {}
+    private readonly trace?: PiRuntimeTrace,
+  ) {
+    trace?.attach(session);
+  }
 
   prompt(prompt: AgentPrompt): Promise<void> {
+    const traceId = prompt.traceId ?? randomUUID();
+    const queuedAt = performance.now();
+    this.trace?.log("pi_prompt_enqueued", { traceId, textLength: prompt.text.length });
     return this.enqueue(async () => {
-      await this.runPrompt(prompt);
+      const startedAt = performance.now();
+      this.trace?.registerInput(prompt.text, traceId);
+      this.trace?.log("pi_prompt_started", {
+        traceId,
+        queueWaitMs: Math.round(startedAt - queuedAt),
+      });
+      let failed = false;
+      try {
+        await this.runPrompt(prompt);
+      } catch (error) {
+        failed = true;
+        throw error;
+      } finally {
+        this.trace?.removeInput(traceId);
+        this.trace?.log("pi_prompt_completed", {
+          traceId,
+          failed,
+          durationMs: Math.round(performance.now() - startedAt),
+        });
+      }
     });
   }
 
   async steer(prompt: AgentPrompt): Promise<void> {
     if (!this.session.isStreaming) {
+      this.trace?.log("pi_steer_started_as_prompt", { traceId: prompt.traceId });
       await this.prompt(prompt);
       return;
     }
 
-    await this.session.steer(
-      prompt.text,
-      prompt.images.map((image) => ({ type: "image", ...image })),
-      { source: "rpc" },
-    );
+    const traceId = prompt.traceId ?? randomUUID();
+    const startedAt = performance.now();
+    this.trace?.registerInput(prompt.text, traceId);
+    this.trace?.log("pi_steer_started", { traceId });
+    try {
+      const disposition = await this.session.steer(
+        prompt.text,
+        prompt.images.map((image) => ({ type: "image", ...image })),
+        { source: "rpc" },
+      );
+      if (disposition !== "queued") this.trace?.removeInput(traceId);
+      this.trace?.log("pi_steer_completed", {
+        traceId,
+        disposition,
+        durationMs: Math.round(performance.now() - startedAt),
+      });
+    } catch (error) {
+      this.trace?.removeInput(traceId);
+      this.trace?.log("pi_steer_failed", { traceId });
+      throw error;
+    }
   }
 
   private enqueue<T>(work: () => Promise<T>): Promise<T> {
@@ -199,6 +243,7 @@ export class PiAgentRuntime implements AgentRuntime {
   }
 
   dispose(): void {
+    this.trace?.dispose();
     this.session.dispose();
   }
 }
@@ -209,6 +254,7 @@ export function createResourceLoader(
   settingsManager: SettingsManager,
   logger?: Logger,
   skillsDirectory = DEFAULT_SKILLS_DIRECTORY,
+  trace?: PiRuntimeTrace,
 ): DefaultResourceLoader {
   return new DefaultResourceLoader({
     cwd: process.cwd(),
@@ -219,6 +265,7 @@ export function createResourceLoader(
       createMcpExtension(),
       createBackgroundCompactionExtension(settingsManager, { logger }),
       createFxtwitterFetchExtension(),
+      ...(trace ? [trace.extension] : []),
     ],
     additionalExtensionPaths: [resolve(process.cwd(), PI_WEB_ACCESS_EXTENSION_PATH)],
     settingsManager,
@@ -308,6 +355,9 @@ export function createPiAgentFactory({
       tools: readonly TTool[],
       options: AgentCreationOptions,
     ): Promise<AgentRuntime> {
+      const trace = new PiRuntimeTrace(
+        logger.child({ component: "pi-runtime", sessionKey: options.sessionKey }),
+      );
       const settingsManager = SettingsManager.create(process.cwd(), agentDir);
       const resourceLoader = createResourceLoader(
         agentDir,
@@ -315,6 +365,7 @@ export function createPiAgentFactory({
         settingsManager,
         logger,
         skillsDirectory,
+        trace,
       );
       await resourceLoader.reload();
       // Select the initial tools without restricting MCP tools registered after startup.
@@ -385,7 +436,7 @@ export function createPiAgentFactory({
         ? new PiImageAnalyzer(session.modelRuntime, sessionImageModel, llm.image?.thinkingLevel)
         : undefined;
 
-      return new PiAgentRuntime(session, imageAnalyzer);
+      return new PiAgentRuntime(session, imageAnalyzer, trace);
     },
   };
 }

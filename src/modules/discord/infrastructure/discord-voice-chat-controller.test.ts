@@ -71,22 +71,24 @@ function createController(
 
 test("sends final voice transcripts to the dedicated conversation", async () => {
   const originalStart = DiscordVoiceCaptureSession.prototype.start;
-  let onTranscript: ((text: string) => Promise<void>) | undefined;
+  let onTranscript: ((text: string, requestId?: string) => Promise<void>) | undefined;
   DiscordVoiceCaptureSession.prototype.start = async function () {
     onTranscript = (
       this as unknown as {
-        options: { onTranscript: (text: string) => Promise<void> };
+        options: { onTranscript: (text: string, requestId?: string) => Promise<void> };
       }
     ).options.onTranscript;
   };
   const contexts: unknown[] = [];
   const transcripts: string[] = [];
+  const requestIds: Array<string | undefined> = [];
   const controller = createController({
     create: async (context) => {
       contexts.push(context);
       return {
-        handleTranscript: async (text) => {
+        handleTranscript: async (text, requestId) => {
           transcripts.push(text);
+          requestIds.push(requestId);
         },
         stop: async () => undefined,
       };
@@ -101,7 +103,7 @@ test("sends final voice transcripts to the dedicated conversation", async () => 
   try {
     await controller.handleCommand(interaction);
     assert.ok(onTranscript);
-    await onTranscript("こんにちは");
+    await onTranscript("こんにちは", "asr-request-123");
 
     const { speak, playReaction, onSpeechStart, ...contextWithoutSpeak } = contexts[0] as Record<
       string,
@@ -124,6 +126,7 @@ test("sends final voice transcripts to the dedicated conversation", async () => 
       voiceChannelId: "voice-channel-123",
     });
     assert.deepEqual(transcripts, ["こんにちは"]);
+    assert.deepEqual(requestIds, ["asr-request-123"]);
   } finally {
     DiscordVoiceCaptureSession.prototype.start = originalStart;
     await controller.stop();

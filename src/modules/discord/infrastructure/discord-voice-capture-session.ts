@@ -57,7 +57,7 @@ export interface DiscordVoiceCaptureSessionOptions {
   readonly language: string;
   readonly logger?: Logger;
   readonly onError?: (error: Error) => void;
-  readonly onTranscript: (text: string) => Promise<void>;
+  readonly onTranscript: (text: string, requestId?: string) => Promise<void>;
   readonly audioResourceFactory?: (audio: Uint8Array) => ReturnType<typeof createAudioResource>;
   readonly reactionPresets?: readonly VoiceReactionPreset[];
   readonly tts: TextToSpeech;
@@ -322,9 +322,10 @@ export class DiscordVoiceCaptureSession {
         const requestId = randomUUID();
         try {
           const request = asrConnection.start({ requestId, language: this.options.language });
+          const queuedAt = performance.now();
           let resolveTranscript!: (text: string) => void;
-          const transcriptResult = new Promise<string>((resolve) => {
-            resolveTranscript = resolve;
+          const transcriptResult = new Promise<{ text: string; receivedAt: number }>((resolve) => {
+            resolveTranscript = (text) => resolve({ text, receivedAt: performance.now() });
           });
           this.activeAsrRequest = {
             request,
@@ -337,14 +338,36 @@ export class DiscordVoiceCaptureSession {
             "Detected speech and started an ASR request",
           );
           this.transcriptQueue = this.transcriptQueue.then(async () => {
-            const text = await transcriptResult;
+            const { text, receivedAt } = await transcriptResult;
             if (this.stopped || !text.trim()) return;
+            const deliveryStartedAt = performance.now();
+            this.logger?.info(
+              {
+                event: "discord_voice_transcript_delivery_started",
+                requestId,
+                asrResultWaitMs: Math.round(receivedAt - queuedAt),
+                resultQueueWaitMs: Math.round(deliveryStartedAt - receivedAt),
+              },
+              "Delivering an ASR transcript to the conversation",
+            );
+            let failed = false;
             try {
-              await this.options.onTranscript(text);
+              await this.options.onTranscript(text, requestId);
             } catch (error) {
+              failed = true;
               this.logger?.warn(
-                { err: error, event: "discord_voice_transcript_processing_failed" },
+                { err: error, event: "discord_voice_transcript_processing_failed", requestId },
                 "Failed to process a voice transcript",
+              );
+            } finally {
+              this.logger?.info(
+                {
+                  event: "discord_voice_transcript_delivery_completed",
+                  requestId,
+                  durationMs: Math.round(performance.now() - deliveryStartedAt),
+                  failed,
+                },
+                "Finished delivering an ASR transcript",
               );
             }
           });
@@ -414,18 +437,19 @@ export class DiscordVoiceCaptureSession {
       });
   }
 
-  async speak(text: string): Promise<void> {
+  async speak(text: string, toolCallId?: string): Promise<void> {
+    const speakId = toolCallId ?? randomUUID();
     const audioPlayer = this.audioPlayer;
     if (!audioPlayer || this.stopped) {
       this.logger?.warn(
-        { event: "discord_voice_speak_skipped", stopped: this.stopped },
+        { event: "discord_voice_speak_skipped", speakId, toolCallId, stopped: this.stopped },
         "Voice playback is unavailable",
       );
       return;
     }
     const startedAt = performance.now();
     this.logger?.info(
-      { event: "discord_voice_tts_started", textLength: text.length },
+      { event: "discord_voice_tts_started", speakId, toolCallId, textLength: text.length },
       "Synthesizing a voice reply",
     );
     const audio = await this.options.tts.synthesize(text).catch((error: unknown) => {
@@ -433,6 +457,8 @@ export class DiscordVoiceCaptureSession {
         {
           err: error,
           event: "discord_voice_tts_failed",
+          speakId,
+          toolCallId,
           durationMs: Math.round(performance.now() - startedAt),
         },
         "Failed to synthesize a voice reply",
@@ -442,22 +468,49 @@ export class DiscordVoiceCaptureSession {
     this.logger?.info(
       {
         event: "discord_voice_tts_completed",
+        speakId,
+        toolCallId,
         durationMs: Math.round(performance.now() - startedAt),
         audioBytes: audio.byteLength,
       },
       "Synthesized a voice reply",
     );
-    if (this.stopped) return;
-    this.stopReaction();
-    this.replacePlayback(false);
-    await this.play(audio, "reply");
-    this.logger?.info(
-      {
-        event: "discord_voice_speak_completed",
-        durationMs: Math.round(performance.now() - startedAt),
-      },
-      "Finished playing the voice reply",
-    );
+    const synthesisDurationMs = Math.round(performance.now() - startedAt);
+    const playbackStartedAt = performance.now();
+    let played = false;
+    let failed = false;
+    try {
+      if (this.stopped) return;
+      this.stopReaction();
+      this.replacePlayback(false);
+      this.logger?.info(
+        { event: "discord_voice_speak_playback_started", speakId, toolCallId },
+        "Starting playback of the synthesized voice reply",
+      );
+      played = await this.play(audio, "reply");
+    } catch (error) {
+      failed = true;
+      this.logger?.warn(
+        { err: error, event: "discord_voice_speak_playback_failed", speakId, toolCallId },
+        "Failed to play the voice reply",
+      );
+      throw error;
+    } finally {
+      this.logger?.info(
+        {
+          event: "discord_voice_speak_completed",
+          speakId,
+          toolCallId,
+          durationMs: Math.round(performance.now() - startedAt),
+          synthesisDurationMs,
+          playbackDurationMs: Math.round(performance.now() - playbackStartedAt),
+          played,
+          stopped: this.stopped,
+          failed,
+        },
+        "Finished the voice reply playback request",
+      );
+    }
   }
 
   async playReaction(reaction: string, signal: AbortSignal): Promise<boolean> {

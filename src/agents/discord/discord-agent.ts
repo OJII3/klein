@@ -30,7 +30,7 @@ export class DiscordAgent {
       readonly sessionKey?: string;
       readonly handoffContext?: string;
       readonly tts?: TextToSpeech;
-      readonly speak?: (text: string) => Promise<void>;
+      readonly speak?: (text: string, toolCallId?: string) => Promise<void>;
     } = {},
   ): Promise<DiscordAgent> {
     let runtime: AgentRuntime | undefined;
@@ -93,6 +93,7 @@ export class DiscordAgent {
     channelRule?: string,
   ): AgentPrompt {
     return {
+      traceId: message.id,
       text: [
         guildMemory ? `<guild-memory>\n${guildMemory}\n</guild-memory>` : undefined,
         channelRule ? `<channel-rule>\n${channelRule}\n</channel-rule>` : undefined,
