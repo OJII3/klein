@@ -83,6 +83,10 @@ Set `"profile"` in `config/config.jsonc` to switch profiles (defaults to `"klein
 
 When `features.memory.enabled` is true, Klein periodically extracts durable guild facts and notes from recent conversations into `.runtime/memory/{guildId}/MEMORY.md` using an optional background model.
 
+### Political content check
+
+Set `features.politicalContentCheck.enabled` to `true` to classify Discord text and voice transcripts before they reach the chat model. Political topics, including neutral factual questions and China-related political topics, are silently skipped and are not added to guild memory. If the classifier cannot make a decision, the message is also skipped. Configure a classifier model that is different from the text and voice chat models; the classifier itself receives the message text for evaluation. Voice transcripts are checked after local transcription, before queue reactions or the voice model. Image attachments are outside this check; their image contents are not classified.
+
 ### Remote MCP Tools
 
 Register MCP tools directly into Pi's agent directory (`.runtime/pi`):

@@ -5,6 +5,7 @@ import type { DiscordOperatingState } from "@modules/discord/domain/discord-oper
 import type { DiscordService } from "@modules/discord/ports/discord-service";
 import type { MemoryCoordinator } from "@modules/memory/application/memory-coordinator";
 import type { DiscordChannelRuleStore } from "@modules/discord/ports/discord-channel-rule-store";
+import type { PoliticalContentClassifier } from "@modules/discord/ports/political-content-classifier";
 import { DiscordAgent } from "@agents/discord/discord-agent";
 import type { TaskCoordinator } from "./task-coordinator";
 import {
@@ -27,6 +28,7 @@ export interface AgentCoordinatorDependencies {
   readonly logger: Logger;
   readonly memoryCoordinator?: MemoryCoordinator;
   readonly operatingState: DiscordOperatingState;
+  readonly politicalContentClassifier?: PoliticalContentClassifier;
   readonly taskCoordinator: TaskCoordinator;
 }
 
@@ -120,8 +122,28 @@ export class AgentCoordinator {
     const startedAt = Date.now();
     logger.debug({ event: "discord_message_processing_started" }, "Processing Discord message");
     let channelState: ChannelSessionState | undefined;
+    let shouldEnqueueMemory = false;
 
     try {
+      let politicalContent = "none";
+      if (this.dependencies.politicalContentClassifier) {
+        try {
+          politicalContent = await this.dependencies.politicalContentClassifier.classify(
+            [message.replyTo?.content, message.content].filter(Boolean).join("\n"),
+          );
+        } catch {
+          politicalContent = "unknown";
+        }
+      }
+      if (politicalContent !== "none") {
+        logger.info(
+          { event: "discord_message_skipped_by_political_content_check" },
+          "Skipped a Discord message based on the political content check",
+        );
+        return;
+      }
+      shouldEnqueueMemory = true;
+
       const now = Date.now();
       channelState = await this.getChannelState(message.channelId, now);
       channelState = await this.rotateChannelIfDue(message.channelId, channelState, now);
@@ -181,7 +203,7 @@ export class AgentCoordinator {
           );
         }
       }
-      this.dependencies.memoryCoordinator?.enqueue(message);
+      if (shouldEnqueueMemory) this.dependencies.memoryCoordinator?.enqueue(message);
     }
   }
 

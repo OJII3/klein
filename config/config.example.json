@@ -50,6 +50,11 @@
       "maxBatchAgeSeconds": 1800,
       "maxBatchMessages": 32
     },
+    "politicalContentCheck": {
+      "enabled": false,
+      "provider": "cloudflare-workers-ai",
+      "model": "@cf/cloudflare/clef-flash"
+    },
     "minecraft": {
       "enabled": false
     },

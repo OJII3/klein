@@ -76,6 +76,15 @@ const MemoryConfigurationSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const PoliticalContentCheckConfigurationSchema = Type.Object(
+  {
+    enabled: Type.Boolean(),
+    provider: Type.String({ minLength: 1 }),
+    model: Type.String({ minLength: 1 }),
+  },
+  { additionalProperties: false },
+);
+
 const WebUiConfigurationSchema = Type.Object(
   {
     enabled: Type.Boolean(),
@@ -147,6 +156,7 @@ export const ConfigSchema = Type.Object(
     features: Type.Object(
       {
         memory: Type.Object(MemoryConfigurationSchema.properties, { additionalProperties: false }),
+        politicalContentCheck: Type.Optional(PoliticalContentCheckConfigurationSchema),
         minecraft: Type.Object(
           {
             enabled: Type.Boolean(),

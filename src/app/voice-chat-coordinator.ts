@@ -107,6 +107,20 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
       return reactionController;
     };
 
+    const shouldDiscardPoliticalTranscript = async (
+      text: string,
+      signal: AbortSignal,
+    ): Promise<boolean> => {
+      const selector = this.dependencies.transcriptQueueSelector;
+      if (!selector?.checkPoliticalContent) return false;
+
+      try {
+        return await selector.checkPoliticalContent(text, signal);
+      } catch {
+        return true;
+      }
+    };
+
     const processTranscript = async (
       message: DiscordMessage,
       reactionController: AbortController,
@@ -283,6 +297,24 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
         return;
       }
       if (!processing) {
+        const message = pendingTranscripts[0]!;
+        const shouldDiscard = await shouldDiscardPoliticalTranscript(
+          message.content,
+          controller.signal,
+        );
+        if (controller.signal.aborted || revision !== queueRevision || stopped) return;
+        if (shouldDiscard) {
+          pendingTranscripts.shift();
+          logger.info(
+            {
+              event: "voice_chat_transcript_skipped_by_political_content_check",
+              messageId: message.id,
+            },
+            "Skipped a voice transcript based on the political content check",
+          );
+          scheduleQueueDecision();
+          return;
+        }
         processNextQueuedTranscript();
         return;
       }
@@ -297,7 +329,12 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
           controller.signal,
         );
       } catch {
-        action = "keep";
+        const firstQueuedTranscript = pendingTranscripts[0];
+        action =
+          firstQueuedTranscript &&
+          (await shouldDiscardPoliticalTranscript(firstQueuedTranscript.content, controller.signal))
+            ? "discard"
+            : "keep";
       }
       if (controller.signal.aborted || revision !== queueRevision || stopped) return;
       await applyQueueAction(action, revision, controller);
@@ -330,7 +367,7 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
     };
 
     return {
-      handleTranscript: (text, requestId) => {
+      handleTranscript: async (text, requestId) => {
         if (stopped) return Promise.resolve();
         const message: DiscordMessage = {
           author: context.user,
@@ -366,6 +403,22 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
             return Promise.resolve();
           }
 
+          const shouldDiscard = await shouldDiscardPoliticalTranscript(
+            text,
+            new AbortController().signal,
+          );
+          if (stopped) return;
+          if (shouldDiscard) {
+            logger.info(
+              {
+                event: "voice_chat_transcript_skipped_by_political_content_check",
+                messageId: message.id,
+              },
+              "Skipped a voice transcript based on the political content check",
+            );
+            return;
+          }
+
           const reactionController = startReaction(text, message.id);
           const next = processTranscript(message, reactionController);
           trackProcessing(next);
@@ -373,10 +426,41 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
         }
 
         if (processing && typeof agent.steer !== "function") {
+          const shouldDiscard = await shouldDiscardPoliticalTranscript(
+            text,
+            new AbortController().signal,
+          );
+          if (stopped) return;
+          if (shouldDiscard) {
+            logger.info(
+              {
+                event: "voice_chat_transcript_skipped_by_political_content_check",
+                messageId: message.id,
+              },
+              "Skipped a voice transcript based on the political content check",
+            );
+            return;
+          }
           const next = processing.then(() =>
             processTranscript(message, startReaction(text, message.id)),
           );
           return trackProcessing(next);
+        }
+
+        const shouldDiscard = await shouldDiscardPoliticalTranscript(
+          text,
+          new AbortController().signal,
+        );
+        if (stopped) return;
+        if (shouldDiscard) {
+          logger.info(
+            {
+              event: "voice_chat_transcript_skipped_by_political_content_check",
+              messageId: message.id,
+            },
+            "Skipped a voice transcript based on the political content check",
+          );
+          return;
         }
 
         const reactionController = startReaction(text, message.id);

@@ -20,6 +20,7 @@ import {
 import { PiMemoryProcessor } from "@runtime/pi/pi-memory-processor";
 import { PiVoiceReactionSelector } from "@runtime/pi/pi-voice-reaction-selector";
 import { PiVoiceTranscriptQueueSelector } from "@runtime/pi/pi-voice-transcript-queue-selector";
+import { PiDiscordPoliticalContentClassifier } from "@runtime/pi/pi-discord-political-content-classifier";
 import { createDiscordAccessPolicy } from "@modules/discord/domain/discord-access-policy";
 import { DiscordOperatingState } from "@modules/discord/domain/discord-operating-state";
 import { DiscordJsService } from "@modules/discord/infrastructure/discord-js-service";
@@ -62,8 +63,16 @@ export async function bootstrap(): Promise<void> {
   const voiceChatLlmConfiguration = voiceChatConfiguration?.enabled
     ? voiceChatConfiguration.llm
     : undefined;
+  const politicalContentCheckConfiguration = config.features.politicalContentCheck?.enabled
+    ? config.features.politicalContentCheck
+    : undefined;
   const memoryLlmConfiguration = config.features.memory.llm ?? config.llm;
-  const modelsInUse = [config.llm, config.llm.image, voiceChatLlmConfiguration];
+  const modelsInUse = [
+    config.llm,
+    config.llm.image,
+    voiceChatLlmConfiguration,
+    politicalContentCheckConfiguration,
+  ];
   if (config.features.memory.enabled) modelsInUse.push(memoryLlmConfiguration);
   const usesOpenCodeGo = modelsInUse.some((model) => model?.provider === "opencode-go");
   if (usesOpenCodeGo && !openCodeGoApiKey) {
@@ -95,6 +104,32 @@ export async function bootstrap(): Promise<void> {
         reactionConfiguration.model,
       )
     : undefined;
+  const politicalContentClassifierModel = politicalContentCheckConfiguration
+    ? modelRuntime.getModelOfType(
+        "classifier",
+        politicalContentCheckConfiguration.provider,
+        politicalContentCheckConfiguration.model,
+      )
+    : undefined;
+  if (politicalContentCheckConfiguration && !politicalContentClassifierModel) {
+    throw new Error(
+      `Political content classifier model was not found: ${politicalContentCheckConfiguration.provider}/${politicalContentCheckConfiguration.model}`,
+    );
+  }
+  if (
+    politicalContentCheckConfiguration &&
+    ((config.llm.provider === politicalContentCheckConfiguration.provider &&
+      config.llm.model === politicalContentCheckConfiguration.model) ||
+      (config.llm.image?.provider === politicalContentCheckConfiguration.provider &&
+        config.llm.image.model === politicalContentCheckConfiguration.model) ||
+      (voiceChatLlmConfiguration?.provider === politicalContentCheckConfiguration.provider &&
+        voiceChatLlmConfiguration.model === politicalContentCheckConfiguration.model))
+  ) {
+    throw new Error("Political content classifier must use a different model from the chat model");
+  }
+  const politicalContentClassifier = politicalContentClassifierModel
+    ? new PiDiscordPoliticalContentClassifier(modelRuntime, politicalContentClassifierModel)
+    : undefined;
   if (reactionConfiguration && !reactionClassifierModel) {
     throw new Error(
       `Voice chat classifier model was not found: ${reactionConfiguration.provider}/${reactionConfiguration.model}`,
@@ -103,8 +138,13 @@ export async function bootstrap(): Promise<void> {
   const reactionSelector = reactionClassifierModel
     ? new PiVoiceReactionSelector(modelRuntime, reactionClassifierModel, reactionPresets ?? [])
     : undefined;
-  const transcriptQueueSelector = reactionClassifierModel
-    ? new PiVoiceTranscriptQueueSelector(modelRuntime, reactionClassifierModel)
+  const transcriptQueueClassifierModel = reactionClassifierModel ?? politicalContentClassifierModel;
+  const transcriptQueueSelector = transcriptQueueClassifierModel
+    ? new PiVoiceTranscriptQueueSelector(
+        modelRuntime,
+        transcriptQueueClassifierModel,
+        politicalContentCheckConfiguration !== undefined,
+      )
     : undefined;
   const piAgentFactory = createPiAgentFactory({
     agentDir,
@@ -198,6 +238,7 @@ export async function bootstrap(): Promise<void> {
     logger,
     memoryCoordinator,
     operatingState: discordOperatingState,
+    politicalContentClassifier,
     taskCoordinator,
   });
   const usageProvider =
