@@ -125,17 +125,17 @@ export class AgentCoordinator {
     let shouldEnqueueMemory = false;
 
     try {
-      let politicalContent = "none";
+      let shouldSkip = false;
       if (this.dependencies.politicalContentClassifier) {
         try {
-          politicalContent = await this.dependencies.politicalContentClassifier.classify(
+          shouldSkip = await this.dependencies.politicalContentClassifier.containsPoliticalContent(
             [message.replyTo?.content, message.content].filter(Boolean).join("\n"),
           );
         } catch {
-          politicalContent = "unknown";
+          shouldSkip = true;
         }
       }
-      if (politicalContent !== "none") {
+      if (shouldSkip) {
         logger.info(
           { event: "discord_message_skipped_by_political_content_check" },
           "Skipped a Discord message based on the political content check",
