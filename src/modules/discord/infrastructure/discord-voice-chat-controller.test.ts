@@ -10,7 +10,13 @@ import { DiscordVoiceCaptureSession } from "./discord-voice-capture-session";
 
 function createInteraction(
   subcommand: "join" | "leave",
-  options: { channelId?: string; isThread?: boolean; parentId?: string } = {},
+  options: {
+    channelId?: string;
+    isThread?: boolean;
+    parentId?: string;
+    userId?: string;
+    userIsBot?: boolean;
+  } = {},
 ) {
   const replies: string[] = [];
   const interaction = {
@@ -37,7 +43,7 @@ function createInteraction(
     inGuild: () => true,
     options: { getSubcommand: () => subcommand },
     reply: async ({ content }: { content: string }) => replies.push(content),
-    user: { id: "user-123" },
+    user: { id: options.userId ?? "user-123", bot: options.userIsBot ?? false },
   } as unknown as ChatInputCommandInteraction;
   return { interaction, replies };
 }
@@ -177,6 +183,34 @@ test("stops the capture and dedicated conversation on leave", async () => {
 
     assert.deepEqual(stopped, ["conversation"]);
     assert.deepEqual(replies, ["VCから退出しました。"]);
+  } finally {
+    DiscordVoiceCaptureSession.prototype.start = originalStart;
+    await controller.stop();
+  }
+});
+
+test("owner VC access rejects other users and bots and accepts the owner", async () => {
+  const originalStart = DiscordVoiceCaptureSession.prototype.start;
+  DiscordVoiceCaptureSession.prototype.start = async () => undefined;
+  let createCalls = 0;
+  const controller = createController(
+    {
+      create: async () => {
+        createCalls += 1;
+        return { handleTranscript: async () => undefined, stop: async () => undefined };
+      },
+    },
+    createDiscordAccessPolicy({ default: "owner", directMessages: "deny" }, "user-123"),
+  );
+  try {
+    for (const identity of [{ userId: "other-user" }, { userIsBot: true }]) {
+      const { interaction, replies } = createInteraction("join", identity);
+      await controller.handleCommand(interaction);
+      assert.deepEqual(replies, ["このチャンネルではVC会話を利用できません。"]);
+    }
+    assert.equal(createCalls, 0);
+    await controller.handleCommand(createInteraction("join").interaction);
+    assert.equal(createCalls, 1);
   } finally {
     DiscordVoiceCaptureSession.prototype.start = originalStart;
     await controller.stop();

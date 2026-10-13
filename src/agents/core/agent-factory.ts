@@ -3,6 +3,7 @@ import type { AgentRuntime } from "./agent-runtime";
 
 export interface AgentCreationOptions {
   readonly sessionKey: string;
+  readonly ownerFeaturesAllowed?: boolean;
   readonly initialContext?: string;
 }
 

@@ -10,6 +10,7 @@ import { DiscordJsService } from "./discord-js-service";
 
 type TestableDiscordJsService = {
   readonly client: {
+    channels: { fetch: (id: string) => Promise<unknown> };
     user: {
       id: string;
       setActivity?: (name: string) => void;
@@ -267,6 +268,84 @@ test("handles idle and online slash commands for members with Manage Server", as
 
     assert.equal(operatingState.mode, "paused");
     assert.deepEqual(replies, [{ content: "Botを一時停止しました。", ephemeral: true }]);
+  } finally {
+    await service.stop();
+  }
+});
+
+test("owner channels only forward real owner messages", async () => {
+  const service = new DiscordJsService(
+    "token",
+    createDiscordAccessPolicy({ default: "owner", directMessages: "owner" }, "user-123"),
+  );
+  const testableService = service as unknown as TestableDiscordJsService;
+  testableService.acceptingMessages = true;
+  const received: DiscordMessage[] = [];
+  testableService.onMessage = async (message) => {
+    received.push(message);
+  };
+  try {
+    await testableService.handleMessage(createMessage({ author: { id: "other-user" } }));
+    await testableService.handleMessage(createMessage({ author: { id: "user-123", bot: true } }));
+    await testableService.handleMessage(createMessage());
+    assert.equal(received.length, 1);
+    assert.equal(received[0]?.author.id, "user-123");
+    assert.equal(received[0]?.author.bot, false);
+  } finally {
+    await service.stop();
+  }
+});
+
+test("message reads enforce inherited access and trusted requester identity", async () => {
+  const service = new DiscordJsService(
+    "token",
+    createDiscordAccessPolicy(
+      {
+        default: "deny",
+        directMessages: "deny",
+        guilds: {
+          "guild-123": {
+            channels: {
+              private: { access: "owner", threads: { public: { access: "allow" } } },
+            },
+          },
+        },
+      },
+      "user-123",
+    ),
+  );
+  const testableService = service as unknown as TestableDiscordJsService;
+  let reads = 0;
+  testableService.client.channels.fetch = async (id) => ({
+    id,
+    guildId: "guild-123",
+    isTextBased: () => true,
+    isThread: () => id === "public" || id === "private-thread",
+    parentId: "private",
+    messages: {
+      fetch: async () => {
+        reads += 1;
+        return createMessage();
+      },
+    },
+  });
+  const locator = { channelId: "private-thread", messageId: "message-123" };
+  try {
+    for (const requester of [
+      undefined,
+      { userId: "other-user" },
+      { userId: "user-123", userIsBot: true },
+    ]) {
+      await assert.rejects(service.readMessage(locator, requester), /access denied/);
+    }
+    await assert.rejects(
+      service.readMessage({ ...locator, channelId: "denied" }, { userId: "user-123" }),
+      /access denied/,
+    );
+    assert.equal(reads, 0);
+    assert.equal((await service.readMessage(locator, { userId: "user-123" })).id, "message-123");
+    await service.readMessage({ ...locator, channelId: "public" });
+    assert.equal(reads, 2);
   } finally {
     await service.stop();
   }

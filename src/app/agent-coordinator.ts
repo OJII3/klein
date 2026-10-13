@@ -1,5 +1,6 @@
 import type { Logger } from "pino";
 
+import type { DiscordAccessPolicy } from "@modules/discord/domain/discord-access-policy";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import type { DiscordOperatingState } from "@modules/discord/domain/discord-operating-state";
 import type { DiscordService } from "@modules/discord/ports/discord-service";
@@ -17,10 +18,13 @@ import {
 
 export interface AgentCoordinatorDependencies {
   readonly discordService: DiscordService;
+  readonly accessPolicy?: DiscordAccessPolicy;
+  readonly ownerUserId?: string;
   readonly createDiscordAgent: (
     channelId: string,
     sessionKey: string,
     handoffContext?: string,
+    ownerFeaturesAllowed?: boolean,
   ) => Promise<DiscordAgent>;
   readonly channelSessionStateStore?: ChannelSessionStateStore;
   readonly channelRuleStore?: DiscordChannelRuleStore;
@@ -112,6 +116,18 @@ export class AgentCoordinator {
 
   private async processMessage(message: DiscordMessage): Promise<void> {
     if (!this.dependencies.operatingState.isActive()) return;
+    const target = {
+      guildId: message.guildId,
+      channelId: message.parentChannelId ?? message.channelId,
+      threadId: message.threadId,
+      userId: message.author.id,
+      userIsBot: message.author.bot,
+    };
+    if (this.dependencies.accessPolicy && !this.dependencies.accessPolicy.canReceive(target))
+      return;
+    const ownerFeaturesAllowed =
+      this.dependencies.accessPolicy?.canUseOwnerFeatures(target) ?? false;
+    const accessScope = ownerFeaturesAllowed ? `owner:${this.dependencies.ownerUserId}` : "public";
 
     const logger = this.logger.child({
       channelId: message.channelId,
@@ -123,7 +139,7 @@ export class AgentCoordinator {
 
     try {
       const now = Date.now();
-      channelState = await this.getChannelState(message.channelId, now);
+      channelState = await this.getChannelState(message.channelId, now, accessScope);
       channelState = await this.rotateChannelIfDue(message.channelId, channelState, now);
       const agent = await this.getDiscordAgent(message.channelId, channelState);
       if (channelState.handoffContext) {
@@ -181,7 +197,7 @@ export class AgentCoordinator {
           );
         }
       }
-      this.dependencies.memoryCoordinator?.enqueue(message);
+      if (!ownerFeaturesAllowed) this.dependencies.memoryCoordinator?.enqueue(message);
     }
   }
 
@@ -221,7 +237,9 @@ export class AgentCoordinator {
       handoffContext,
       hasActivitySinceRotation: false,
       lastRotationDate: rotationDate,
-      sessionKey: `discord-channel:${channelId}:rotation:${rotationDate}`,
+      sessionKey: this.dependencies.accessPolicy
+        ? `discord-channel:${channelId}:${state.accessScope ?? "public"}:rotation:${rotationDate}`
+        : `discord-channel:${channelId}:rotation:${rotationDate}`,
     };
     await this.saveChannelState(nextState);
     agent.dispose();
@@ -233,18 +251,33 @@ export class AgentCoordinator {
     return nextState;
   }
 
-  private async getChannelState(channelId: string, now: number): Promise<ChannelSessionState> {
+  private async getChannelState(
+    channelId: string,
+    now: number,
+    accessScope?: string,
+  ): Promise<ChannelSessionState> {
     const rotationDate = getChannelRotationDate(now);
-    if (this.dependencies.channelSessionStateStore) {
-      return this.dependencies.channelSessionStateStore.getOrCreate(channelId, rotationDate);
+    const existing = this.dependencies.channelSessionStateStore
+      ? await this.dependencies.channelSessionStateStore.getOrCreate(channelId, rotationDate)
+      : this.inMemoryChannelStates.get(channelId);
+    if (
+      existing &&
+      (accessScope === undefined ||
+        existing.accessScope === accessScope ||
+        (!this.dependencies.accessPolicy && !existing.accessScope && accessScope === "public"))
+    ) {
+      return existing;
     }
-
-    const existing = this.inMemoryChannelStates.get(channelId);
-    if (existing) return existing;
+    const previousAgent = this.agents.get(channelId);
+    if (previousAgent) (await previousAgent).dispose();
+    this.agents.delete(channelId);
 
     const created: ChannelSessionState = {
       channelId,
-      sessionKey: `discord-channel:${channelId}`,
+      accessScope,
+      sessionKey: this.dependencies.accessPolicy
+        ? `discord-channel:${channelId}:${accessScope ?? "public"}`
+        : `discord-channel:${channelId}`,
       lastActivityAt: null,
       lastRotationDate: rotationDate,
       hasActivitySinceRotation: true,
@@ -266,6 +299,8 @@ export class AgentCoordinator {
       channelId,
       state.sessionKey,
       state.handoffContext,
+      state.accessScope === `owner:${this.dependencies.ownerUserId}` &&
+        !!this.dependencies.ownerUserId,
     );
     this.agents.set(channelId, created);
     void created.catch(() => {

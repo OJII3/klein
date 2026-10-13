@@ -36,9 +36,11 @@ import {
 import { PiImageAnalyzer, type ImageAnalyzer } from "./pi-image-analyzer";
 import { adaptPiTools } from "./pi-tool-adapter";
 import { PiRuntimeTrace } from "./pi-runtime-trace";
+import { ToolAuthorization, piMcpConfigLoader, type ToolPermissions } from "./tool-permissions";
 
 export interface PiAgentFactoryOptions {
   readonly agentDir: string;
+  readonly permissions?: ToolPermissions;
   readonly skillsDirectory?: string;
   readonly modelRuntime: ModelRuntime;
   readonly sessionMode: SessionMode;
@@ -128,6 +130,7 @@ export class PiAgentRuntime implements AgentRuntime {
     private readonly imageAnalyzer?: ImageAnalyzer,
     private readonly trace?: PiRuntimeTrace,
     private readonly modelRuntime?: ModelRuntime,
+    private readonly authorization?: ToolAuthorization,
   ) {
     trace?.attach(session);
   }
@@ -146,11 +149,13 @@ export class PiAgentRuntime implements AgentRuntime {
       });
       let failed = false;
       try {
+        this.authorization?.setPrompt(prompt.ownerFeaturesAllowed === true);
         await this.runPrompt(prompt);
       } catch (error) {
         failed = true;
         throw error;
       } finally {
+        this.authorization?.setPrompt(false);
         this.trace?.removeInput(traceId);
         this.trace?.log("pi_prompt_completed", {
           traceId,
@@ -165,6 +170,15 @@ export class PiAgentRuntime implements AgentRuntime {
     this.ensureSessionAvailable();
     if (!this.session.isStreaming) {
       this.trace?.log("pi_steer_started_as_prompt", { traceId: prompt.traceId });
+      await this.prompt(prompt);
+      return;
+    }
+
+    if (
+      this.authorization &&
+      this.authorization.ownerFeaturesAllowed !==
+        (this.authorization.ownerSession && prompt.ownerFeaturesAllowed === true)
+    ) {
       await this.prompt(prompt);
       return;
     }
@@ -326,20 +340,45 @@ export function createResourceLoader(
   logger?: Logger,
   skillsDirectory = DEFAULT_SKILLS_DIRECTORY,
   trace?: PiRuntimeTrace,
+  authorization?: ToolAuthorization,
 ): DefaultResourceLoader {
+  const wrap = (factory: import("@earendil-works/pi-coding-agent").ExtensionFactory) =>
+    authorization ? authorization.wrap(factory) : factory;
   return new DefaultResourceLoader({
     cwd: process.cwd(),
     agentDir,
     extensionFactories: [
-      createCodemodeExtension({ mode: "on", models: false }),
-      createToolSearchExtension(),
-      createMcpExtension(),
+      wrap(createCodemodeExtension({ mode: "on", models: false })),
+      wrap(createToolSearchExtension()),
+      wrap(
+        createMcpExtension(
+          authorization
+            ? {
+                loadConfig: (ctx) => {
+                  const config = piMcpConfigLoader({
+                    agentDir,
+                    cwd: ctx.cwd,
+                    projectTrusted: ctx.isProjectTrusted(),
+                  });
+                  authorization.rememberServers(config.servers.map((server) => server.name));
+                  return {
+                    ...config,
+                    servers: config.servers.filter((server) =>
+                      authorization.allowsServer(server.name, true),
+                    ),
+                  };
+                },
+              }
+            : undefined,
+        ),
+      ),
       createBackgroundCompactionExtension(settingsManager, {
         handoffInstructions: HANDOFF_COMPACTION_INSTRUCTIONS,
         logger,
       }),
       createFxtwitterFetchExtension(),
       ...(trace ? [trace.extension] : []),
+      ...(authorization ? [authorization.extension] : []),
     ],
     additionalExtensionPaths: [resolve(process.cwd(), PI_WEB_ACCESS_EXTENSION_PATH)],
     settingsManager,
@@ -415,6 +454,7 @@ export function createPiAgentFactory({
   modelRuntime,
   sessionMode,
   skillsDirectory = DEFAULT_SKILLS_DIRECTORY,
+  permissions,
 }: PiAgentFactoryOptions): AgentFactory {
   // Pi's MCP extension resolves config, credentials, and logs through this environment variable.
   process.env.PI_CODING_AGENT_DIR = resolve(agentDir);
@@ -429,6 +469,10 @@ export function createPiAgentFactory({
       tools: readonly TTool[],
       options: AgentCreationOptions,
     ): Promise<AgentRuntime> {
+      const authorization = new ToolAuthorization(
+        options.ownerFeaturesAllowed === true,
+        permissions,
+      );
       const trace = new PiRuntimeTrace(
         logger.child({ component: "pi-runtime", sessionKey: options.sessionKey }),
       );
@@ -440,6 +484,7 @@ export function createPiAgentFactory({
         logger,
         skillsDirectory,
         trace,
+        authorization,
       );
       await resourceLoader.reload();
       // Select the initial tools without restricting MCP tools registered after startup.
@@ -470,7 +515,9 @@ export function createPiAgentFactory({
 
       const { session } = await createAgentSession({
         agentDir,
-        customTools: adaptPiTools(tools),
+        customTools: adaptPiTools(tools).filter((tool) =>
+          authorization.allowsTool(tool.name, true),
+        ),
         model,
         modelRuntime,
         resourceLoader,
@@ -510,7 +557,7 @@ export function createPiAgentFactory({
         ? new PiImageAnalyzer(session.modelRuntime, sessionImageModel, llm.image?.thinkingLevel)
         : undefined;
 
-      return new PiAgentRuntime(session, imageAnalyzer, trace, modelRuntime);
+      return new PiAgentRuntime(session, imageAnalyzer, trace, modelRuntime, authorization);
     },
   };
 }

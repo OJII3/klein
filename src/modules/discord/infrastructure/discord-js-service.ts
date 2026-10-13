@@ -15,7 +15,11 @@ import {
   type DiscordOperatingMode,
 } from "../domain/discord-operating-state";
 import { type DiscordMessage, type DiscordMessageLocator } from "../domain/discord-message";
-import type { DiscordMessageHandler, DiscordService } from "../ports/discord-service";
+import type {
+  DiscordMessageHandler,
+  DiscordMessageRequester,
+  DiscordService,
+} from "../ports/discord-service";
 import type { DiscordChannelRuleStore } from "../ports/discord-channel-rule-store";
 import {
   DiscordVoiceChatController,
@@ -173,10 +177,25 @@ export class DiscordJsService implements DiscordService {
     await channel.send({ files: [new AttachmentBuilder(Buffer.from(audio), { name: filename })] });
   }
 
-  async readMessage(locator: DiscordMessageLocator): Promise<DiscordMessage> {
+  async readMessage(
+    locator: DiscordMessageLocator,
+    requester?: DiscordMessageRequester,
+  ): Promise<DiscordMessage> {
     const channel = await this.client.channels.fetch(locator.channelId);
     if (!channel?.isTextBased()) {
       throw new Error(`Discord channel cannot contain messages: ${locator.channelId}`);
+    }
+
+    const thread = channel.isThread() ? channel : undefined;
+    if (
+      !this.accessPolicy.canReceive({
+        guildId: "guildId" in channel ? channel.guildId : undefined,
+        channelId: thread?.parentId ?? channel.id,
+        threadId: thread?.id,
+        ...requester,
+      })
+    ) {
+      throw new Error(`Discord channel access denied: ${locator.channelId}`);
     }
 
     const message = await channel.messages.fetch(locator.messageId);
@@ -247,6 +266,8 @@ export class DiscordJsService implements DiscordService {
         guildId: normalizedMessage.guildId,
         channelId: normalizedMessage.parentChannelId ?? normalizedMessage.channelId,
         threadId: normalizedMessage.threadId,
+        userId: message.author.id,
+        userIsBot: message.author.bot,
       })
     ) {
       return;

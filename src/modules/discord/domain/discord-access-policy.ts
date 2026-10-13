@@ -1,4 +1,4 @@
-export type DiscordAccess = "allow" | "deny";
+export type DiscordAccess = "allow" | "deny" | "owner";
 
 export interface DiscordThreadAccessRule {
   readonly access?: DiscordAccess;
@@ -25,10 +25,14 @@ export interface DiscordAccessTarget {
   /** The guild channel, or the parent channel when the target is a thread. */
   readonly channelId: string;
   readonly threadId?: string;
+  readonly userId?: string;
+  readonly userIsBot?: boolean;
 }
 
 export interface DiscordAccessPolicy {
   canReceive(target: DiscordAccessTarget): boolean;
+  resolveAccess(target: DiscordAccessTarget): DiscordAccess;
+  canUseOwnerFeatures(target: DiscordAccessTarget): boolean;
 }
 
 function resolveAccess(
@@ -46,10 +50,19 @@ function resolveAccess(
 
 export function createDiscordAccessPolicy(
   configuration: DiscordAccessConfiguration,
+  ownerUserId?: string,
 ): DiscordAccessPolicy {
+  const canUseOwnerFeatures = (target: DiscordAccessTarget): boolean =>
+    resolveAccess(configuration, target) === "owner" &&
+    !!ownerUserId &&
+    target.userId === ownerUserId &&
+    !target.userIsBot;
+
   return {
     canReceive(target) {
-      return resolveAccess(configuration, target) === "allow";
+      return resolveAccess(configuration, target) === "allow" || canUseOwnerFeatures(target);
     },
+    resolveAccess: (target) => resolveAccess(configuration, target),
+    canUseOwnerFeatures,
   };
 }

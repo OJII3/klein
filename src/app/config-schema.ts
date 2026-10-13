@@ -11,7 +11,27 @@ const ThinkingLevelSchema = Type.Union([
 ]);
 
 const DiscordIdSchema = Type.String({ minLength: 1, pattern: "^[0-9]+$" });
-const DiscordAccessSchema = Type.Union([Type.Literal("allow"), Type.Literal("deny")]);
+const DiscordAccessSchema = Type.Union([
+  Type.Literal("allow"),
+  Type.Literal("deny"),
+  Type.Literal("owner"),
+]);
+
+const ToolPermissionsSchema = Type.Object(
+  {
+    default: Type.Optional(DiscordAccessSchema),
+    overrides: Type.Optional(Type.Record(Type.String({ minLength: 1 }), DiscordAccessSchema)),
+  },
+  { additionalProperties: false },
+);
+
+const McpPermissionsSchema = Type.Object(
+  {
+    default: Type.Optional(DiscordAccessSchema),
+    servers: Type.Optional(Type.Record(Type.String({ minLength: 1 }), DiscordAccessSchema)),
+  },
+  { additionalProperties: false },
+);
 
 const DiscordThreadAccessSchema = Type.Object(
   {
@@ -123,6 +143,23 @@ export const ConfigSchema = Type.Object(
     $schema: Type.Optional(Type.String({ minLength: 1 })),
     version: Type.Literal(1),
     profile: Type.Optional(ProfileNameSchema),
+    owner: Type.Optional(
+      Type.Object(
+        {
+          discord: Type.Object({ userId: DiscordIdSchema }, { additionalProperties: false }),
+        },
+        { additionalProperties: false },
+      ),
+    ),
+    permissions: Type.Optional(
+      Type.Object(
+        {
+          tools: Type.Optional(ToolPermissionsSchema),
+          mcp: Type.Optional(McpPermissionsSchema),
+        },
+        { additionalProperties: false },
+      ),
+    ),
     llm: LlmConfigurationSchema,
     runtime: Type.Object(
       {

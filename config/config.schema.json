@@ -15,6 +15,117 @@
       "minLength": 1,
       "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
     },
+    "owner": {
+      "type": "object",
+      "required": ["discord"],
+      "properties": {
+        "discord": {
+          "type": "object",
+          "required": ["userId"],
+          "properties": {
+            "userId": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^[0-9]+$"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "permissions": {
+      "type": "object",
+      "properties": {
+        "tools": {
+          "type": "object",
+          "properties": {
+            "default": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "const": "allow"
+                },
+                {
+                  "type": "string",
+                  "const": "deny"
+                },
+                {
+                  "type": "string",
+                  "const": "owner"
+                }
+              ]
+            },
+            "overrides": {
+              "type": "object",
+              "patternProperties": {
+                "^.*$": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "const": "allow"
+                    },
+                    {
+                      "type": "string",
+                      "const": "deny"
+                    },
+                    {
+                      "type": "string",
+                      "const": "owner"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "mcp": {
+          "type": "object",
+          "properties": {
+            "default": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "const": "allow"
+                },
+                {
+                  "type": "string",
+                  "const": "deny"
+                },
+                {
+                  "type": "string",
+                  "const": "owner"
+                }
+              ]
+            },
+            "servers": {
+              "type": "object",
+              "patternProperties": {
+                "^.*$": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "const": "allow"
+                    },
+                    {
+                      "type": "string",
+                      "const": "deny"
+                    },
+                    {
+                      "type": "string",
+                      "const": "owner"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
     "llm": {
       "type": "object",
       "required": ["provider", "model"],
@@ -162,6 +273,10 @@
                 {
                   "type": "string",
                   "const": "deny"
+                },
+                {
+                  "type": "string",
+                  "const": "owner"
                 }
               ]
             },
@@ -174,6 +289,10 @@
                 {
                   "type": "string",
                   "const": "deny"
+                },
+                {
+                  "type": "string",
+                  "const": "owner"
                 }
               ]
             },
@@ -192,6 +311,10 @@
                         {
                           "type": "string",
                           "const": "deny"
+                        },
+                        {
+                          "type": "string",
+                          "const": "owner"
                         }
                       ]
                     },
@@ -210,6 +333,10 @@
                                 {
                                   "type": "string",
                                   "const": "deny"
+                                },
+                                {
+                                  "type": "string",
+                                  "const": "owner"
                                 }
                               ]
                             },
@@ -228,6 +355,10 @@
                                         {
                                           "type": "string",
                                           "const": "deny"
+                                        },
+                                        {
+                                          "type": "string",
+                                          "const": "owner"
                                         }
                                       ]
                                     }
