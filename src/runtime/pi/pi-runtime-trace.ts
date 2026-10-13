@@ -6,6 +6,8 @@ import type {
   ExtensionFactory,
 } from "@earendil-works/pi-coding-agent";
 
+const BLOCKED_SESSION_ENTRY_TYPE = "klein-provider-http-400";
+
 /** Observe Pi without recording prompts, tokens, tool arguments, or HTTP headers. */
 export class PiRuntimeTrace {
   private sessionId?: string;
@@ -24,6 +26,7 @@ export class PiRuntimeTrace {
   private readonly inputs = new Map<string, string[]>();
   private readonly tools = new Map<string, number>();
   private compactionStartedAt = 0;
+  private sessionBlocked = false;
   private unsubscribe?: () => void;
   private session?: AgentSession;
 
@@ -51,6 +54,7 @@ export class PiRuntimeTrace {
       this.log("pi_llm_provider_started");
     });
     pi.on("after_provider_response", (event) => {
+      if (event.status === 400) this.blockSession();
       if (this.providerTimingAmbiguous) return;
       this.log("pi_llm_http_response", {
         status: event.status,
@@ -82,6 +86,9 @@ export class PiRuntimeTrace {
   attach(session: AgentSession): void {
     this.session = session;
     this.sessionId = session.sessionManager.getSessionId();
+    this.sessionBlocked = session.sessionManager.getBranch().some((entry) => {
+      return entry.type === "custom" && entry.customType === BLOCKED_SESSION_ENTRY_TYPE;
+    });
     this.unsubscribe = session.subscribe((event) => this.onEvent(event));
     this.log("pi_session_ready", {
       provider: session.model?.provider,
@@ -91,6 +98,13 @@ export class PiRuntimeTrace {
       httpIdleTimeoutMs: session.settingsManager.getHttpIdleTimeoutMs(),
       providerRetry: session.settingsManager.getProviderRetrySettings(),
     });
+    if (this.sessionBlocked) {
+      this.log("pi_session_blocked", { reason: "provider_http_400" });
+    }
+  }
+
+  isSessionBlocked(): boolean {
+    return this.sessionBlocked;
   }
 
   registerInput(text: string, traceId: string): void {
@@ -125,6 +139,18 @@ export class PiRuntimeTrace {
 
   private elapsed(startedAt: number | undefined): number | undefined {
     return startedAt === undefined ? undefined : Math.round(this.now() - startedAt);
+  }
+
+  private blockSession(): void {
+    if (this.sessionBlocked) return;
+    this.sessionBlocked = true;
+    this.session?.sessionManager.appendCustomEntry(BLOCKED_SESSION_ENTRY_TYPE, {
+      reason: "provider_http_400",
+    });
+    this.log("pi_session_blocked", { reason: "provider_http_400" });
+    void this.session?.abort().catch(() => {
+      this.log("pi_session_abort_after_provider_400_failed");
+    });
   }
 
   private onEvent(event: AgentSessionEvent): void {
