@@ -6,7 +6,7 @@ assistantが過去に述べた内容を、ユーザーが確認した事実や�
 Goalの文は呼び出し側で固定するため、出力には箇条書きだけを含めてください。
 固有名詞、コード、識別子以外に日本語以外の言語を使わないでください。`;
 
-export const HANDOFF_SUMMARY_MAX_TOKENS = 1024;
+export const HANDOFF_SUMMARY_MAX_TOKENS = 10_000;
 
 export function buildHandoffSummaryPrompt(source: string, previousSummary?: string): string {
   return [
