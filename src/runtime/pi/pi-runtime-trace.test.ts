@@ -39,7 +39,7 @@ async function createTrace() {
     },
   } as unknown as ExtensionAPI);
   trace.attach({
-    sessionManager: { getSessionId: () => "session-test" },
+    sessionManager: { getSessionId: () => "session-test", getBranch: () => [] },
     settingsManager: {
       getHttpIdleTimeoutMs: () => 60_000,
       getProviderRetrySettings: () => ({ maxRetries: 3 }),
