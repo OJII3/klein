@@ -2,7 +2,7 @@ import type { PiSessionEvent, SessionSummary } from "../../api";
 import { Badge, Button, Group, Paper, Stack, Text, Timeline, Title } from "@mantine/core";
 import { EmptyState } from "../../components/feedback";
 import { JsonValue } from "../../components/json-value";
-import { formatTimestamp } from "../../lib/format";
+import { formatShortTimestamp, formatTimestamp, truncateMiddle } from "../../lib/format";
 
 interface SessionTimelineProps {
   events: PiSessionEvent[];
@@ -23,13 +23,22 @@ export function SessionTimeline({
     <Paper withBorder radius="md" p="md">
       <Stack>
         <Group justify="space-between" align="start">
-          <Stack gap={4}>
-            <Badge variant="light" color="teal">
-              {session.channelKey}
-            </Badge>
-            <Title order={3} size="h4">
-              {session.firstMessage || "Pi session"}
+          <Stack gap={4} style={{ minWidth: 0 }}>
+            <Title
+              order={3}
+              size="h4"
+              title={session.channelKey}
+              style={{
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {truncateMiddle(session.channelKey, 48)}
             </Title>
+            <Text size="xs" c="dimmed">
+              更新 {formatShortTimestamp(session.modified)}
+            </Text>
           </Stack>
           <Stack gap={2} align="end">
             <Text size="sm">{session.messageCount} メッセージ</Text>
