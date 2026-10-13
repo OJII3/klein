@@ -137,6 +137,7 @@ export class PiAgentRuntime implements AgentRuntime {
     const queuedAt = performance.now();
     this.trace?.log("pi_prompt_enqueued", { traceId, textLength: prompt.text.length });
     return this.enqueue(async () => {
+      this.ensureSessionAvailable();
       const startedAt = performance.now();
       this.trace?.registerInput(prompt.text, traceId);
       this.trace?.log("pi_prompt_started", {
@@ -161,6 +162,7 @@ export class PiAgentRuntime implements AgentRuntime {
   }
 
   async steer(prompt: AgentPrompt): Promise<void> {
+    this.ensureSessionAvailable();
     if (!this.session.isStreaming) {
       this.trace?.log("pi_steer_started_as_prompt", { traceId: prompt.traceId });
       await this.prompt(prompt);
@@ -208,6 +210,7 @@ export class PiAgentRuntime implements AgentRuntime {
   private async runPrompt(prompt: AgentPrompt): Promise<void> {
     if (this.imageAnalyzer && prompt.images.length > 0) {
       const analysis = await this.imageAnalyzer.analyze(prompt);
+      this.ensureSessionAvailable();
       await this.session.sendCustomMessage({
         content:
           `<image-analysis>\n` +
@@ -221,6 +224,7 @@ export class PiAgentRuntime implements AgentRuntime {
       return;
     }
 
+    this.ensureSessionAvailable();
     await this.session.prompt(prompt.text, {
       images:
         prompt.images.length > 0
@@ -235,6 +239,7 @@ export class PiAgentRuntime implements AgentRuntime {
   }
 
   analyzeImage(prompt: AgentPrompt): Promise<string> {
+    this.ensureSessionAvailable();
     if (!this.imageAnalyzer) {
       throw new Error("Image analysis is not configured");
     }
@@ -244,6 +249,7 @@ export class PiAgentRuntime implements AgentRuntime {
 
   compactForHandoff(): Promise<string> {
     return this.enqueue(async () => {
+      this.ensureSessionAvailable();
       const branch = this.session.sessionManager.getBranch();
       if (branch.at(-1)?.type === "compaction") {
         const previousSummary = getLatestCompactionEntry(branch)?.summary;
@@ -301,6 +307,12 @@ export class PiAgentRuntime implements AgentRuntime {
   dispose(): void {
     this.trace?.dispose();
     this.session.dispose();
+  }
+
+  private ensureSessionAvailable(): void {
+    if (this.trace?.isSessionBlocked()) {
+      throw new Error("Pi session is blocked after the provider returned HTTP 400");
+    }
   }
 }
 
