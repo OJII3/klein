@@ -200,29 +200,19 @@ export class AgentCoordinator {
     try {
       handoffContext = (await compaction).trim();
     } catch (error) {
-      const deferredState = {
-        ...state,
-        lastRotationDate: getChannelRotationDate(now),
-      };
-      await this.saveChannelState(deferredState);
       this.logger.warn(
         { channelId, err: error, event: "channel_context_compaction_failed" },
         "Failed to compact the Discord channel context",
       );
-      return deferredState;
+      return state;
     }
 
     if (!handoffContext) {
-      const deferredState = {
-        ...state,
-        lastRotationDate: getChannelRotationDate(now),
-      };
-      await this.saveChannelState(deferredState);
       this.logger.warn(
         { channelId, event: "channel_context_compaction_empty" },
         "Compaction produced no Discord channel handoff summary",
       );
-      return deferredState;
+      return state;
     }
 
     const rotationDate = getChannelRotationDate(now);
