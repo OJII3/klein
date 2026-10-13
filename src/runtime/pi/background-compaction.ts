@@ -1,7 +1,9 @@
 import {
   compact,
+  convertToLlm,
   findCutPoint,
   getLatestCompactionEntry,
+  serializeConversation,
   sessionEntryToContextMessages,
   type CompactionResult,
   type ExtensionContext,
@@ -10,13 +12,21 @@ import {
   type SessionEntry,
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
-import type { ProviderHeaders } from "@earendil-works/pi-ai";
+import { uuidv7, type ProviderHeaders } from "@earendil-works/pi-ai";
 import type { Logger } from "pino";
+import {
+  buildHandoffSummaryPrompt,
+  extractTextContent,
+  formatHandoffSummary,
+  HANDOFF_SUMMARY_MAX_TOKENS,
+  HANDOFF_SUMMARY_SYSTEM_PROMPT,
+} from "./handoff-summary";
 
 /** Start preparing a summary this many tokens before Pi's compaction threshold. */
 export const BACKGROUND_COMPACTION_LEAD_TOKENS = 16_384;
 
 export interface BackgroundCompactionOptions {
+  readonly handoffInstructions?: string;
   readonly leadTokens?: number;
   readonly logger?: Logger;
   readonly summarize?: BackgroundCompactionSummarizer;
@@ -140,8 +150,25 @@ export function createBackgroundCompactionExtension(
         });
     });
 
-    pi.on("session_before_compact", (event, _context) => {
+    pi.on("session_before_compact", (event, context) => {
       const pending = state.pending;
+
+      if (
+        options.handoffInstructions !== undefined &&
+        event.customInstructions === options.handoffInstructions
+      ) {
+        if (pending) cancelPending(state, pending);
+        return summarizeHandoff(event.preparation, context, event.signal)
+          .then((compaction) => (compaction ? { compaction } : { cancel: true }))
+          .catch((error: unknown) => {
+            logger?.error(
+              { err: error, event: "pi_handoff_compaction_failed" },
+              "Failed to summarize the handoff context",
+            );
+            return { cancel: true };
+          });
+      }
+
       if (!pending) return;
 
       if (
@@ -167,6 +194,55 @@ export function createBackgroundCompactionExtension(
     pi.on("session_shutdown", () => {
       if (state.pending) cancelPending(state, state.pending);
     });
+  };
+}
+
+async function summarizeHandoff(
+  preparation: BackgroundCompactionPreparation,
+  context: ExtensionContext,
+  signal: AbortSignal,
+): Promise<CompactionResult | undefined> {
+  const model = context.model;
+  if (!model) return undefined;
+
+  const userMessages = context.sessionManager
+    .buildSessionProjection()
+    .messages.filter((message) => "role" in message && message.role === "user");
+  const userMessagesText = serializeConversation(convertToLlm(userMessages));
+  const response = await context.modelRegistry.complete(
+    model,
+    {
+      systemPrompt: HANDOFF_SUMMARY_SYSTEM_PROMPT,
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: buildHandoffSummaryPrompt(userMessagesText, preparation.previousSummary),
+            },
+          ],
+          timestamp: Date.now(),
+        },
+      ],
+    },
+    {
+      maxTokens: HANDOFF_SUMMARY_MAX_TOKENS,
+      signal,
+      cacheRetention: "none",
+      sessionId: uuidv7(),
+    },
+  );
+  if (signal.aborted || response.stopReason !== "stop") return undefined;
+
+  const summaryBody = extractTextContent(response.content);
+  if (!summaryBody) return undefined;
+
+  return {
+    summary: formatHandoffSummary(summaryBody),
+    firstKeptEntryId: preparation.firstKeptEntryId,
+    tokensBefore: preparation.tokensBefore,
+    usage: response.usage,
   };
 }
 

@@ -12,6 +12,9 @@ import {
   createCodemodeExtension,
   createMcpExtension,
   createToolSearchExtension,
+  convertToLlm,
+  getLatestCompactionEntry,
+  serializeConversation,
 } from "@earendil-works/pi-coding-agent";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { Api, Model, Models } from "@earendil-works/pi-ai";
@@ -23,6 +26,13 @@ import type { AgentPrompt, AgentRuntime } from "@agents/core/agent-runtime";
 import type { SessionMode } from "@app/cli-options";
 import { createBackgroundCompactionExtension } from "./background-compaction";
 import { createFxtwitterFetchExtension } from "./fxtwitter-fetch";
+import {
+  buildHandoffSummaryPrompt,
+  extractTextContent,
+  formatHandoffSummary,
+  HANDOFF_SUMMARY_MAX_TOKENS,
+  HANDOFF_SUMMARY_SYSTEM_PROMPT,
+} from "./handoff-summary";
 import { PiImageAnalyzer, type ImageAnalyzer } from "./pi-image-analyzer";
 import { adaptPiTools } from "./pi-tool-adapter";
 import { PiRuntimeTrace } from "./pi-runtime-trace";
@@ -50,9 +60,7 @@ export const DEFAULT_SKILLS_DIRECTORY = "config/klein/skills";
 const PI_WEB_ACCESS_EXTENSION_PATH = "node_modules/pi-web-access/index.ts";
 const MODEL_CATALOG_REFRESH_TIMEOUT_MS = 5_000;
 const HANDOFF_COMPACTION_INSTRUCTIONS =
-  "Prepare a concise handoff summary for a fresh session. Preserve the ongoing topics, " +
-  "important facts and preferences, decisions, commitments, and unresolved questions. " +
-  "Do not include routine details that are no longer useful.";
+  "Create the concise Japanese handoff summary requested by Klein's handoff extension.";
 const HANDOFF_CUSTOM_MESSAGE_TYPE = "klein-context-handoff";
 
 const DEEPSEEK_V41_FLASH_FALLBACK: Model<"openai-completions"> = {
@@ -119,6 +127,7 @@ export class PiAgentRuntime implements AgentRuntime {
     private readonly session: AgentSession,
     private readonly imageAnalyzer?: ImageAnalyzer,
     private readonly trace?: PiRuntimeTrace,
+    private readonly modelRuntime?: ModelRuntime,
   ) {
     trace?.attach(session);
   }
@@ -235,15 +244,58 @@ export class PiAgentRuntime implements AgentRuntime {
 
   compactForHandoff(): Promise<string> {
     return this.enqueue(async () => {
-      if (this.session.sessionManager.getBranch().at(-1)?.type !== "compaction") {
-        try {
-          await this.session.compact(HANDOFF_COMPACTION_INSTRUCTIONS);
-        } catch (error) {
-          if (!isCompactionTooSmall(error)) throw error;
-        }
+      const branch = this.session.sessionManager.getBranch();
+      if (branch.at(-1)?.type === "compaction") {
+        const previousSummary = getLatestCompactionEntry(branch)?.summary;
+        return this.summarizeCurrentContextForHandoff(previousSummary);
       }
-      return formatHandoffContext(this.session.sessionManager.buildSessionContext().messages);
+
+      try {
+        const result = await this.session.compact(HANDOFF_COMPACTION_INSTRUCTIONS);
+        return result.summary;
+      } catch (error) {
+        if (!isCompactionTooSmall(error)) throw error;
+        return this.summarizeCurrentContextForHandoff();
+      }
     });
+  }
+
+  private async summarizeCurrentContextForHandoff(previousSummary?: string): Promise<string> {
+    const model = this.session.model;
+    if (!model || !this.modelRuntime) {
+      throw new Error("Cannot summarize handoff without a configured model runtime");
+    }
+
+    const userMessages = this.session.sessionManager
+      .buildSessionContext()
+      .messages.filter((message) => "role" in message && message.role === "user");
+    const source = serializeConversation(convertToLlm(userMessages));
+    const response = await this.modelRuntime.completeSimple(
+      model,
+      {
+        systemPrompt: HANDOFF_SUMMARY_SYSTEM_PROMPT,
+        messages: [
+          {
+            role: "user",
+            content: buildHandoffSummaryPrompt(source, previousSummary),
+            timestamp: Date.now(),
+          },
+        ],
+      },
+      {
+        maxTokens: HANDOFF_SUMMARY_MAX_TOKENS,
+        cacheRetention: "none",
+        sessionId: randomUUID(),
+      },
+    );
+    if (response.stopReason !== "stop") {
+      throw new Error(response.errorMessage ?? "Handoff summarization did not complete");
+    }
+
+    const summaryBody = extractTextContent(response.content);
+    if (!summaryBody) throw new Error("Handoff summarization returned an empty summary");
+
+    return formatHandoffSummary(summaryBody);
   }
 
   dispose(): void {
@@ -267,7 +319,10 @@ export function createResourceLoader(
       createCodemodeExtension({ mode: "on", models: false }),
       createToolSearchExtension(),
       createMcpExtension(),
-      createBackgroundCompactionExtension(settingsManager, { logger }),
+      createBackgroundCompactionExtension(settingsManager, {
+        handoffInstructions: HANDOFF_COMPACTION_INSTRUCTIONS,
+        logger,
+      }),
       createFxtwitterFetchExtension(),
       ...(trace ? [trace.extension] : []),
     ],
@@ -440,38 +495,9 @@ export function createPiAgentFactory({
         ? new PiImageAnalyzer(session.modelRuntime, sessionImageModel, llm.image?.thinkingLevel)
         : undefined;
 
-      return new PiAgentRuntime(session, imageAnalyzer, trace);
+      return new PiAgentRuntime(session, imageAnalyzer, trace, modelRuntime);
     },
   };
-}
-
-type SessionContextMessage = ReturnType<SessionManager["buildSessionContext"]>["messages"][number];
-
-function formatHandoffContext(messages: readonly SessionContextMessage[]): string {
-  return messages
-    .map((message) => {
-      const text = formatMessageContent("content" in message ? message.content : undefined);
-      if (!text) return undefined;
-      const role = "role" in message ? message.role : "context";
-      return `[${role}]\n${text}`;
-    })
-    .filter((message): message is string => message !== undefined)
-    .join("\n\n");
-}
-
-function formatMessageContent(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-
-  return content
-    .map((block) => {
-      if (typeof block !== "object" || block === null || !("type" in block)) return "";
-      if (block.type === "text" && "text" in block) return String(block.text);
-      if (block.type === "image") return "[画像]";
-      return "";
-    })
-    .filter(Boolean)
-    .join("\n");
 }
 
 function isCompactionTooSmall(error: unknown): boolean {
