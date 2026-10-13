@@ -32,7 +32,7 @@ const OPERATING_MODE_COMMANDS: readonly ApplicationCommandDataResolvable[] = [
 const CHANNEL_RULE_COMMAND = new SlashCommandBuilder()
   .setName("rule")
   .setDescription("このチャンネルまたはスレッドのルールを編集します")
-  .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+  .setDefaultMemberPermissions(PermissionFlagsBits.UseApplicationCommands)
   .setDMPermission(false);
 const CHANNEL_RULE_MODAL_ID = "channel-rule-edit";
 const CHANNEL_RULE_INPUT_ID = "channel-rule";
@@ -118,7 +118,7 @@ export class DiscordJsInteractionHandler {
       });
       return;
     }
-    if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+    if (!interaction.memberPermissions?.has(PermissionFlagsBits.UseApplicationCommands)) {
       await interaction.reply({
         content: "このコマンドを実行する権限がありません。",
       });
@@ -152,7 +152,7 @@ export class DiscordJsInteractionHandler {
       });
       return;
     }
-    if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+    if (!interaction.memberPermissions?.has(PermissionFlagsBits.UseApplicationCommands)) {
       await interaction.reply({
         content: "この操作を実行する権限がありません。",
       });
