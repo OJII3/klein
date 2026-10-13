@@ -150,7 +150,7 @@ export function createBackgroundCompactionExtension(
         });
     });
 
-    pi.on("session_before_compact", async (event, context) => {
+    pi.on("session_before_compact", (event, context) => {
       const pending = state.pending;
 
       if (
@@ -158,16 +158,15 @@ export function createBackgroundCompactionExtension(
         event.customInstructions === options.handoffInstructions
       ) {
         if (pending) cancelPending(state, pending);
-        try {
-          const compaction = await summarizeHandoff(event.preparation, context, event.signal);
-          return compaction ? { compaction } : { cancel: true };
-        } catch (error) {
-          logger?.error(
-            { err: error, event: "pi_handoff_compaction_failed" },
-            "Failed to summarize the handoff context",
-          );
-          return { cancel: true };
-        }
+        return summarizeHandoff(event.preparation, context, event.signal)
+          .then((compaction) => (compaction ? { compaction } : { cancel: true }))
+          .catch((error: unknown) => {
+            logger?.error(
+              { err: error, event: "pi_handoff_compaction_failed" },
+              "Failed to summarize the handoff context",
+            );
+            return { cancel: true };
+          });
       }
 
       if (!pending) return;
