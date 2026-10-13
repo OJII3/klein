@@ -1,5 +1,6 @@
 import { useState } from "react";
 import {
+  Accordion,
   Badge,
   Button,
   Card,
@@ -203,56 +204,55 @@ function MemoryEntries({
             {entries.length.toLocaleString("ja-JP")} 件
           </Text>
         </Group>
-        <Paper
-          component="form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            const title = ruleTitle.trim();
-            const content = ruleContent.trim();
-            if (!title || !content) return;
-            onAddRule(title, content);
-            setRuleTitle("");
-            setRuleContent("");
-          }}
-          withBorder
-          p="md"
-          radius="md"
-        >
-          <Stack>
-            <Title order={3} size="h5">
-              ルールを追加
-            </Title>
-            <TextInput
-              label="タイトル"
-              maxLength={200}
-              value={ruleTitle}
-              onChange={(event) => setRuleTitle(event.target.value)}
-              required
-            />
-            <Textarea
-              label="内容"
-              maxLength={10000}
-              minRows={3}
-              value={ruleContent}
-              onChange={(event) => setRuleContent(event.target.value)}
-              required
-            />
-            {addRuleError && (
-              <ErrorNotice
-                message={addRuleError}
-                onRetry={() => onAddRule(ruleTitle.trim(), ruleContent.trim())}
-              />
-            )}
-            <Button
-              w="fit-content"
-              color="teal"
-              disabled={addingRule || !ruleTitle.trim() || !ruleContent.trim()}
-              type="submit"
-            >
-              {addingRule ? "追加中…" : "ルールを追加"}
-            </Button>
-          </Stack>
-        </Paper>
+        <Accordion defaultValue={null} variant="contained" radius="md" order={3}>
+          <Accordion.Item value="add-rule">
+            <Accordion.Control>ルールを追加</Accordion.Control>
+            <Accordion.Panel>
+              <Stack
+                component="form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const title = ruleTitle.trim();
+                  const content = ruleContent.trim();
+                  if (!title || !content) return;
+                  onAddRule(title, content);
+                  setRuleTitle("");
+                  setRuleContent("");
+                }}
+              >
+                <TextInput
+                  label="タイトル"
+                  maxLength={200}
+                  value={ruleTitle}
+                  onChange={(event) => setRuleTitle(event.target.value)}
+                  required
+                />
+                <Textarea
+                  label="内容"
+                  maxLength={10000}
+                  minRows={3}
+                  value={ruleContent}
+                  onChange={(event) => setRuleContent(event.target.value)}
+                  required
+                />
+                {addRuleError && (
+                  <ErrorNotice
+                    message={addRuleError}
+                    onRetry={() => onAddRule(ruleTitle.trim(), ruleContent.trim())}
+                  />
+                )}
+                <Button
+                  w="fit-content"
+                  color="teal"
+                  disabled={addingRule || !ruleTitle.trim() || !ruleContent.trim()}
+                  type="submit"
+                >
+                  {addingRule ? "追加中…" : "ルールを追加"}
+                </Button>
+              </Stack>
+            </Accordion.Panel>
+          </Accordion.Item>
+        </Accordion>
       </Paper>
       {entries.length === 0 ? (
         <EmptyState>このギルドのメモリは空です</EmptyState>
