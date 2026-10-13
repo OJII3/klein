@@ -10,6 +10,7 @@ export function createDiscordReadTool(
   discordService: Pick<DiscordService, "readMessage">,
   currentChannelId: string,
   analyzeImages?: DiscordImageAnalysis,
+  requester?: Parameters<DiscordService["readMessage"]>[1],
 ) {
   return defineTool({
     name: "discord_read",
@@ -26,10 +27,13 @@ export function createDiscordReadTool(
       channelId: Type.Optional(Type.String({ minLength: 1 })),
     }),
     async execute(_toolCallId, params) {
-      const message = await discordService.readMessage({
-        channelId: params.channelId ?? currentChannelId,
-        messageId: params.messageId,
-      });
+      const message = await discordService.readMessage(
+        {
+          channelId: params.channelId ?? currentChannelId,
+          messageId: params.messageId,
+        },
+        requester,
+      );
       const imageAnalysis = message.images.length > 0 ? await analyzeImages?.(message) : undefined;
       const formattedMessage = formatDiscordMessage(message);
 

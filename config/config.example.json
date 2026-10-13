@@ -2,6 +2,24 @@
   "$schema": "./config.schema.json",
   "version": 1,
   "profile": "klein",
+  "owner": {
+    "discord": {
+      "userId": "456789012345678901"
+    }
+  },
+  "permissions": {
+    "tools": {
+      "default": "allow",
+      "overrides": {}
+    },
+    "mcp": {
+      "default": "owner",
+      "servers": {
+        "obsidian": "owner",
+        "docs": "allow"
+      }
+    }
+  },
   "llm": {
     "provider": "opencode-go",
     "model": "deepseek-v4.1-flash",
@@ -31,6 +49,9 @@
                   "access": "allow"
                 }
               }
+            },
+            "456789012345678901": {
+              "access": "owner"
             }
           }
         }

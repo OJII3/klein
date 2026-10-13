@@ -2,6 +2,11 @@ import type { DiscordMessage, DiscordMessageLocator } from "../domain/discord-me
 
 export type DiscordMessageHandler = (message: DiscordMessage) => Promise<void>;
 
+export interface DiscordMessageRequester {
+  readonly userId: string;
+  readonly userIsBot?: boolean;
+}
+
 export interface DiscordService {
   start(onMessage: DiscordMessageHandler): Promise<void>;
   stopAccepting(): void;
@@ -9,6 +14,9 @@ export interface DiscordService {
   sendTyping(channelId: string): Promise<void>;
   sendMessage(channelId: string, content: string): Promise<void>;
   sendAudio(channelId: string, audio: Uint8Array, filename: string): Promise<void>;
-  readMessage(locator: DiscordMessageLocator): Promise<DiscordMessage>;
+  readMessage(
+    locator: DiscordMessageLocator,
+    requester?: DiscordMessageRequester,
+  ): Promise<DiscordMessage>;
   stop(): Promise<void>;
 }

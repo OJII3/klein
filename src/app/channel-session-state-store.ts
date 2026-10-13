@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 
 export interface ChannelSessionState {
   readonly channelId: string;
+  readonly accessScope?: string;
   readonly sessionKey: string;
   readonly lastActivityAt: number | null;
   readonly lastRotationDate: string;

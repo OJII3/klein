@@ -116,6 +116,8 @@ export class DiscordVoiceChatController {
         guildId,
         channelId: textChannelId,
         threadId: textThread?.id,
+        userId: interaction.user.id,
+        userIsBot: interaction.user.bot,
       })
     ) {
       await interaction.reply({
@@ -168,7 +170,7 @@ export class DiscordVoiceChatController {
         onSpeechStart: (listener) => session?.subscribeSpeechStart(listener) ?? (() => undefined),
         threadId: textThread?.id,
         user: {
-          bot: false,
+          bot: interaction.user.bot,
           displayName: member.displayName,
           id: interaction.user.id,
           username: member.user.username,

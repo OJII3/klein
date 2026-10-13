@@ -19,7 +19,12 @@ function formatDiscordAgentPrompt(message: DiscordMessage): string {
 }
 
 export class DiscordAgent {
-  private constructor(private readonly runtime: AgentRuntime) {}
+  private constructor(
+    private readonly runtime: AgentRuntime,
+    private readonly channelId: string,
+    private readonly ownerUserId?: string,
+    private readonly ownerFeaturesAllowed = false,
+  ) {}
 
   static async create(
     agentFactory: AgentFactory,
@@ -29,6 +34,8 @@ export class DiscordAgent {
     options: {
       readonly sessionKey?: string;
       readonly handoffContext?: string;
+      readonly ownerFeaturesAllowed?: boolean;
+      readonly ownerUserId?: string;
       readonly tts?: TextToSpeech;
       readonly speak?: (text: string, toolCallId?: string) => Promise<void>;
     } = {},
@@ -44,8 +51,14 @@ export class DiscordAgent {
       return runtime.analyzeImage(prompt);
     };
 
+    const ownerFeaturesAllowed = options.ownerFeaturesAllowed === true && !!options.ownerUserId;
     const tools = [
-      createDiscordReadTool(discordService, channelId, analyzeImages),
+      createDiscordReadTool(
+        discordService,
+        channelId,
+        analyzeImages,
+        ownerFeaturesAllowed ? { userId: options.ownerUserId! } : undefined,
+      ),
       ...(options.speak
         ? [createDiscordSpeakTool(options.speak)]
         : [createDiscordSendTool(discordService, channelId)]),
@@ -72,10 +85,11 @@ export class DiscordAgent {
             `${options.handoffContext}\n</previous-conversation-context>`
           : undefined,
         sessionKey: options.sessionKey ?? `discord-channel:${channelId}`,
+        ownerFeaturesAllowed,
       },
     );
 
-    return new DiscordAgent(runtime);
+    return new DiscordAgent(runtime, channelId, options.ownerUserId, ownerFeaturesAllowed);
   }
 
   prompt(message: DiscordMessage, guildMemory?: string, channelRule?: string): Promise<void> {
@@ -92,7 +106,17 @@ export class DiscordAgent {
     guildMemory?: string,
     channelRule?: string,
   ): AgentPrompt {
+    if (
+      this.ownerFeaturesAllowed &&
+      (message.author.bot ||
+        message.author.id !== this.ownerUserId ||
+        message.channelId !== this.channelId)
+    ) {
+      throw new Error("Only the owner can use this Discord agent in its configured channel");
+    }
+
     return {
+      ownerFeaturesAllowed: this.ownerFeaturesAllowed,
       traceId: message.id,
       text: [
         guildMemory ? `<guild-memory>\n${guildMemory}\n</guild-memory>` : undefined,

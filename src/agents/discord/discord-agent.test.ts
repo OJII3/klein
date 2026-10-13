@@ -224,3 +224,50 @@ test("injects the current guild memory into the agent prompt", async () => {
   assert.match(receivedPrompt?.text ?? "", /読み取った本文/u);
   agent.dispose();
 });
+
+test("binds private reads to the owner and refuses other authors or channels", async () => {
+  const prompts: AgentPrompt[] = [];
+  let tools: readonly ToolDefinition[] = [];
+  let requester: Parameters<DiscordService["readMessage"]>[1];
+  const factory: AgentFactory = {
+    async create(_definition, registeredTools, options) {
+      assert.equal(options.ownerFeaturesAllowed, true);
+      tools = registeredTools as readonly ToolDefinition[];
+      return {
+        async prompt(prompt) {
+          prompts.push(prompt);
+        },
+        async steer(prompt) {
+          prompts.push(prompt);
+        },
+        dispose() {},
+      };
+    },
+  };
+  const service = {
+    async readMessage(_locator, trustedRequester) {
+      requester = trustedRequester;
+      return { ...message, images: [] };
+    },
+  } as Pick<DiscordService, "readMessage"> as DiscordService;
+  const agent = await DiscordAgent.create(factory, service, message.channelId, "system", {
+    ownerUserId: message.author.id,
+    ownerFeaturesAllowed: true,
+  });
+  await agent.prompt(message);
+  assert.equal(prompts[0].ownerFeaturesAllowed, true);
+  const read = tools.find((tool) => tool.name === "discord_read");
+  assert.ok(read);
+  await read.execute("read", { messageId: message.id }, undefined, undefined, {} as never);
+  assert.deepEqual(requester, { userId: message.author.id });
+  for (const invalid of [
+    { ...message, author: { ...message.author, id: "other" } },
+    { ...message, author: { ...message.author, bot: true } },
+    { ...message, channelId: "another-channel" },
+  ]) {
+    assert.throws(() => agent.prompt(invalid), /Only the owner/);
+    assert.throws(() => agent.steer(invalid), /Only the owner/);
+  }
+  assert.equal(prompts.length, 1);
+  agent.dispose();
+});

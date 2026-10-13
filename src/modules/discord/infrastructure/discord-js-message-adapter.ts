@@ -124,9 +124,15 @@ export class DiscordJsMessageAdapter {
   async fetchReplyReference(message: Message): Promise<DiscordReplyReference | undefined> {
     const messageId = message.reference?.messageId;
     if (!messageId) return undefined;
+    if (message.reference?.channelId && message.reference.channelId !== message.channelId) {
+      return { id: messageId };
+    }
 
     try {
       const referencedMessage = await message.fetchReference();
+      if (referencedMessage.channelId && referencedMessage.channelId !== message.channelId) {
+        return { id: messageId };
+      }
       return {
         author: toDiscordUser(referencedMessage),
         content: this.normalizeMessageContent(referencedMessage),

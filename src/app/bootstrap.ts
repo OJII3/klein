@@ -70,7 +70,8 @@ export async function bootstrap(): Promise<void> {
     throw new Error("OPENCODE_API_KEY is required");
   }
   const discordOperatingState = new DiscordOperatingState();
-  const discordAccessPolicy = createDiscordAccessPolicy(config.discord.access);
+  const ownerUserId = config.owner?.discord.userId;
+  const discordAccessPolicy = createDiscordAccessPolicy(config.discord.access, ownerUserId);
   const voiceSystemPrompt = voiceChatConfiguration?.enabled
     ? await loadPromptFile(profile.voiceSystemPromptFile)
     : undefined;
@@ -113,6 +114,7 @@ export async function bootstrap(): Promise<void> {
     logger,
     modelRuntime,
     sessionMode,
+    permissions: config.permissions,
   });
   const voiceChatAgentFactory = voiceChatLlmConfiguration
     ? createPiAgentFactory({
@@ -122,12 +124,20 @@ export async function bootstrap(): Promise<void> {
         logger,
         modelRuntime,
         sessionMode,
+        permissions: config.permissions,
       })
     : piAgentFactory;
   let discordService!: DiscordJsService;
-  const createDiscordAgent = (channelId: string, sessionKey: string, handoffContext?: string) =>
+  const createDiscordAgent = (
+    channelId: string,
+    sessionKey: string,
+    handoffContext?: string,
+    ownerFeaturesAllowed = false,
+  ) =>
     DiscordAgent.create(piAgentFactory, discordService, channelId, systemPrompt, {
       handoffContext,
+      ownerFeaturesAllowed,
+      ownerUserId,
       sessionKey,
       tts,
     });
@@ -191,6 +201,8 @@ export async function bootstrap(): Promise<void> {
       })
     : undefined;
   const agentCoordinator = new AgentCoordinator({
+    accessPolicy: discordAccessPolicy,
+    ownerUserId,
     createDiscordAgent,
     channelSessionStateStore,
     channelRuleStore,

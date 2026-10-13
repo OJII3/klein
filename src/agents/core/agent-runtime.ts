@@ -5,6 +5,7 @@ export interface AgentImage {
 
 export interface AgentPrompt {
   readonly traceId?: string;
+  readonly ownerFeaturesAllowed?: boolean;
   readonly text: string;
   readonly images: readonly AgentImage[];
 }
