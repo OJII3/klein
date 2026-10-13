@@ -115,14 +115,12 @@ export class DiscordJsInteractionHandler {
     if (!interaction.inGuild()) {
       await interaction.reply({
         content: "このコマンドはサーバー内でのみ使用できます。",
-        ephemeral: true,
       });
       return;
     }
     if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
       await interaction.reply({
         content: "このコマンドを実行する権限がありません。",
-        ephemeral: true,
       });
       return;
     }
@@ -151,14 +149,12 @@ export class DiscordJsInteractionHandler {
     if (!interaction.inGuild()) {
       await interaction.reply({
         content: "この操作はサーバー内でのみ使用できます。",
-        ephemeral: true,
       });
       return;
     }
     if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
       await interaction.reply({
         content: "この操作を実行する権限がありません。",
-        ephemeral: true,
       });
       return;
     }
@@ -169,7 +165,6 @@ export class DiscordJsInteractionHandler {
     if (!guildId || !channelId) {
       await interaction.reply({
         content: "チャンネルを特定できませんでした。",
-        ephemeral: true,
       });
       return;
     }
@@ -179,7 +174,6 @@ export class DiscordJsInteractionHandler {
       content: rule.trim()
         ? "このチャンネル／スレッドのルールを保存しました。"
         : "このチャンネル／スレッドのルールを削除しました。",
-      ephemeral: true,
     });
   }
 }
