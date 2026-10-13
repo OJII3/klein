@@ -425,28 +425,6 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
           return typeof agent.steer === "function" ? Promise.resolve() : next;
         }
 
-        if (processing && typeof agent.steer !== "function") {
-          const shouldDiscard = await shouldDiscardPoliticalTranscript(
-            text,
-            new AbortController().signal,
-          );
-          if (stopped) return;
-          if (shouldDiscard) {
-            logger.info(
-              {
-                event: "voice_chat_transcript_skipped_by_political_content_check",
-                messageId: message.id,
-              },
-              "Skipped a voice transcript based on the political content check",
-            );
-            return;
-          }
-          const next = processing.then(() =>
-            processTranscript(message, startReaction(text, message.id)),
-          );
-          return trackProcessing(next);
-        }
-
         const shouldDiscard = await shouldDiscardPoliticalTranscript(
           text,
           new AbortController().signal,
@@ -461,6 +439,13 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
             "Skipped a voice transcript based on the political content check",
           );
           return;
+        }
+
+        if (processing && typeof agent.steer !== "function") {
+          const next = processing.then(() =>
+            processTranscript(message, startReaction(text, message.id)),
+          );
+          return trackProcessing(next);
         }
 
         const reactionController = startReaction(text, message.id);
