@@ -19,6 +19,28 @@ export function formatTimestamp(value: string | undefined): string {
   });
 }
 
+export function formatShortTimestamp(value: string | undefined): string {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("ja-JP", {
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+export function truncateMiddle(value: string, maxLength: number): string {
+  if (value.length <= maxLength) return value;
+
+  const visibleLength = maxLength - 1;
+  const startLength = Math.ceil(visibleLength / 2);
+  const endLength = Math.floor(visibleLength / 2);
+  return `${value.slice(0, startLength)}…${value.slice(-endLength)}`;
+}
+
 export function levelLabel(level: number | string): string {
   if (typeof level === "number") return LEVEL_LABELS[level] ?? String(level);
   return level;
