@@ -1,6 +1,5 @@
 import type { PiSessionEvent, SessionSummary } from "../../api";
 import {
-  Badge,
   Button,
   Card,
   Grid,
