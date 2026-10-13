@@ -85,7 +85,7 @@ When `features.memory.enabled` is true, Klein periodically extracts durable guil
 
 ### Political content check
 
-Set `features.politicalContentCheck.enabled` to `true` to classify Discord text and voice transcripts before they reach the chat model. Political topics, including neutral factual questions and China-related political topics, are silently skipped and are not added to guild memory. If the classifier cannot make a decision, the message is also skipped. Configure a classifier model that is different from the text and voice chat models; the classifier itself receives the message text for evaluation. Voice transcripts are checked after local transcription, before queue reactions or the voice model. Image attachments are outside this check; their image contents are not classified.
+Set `features.politicalContentCheck.enabled` to `true` to skip political Discord text and voice transcripts (including neutral factual questions and China-related topics such as the 1989 Tiananmen Square protests and massacre) before the chat model and guild memory. Uncertain classifications are also skipped. Configure a separate classifier model; it receives the text for evaluation. Voice transcripts are checked after local transcription. Image attachments are outside this check.
 
 ### Remote MCP Tools
 
