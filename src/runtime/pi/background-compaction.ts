@@ -203,7 +203,7 @@ async function summarizeHandoff(
   signal: AbortSignal,
 ): Promise<CompactionResult | undefined> {
   const model = context.model;
-  if (!model) return undefined;
+  if (!model) throw new Error("Cannot summarize handoff without a configured model");
 
   const userMessages = context.sessionManager
     .buildSessionProjection()
@@ -233,10 +233,16 @@ async function summarizeHandoff(
       sessionId: uuidv7(),
     },
   );
-  if (signal.aborted || response.stopReason !== "stop") return undefined;
+  if (signal.aborted) return undefined;
+  if (response.stopReason !== "stop") {
+    throw new Error(
+      `${response.errorMessage ?? "Handoff summarization did not complete"} ` +
+        `(stop reason: ${response.stopReason})`,
+    );
+  }
 
   const summaryBody = extractTextContent(response.content);
-  if (!summaryBody) return undefined;
+  if (!summaryBody) throw new Error("Handoff summarization returned an empty summary");
 
   return {
     summary: formatHandoffSummary(summaryBody),

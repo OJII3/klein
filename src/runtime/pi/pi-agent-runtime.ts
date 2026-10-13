@@ -295,7 +295,10 @@ export class PiAgentRuntime implements AgentRuntime {
       },
     );
     if (response.stopReason !== "stop") {
-      throw new Error(response.errorMessage ?? "Handoff summarization did not complete");
+      throw new Error(
+        `${response.errorMessage ?? "Handoff summarization did not complete"} ` +
+          `(stop reason: ${response.stopReason})`,
+      );
     }
 
     const summaryBody = extractTextContent(response.content);
