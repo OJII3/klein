@@ -118,8 +118,12 @@ export class DiscordJsInteractionHandler {
 
     this.setOperatingMode(mode);
     await interaction.reply({
-      content: mode === "active" ? "Botを再開しました。" : "Botを一時停止しました。",
-      ephemeral: true,
+      embeds: [
+        new EmbedBuilder().setDescription(
+          mode === "active" ? "Botを再開しました。" : "Botを一時停止しました。",
+        ),
+      ],
+      ephemeral: false,
     });
   }
 
