@@ -100,7 +100,13 @@ for (const restricted of [false, true]) {
         fauxAssistantMessage("Finished"),
       ]);
 
-      await runtime.prompt({ text: "二つのメッセージを確認して", images: [] });
+      await runtime.prompt({
+        id: "test-event",
+        type: "message",
+        source: "test",
+        text: "二つのメッセージを確認して",
+        images: [],
+      });
       assert.equal(requests.length, 2);
       assert.deepEqual(
         getCurrentTools(requests[0].messages)
@@ -151,7 +157,13 @@ for (const restricted of [false, true]) {
           return fauxAssistantMessage("No further reply needed");
         },
       ]);
-      await runtime.prompt({ text: "ありがとう", images: [] });
+      await runtime.prompt({
+        id: "test-event",
+        type: "message",
+        source: "test",
+        text: "ありがとう",
+        images: [],
+      });
       assert.deepEqual(sent, ["……確認したよ"]);
     } finally {
       runtime.dispose();

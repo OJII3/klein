@@ -173,3 +173,18 @@ To securely expose the Web UI:
 1. Create a Cloudflare Tunnel and add `TUNNEL_TOKEN=...` to `.env`.
 2. Protect the route with Cloudflare Access.
 3. Start Klein (`cloudflared` is started and stopped automatically with Klein).
+
+## Agent Input Events
+
+`AgentRuntime.prompt` and `steer` accept `AgentEvent` inputs defined in
+`src/agents/core/agent-event.ts`. Each producer provides a stable `id`, an event
+`type` (such as `discord.message`), a `source`, readable `text`, and `images`.
+Optional `data` carries JSON-serializable source metadata without image bytes.
+Pi renders the event metadata and text at the runtime boundary and uses the event
+ID for tracing. Discord includes channel, author, and reply metadata while
+preserving its conversation guidance, memory, and channel rules.
+
+New producers can use the same runtime interface for reminders, MCP notifications,
+and messages from other agents. Their scheduling, subscriptions, and routing are
+not implemented yet. `ownerFeaturesAllowed` must be assigned by trusted application
+access checks; values inside `data` do not grant tool permissions.

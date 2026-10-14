@@ -13,6 +13,9 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 
+import { createPiEventPrompt } from "./pi-event-prompt";
+import type { AgentEvent } from "@agents/core/agent-event";
+
 import {
   type BackgroundCompactionPreparation,
   createBackgroundCompactionExtension,
@@ -105,17 +108,21 @@ test("passes agent image attachments to Pi", async () => {
     dispose() {},
   } as never);
 
-  await runtime.prompt({
+  const event: AgentEvent = {
+    id: "image-event",
+    type: "message",
+    source: "test",
     text: "画像を確認して",
     images: [{ data: "c2VjcmV0", mimeType: "image/png" }],
-  });
+  };
+  await runtime.prompt(event);
 
   assert.deepEqual(receivedPrompt, {
     options: {
       images: [{ type: "image", data: "c2VjcmV0", mimeType: "image/png" }],
       source: "rpc",
     },
-    text: "画像を確認して",
+    text: createPiEventPrompt(event).text,
   });
   runtime.dispose();
 });
@@ -134,17 +141,21 @@ test("passes image analysis to the main session without image attachments", asyn
     } as never,
     {
       async analyze(prompt) {
-        assert.equal(prompt.text, "この画像を確認して");
+        assert.equal(prompt.text, createPiEventPrompt(event).text);
         assert.deepEqual(prompt.images, [{ data: "c2VjcmV0", mimeType: "image/png" }]);
         return "画像にはテスト用の内容があります。";
       },
     },
   );
 
-  await runtime.prompt({
+  const event: AgentEvent = {
+    id: "image-event",
+    type: "message",
+    source: "test",
     text: "この画像を確認して",
     images: [{ data: "c2VjcmV0", mimeType: "image/png" }],
-  });
+  };
+  await runtime.prompt(event);
 
   assert.deepEqual(received, [
     {
@@ -163,10 +174,70 @@ test("passes image analysis to the main session without image attachments", asyn
       kind: "prompt",
       value: {
         options: { source: "rpc" },
-        text: "この画像を確認して",
+        text: createPiEventPrompt(event).text,
       },
     },
   ]);
+  runtime.dispose();
+});
+
+test("accepts non-Discord events through prompt and steer", async () => {
+  const received: Array<{ kind: string; text: string }> = [];
+  const session = {
+    isStreaming: false,
+    async prompt(text: string) {
+      received.push({ kind: "prompt", text });
+    },
+    async steer(text: string) {
+      received.push({ kind: "steer", text });
+      return "queued";
+    },
+    dispose() {},
+  };
+  const runtime = new PiAgentRuntime(session as never);
+  const events: AgentEvent[] = [
+    {
+      id: "reminder-1",
+      type: "reminder.due",
+      source: "reminder",
+      text: "定例会の時間",
+      images: [],
+    },
+    {
+      id: "mcp-1",
+      type: "mcp.notification",
+      source: "mcp:calendar",
+      data: { method: "calendar/updated" },
+      text: "予定が更新された",
+      images: [],
+    },
+    {
+      id: "agent-1",
+      type: "agent.message",
+      source: "agent:researcher",
+      text: "調査結果",
+      images: [],
+    },
+  ];
+
+  await runtime.prompt(events[0]);
+  await runtime.steer(events[1]);
+  session.isStreaming = true;
+  await runtime.steer(events[2]);
+
+  assert.deepEqual(
+    received.map((input) => input.kind),
+    ["prompt", "prompt", "steer"],
+  );
+  for (const [index, input] of received.entries()) {
+    const metadata = JSON.parse(input.text.split("\n")[1]!);
+    assert.equal(metadata.id, events[index].id);
+    assert.equal(metadata.type, events[index].type);
+    assert.equal(metadata.source, events[index].source);
+    assert.deepEqual(metadata.data, events[index].data);
+    assert.ok(input.text.endsWith(events[index].text));
+    assert.equal(input.text.match(/<event-metadata>/gu)?.length, 1);
+  }
   runtime.dispose();
 });
 

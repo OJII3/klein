@@ -137,6 +137,9 @@ for (const sessionMode of ["new", "resume"] as const) {
         ]);
 
         await runtime.prompt({
+          id: "test-event",
+          type: "message",
+          source: "test",
           text: "Read an Obsidian note",
           images: [],
           ownerFeaturesAllowed: ownerPrompt,

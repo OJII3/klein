@@ -23,6 +23,8 @@ import type { CreateAgentSessionOptions } from "@earendil-works/pi-coding-agent"
 
 import type { AgentDefinition } from "@agents/core/agent-definition";
 import type { AgentFactory, AgentCreationOptions } from "@agents/core/agent-factory";
+import type { AgentEvent } from "@agents/core/agent-event";
+import { createPiEventPrompt } from "./pi-event-prompt";
 import type { AgentPrompt, AgentRuntime } from "@agents/core/agent-runtime";
 import type { SessionMode } from "@app/cli-options";
 import { createBackgroundCompactionExtension } from "./background-compaction";
@@ -136,8 +138,9 @@ export class PiAgentRuntime implements AgentRuntime {
     trace?.attach(session);
   }
 
-  prompt(prompt: AgentPrompt): Promise<void> {
-    const traceId = prompt.traceId ?? randomUUID();
+  prompt(event: AgentEvent): Promise<void> {
+    const prompt = createPiEventPrompt(event);
+    const traceId = event.id;
     const queuedAt = performance.now();
     this.trace?.log("pi_prompt_enqueued", { traceId, textLength: prompt.text.length });
     return this.enqueue(async () => {
@@ -167,11 +170,12 @@ export class PiAgentRuntime implements AgentRuntime {
     });
   }
 
-  async steer(prompt: AgentPrompt): Promise<void> {
+  async steer(event: AgentEvent): Promise<void> {
+    const prompt = createPiEventPrompt(event);
     this.ensureSessionAvailable();
     if (!this.session.isStreaming) {
       this.trace?.log("pi_steer_started_as_prompt", { traceId: prompt.traceId });
-      await this.prompt(prompt);
+      await this.prompt(event);
       return;
     }
 
@@ -180,11 +184,11 @@ export class PiAgentRuntime implements AgentRuntime {
       this.authorization.ownerFeaturesAllowed !==
         (this.authorization.ownerSession && prompt.ownerFeaturesAllowed === true)
     ) {
-      await this.prompt(prompt);
+      await this.prompt(event);
       return;
     }
 
-    const traceId = prompt.traceId ?? randomUUID();
+    const traceId = event.id;
     const startedAt = performance.now();
     this.trace?.registerInput(prompt.text, traceId);
     this.trace?.log("pi_steer_started", { traceId });

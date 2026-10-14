@@ -1,3 +1,4 @@
+import type { AgentEvent } from "../core/agent-event";
 import type { AgentFactory } from "../core/agent-factory";
 import type { AgentPrompt, AgentRuntime } from "../core/agent-runtime";
 import { formatDiscordMessage, type DiscordMessage } from "@modules/discord/domain/discord-message";
@@ -93,19 +94,19 @@ export class DiscordAgent {
   }
 
   prompt(message: DiscordMessage, guildMemory?: string, channelRule?: string): Promise<void> {
-    return this.runtime.prompt(this.createPrompt(message, guildMemory, channelRule));
+    return this.runtime.prompt(this.createEvent(message, guildMemory, channelRule));
   }
 
   steer(message: DiscordMessage, guildMemory?: string, channelRule?: string): Promise<void> {
-    const prompt = this.createPrompt(message, guildMemory, channelRule);
+    const prompt = this.createEvent(message, guildMemory, channelRule);
     return this.runtime.steer ? this.runtime.steer(prompt) : this.runtime.prompt(prompt);
   }
 
-  private createPrompt(
+  private createEvent(
     message: DiscordMessage,
     guildMemory?: string,
     channelRule?: string,
-  ): AgentPrompt {
+  ): AgentEvent {
     if (
       this.ownerFeaturesAllowed &&
       (message.author.bot ||
@@ -117,7 +118,17 @@ export class DiscordAgent {
 
     return {
       ownerFeaturesAllowed: this.ownerFeaturesAllowed,
-      traceId: message.id,
+      id: message.id,
+      type: "discord.message",
+      source: "discord",
+      data: {
+        channelId: message.channelId,
+        guildId: message.guildId,
+        parentChannelId: message.parentChannelId,
+        threadId: message.threadId,
+        author: message.author,
+        replyTo: message.replyTo,
+      },
       text: [
         guildMemory ? `<guild-memory>\n${guildMemory}\n</guild-memory>` : undefined,
         channelRule ? `<channel-rule>\n${channelRule}\n</channel-rule>` : undefined,
