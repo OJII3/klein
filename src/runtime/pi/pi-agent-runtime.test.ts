@@ -7,9 +7,11 @@ import { join, resolve } from "node:path";
 import {
   SettingsManager,
   SessionManager,
+  type ContextEvent,
   type ExtensionAPI,
   type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 
 import {
   type BackgroundCompactionPreparation,
@@ -17,12 +19,77 @@ import {
   shouldStartBackgroundCompaction,
 } from "./background-compaction";
 import {
+  createAssistantTextContextExtension,
   createPiSessionManager,
   createResourceLoader,
   PiAgentRuntime,
   resolveConfiguredModel,
   withOpenCodeSessionHeader,
 } from "./pi-agent-runtime";
+
+test("filters completed assistant text while preserving the active turn after sending", async () => {
+  const oldCall = fauxAssistantMessage([
+    { type: "text", text: "Old reasoning text" },
+    fauxToolCall("discord_send", { content: "old" }),
+  ]);
+  const oldEnd = fauxAssistantMessage("Old turn finished");
+  const currentCall = fauxAssistantMessage([
+    { type: "text", text: "Current reasoning text" },
+    fauxToolCall("discord_send", { content: "current" }),
+  ]);
+  const result: ContextEvent["messages"][number] = {
+    role: "toolResult",
+    toolCallId: currentCall.content.find((block) => block.type === "toolCall")!.id,
+    toolName: "discord_send",
+    content: [{ type: "text", text: "The message was sent to Discord." }],
+    isError: false,
+    timestamp: 3,
+  };
+  const messages: ContextEvent["messages"] = [
+    { role: "user", content: "Old request", timestamp: 1 },
+    oldCall,
+    { ...result, toolCallId: oldCall.content.find((block) => block.type === "toolCall")!.id },
+    oldEnd,
+    { role: "user", content: "Current request", timestamp: 2 },
+    currentCall,
+    result,
+    { role: "user", content: "Steering input", timestamp: 4 },
+  ];
+  const handler = registerExtension(createAssistantTextContextExtension()).get("context")!;
+  const filtered = (await handler(
+    { type: "context", messages } as never,
+    {} as ExtensionContext,
+  )) as { messages: ContextEvent["messages"] };
+
+  assert.deepEqual(filtered.messages, [
+    messages[0],
+    { ...oldCall, content: oldCall.content.filter((block) => block.type !== "text") },
+    messages[2],
+    ...messages.slice(4),
+  ]);
+  assert.equal(filtered.messages[4], currentCall);
+  assert.equal(oldCall.content[0]?.type, "text");
+  assert.equal(oldEnd.content[0]?.type, "text");
+});
+
+test("preserves an active turn without completed history or a user boundary", async () => {
+  const handler = registerExtension(createAssistantTextContextExtension()).get("context")!;
+  const call = fauxAssistantMessage([
+    { type: "text", text: "Current text" },
+    fauxToolCall("discord_send", { content: "reply" }),
+  ]);
+  for (const messages of [
+    [call],
+    [{ role: "user" as const, content: "First request", timestamp: 1 }, call],
+    [fauxAssistantMessage("Completed text without a new request")],
+  ]) {
+    const filtered = (await handler(
+      { type: "context", messages } as never,
+      {} as ExtensionContext,
+    )) as { messages: ContextEvent["messages"] };
+    assert.deepEqual(filtered.messages, messages);
+  }
+});
 
 test("passes agent image attachments to Pi", async () => {
   let receivedPrompt:
