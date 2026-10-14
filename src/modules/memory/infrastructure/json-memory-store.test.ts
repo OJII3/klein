@@ -4,16 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import {
-  listMemoryGuildIds,
-  MarkdownMemoryStore,
-  renderMemoryContext,
-  renderMemoryDocument,
-} from "./markdown-memory-store";
+import { JsonMemoryStore, listMemoryGuildIds, renderMemoryDocument } from "./json-memory-store";
+import { renderMemoryContext } from "./memory-context-renderer";
 
-test("applies memory operations to a Markdown file", async () => {
+test("applies memory operations to a JSON file", async () => {
   const directory = await mkdtemp(join(tmpdir(), "klein-memory-"));
-  const store = new MarkdownMemoryStore(join(directory, "MEMORY.md"));
+  const filePath = join(directory, "MEMORY.json");
+  const store = new JsonMemoryStore(filePath);
 
   try {
     await store.apply(
@@ -55,21 +52,21 @@ test("applies memory operations to a Markdown file", async () => {
     await store.apply([{ id: updated.id, type: "delete" }], ["message-3"]);
     assert.deepEqual((await store.read()).entries, []);
 
-    const file = await readFile(join(directory, "MEMORY.md"), "utf8");
-    assert.match(file, /^# Guild Memory/u);
+    const file = await readFile(filePath, "utf8");
+    assert.deepEqual(JSON.parse(file), { entries: [] });
   } finally {
     await rm(directory, { force: true, recursive: true });
   }
 });
 
-test("rejects malformed managed entries", async () => {
+test("rejects malformed JSON memory entries", async () => {
   const directory = await mkdtemp(join(tmpdir(), "klein-memory-"));
-  const store = new MarkdownMemoryStore(join(directory, "MEMORY.md"));
+  const store = new JsonMemoryStore(join(directory, "MEMORY.json"));
 
   try {
     await writeFile(
-      join(directory, "MEMORY.md"),
-      "<!-- memory:start\nid: mem-1\nkind: unknown\n-->\n### 壊れたエントリ\n\n本文\n<!-- memory:end -->",
+      join(directory, "MEMORY.json"),
+      JSON.stringify({ entries: [{ id: "mem-1", kind: "unknown" }] }),
       "utf8",
     );
 
@@ -79,18 +76,14 @@ test("rejects malformed managed entries", async () => {
   }
 });
 
-test("rejects an unclosed managed entry", async () => {
+test("rejects invalid JSON memory documents", async () => {
   const directory = await mkdtemp(join(tmpdir(), "klein-memory-"));
-  const store = new MarkdownMemoryStore(join(directory, "MEMORY.md"));
+  const store = new JsonMemoryStore(join(directory, "MEMORY.json"));
 
   try {
-    await writeFile(
-      join(directory, "MEMORY.md"),
-      "<!-- memory:start\nid: mem-1\nkind: fact\ncreated_at: now\nupdated_at: now\n-->\n### 壊れたエントリ\n\n本文",
-      "utf8",
-    );
+    await writeFile(join(directory, "MEMORY.json"), "{", "utf8");
 
-    await assert.rejects(store.read(), /unclosed memory entry/u);
+    await assert.rejects(store.read(), /invalid JSON/u);
   } finally {
     await rm(directory, { force: true, recursive: true });
   }
@@ -100,7 +93,7 @@ test("lists guilds with persisted memory files", async () => {
   const directory = await mkdtemp(join(tmpdir(), "klein-memory-"));
 
   try {
-    const filePath = join(directory, "{guildId}", "MEMORY.md");
+    const filePath = join(directory, "{guildId}", "MEMORY.json");
     const entry = {
       content: "本文",
       createdAt: "2026-09-11T00:00:00.000Z",
@@ -112,7 +105,7 @@ test("lists guilds with persisted memory files", async () => {
     };
     await mkdir(join(directory, "guild-a"));
     await writeFile(
-      join(directory, "guild-a", "MEMORY.md"),
+      join(directory, "guild-a", "MEMORY.json"),
       renderMemoryDocument({ entries: [entry] }),
       "utf8",
     );
@@ -143,7 +136,7 @@ test("renders compact guild memory context without storage metadata", () => {
   assert.match(context, /Kind: rule · Updated: 2026-10-05/u);
   assert.match(context, /### 発言について\n\n/u);
   assert.match(context, /本文/u);
-  assert.doesNotMatch(context, /mem-1|message-1|created_at|T03:26:33/u);
+  assert.doesNotMatch(context, /mem-1|message-1|createdAt|T03:26:33/u);
 
   const processingContext = renderMemoryContext(document, { includeIds: true });
   assert.match(processingContext, /Memory ID: mem-1/u);

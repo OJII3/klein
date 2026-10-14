@@ -13,7 +13,7 @@ import {
   type MemoryOperation,
   type MemoryProcessor,
 } from "../domain/memory";
-import { MarkdownMemoryStore } from "../infrastructure/markdown-memory-store";
+import { JsonMemoryStore } from "../infrastructure/json-memory-store";
 import { MemoryCoordinator } from "./memory-coordinator";
 
 test("batches recent guild messages and keeps guild memory files separate", async () => {
@@ -37,7 +37,7 @@ test("batches recent guild messages and keeps guild memory files separate", asyn
   };
   const taskCoordinator = new TaskCoordinator();
   const coordinator = new MemoryCoordinator({
-    filePath: join(directory, "{guildId}", "MEMORY.md"),
+    filePath: join(directory, "{guildId}", "MEMORY.json"),
     idleSeconds: 0.01,
     logger: pino({ level: "silent" }),
     maxBatchAgeSeconds: 1,
@@ -74,7 +74,7 @@ test("deletes a persisted memory entry for a guild", async () => {
   const directory = await mkdtemp(join(tmpdir(), "klein-memory-"));
   const taskCoordinator = new TaskCoordinator();
   const coordinator = new MemoryCoordinator({
-    filePath: join(directory, "{guildId}", "MEMORY.md"),
+    filePath: join(directory, "{guildId}", "MEMORY.json"),
     idleSeconds: 1,
     logger: pino({ level: "silent" }),
     maxBatchAgeSeconds: 1,
@@ -88,7 +88,7 @@ test("deletes a persisted memory entry for a guild", async () => {
   });
 
   try {
-    const store = new MarkdownMemoryStore(join(directory, "guild-a", "MEMORY.md"));
+    const store = new JsonMemoryStore(join(directory, "guild-a", "MEMORY.json"));
     await store.apply(
       [
         {

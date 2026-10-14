@@ -81,7 +81,7 @@ Set `"profile"` in `config/config.jsonc` to switch profiles (defaults to `"klein
 
 ### Memory
 
-When `features.memory.enabled` is true, Klein periodically extracts durable guild facts and notes from recent conversations into `.runtime/memory/{guildId}/MEMORY.md` using an optional background model.
+When `features.memory.enabled` is true, Klein periodically extracts durable guild facts and notes from recent conversations into `.runtime/memory/{guildId}/MEMORY.json` using an optional background model.
 
 ### Remote MCP Tools
 

@@ -181,7 +181,7 @@ export async function bootstrap(): Promise<void> {
   const memorySessionId = `memory-${randomUUID()}`;
   const memoryCoordinator = memoryConfiguration.enabled
     ? new MemoryCoordinator({
-        filePath: memoryConfiguration.filePath ?? ".runtime/memory/{guildId}/MEMORY.md",
+        filePath: memoryConfiguration.filePath ?? ".runtime/memory/{guildId}/MEMORY.json",
         idleSeconds: memoryConfiguration.idleSeconds ?? 180,
         logger,
         maxBatchAgeSeconds: memoryConfiguration.maxBatchAgeSeconds ?? 1800,
