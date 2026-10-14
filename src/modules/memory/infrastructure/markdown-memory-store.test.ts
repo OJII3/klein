@@ -7,6 +7,7 @@ import test from "node:test";
 import {
   listMemoryGuildIds,
   MarkdownMemoryStore,
+  renderMemoryContext,
   renderMemoryDocument,
 } from "./markdown-memory-store";
 
@@ -120,4 +121,31 @@ test("lists guilds with persisted memory files", async () => {
   } finally {
     await rm(directory, { force: true, recursive: true });
   }
+});
+
+test("renders compact guild memory context without storage metadata", () => {
+  const document = {
+    entries: [
+      {
+        content: "本文",
+        createdAt: "2026-09-10T12:30:00.000Z",
+        id: "mem-1",
+        kind: "rule" as const,
+        sourceMessageIds: ["message-1"],
+        title: "発言について",
+        updatedAt: "2026-10-05T03:26:33.905Z",
+      },
+    ],
+  };
+
+  const context = renderMemoryContext(document);
+  assert.match(context, /Shared memory across channels in this guild\./u);
+  assert.match(context, /Kind: rule · Updated: 2026-10-05/u);
+  assert.match(context, /### 発言について\n\n/u);
+  assert.match(context, /本文/u);
+  assert.doesNotMatch(context, /mem-1|message-1|created_at|T03:26:33/u);
+
+  const processingContext = renderMemoryContext(document, { includeIds: true });
+  assert.match(processingContext, /Memory ID: mem-1/u);
+  assert.doesNotMatch(processingContext, /message-1|T03:26:33/u);
 });
