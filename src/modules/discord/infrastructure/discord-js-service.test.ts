@@ -253,6 +253,8 @@ test("handles idle and online slash commands for members with Manage Server", as
   const interaction = {
     commandName: "idle",
     inGuild: () => true,
+    channelId: "channel-123",
+    channel: { isThread: () => false },
     isChatInputCommand: () => true,
     isModalSubmit: () => false,
     memberPermissions: {
