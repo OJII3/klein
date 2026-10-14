@@ -237,7 +237,7 @@ test("changes the Discord presence when the operating mode changes", async () =>
   }
 });
 
-test("handles idle and online slash commands for members with Manage Server", async () => {
+test("handles status slash subcommands for members with Manage Server", async () => {
   const operatingState = new DiscordOperatingState();
   const service = new DiscordJsService(
     "token",
@@ -251,14 +251,16 @@ test("handles idle and online slash commands for members with Manage Server", as
     setStatus: () => undefined,
   };
   const replies: Array<{ content: string; ephemeral: boolean }> = [];
+  let subcommand = "idle";
   const interaction = {
-    commandName: "idle",
+    commandName: "status",
     inGuild: () => true,
     channelId: "channel-123",
     channel: { isThread: () => false },
     user: { id: "user-123", bot: false },
     isChatInputCommand: () => true,
     isModalSubmit: () => false,
+    options: { getSubcommand: () => subcommand },
     memberPermissions: {
       has: () => true,
     },
@@ -271,7 +273,15 @@ test("handles idle and online slash commands for members with Manage Server", as
     await testableService.handleInteraction(interaction);
 
     assert.equal(operatingState.mode, "paused");
-    assert.deepEqual(replies, [{ content: "Botを一時停止しました。", ephemeral: true }]);
+
+    subcommand = "online";
+    await testableService.handleInteraction(interaction);
+
+    assert.equal(operatingState.mode, "active");
+    assert.deepEqual(replies, [
+      { content: "Botを一時停止しました。", ephemeral: true },
+      { content: "Botを再開しました。", ephemeral: true },
+    ]);
   } finally {
     await service.stop();
   }
