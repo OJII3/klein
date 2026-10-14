@@ -33,4 +33,5 @@ test("returns the sent content in the tool result", async () => {
       text: "The message was sent to Discord.\nSent content:\n送信する本文",
     },
   ]);
+  assert.equal(result.terminate, true);
 });

@@ -97,7 +97,7 @@ for (const restricted of [false, true]) {
           requests.push(context);
           return fauxAssistantMessage(fauxToolCall("discord_send", { content: "……確認したよ" }));
         },
-        fauxAssistantMessage("Finished"),
+        fauxAssistantMessage(fauxToolCall("discord_send", { content: "……もう一通" })),
       ]);
 
       await runtime.prompt({ text: "二つのメッセージを確認して", images: [] });
