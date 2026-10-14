@@ -15,6 +15,7 @@ import {
   convertToLlm,
   getLatestCompactionEntry,
   serializeConversation,
+  type ExtensionFactory,
 } from "@earendil-works/pi-coding-agent";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { Api, Model, Models } from "@earendil-works/pi-ai";
@@ -349,6 +350,7 @@ export function createResourceLoader(
     agentDir,
     extensionFactories: [
       wrap(createCodemodeExtension({ mode: "on", models: false })),
+      createAssistantTextContextExtension(),
       wrap(createToolSearchExtension()),
       wrap(
         createMcpExtension(
@@ -390,6 +392,24 @@ export function createResourceLoader(
     noThemes: true,
     systemPrompt,
   });
+}
+
+function createAssistantTextContextExtension(): ExtensionFactory {
+  return (pi) => {
+    pi.on("context", (event) => {
+      const messages: typeof event.messages = [];
+      for (const message of event.messages) {
+        if (message.role !== "assistant") {
+          messages.push(message);
+          continue;
+        }
+
+        const content = message.content.filter((block) => block.type !== "text");
+        if (content.length > 0) messages.push({ ...message, content });
+      }
+      return { messages };
+    });
+  };
 }
 
 export function resolveConfiguredModel(
