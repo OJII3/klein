@@ -396,14 +396,19 @@ export function createResourceLoader(
 
 function createAssistantTextContextExtension(): ExtensionFactory {
   return (pi) => {
-    pi.on("context", (event) => ({
-      messages: event.messages.flatMap((message) => {
-        if (message.role !== "assistant") return [message];
+    pi.on("context", (event) => {
+      const messages: typeof event.messages = [];
+      for (const message of event.messages) {
+        if (message.role !== "assistant") {
+          messages.push(message);
+          continue;
+        }
 
         const content = message.content.filter((block) => block.type !== "text");
-        return content.length > 0 ? [{ ...message, content }] : [];
-      }),
-    }));
+        if (content.length > 0) messages.push({ ...message, content });
+      }
+      return { messages };
+    });
   };
 }
 
