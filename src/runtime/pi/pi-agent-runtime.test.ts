@@ -30,12 +30,13 @@ import {
   withOpenCodeSessionHeader,
 } from "./pi-agent-runtime";
 
-test("filters completed assistant text while preserving the active turn after sending", async () => {
+test("records completed turn outcomes while preserving the active turn after sending", async () => {
   const oldCall = fauxAssistantMessage([
     { type: "text", text: "Old reasoning text" },
     fauxToolCall("discord_send", { content: "old" }),
   ]);
   const oldEnd = fauxAssistantMessage("Old turn finished");
+  const silentEnd = fauxAssistantMessage("No reply needed");
   const currentCall = fauxAssistantMessage([
     { type: "text", text: "Current reasoning text" },
     fauxToolCall("discord_send", { content: "current" }),
@@ -53,6 +54,8 @@ test("filters completed assistant text while preserving the active turn after se
     oldCall,
     { ...result, toolCallId: oldCall.content.find((block) => block.type === "toolCall")!.id },
     oldEnd,
+    { role: "user", content: "Ignored request", timestamp: 2 },
+    silentEnd,
     { role: "user", content: "Current request", timestamp: 2 },
     currentCall,
     result,
@@ -68,12 +71,67 @@ test("filters completed assistant text while preserving the active turn after se
     messages[0],
     { ...oldCall, content: oldCall.content.filter((block) => block.type !== "text") },
     messages[2],
-    ...messages.slice(4),
+    { ...oldEnd, content: [{ type: "text", text: "Sent a message to Discord." }] },
+    messages[4],
+    { ...silentEnd, content: [{ type: "text", text: "Remained silent." }] },
+    ...messages.slice(6),
   ]);
-  assert.equal(filtered.messages[4], currentCall);
+  assert.equal(filtered.messages[7], currentCall);
   assert.equal(oldCall.content[0]?.type, "text");
   assert.equal(oldEnd.content[0]?.type, "text");
 });
+
+for (const { toolNames, errors, expected } of [
+  { toolNames: [], errors: [], expected: "Remained silent." },
+  { toolNames: ["discord_read"], errors: [false], expected: "Remained silent." },
+  { toolNames: ["discord_send"], errors: [true], expected: "Remained silent." },
+  { toolNames: ["discord_send"], errors: [false], expected: "Sent a message to Discord." },
+  {
+    toolNames: ["discord_send", "discord_send"],
+    errors: [false, true],
+    expected: "Sent a message to Discord.",
+  },
+]) {
+  test(`summarizes completed assistant text (${JSON.stringify({ toolNames, errors })})`, async () => {
+    const messages: ContextEvent["messages"] = [
+      { role: "user", content: "Previous request", timestamp: 1 },
+    ];
+    for (const [index, toolName] of toolNames.entries()) {
+      const call = fauxToolCall(toolName, {});
+      messages.push(
+        fauxAssistantMessage([{ type: "text", text: "Private reasoning" }, call]),
+        { role: "user", content: "Steering input", timestamp: 2 },
+        {
+          role: "toolResult",
+          toolCallId: call.id,
+          toolName,
+          content: [{ type: "text", text: "Tool result" }],
+          isError: errors[index]!,
+          timestamp: 3,
+        },
+      );
+    }
+    const thinking = { type: "thinking" as const, thinking: "Private thinking" };
+    const end = fauxAssistantMessage([
+      thinking,
+      { type: "text", text: "Internal conclusion" },
+      { type: "text", text: "More internal text" },
+    ]);
+    messages.push(end, { role: "user", content: "Next request", timestamp: 4 });
+    const original = structuredClone(messages);
+    const handler = registerExtension(createAssistantTextContextExtension()).get("context")!;
+    const filtered = (await handler(
+      { type: "context", messages } as never,
+      {} as ExtensionContext,
+    )) as { messages: ContextEvent["messages"] };
+
+    assert.deepEqual(filtered.messages.at(-2), {
+      ...end,
+      content: [thinking, { type: "text", text: expected }],
+    });
+    assert.deepEqual(messages, original);
+  });
+}
 
 test("preserves an active turn without completed history or a user boundary", async () => {
   const handler = registerExtension(createAssistantTextContextExtension()).get("context")!;

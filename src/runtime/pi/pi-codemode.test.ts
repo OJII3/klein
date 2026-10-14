@@ -155,6 +155,12 @@ for (const restricted of [false, true]) {
           assert.ok(previousAssistant && previousAssistant.role === "assistant");
           assert.ok(previousAssistant.content.some((block) => block.type === "toolCall"));
           assert.ok(previousAssistant.content.every((block) => block.type !== "text"));
+          assert.deepEqual(
+            context.messages
+              .filter((message) => message.role === "assistant")
+              .flatMap((message) => message.content.filter((block) => block.type === "text")),
+            [{ type: "text", text: "Sent a message to Discord." }],
+          );
           return fauxAssistantMessage("No further reply needed");
         },
       ]);
@@ -164,6 +170,29 @@ for (const restricted of [false, true]) {
         source: "test",
         occurredAt: "2026-10-14T09:30:42.123Z",
         content: [{ type: "text", text: "ありがとう" }],
+      });
+      assert.deepEqual(sent, ["……確認したよ"]);
+
+      provider.setResponses([
+        (context) => {
+          assert.deepEqual(
+            context.messages
+              .filter((message) => message.role === "assistant")
+              .flatMap((message) => message.content.filter((block) => block.type === "text")),
+            [
+              { type: "text", text: "Sent a message to Discord." },
+              { type: "text", text: "Remained silent." },
+            ],
+          );
+          return fauxAssistantMessage("No further reply needed");
+        },
+      ]);
+      await runtime.prompt({
+        id: "next-event",
+        type: "message",
+        source: "test",
+        occurredAt: "2026-10-14T09:30:43.123Z",
+        content: [{ type: "text", text: "次の話題" }],
       });
       assert.deepEqual(sent, ["……確認したよ"]);
     } finally {
