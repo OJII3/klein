@@ -1,5 +1,5 @@
 import type { PiSessionEvent, SessionSummary } from "../../api";
-import { Badge, Button, Group, Paper, Stack, Text, Timeline, Title } from "@mantine/core";
+import { Badge, Button, Group, Paper, Stack, Text, Title } from "@mantine/core";
 import { EmptyState } from "../../components/feedback";
 import { JsonValue } from "../../components/json-value";
 import { formatShortTimestamp, formatTimestamp, truncateMiddle } from "../../lib/format";
@@ -50,45 +50,39 @@ export function SessionTimeline({
         {events.length === 0 ? (
           <EmptyState>イベントがありません</EmptyState>
         ) : (
-          <Timeline active={events.length} bulletSize={24} lineWidth={2}>
+          <Stack gap="md">
             {events.map((event) => (
-              <Timeline.Item
-                key={event.id}
-                title={
-                  <Group gap="xs">
-                    <Badge size="sm" variant="light">
-                      {event.kind}
+              <Stack key={event.id} gap="xs">
+                <Group gap="xs">
+                  <Badge size="sm" variant="light">
+                    {event.kind}
+                  </Badge>
+                  {event.role && (
+                    <Badge size="sm" color="gray" variant="outline">
+                      {event.role}
                     </Badge>
-                    {event.role && (
-                      <Badge size="sm" color="gray" variant="outline">
-                        {event.role}
-                      </Badge>
-                    )}
-                    <Text size="xs" c="dimmed">
-                      {formatTimestamp(event.timestamp)}
-                    </Text>
-                  </Group>
-                }
-              >
-                <Stack mt="xs" gap="xs">
-                  {event.errorMessage && (
-                    <Paper withBorder p="sm" c="red" role="alert">
-                      {event.errorMessage}
-                    </Paper>
                   )}
-                  {event.content !== undefined &&
-                    (!Array.isArray(event.content) || event.content.length > 0) && (
-                      <JsonValue value={event.content} />
-                    )}
-                  {event.parentId && (
-                    <Text size="xs" c="dimmed">
-                      parent: {event.parentId}
-                    </Text>
+                  <Text size="xs" c="dimmed">
+                    {formatTimestamp(event.timestamp)}
+                  </Text>
+                </Group>
+                {event.errorMessage && (
+                  <Paper withBorder p="sm" c="red" role="alert">
+                    {event.errorMessage}
+                  </Paper>
+                )}
+                {event.content !== undefined &&
+                  (!Array.isArray(event.content) || event.content.length > 0) && (
+                    <JsonValue value={event.content} />
                   )}
-                </Stack>
-              </Timeline.Item>
+                {event.parentId && (
+                  <Text size="xs" c="dimmed">
+                    parent: {event.parentId}
+                  </Text>
+                )}
+              </Stack>
             ))}
-          </Timeline>
+          </Stack>
         )}
         {events.length > 0 && (
           <Group justify="center">
