@@ -405,13 +405,31 @@ export function createAssistantTextContextExtension(): ExtensionFactory {
         }
       }
       const messages: typeof event.messages = [];
+      let sentMessage = false;
       for (const [index, message] of event.messages.entries()) {
+        if (
+          message.role === "toolResult" &&
+          message.toolName === "discord_send" &&
+          !message.isError
+        ) {
+          sentMessage = true;
+        }
         if (message.role !== "assistant" || index > completedTurnIndex) {
           messages.push(message);
           continue;
         }
 
-        const content = message.content.filter((block) => block.type !== "text");
+        const content: typeof message.content = message.content.filter(
+          (block) => block.type !== "text",
+        );
+        if (!content.some((block) => block.type === "toolCall")) {
+          // Record the completed outcome so silence is not mistaken for a pending reply.
+          content.push({
+            type: "text",
+            text: sentMessage ? "Sent a message to Discord." : "Remained silent.",
+          });
+          sentMessage = false;
+        }
         if (content.length > 0) messages.push({ ...message, content });
       }
       return { messages };
