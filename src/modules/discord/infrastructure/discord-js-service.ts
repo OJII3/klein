@@ -79,6 +79,7 @@ export class DiscordJsService implements DiscordService {
       ? new DiscordVoiceChatController(accessPolicy, logger, voiceChat)
       : undefined;
     this.interactionHandler = new DiscordJsInteractionHandler(
+      accessPolicy,
       (mode) => this.setOperatingMode(mode),
       this.voiceChatController,
       channelRuleStore,

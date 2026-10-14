@@ -98,8 +98,9 @@ Restart Klein after modifying MCP configurations.
 
 Set `owner.discord.userId` to the owner's Discord user ID. `discord.access` accepts
 `allow`, `deny`, and `owner` at every existing level: default, direct messages, guilds,
-channels, and threads. The most specific rule wins. `owner` accepts only messages
-from the configured owner (never bots) and enables owner-only tools for that conversation.
+channels, and threads. The most specific rule wins. `owner` accepts messages and
+slash commands only from the configured owner (never bots), and enables owner-only tools
+for that conversation.
 An owner's message in an `allow` channel does not enable owner-only tools. Without an
 owner ID, `owner` denies everyone.
 
