@@ -25,7 +25,7 @@ import type { AgentDefinition } from "@agents/core/agent-definition";
 import type { AgentFactory, AgentCreationOptions } from "@agents/core/agent-factory";
 import type { AgentEvent } from "@agents/core/agent-event";
 import { createPiEventPrompt } from "./pi-event-prompt";
-import type { AgentPrompt, AgentRuntime } from "@agents/core/agent-runtime";
+import type { AgentExecutionOptions, AgentPrompt, AgentRuntime } from "@agents/core/agent-runtime";
 import type { SessionMode } from "@app/cli-options";
 import { createBackgroundCompactionExtension } from "./background-compaction";
 import { createFxtwitterFetchExtension } from "./fxtwitter-fetch";
@@ -138,7 +138,7 @@ export class PiAgentRuntime implements AgentRuntime {
     trace?.attach(session);
   }
 
-  prompt(event: AgentEvent): Promise<void> {
+  prompt(event: AgentEvent, options: AgentExecutionOptions = {}): Promise<void> {
     const prompt = createPiEventPrompt(event);
     const traceId = event.id;
     const queuedAt = performance.now();
@@ -153,7 +153,7 @@ export class PiAgentRuntime implements AgentRuntime {
       });
       let failed = false;
       try {
-        this.authorization?.setPrompt(prompt.ownerFeaturesAllowed === true);
+        this.authorization?.setPrompt(options.ownerFeaturesAllowed === true);
         await this.runPrompt(prompt);
       } catch (error) {
         failed = true;
@@ -170,21 +170,21 @@ export class PiAgentRuntime implements AgentRuntime {
     });
   }
 
-  async steer(event: AgentEvent): Promise<void> {
+  async steer(event: AgentEvent, options: AgentExecutionOptions = {}): Promise<void> {
     const prompt = createPiEventPrompt(event);
     this.ensureSessionAvailable();
     if (!this.session.isStreaming) {
       this.trace?.log("pi_steer_started_as_prompt", { traceId: prompt.traceId });
-      await this.prompt(event);
+      await this.prompt(event, options);
       return;
     }
 
     if (
       this.authorization &&
       this.authorization.ownerFeaturesAllowed !==
-        (this.authorization.ownerSession && prompt.ownerFeaturesAllowed === true)
+        (this.authorization.ownerSession && options.ownerFeaturesAllowed === true)
     ) {
-      await this.prompt(event);
+      await this.prompt(event, options);
       return;
     }
 

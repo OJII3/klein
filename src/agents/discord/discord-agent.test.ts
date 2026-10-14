@@ -4,8 +4,9 @@ import test from "node:test";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 
 import type { AgentFactory } from "../core/agent-factory";
-import type { AgentPrompt, AgentRuntime } from "../core/agent-runtime";
+import type { AgentExecutionOptions, AgentRuntime } from "../core/agent-runtime";
 import { DiscordAgent } from "./discord-agent";
+import type { AgentEvent } from "../core/agent-event";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import type { DiscordService } from "@modules/discord/ports/discord-service";
 
@@ -19,6 +20,7 @@ const message: DiscordMessage = {
   channelId: "channel-123",
   content: "読み取った本文",
   id: "message-456",
+  occurredAt: "2026-10-14T09:30:42.123Z",
   images: [
     {
       data: "c2VjcmV0",
@@ -38,8 +40,11 @@ test("routes voice replies through discord_speak using the existing runtime prom
       assert.equal(prompt.id, message.id);
       assert.equal(prompt.type, "discord.message");
       assert.equal(prompt.source, "discord");
-      assert.deepEqual(prompt.data?.author, message.author);
-      assert.equal(prompt.data?.channelId, message.channelId);
+      assert.equal(prompt.occurredAt, message.occurredAt);
+      assert.deepEqual(prompt.content, [
+        { type: "text", text: "さつき (@satsuki):\n読み取った本文\n[添付画像: sample.png]" },
+        { type: "image", data: "c2VjcmV0", mimeType: "image/png" },
+      ]);
       const tool = tools.find((tool) => tool.name === "discord_speak");
       assert.ok(tool);
       await tool.execute("tool-call", { text: "LLMの返答" }, undefined, undefined, {} as never);
@@ -140,7 +145,7 @@ test("wires the runtime image analyzer into discord_read", async () => {
 });
 
 test("adds bot-specific conversation guidance only for bot messages", async () => {
-  const prompts: AgentPrompt[] = [];
+  const prompts: AgentEvent[] = [];
   const runtime: AgentRuntime = {
     async prompt(prompt) {
       prompts.push(prompt);
@@ -178,19 +183,16 @@ test("adds bot-specific conversation guidance only for bot messages", async () =
   });
 
   assert.equal(prompts.length, 2);
-  assert.equal(prompts[0]?.text, "さつき (@satsuki):\n読み取った本文\n[添付画像: sample.png]");
-  assert.match(prompts[1]?.text ?? "", /latest Discord message was sent by another bot/);
-  assert.match(
-    prompts[1]?.text ?? "",
-    /history, experiences, preferences, or personal information/,
-  );
-  assert.match(prompts[1]?.text ?? "", /self-contained character-driven closing remark/);
+  assert.equal(eventText(prompts[0]), "さつき (@satsuki):\n読み取った本文\n[添付画像: sample.png]");
+  assert.match(eventText(prompts[1]), /latest Discord message was sent by another bot/);
+  assert.match(eventText(prompts[1]), /history, experiences, preferences, or personal information/);
+  assert.match(eventText(prompts[1]), /self-contained character-driven closing remark/);
 
   agent.dispose();
 });
 
 test("injects the current guild memory into the agent prompt", async () => {
-  let receivedPrompt: AgentPrompt | undefined;
+  let receivedPrompt: AgentEvent | undefined;
   const runtime: AgentRuntime = {
     async prompt(prompt) {
       receivedPrompt = prompt;
@@ -223,14 +225,15 @@ test("injects the current guild memory into the agent prompt", async () => {
 
   await agent.prompt(message, "### 定例会の曜日\n\n毎週土曜日");
 
-  assert.match(receivedPrompt?.text ?? "", /<guild-memory>/u);
-  assert.match(receivedPrompt?.text ?? "", /毎週土曜日/u);
-  assert.match(receivedPrompt?.text ?? "", /読み取った本文/u);
+  assert.match(eventText(receivedPrompt), /<guild-memory>/u);
+  assert.match(eventText(receivedPrompt), /毎週土曜日/u);
+  assert.match(eventText(receivedPrompt), /読み取った本文/u);
   agent.dispose();
 });
 
 test("binds private reads to the owner and refuses other authors or channels", async () => {
-  const prompts: AgentPrompt[] = [];
+  const prompts: AgentEvent[] = [];
+  const executionOptions: (AgentExecutionOptions | undefined)[] = [];
   let tools: readonly ToolDefinition[] = [];
   let requester: Parameters<DiscordService["readMessage"]>[1];
   const factory: AgentFactory = {
@@ -238,11 +241,13 @@ test("binds private reads to the owner and refuses other authors or channels", a
       assert.equal(options.ownerFeaturesAllowed, true);
       tools = registeredTools as readonly ToolDefinition[];
       return {
-        async prompt(prompt) {
+        async prompt(prompt, options) {
           prompts.push(prompt);
+          executionOptions.push(options);
         },
-        async steer(prompt) {
+        async steer(prompt, options) {
           prompts.push(prompt);
+          executionOptions.push(options);
         },
         dispose() {},
       };
@@ -259,7 +264,12 @@ test("binds private reads to the owner and refuses other authors or channels", a
     ownerFeaturesAllowed: true,
   });
   await agent.prompt(message);
-  assert.equal(prompts[0].ownerFeaturesAllowed, true);
+  await agent.steer(message);
+  assert.deepEqual(executionOptions, [
+    { ownerFeaturesAllowed: true },
+    { ownerFeaturesAllowed: true },
+  ]);
+  assert.ok(prompts.every((event) => !("ownerFeaturesAllowed" in event)));
   const read = tools.find((tool) => tool.name === "discord_read");
   assert.ok(read);
   await read.execute("read", { messageId: message.id }, undefined, undefined, {} as never);
@@ -272,6 +282,15 @@ test("binds private reads to the owner and refuses other authors or channels", a
     assert.throws(() => agent.prompt(invalid), /Only the owner/);
     assert.throws(() => agent.steer(invalid), /Only the owner/);
   }
-  assert.equal(prompts.length, 1);
+  assert.equal(prompts.length, 2);
   agent.dispose();
 });
+
+function eventText(event: AgentEvent | undefined): string {
+  return (
+    event?.content
+      .filter((block) => block.type === "text")
+      .map((block) => block.text)
+      .join("\n\n") ?? ""
+  );
+}

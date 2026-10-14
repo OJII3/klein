@@ -40,6 +40,7 @@ test("formats a Discord message with its reply context", () => {
       channelId: "channel-123",
       content: "本文です",
       id: "message-456",
+      occurredAt: "2026-10-14T09:30:42.123Z",
       images: [],
       replyTo: {
         author: bot,
@@ -82,6 +83,7 @@ test("formats image attachment context without including image data", () => {
       channelId: "channel-123",
       content: "これを見て",
       id: "message-456",
+      occurredAt: "2026-10-14T09:30:42.123Z",
       images: [
         {
           data: "c2VjcmV0",
@@ -102,6 +104,7 @@ test("formats an image-only message", () => {
       channelId: "channel-123",
       content: "",
       id: "message-456",
+      occurredAt: "2026-10-14T09:30:42.123Z",
       images: [
         {
           data: "c2VjcmV0",

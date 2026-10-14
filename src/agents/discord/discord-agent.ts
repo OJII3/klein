@@ -94,12 +94,17 @@ export class DiscordAgent {
   }
 
   prompt(message: DiscordMessage, guildMemory?: string, channelRule?: string): Promise<void> {
-    return this.runtime.prompt(this.createEvent(message, guildMemory, channelRule));
+    return this.runtime.prompt(this.createEvent(message, guildMemory, channelRule), {
+      ownerFeaturesAllowed: this.ownerFeaturesAllowed,
+    });
   }
 
   steer(message: DiscordMessage, guildMemory?: string, channelRule?: string): Promise<void> {
-    const prompt = this.createEvent(message, guildMemory, channelRule);
-    return this.runtime.steer ? this.runtime.steer(prompt) : this.runtime.prompt(prompt);
+    const event = this.createEvent(message, guildMemory, channelRule);
+    const options = { ownerFeaturesAllowed: this.ownerFeaturesAllowed };
+    return this.runtime.steer
+      ? this.runtime.steer(event, options)
+      : this.runtime.prompt(event, options);
   }
 
   private createEvent(
@@ -117,26 +122,23 @@ export class DiscordAgent {
     }
 
     return {
-      ownerFeaturesAllowed: this.ownerFeaturesAllowed,
       id: message.id,
+      occurredAt: message.occurredAt,
       type: "discord.message",
       source: "discord",
-      data: {
-        channelId: message.channelId,
-        guildId: message.guildId,
-        parentChannelId: message.parentChannelId,
-        threadId: message.threadId,
-        author: message.author,
-        replyTo: message.replyTo,
-      },
-      text: [
-        guildMemory ? `<guild-memory>\n${guildMemory}\n</guild-memory>` : undefined,
-        channelRule ? `<channel-rule>\n${channelRule}\n</channel-rule>` : undefined,
-        formatDiscordAgentPrompt(message),
-      ]
-        .filter((context): context is string => context !== undefined)
-        .join("\n\n"),
-      images: message.images.map(({ data, mimeType }) => ({ data, mimeType })),
+      content: [
+        {
+          type: "text",
+          text: [
+            guildMemory ? `<guild-memory>\n${guildMemory}\n</guild-memory>` : undefined,
+            channelRule ? `<channel-rule>\n${channelRule}\n</channel-rule>` : undefined,
+            formatDiscordAgentPrompt(message),
+          ]
+            .filter((context): context is string => context !== undefined)
+            .join("\n\n"),
+        },
+        ...message.images.map(({ data, mimeType }) => ({ type: "image" as const, data, mimeType })),
+      ],
     };
   }
 

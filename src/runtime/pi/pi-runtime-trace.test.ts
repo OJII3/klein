@@ -301,8 +301,8 @@ test("real Pi keeps accepting steer while a spoken tool blocks the next model ca
     id: "first-asr",
     type: "discord.message",
     source: "discord",
-    text: "hello",
-    images: [],
+    occurredAt: "2026-10-14T09:30:42.123Z",
+    content: [{ type: "text", text: "hello" }],
   });
   try {
     await speaking;
@@ -311,8 +311,8 @@ test("real Pi keeps accepting steer while a spoken tool blocks the next model ca
       id: "second-asr",
       type: "discord.message",
       source: "discord",
-      text: "more context",
-      images: [],
+      occurredAt: "2026-10-14T09:30:42.123Z",
+      content: [{ type: "text", text: "more context" }],
     });
     assert.equal(modelCalls, 1);
     assert.ok(entries().some((r) => r.event === "pi_queue_updated" && r.steeringCount === 1));

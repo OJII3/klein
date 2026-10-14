@@ -177,14 +177,32 @@ To securely expose the Web UI:
 ## Agent Input Events
 
 `AgentRuntime.prompt` and `steer` accept `AgentEvent` inputs defined in
-`src/agents/core/agent-event.ts`. Each producer provides a stable `id`, an event
-`type` (such as `discord.message`), a `source`, readable `text`, and `images`.
-Optional `data` carries JSON-serializable source metadata without image bytes.
-Pi renders the event metadata and text at the runtime boundary and uses the event
-ID for tracing. Discord includes channel, author, and reply metadata while
-preserving its conversation guidance, memory, and channel rules.
+`src/agents/core/agent-event.ts`. Each producer provides an internal tracing `id`,
+an ISO 8601 `occurredAt` with a timezone, an event `type` (such as `discord.message`),
+a `source`, and `content` containing text and image blocks:
+
+```ts
+await runtime.prompt({
+  id: "reminder-123",
+  occurredAt: "2026-10-14T18:30:42+09:00",
+  type: "reminder.due",
+  source: "reminder",
+  content: [{ type: "text", text: "定例会の時間です。" }],
+});
+```
+
+Text blocks use `{ type: "text", text }`; image blocks use
+`{ type: "image", data, mimeType }`, where `data` is Base64. Source-specific data
+stays in its producer; information relevant to the agent belongs in text blocks.
+Pi receives the event type, source, and occurrence time in Japan Standard Time
+at minute precision (for example, `2026-10-14 18:30 JST`), followed by the text
+and images. The event ID and full timestamp stay internal. Discord preserves its
+original posting time, author and reply text, conversation guidance, memory,
+and channel rules. Voice transcripts use their receipt time.
 
 New producers can use the same runtime interface for reminders, MCP notifications,
 and messages from other agents. Their scheduling, subscriptions, and routing are
-not implemented yet. `ownerFeaturesAllowed` must be assigned by trusted application
-access checks; values inside `data` do not grant tool permissions.
+not implemented yet. Execution permissions are separate from the event:
+`runtime.prompt(event, { ownerFeaturesAllowed: true })`. This option must be
+assigned by trusted application access checks and defaults to no owner access.
+An owner-enabled session is also required to use owner-only tools.

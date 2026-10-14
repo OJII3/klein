@@ -44,6 +44,7 @@ function createMessage(
     channelId: "channel-123",
     content: options.content ?? "メンションなしのメッセージ",
     guildId: "guild-123",
+    createdAt: new Date("2026-10-14T09:30:42.123Z"),
     id: "message-123",
     attachments: options.attachments ?? new Map(),
     mentions: {

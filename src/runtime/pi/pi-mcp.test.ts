@@ -136,14 +136,16 @@ for (const sessionMode of ["new", "resume"] as const) {
           },
         ]);
 
-        await runtime.prompt({
-          id: "test-event",
-          type: "message",
-          source: "test",
-          text: "Read an Obsidian note",
-          images: [],
-          ownerFeaturesAllowed: ownerPrompt,
-        });
+        await runtime.prompt(
+          {
+            id: "test-event",
+            type: "message",
+            source: "test",
+            occurredAt: "2026-10-14T09:30:42.123Z",
+            content: [{ type: "text", text: "Read an Obsidian note" }],
+          },
+          { ownerFeaturesAllowed: ownerPrompt },
+        );
 
         assert.equal(
           /mcp__obsidian/.test(getCurrentSystemPrompt(requests[0].messages)),

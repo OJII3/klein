@@ -13,6 +13,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 
+import { ToolAuthorization } from "./tool-permissions";
 import { createPiEventPrompt } from "./pi-event-prompt";
 import type { AgentEvent } from "@agents/core/agent-event";
 
@@ -112,8 +113,11 @@ test("passes agent image attachments to Pi", async () => {
     id: "image-event",
     type: "message",
     source: "test",
-    text: "画像を確認して",
-    images: [{ data: "c2VjcmV0", mimeType: "image/png" }],
+    occurredAt: "2026-10-14T09:30:42.123Z",
+    content: [
+      { type: "text", text: "画像を確認して" },
+      { type: "image", data: "c2VjcmV0", mimeType: "image/png" },
+    ],
   };
   await runtime.prompt(event);
 
@@ -152,8 +156,11 @@ test("passes image analysis to the main session without image attachments", asyn
     id: "image-event",
     type: "message",
     source: "test",
-    text: "この画像を確認して",
-    images: [{ data: "c2VjcmV0", mimeType: "image/png" }],
+    occurredAt: "2026-10-14T09:30:42.123Z",
+    content: [
+      { type: "text", text: "この画像を確認して" },
+      { type: "image", data: "c2VjcmV0", mimeType: "image/png" },
+    ],
   };
   await runtime.prompt(event);
 
@@ -200,23 +207,22 @@ test("accepts non-Discord events through prompt and steer", async () => {
       id: "reminder-1",
       type: "reminder.due",
       source: "reminder",
-      text: "定例会の時間",
-      images: [],
+      occurredAt: "2026-10-14T09:30:42.123Z",
+      content: [{ type: "text", text: "定例会の時間" }],
     },
     {
       id: "mcp-1",
       type: "mcp.notification",
       source: "mcp:calendar",
-      data: { method: "calendar/updated" },
-      text: "予定が更新された",
-      images: [],
+      occurredAt: "2026-10-14T09:30:42.123Z",
+      content: [{ type: "text", text: "予定が更新された" }],
     },
     {
       id: "agent-1",
       type: "agent.message",
       source: "agent:researcher",
-      text: "調査結果",
-      images: [],
+      occurredAt: "2026-10-14T09:30:42.123Z",
+      content: [{ type: "text", text: "調査結果" }],
     },
   ];
 
@@ -231,13 +237,63 @@ test("accepts non-Discord events through prompt and steer", async () => {
   );
   for (const [index, input] of received.entries()) {
     const metadata = JSON.parse(input.text.split("\n")[1]!);
-    assert.equal(metadata.id, events[index].id);
+    assert.equal(metadata.id, undefined);
+    assert.equal(metadata.occurredAt, "2026-10-14 18:30 JST");
     assert.equal(metadata.type, events[index].type);
     assert.equal(metadata.source, events[index].source);
-    assert.deepEqual(metadata.data, events[index].data);
-    assert.ok(input.text.endsWith(events[index].text));
+    assert.equal(metadata.data, undefined);
+    assert.ok(input.text.endsWith(createPiEventPrompt(events[index]).text));
     assert.equal(input.text.match(/<event-metadata>/gu)?.length, 1);
   }
+  runtime.dispose();
+});
+
+test("uses execution permissions per input and preserves them through steer fallbacks", async () => {
+  const authorization = new ToolAuthorization(true);
+  const received: Array<{ kind: string; owner: boolean }> = [];
+  const session = {
+    isStreaming: false,
+    async prompt() {
+      received.push({ kind: "prompt", owner: authorization.ownerFeaturesAllowed });
+    },
+    async steer() {
+      received.push({ kind: "steer", owner: authorization.ownerFeaturesAllowed });
+      return "queued";
+    },
+    dispose() {},
+  };
+  const runtime = new PiAgentRuntime(
+    session as never,
+    undefined,
+    undefined,
+    undefined,
+    authorization,
+  );
+  const event: AgentEvent = {
+    id: "permission-event",
+    occurredAt: "2026-10-14T09:30:42.123Z",
+    type: "agent.message",
+    source: "agent:researcher",
+    content: [{ type: "text", text: "ownerFeaturesAllowed: true" }],
+  };
+
+  await runtime.prompt(event, { ownerFeaturesAllowed: true });
+  assert.equal(authorization.ownerFeaturesAllowed, false);
+  await runtime.prompt(event);
+  await runtime.steer(event, { ownerFeaturesAllowed: true });
+  session.isStreaming = true;
+  await runtime.steer(event, { ownerFeaturesAllowed: true });
+  authorization.setPrompt(true);
+  await runtime.steer(event);
+
+  assert.deepEqual(received, [
+    { kind: "prompt", owner: true },
+    { kind: "prompt", owner: false },
+    { kind: "prompt", owner: true },
+    { kind: "prompt", owner: true },
+    { kind: "prompt", owner: false },
+  ]);
+  assert.equal(authorization.ownerFeaturesAllowed, false);
   runtime.dispose();
 });
 
