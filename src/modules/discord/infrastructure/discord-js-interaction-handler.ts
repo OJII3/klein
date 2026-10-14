@@ -18,20 +18,13 @@ import type { DiscordAccessPolicy } from "../domain/discord-access-policy";
 import type { DiscordChannelRuleStore } from "../ports/discord-channel-rule-store";
 import { DiscordVoiceChatController, VOICE_COMMAND } from "./discord-voice-chat-controller";
 
-const OPERATING_MODE_COMMANDS: readonly ApplicationCommandDataResolvable[] = [
-  {
-    name: "idle",
-    description: "Botを一時停止します",
-    defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
-    dmPermission: false,
-  },
-  {
-    name: "online",
-    description: "Botを再開します",
-    defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
-    dmPermission: false,
-  },
-];
+const OPERATING_MODE_COMMAND = new SlashCommandBuilder()
+  .setName("status")
+  .setDescription("Botの稼働状態を変更します")
+  .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+  .setDMPermission(false)
+  .addSubcommand((subcommand) => subcommand.setName("idle").setDescription("Botを一時停止します"))
+  .addSubcommand((subcommand) => subcommand.setName("online").setDescription("Botを再開します"));
 const CHANNEL_RULE_COMMAND = new SlashCommandBuilder()
   .setName("rule")
   .setDescription("このチャンネルまたはスレッドのルールを編集します")
@@ -50,7 +43,7 @@ export class DiscordJsInteractionHandler {
     private readonly channelRuleStore?: DiscordChannelRuleStore,
   ) {
     this.commands = [
-      ...OPERATING_MODE_COMMANDS,
+      OPERATING_MODE_COMMAND,
       CHANNEL_RULE_COMMAND,
       ...(voiceChatController ? [VOICE_COMMAND] : []),
     ];
@@ -97,10 +90,12 @@ export class DiscordJsInteractionHandler {
       return;
     }
 
+    const subcommand =
+      interaction.commandName === "status" ? interaction.options.getSubcommand() : undefined;
     const mode =
-      interaction.commandName === "idle"
+      subcommand === "idle"
         ? ("paused" as const)
-        : interaction.commandName === "online"
+        : subcommand === "online"
           ? ("active" as const)
           : undefined;
     if (!mode) return;

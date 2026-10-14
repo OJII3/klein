@@ -61,7 +61,7 @@ Set `"profile"` in `config/config.jsonc` to switch profiles (defaults to `"klein
 ### Discord Bot & Commands
 
 - **Access control**: Configured via `discord.access` (evaluated in order: thread → channel → guild → default). Requires the Discord **Message Content Intent**.
-- **Commands**: Members with _Manage Server_ permissions can use `/idle` to pause message processing and `/online` to resume.
+- **Commands**: Members with _Manage Server_ permissions can use `/status idle` to pause message processing and `/status online` to resume.
 - **Activity status**: Displays remaining monthly usage and estimated cost, refreshed hourly.
 
 ### LLM & Providers
