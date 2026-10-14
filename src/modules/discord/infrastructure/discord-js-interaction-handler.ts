@@ -1,5 +1,6 @@
 import {
   ActionRowBuilder,
+  EmbedBuilder,
   ModalBuilder,
   PermissionFlagsBits,
   SlashCommandBuilder,
@@ -209,9 +210,15 @@ export class DiscordJsInteractionHandler {
 
     await this.channelRuleStore?.set(guildId, channelId, rule);
     await interaction.reply({
-      content: rule.trim()
-        ? "このチャンネル／スレッドのルールを保存しました。"
-        : "このチャンネル／スレッドのルールを削除しました。",
+      embeds: [
+        new EmbedBuilder()
+          .setColor(rule.trim() ? 0x57f287 : 0x747f8d)
+          .setTitle(
+            rule.trim()
+              ? "このチャンネル／スレッドのルールを保存しました。"
+              : "このチャンネル／スレッドのルールを削除しました。",
+          ),
+      ],
     });
   }
 }
