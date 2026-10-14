@@ -83,6 +83,7 @@ export class DiscordJsMessageAdapter {
     const thread = message.channel.isThread() ? message.channel : undefined;
 
     return {
+      occurredAt: message.createdAt.toISOString(),
       author: toDiscordUser(message),
       channelId: message.channelId,
       content: this.normalizeMessageContent(message),

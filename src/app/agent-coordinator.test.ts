@@ -4,7 +4,8 @@ import pino from "pino";
 
 import { DiscordAgent } from "@agents/discord/discord-agent";
 import type { AgentFactory } from "@agents/core/agent-factory";
-import type { AgentPrompt, AgentRuntime } from "@agents/core/agent-runtime";
+import type { AgentRuntime } from "@agents/core/agent-runtime";
+import type { AgentEvent } from "@agents/core/agent-event";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import { DiscordOperatingState } from "@modules/discord/domain/discord-operating-state";
 import type { DiscordService } from "@modules/discord/ports/discord-service";
@@ -14,19 +15,19 @@ import { AgentCoordinator } from "./agent-coordinator";
 interface TestHarness {
   readonly agentCoordinator: AgentCoordinator;
   readonly createdSessionKeys: string[];
-  readonly prompts: Map<string, AgentPrompt[]>;
+  readonly prompts: Map<string, AgentEvent[]>;
 }
 
 function createHarness(createGate?: Promise<void>): TestHarness {
   const createdSessionKeys: string[] = [];
-  const prompts = new Map<string, AgentPrompt[]>();
+  const prompts = new Map<string, AgentEvent[]>();
   const agentFactory: AgentFactory = {
     async create(_definition, _tools, options): Promise<AgentRuntime> {
       createdSessionKeys.push(options.sessionKey);
       if (createGate) await createGate;
 
       const channelId = options.sessionKey.slice("discord-channel:".length);
-      const channelPrompts: AgentPrompt[] = [];
+      const channelPrompts: AgentEvent[] = [];
       prompts.set(channelId, channelPrompts);
 
       return {
@@ -81,6 +82,7 @@ function createMessage(
     channelId,
     content,
     id,
+    occurredAt: "2026-10-14T09:30:42.123Z",
     images: [],
     ...options,
   };
@@ -99,7 +101,12 @@ test("reuses one Pi session for messages in the same Discord channel", async () 
 
     assert.deepEqual(harness.createdSessionKeys, ["discord-channel:channel-a"]);
     assert.deepEqual(
-      harness.prompts.get("channel-a")?.map((prompt) => prompt.text),
+      harness.prompts.get("channel-a")?.map((prompt) =>
+        prompt.content
+          .filter((block) => block.type === "text")
+          .map((block) => block.text)
+          .join("\n\n"),
+      ),
       ["ユーザー (@user):\n最初のメッセージ", "ユーザー (@user):\n次のメッセージ"],
     );
   } finally {
@@ -125,11 +132,21 @@ test("isolates Pi sessions between Discord channels", async () => {
       "discord-channel:channel-b",
     ]);
     assert.deepEqual(
-      harness.prompts.get("channel-a")?.map((prompt) => prompt.text),
+      harness.prompts.get("channel-a")?.map((prompt) =>
+        prompt.content
+          .filter((block) => block.type === "text")
+          .map((block) => block.text)
+          .join("\n\n"),
+      ),
       ["ユーザー (@user):\nA のメッセージ"],
     );
     assert.deepEqual(
-      harness.prompts.get("channel-b")?.map((prompt) => prompt.text),
+      harness.prompts.get("channel-b")?.map((prompt) =>
+        prompt.content
+          .filter((block) => block.type === "text")
+          .map((block) => block.text)
+          .join("\n\n"),
+      ),
       ["ユーザー (@user):\nB のメッセージ"],
     );
   } finally {
@@ -187,7 +204,12 @@ test("does not create duplicate agents while a channel agent is initializing", a
     await Promise.all([first, second]);
 
     assert.deepEqual(
-      harness.prompts.get("channel-a")?.map((prompt) => prompt.text),
+      harness.prompts.get("channel-a")?.map((prompt) =>
+        prompt.content
+          .filter((block) => block.type === "text")
+          .map((block) => block.text)
+          .join("\n\n"),
+      ),
       ["ユーザー (@user):\n最初のメッセージ", "ユーザー (@user):\n次のメッセージ"],
     );
   } finally {

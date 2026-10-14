@@ -130,7 +130,7 @@ owner ID, `owner` denies everyone.
 ```
 
 Tool and MCP permissions use the same values: `allow` permits ordinary use, `deny`
-blocks everyone, and `owner` requires an owner's message in an `owner` location.
+blocks everyone, and `owner` requires an owner session created for an `owner` location.
 Tool overrides use exact tool names; MCP rules use the server names registered in Pi.
 Unspecified tools default to `allow`; unspecified MCP servers default to `owner`,
 including newly registered servers. This changes existing MCP access: explicitly
@@ -173,3 +173,37 @@ To securely expose the Web UI:
 1. Create a Cloudflare Tunnel and add `TUNNEL_TOKEN=...` to `.env`.
 2. Protect the route with Cloudflare Access.
 3. Start Klein (`cloudflared` is started and stopped automatically with Klein).
+
+## Agent Input Events
+
+`AgentRuntime.prompt` and `steer` accept `AgentEvent` inputs defined in
+`src/agents/core/agent-event.ts`. Each producer provides an internal tracing `id`,
+an ISO 8601 `occurredAt` with a timezone, an event `type` (such as `discord.message`),
+a `source`, and `content` containing text and image blocks:
+
+```ts
+await runtime.prompt({
+  id: "reminder-123",
+  occurredAt: "2026-10-14T18:30:42+09:00",
+  type: "reminder.due",
+  source: "reminder",
+  content: [{ type: "text", text: "定例会の時間です。" }],
+});
+```
+
+Text blocks use `{ type: "text", text }`; image blocks use
+`{ type: "image", data, mimeType }`, where `data` is Base64. Source-specific data
+stays in its producer; information relevant to the agent belongs in text blocks.
+Pi receives the event type, source, and occurrence time in Japan Standard Time
+at minute precision (for example, `2026-10-14 18:30 JST`), followed by the text
+and images. The event ID and full timestamp stay internal. Discord preserves its
+original posting time, author and reply text, conversation guidance, memory,
+and channel rules. Voice transcripts use their receipt time.
+
+New producers can use the same runtime interface for reminders, MCP notifications,
+and messages from other agents. Their scheduling, subscriptions, and routing are
+not implemented yet. Tool permissions are fixed when the agent is created and
+apply to every event it processes, including reminders and MCP notifications.
+`prompt(event)` and `steer(event)` need no per-input permission options.
+Owner-only tools require an owner-enabled session established by trusted
+application access checks; event content cannot grant owner access.

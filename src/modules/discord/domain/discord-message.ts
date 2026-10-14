@@ -24,6 +24,7 @@ export interface DiscordImageAttachment {
 }
 
 export interface DiscordMessage {
+  readonly occurredAt: string;
   readonly channelId: string;
   readonly guildId?: string;
   readonly parentChannelId?: string;

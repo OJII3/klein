@@ -124,6 +124,7 @@ function createMessage(guildId: string, id: string, content: string): DiscordMes
     content,
     guildId,
     id,
+    occurredAt: "2026-10-14T09:30:42.123Z",
     images: [],
   };
 }

@@ -14,6 +14,7 @@ const message: DiscordMessage = {
   channelId: "channel-123",
   content: "読み取った本文",
   id: "message-456",
+  occurredAt: "2026-10-14T09:30:42.123Z",
   images: [],
 };
 

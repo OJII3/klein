@@ -333,6 +333,7 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
       handleTranscript: (text, requestId) => {
         if (stopped) return Promise.resolve();
         const message: DiscordMessage = {
+          occurredAt: new Date().toISOString(),
           author: context.user,
           channelId: context.channelId,
           content: text,

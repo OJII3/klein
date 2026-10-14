@@ -59,3 +59,15 @@ test("omits fetched reply content if it belongs to another channel", async () =>
 
   assert.deepEqual(await adapter.fetchReplyReference(message), { id: "reference-123" });
 });
+
+test("preserves the original Discord message timestamp including milliseconds", () => {
+  const adapter = new DiscordJsMessageAdapter();
+  const message = {
+    ...createReferencedMessage("public"),
+    channel: { isThread: () => false },
+    createdAt: new Date("2026-10-14T18:30:42.123+09:00"),
+  } as unknown as Message;
+
+  const event = adapter.toDiscordMessage(message);
+  assert.equal(event.occurredAt, "2026-10-14T09:30:42.123Z");
+});

@@ -6,7 +6,7 @@ import test from "node:test";
 import pino from "pino";
 
 import type { AgentCreationOptions, AgentFactory } from "@agents/core/agent-factory";
-import type { AgentPrompt } from "@agents/core/agent-runtime";
+import type { AgentEvent } from "@agents/core/agent-event";
 import { DiscordAgent } from "@agents/discord/discord-agent";
 import {
   createDiscordAccessPolicy,
@@ -26,13 +26,14 @@ const message: DiscordMessage = {
   guildId: "guild",
   channelId: "channel",
   content: "private request",
+  occurredAt: "2026-10-14T09:30:42.123Z",
   images: [],
   author: { id: ownerId, bot: false, username: "owner", displayName: "owner" },
 };
 
 function createHarness(store: ChannelSessionStateStore, channelRule: { access: DiscordAccess }) {
   const creations: AgentCreationOptions[] = [];
-  const prompts: AgentPrompt[] = [];
+  const prompts: AgentEvent[] = [];
   const remembered: DiscordMessage[] = [];
   let disposed = 0;
   const factory: AgentFactory = {
@@ -88,7 +89,13 @@ function createHarness(store: ChannelSessionStateStore, channelRule: { access: D
     operatingState: new DiscordOperatingState(),
     taskCoordinator: new TaskCoordinator(),
   });
-  return { coordinator, creations, prompts, remembered, disposed: () => disposed };
+  return {
+    coordinator,
+    creations,
+    prompts,
+    remembered,
+    disposed: () => disposed,
+  };
 }
 
 test("only owner messages create private sessions and never enter shared memory", async () => {
@@ -108,7 +115,6 @@ test("only owner messages create private sessions and never enter shared memory"
     await harness.coordinator.handleDiscordMessage(message);
     assert.equal(harness.creations[0].sessionKey, "discord-channel:channel:owner:123");
     assert.equal(harness.creations[0].ownerFeaturesAllowed, true);
-    assert.equal(harness.prompts[0].ownerFeaturesAllowed, true);
     assert.equal(harness.remembered.length, 0);
   } finally {
     await harness.coordinator.dispose();
@@ -133,8 +139,7 @@ test("changing owner access to allow drops private history and handoff on restar
     assert.equal(publicHarness.creations[0].sessionKey, "discord-channel:channel:public");
     assert.equal(publicHarness.creations[0].ownerFeaturesAllowed, false);
     assert.equal(publicHarness.creations[0].initialContext, undefined);
-    assert.equal(publicHarness.prompts[0].ownerFeaturesAllowed, false);
-    assert.doesNotMatch(publicHarness.prompts[0].text, /secret Obsidian/);
+    assert.doesNotMatch(JSON.stringify(publicHarness.prompts[0].content), /secret Obsidian/);
     assert.equal(publicHarness.remembered.length, 1);
   } finally {
     await publicHarness.coordinator.dispose();

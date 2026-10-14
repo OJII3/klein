@@ -14,9 +14,8 @@ export interface ToolPermissions {
   };
 }
 
-/** The session ceiling and current input are trusted application metadata, never model arguments. */
+/** Session permissions are trusted application metadata, never model arguments. */
 export class ToolAuthorization {
-  private currentOwner = false;
   private readonly servers = new Set<string>();
   private readonly toolServers = new Map<string, string>();
   constructor(
@@ -28,45 +27,31 @@ export class ToolAuthorization {
   }
   allowsResource(input: Record<string, unknown>): boolean {
     if (typeof input.server === "string") return this.allowsServer(input.server);
-    return [...this.servers]
-      .filter((name) => this.allowsServer(name, true))
-      .every((name) => this.allowsServer(name));
+    // Listings only include servers exposed by the session's filtered MCP API.
+    return true;
   }
-  setPrompt(owner: boolean): void {
-    this.currentOwner = this.ownerSession && owner;
-  }
-  get ownerFeaturesAllowed(): boolean {
-    return this.currentOwner;
-  }
-  allowsServer(name: string, discovery = false): boolean {
+  allowsServer(name: string): boolean {
     return this.allows(
       this.permissions.mcp?.servers?.[name] ?? this.permissions.mcp?.default ?? "owner",
-      discovery,
     );
   }
-  allowsTool(name: string, discovery = false): boolean {
+  allowsTool(name: string): boolean {
     const server = this.toolServers.get(name) ?? /^mcp__(.+?)__/.exec(name)?.[1];
     if (server) {
       const matching = [...this.servers].filter((name) => name.replace(/-/g, "_") === server);
-      if (
-        !(matching.length ? matching : [server]).every((name) => this.allowsServer(name, discovery))
-      )
+      if (!(matching.length ? matching : [server]).every((name) => this.allowsServer(name)))
         return false;
     }
     return this.allows(
       this.permissions.tools?.overrides?.[name] ?? this.permissions.tools?.default ?? "allow",
-      discovery,
     );
   }
-  private allows(access: ToolAccess, discovery: boolean): boolean {
-    return (
-      access === "allow" ||
-      (access === "owner" && (discovery ? this.ownerSession : this.currentOwner))
-    );
+  private allows(access: ToolAccess): boolean {
+    return access === "allow" || (access === "owner" && this.ownerSession);
   }
   extension: ExtensionFactory = (pi) => {
     pi.on("before_agent_start", () => {
-      pi.setActiveTools(pi.getActiveTools().filter((name) => this.allowsTool(name, true)));
+      pi.setActiveTools(pi.getActiveTools().filter((name) => this.allowsTool(name)));
     });
     pi.on("tool_call", (event) => {
       if (
@@ -83,7 +68,7 @@ export class ToolAuthorization {
     return (pi) => factory(this.wrapApi(pi));
   }
   private wrapApi(pi: ExtensionAPI): ExtensionAPI {
-    const allowed = (name: string) => this.allowsTool(name, true);
+    const allowed = (name: string) => this.allowsTool(name);
     const filterLoadout = (loadout: ToolLoadout): ToolLoadout => ({
       ...loadout,
       declared: loadout.declared.filter((tool) => allowed(tool.name)),
@@ -96,7 +81,7 @@ export class ToolAuthorization {
       getMcpServers: () => {
         const servers = pi.getMcpServers();
         this.rememberServers(servers.map((server) => server.name));
-        return servers.filter((server) => this.allowsServer(server.name, true));
+        return servers.filter((server) => this.allowsServer(server.name));
       },
       setActiveTools: (names) => pi.setActiveTools(names.filter(allowed)),
       registerTool: (tool) => {

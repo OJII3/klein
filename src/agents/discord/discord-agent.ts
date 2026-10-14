@@ -1,3 +1,4 @@
+import type { AgentEvent } from "../core/agent-event";
 import type { AgentFactory } from "../core/agent-factory";
 import type { AgentPrompt, AgentRuntime } from "../core/agent-runtime";
 import { formatDiscordMessage, type DiscordMessage } from "@modules/discord/domain/discord-message";
@@ -93,19 +94,19 @@ export class DiscordAgent {
   }
 
   prompt(message: DiscordMessage, guildMemory?: string, channelRule?: string): Promise<void> {
-    return this.runtime.prompt(this.createPrompt(message, guildMemory, channelRule));
+    return this.runtime.prompt(this.createEvent(message, guildMemory, channelRule));
   }
 
   steer(message: DiscordMessage, guildMemory?: string, channelRule?: string): Promise<void> {
-    const prompt = this.createPrompt(message, guildMemory, channelRule);
-    return this.runtime.steer ? this.runtime.steer(prompt) : this.runtime.prompt(prompt);
+    const event = this.createEvent(message, guildMemory, channelRule);
+    return this.runtime.steer ? this.runtime.steer(event) : this.runtime.prompt(event);
   }
 
-  private createPrompt(
+  private createEvent(
     message: DiscordMessage,
     guildMemory?: string,
     channelRule?: string,
-  ): AgentPrompt {
+  ): AgentEvent {
     if (
       this.ownerFeaturesAllowed &&
       (message.author.bot ||
@@ -116,16 +117,23 @@ export class DiscordAgent {
     }
 
     return {
-      ownerFeaturesAllowed: this.ownerFeaturesAllowed,
-      traceId: message.id,
-      text: [
-        guildMemory ? `<guild-memory>\n${guildMemory}\n</guild-memory>` : undefined,
-        channelRule ? `<channel-rule>\n${channelRule}\n</channel-rule>` : undefined,
-        formatDiscordAgentPrompt(message),
-      ]
-        .filter((context): context is string => context !== undefined)
-        .join("\n\n"),
-      images: message.images.map(({ data, mimeType }) => ({ data, mimeType })),
+      id: message.id,
+      occurredAt: message.occurredAt,
+      type: "discord.message",
+      source: "discord",
+      content: [
+        {
+          type: "text",
+          text: [
+            guildMemory ? `<guild-memory>\n${guildMemory}\n</guild-memory>` : undefined,
+            channelRule ? `<channel-rule>\n${channelRule}\n</channel-rule>` : undefined,
+            formatDiscordAgentPrompt(message),
+          ]
+            .filter((context): context is string => context !== undefined)
+            .join("\n\n"),
+        },
+        ...message.images.map(({ data, mimeType }) => ({ type: "image" as const, data, mimeType })),
+      ],
     };
   }
 

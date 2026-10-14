@@ -23,6 +23,8 @@ import type { CreateAgentSessionOptions } from "@earendil-works/pi-coding-agent"
 
 import type { AgentDefinition } from "@agents/core/agent-definition";
 import type { AgentFactory, AgentCreationOptions } from "@agents/core/agent-factory";
+import type { AgentEvent } from "@agents/core/agent-event";
+import { createPiEventPrompt } from "./pi-event-prompt";
 import type { AgentPrompt, AgentRuntime } from "@agents/core/agent-runtime";
 import type { SessionMode } from "@app/cli-options";
 import { createBackgroundCompactionExtension } from "./background-compaction";
@@ -131,13 +133,13 @@ export class PiAgentRuntime implements AgentRuntime {
     private readonly imageAnalyzer?: ImageAnalyzer,
     private readonly trace?: PiRuntimeTrace,
     private readonly modelRuntime?: ModelRuntime,
-    private readonly authorization?: ToolAuthorization,
   ) {
     trace?.attach(session);
   }
 
-  prompt(prompt: AgentPrompt): Promise<void> {
-    const traceId = prompt.traceId ?? randomUUID();
+  prompt(event: AgentEvent): Promise<void> {
+    const prompt = createPiEventPrompt(event);
+    const traceId = event.id;
     const queuedAt = performance.now();
     this.trace?.log("pi_prompt_enqueued", { traceId, textLength: prompt.text.length });
     return this.enqueue(async () => {
@@ -150,13 +152,11 @@ export class PiAgentRuntime implements AgentRuntime {
       });
       let failed = false;
       try {
-        this.authorization?.setPrompt(prompt.ownerFeaturesAllowed === true);
         await this.runPrompt(prompt);
       } catch (error) {
         failed = true;
         throw error;
       } finally {
-        this.authorization?.setPrompt(false);
         this.trace?.removeInput(traceId);
         this.trace?.log("pi_prompt_completed", {
           traceId,
@@ -167,24 +167,16 @@ export class PiAgentRuntime implements AgentRuntime {
     });
   }
 
-  async steer(prompt: AgentPrompt): Promise<void> {
+  async steer(event: AgentEvent): Promise<void> {
+    const prompt = createPiEventPrompt(event);
     this.ensureSessionAvailable();
     if (!this.session.isStreaming) {
       this.trace?.log("pi_steer_started_as_prompt", { traceId: prompt.traceId });
-      await this.prompt(prompt);
+      await this.prompt(event);
       return;
     }
 
-    if (
-      this.authorization &&
-      this.authorization.ownerFeaturesAllowed !==
-        (this.authorization.ownerSession && prompt.ownerFeaturesAllowed === true)
-    ) {
-      await this.prompt(prompt);
-      return;
-    }
-
-    const traceId = prompt.traceId ?? randomUUID();
+    const traceId = event.id;
     const startedAt = performance.now();
     this.trace?.registerInput(prompt.text, traceId);
     this.trace?.log("pi_steer_started", { traceId });
@@ -366,7 +358,7 @@ export function createResourceLoader(
                   return {
                     ...config,
                     servers: config.servers.filter((server) =>
-                      authorization.allowsServer(server.name, true),
+                      authorization.allowsServer(server.name),
                     ),
                   };
                 },
@@ -550,9 +542,7 @@ export function createPiAgentFactory({
 
       const { session } = await createAgentSession({
         agentDir,
-        customTools: adaptPiTools(tools).filter((tool) =>
-          authorization.allowsTool(tool.name, true),
-        ),
+        customTools: adaptPiTools(tools).filter((tool) => authorization.allowsTool(tool.name)),
         model,
         modelRuntime,
         resourceLoader,
@@ -592,7 +582,7 @@ export function createPiAgentFactory({
         ? new PiImageAnalyzer(session.modelRuntime, sessionImageModel, llm.image?.thinkingLevel)
         : undefined;
 
-      return new PiAgentRuntime(session, imageAnalyzer, trace, modelRuntime, authorization);
+      return new PiAgentRuntime(session, imageAnalyzer, trace, modelRuntime);
     },
   };
 }

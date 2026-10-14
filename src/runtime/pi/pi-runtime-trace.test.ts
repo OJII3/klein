@@ -297,11 +297,23 @@ test("real Pi keeps accepting steer while a spoken tool blocks the next model ca
     { sessionKey: "voice-trace-integration" },
   );
   const entries = () => lines.map((line) => JSON.parse(line) as Record<string, unknown>);
-  const processing = runtime.prompt({ traceId: "first-asr", text: "hello", images: [] });
+  const processing = runtime.prompt({
+    id: "first-asr",
+    type: "discord.message",
+    source: "discord",
+    occurredAt: "2026-10-14T09:30:42.123Z",
+    content: [{ type: "text", text: "hello" }],
+  });
   try {
     await speaking;
     assert.ok(runtime.steer);
-    await runtime.steer({ traceId: "second-asr", text: "more context", images: [] });
+    await runtime.steer({
+      id: "second-asr",
+      type: "discord.message",
+      source: "discord",
+      occurredAt: "2026-10-14T09:30:42.123Z",
+      content: [{ type: "text", text: "more context" }],
+    });
     assert.equal(modelCalls, 1);
     assert.ok(entries().some((r) => r.event === "pi_queue_updated" && r.steeringCount === 1));
     assert.ok(!entries().some((r) => r.event === "pi_tool_completed"));

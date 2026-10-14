@@ -52,6 +52,7 @@ for (const restricted of [false, true]) {
             channelId: "channel",
             content: `Unfiltered research content for ${messageId}`,
             id: messageId,
+            occurredAt: "2026-10-14T09:30:42.123Z",
             images: [],
           };
         },
@@ -100,7 +101,13 @@ for (const restricted of [false, true]) {
         fauxAssistantMessage("Finished"),
       ]);
 
-      await runtime.prompt({ text: "二つのメッセージを確認して", images: [] });
+      await runtime.prompt({
+        id: "test-event",
+        type: "message",
+        source: "test",
+        occurredAt: "2026-10-14T09:30:42.123Z",
+        content: [{ type: "text", text: "二つのメッセージを確認して" }],
+      });
       assert.equal(requests.length, 2);
       assert.deepEqual(
         getCurrentTools(requests[0].messages)
@@ -151,7 +158,13 @@ for (const restricted of [false, true]) {
           return fauxAssistantMessage("No further reply needed");
         },
       ]);
-      await runtime.prompt({ text: "ありがとう", images: [] });
+      await runtime.prompt({
+        id: "test-event",
+        type: "message",
+        source: "test",
+        occurredAt: "2026-10-14T09:30:42.123Z",
+        content: [{ type: "text", text: "ありがとう" }],
+      });
       assert.deepEqual(sent, ["……確認したよ"]);
     } finally {
       runtime.dispose();
