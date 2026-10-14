@@ -42,7 +42,6 @@ export class DiscordAgent {
       readonly tts?: TextToSpeech;
       readonly speak?: (text: string, toolCallId?: string) => Promise<void>;
       readonly reminderStore?: ReminderStore;
-      readonly resumeExistingSession?: boolean;
     } = {},
   ): Promise<DiscordAgent> {
     let runtime: AgentRuntime | undefined;
@@ -73,9 +72,8 @@ export class DiscordAgent {
       ...(options.reminderStore
         ? createReminderTools(
             options.reminderStore,
-            options.sessionKey ?? `discord-channel:${channelId}`,
             channelId,
-            ownerFeaturesAllowed,
+            ownerFeaturesAllowed ? `owner:${options.ownerUserId!}` : "public",
           )
         : []),
     ];
@@ -102,7 +100,6 @@ export class DiscordAgent {
           : undefined,
         sessionKey: options.sessionKey ?? `discord-channel:${channelId}`,
         ownerFeaturesAllowed,
-        resumeExistingSession: options.resumeExistingSession,
       },
     );
 

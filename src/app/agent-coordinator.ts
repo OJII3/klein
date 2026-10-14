@@ -28,7 +28,6 @@ export interface AgentCoordinatorDependencies {
     sessionKey: string,
     handoffContext?: string,
     ownerFeaturesAllowed?: boolean,
-    resumeExistingSession?: boolean,
   ) => Promise<DiscordAgent>;
   readonly channelSessionStateStore?: ChannelSessionStateStore;
   readonly channelRuleStore?: DiscordChannelRuleStore;
@@ -369,24 +368,42 @@ export class AgentCoordinator {
     if (!this.dependencies.operatingState.isActive()) return;
     const reminderStore = this.dependencies.reminderStore;
     if (!reminderStore) return;
-    const stillDue = (await reminderStore.listForSession(reminder.sessionKey)).some(
-      (current) => current.id === reminder.id && current.dueAt === reminder.dueAt,
-    );
+    const stillDue = (
+      await reminderStore.listForScope(reminder.channelId, reminder.accessScope)
+    ).some((current) => current.id === reminder.id && current.dueAt === reminder.dueAt);
     if (!stillDue) return;
 
-    const currentAgent =
-      this.agentSessionKeys.get(reminder.channelId) === reminder.sessionKey
-        ? this.agents.get(reminder.channelId)
-        : undefined;
-    const agent = currentAgent
-      ? await currentAgent
-      : await this.dependencies.createDiscordAgent(
-          reminder.channelId,
-          reminder.sessionKey,
-          undefined,
-          reminder.ownerFeaturesAllowed,
-          true,
-        );
+    const accessPolicy = this.dependencies.accessPolicy;
+    if (accessPolicy) {
+      const location = await this.dependencies.discordService.getChannelLocation(
+        reminder.channelId,
+      );
+      if (reminder.accessScope === "public") {
+        if (accessPolicy.resolveAccess(location) !== "allow") return;
+      } else {
+        const ownerUserId = this.dependencies.ownerUserId;
+        if (
+          !ownerUserId ||
+          reminder.accessScope !== `owner:${ownerUserId}` ||
+          !accessPolicy.canUseOwnerFeatures({ ...location, userId: ownerUserId, userIsBot: false })
+        )
+          return;
+      }
+    } else if (reminder.accessScope !== "public") {
+      return;
+    }
+
+    const now = Date.now();
+    let channelState = await this.getChannelState(reminder.channelId, now, reminder.accessScope);
+    channelState = await this.rotateChannelIfDue(reminder.channelId, channelState, now);
+    const agent = await this.getDiscordAgent(reminder.channelId, channelState);
+    channelState = {
+      ...channelState,
+      handoffContext: undefined,
+      hasActivitySinceRotation: true,
+      lastActivityAt: now,
+    };
+    await this.saveChannelState(channelState);
     const event: AgentEvent = {
       id: `reminder:${reminder.id}:${reminder.dueAt}`,
       occurredAt: new Date().toISOString(),
@@ -409,7 +426,7 @@ export class AgentCoordinator {
         const nextDueAt = getNextReminderDueAt(reminder, Date.now());
         if (nextDueAt) await reminderStore.updateDueAt(reminder, nextDueAt);
       } else {
-        await reminderStore.delete(reminder.sessionKey, reminder.id);
+        await reminderStore.delete(reminder.channelId, reminder.accessScope, reminder.id);
       }
       this.logger.info(
         { channelId: reminder.channelId, event: "reminder_delivered", reminderId: reminder.id },
@@ -426,7 +443,7 @@ export class AgentCoordinator {
         "Failed to deliver reminder",
       );
     } finally {
-      if (!currentAgent) agent.dispose();
+      await this.saveChannelState({ ...channelState, lastActivityAt: Date.now() });
     }
   }
 

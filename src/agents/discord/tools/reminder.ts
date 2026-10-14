@@ -8,6 +8,7 @@ import {
   REMINDER_WEEKDAYS,
   type Reminder,
   type ReminderSchedule,
+  type ReminderAccessScope,
 } from "@modules/reminders/domain/reminder";
 import type { ReminderStore } from "@modules/reminders/ports/reminder-store";
 
@@ -35,9 +36,8 @@ const scheduleSchema = Type.Union([
 
 export function createReminderTools(
   store: ReminderStore,
-  sessionKey: string,
   channelId: string,
-  ownerFeaturesAllowed: boolean,
+  accessScope: ReminderAccessScope,
 ) {
   return [
     defineTool({
@@ -46,7 +46,7 @@ export function createReminderTools(
       description:
         "Add a one-time reminder after a duration or at a date and time, or a daily/weekly reminder. " +
         "Times use Japan Standard Time (JST). Weekly reminders require one or more weekdays: sun, mon, tue, wed, thu, fri, sat.",
-      promptSnippet: "Schedule a reminder for this Pi session.",
+      promptSnippet: "Schedule a reminder for this conversation.",
       parameters: Type.Object({
         message: Type.String({ minLength: 1, maxLength: 2_000 }),
         schedule: scheduleSchema,
@@ -57,9 +57,8 @@ export function createReminderTools(
         const now = Date.now();
         const reminder: Reminder = {
           id: randomUUID(),
-          sessionKey,
           channelId,
-          ownerFeaturesAllowed,
+          accessScope,
           message: params.message.trim(),
           createdAt: new Date(now).toISOString(),
           dueAt: getReminderDueAt(schedule, now),
@@ -90,19 +89,19 @@ export function createReminderTools(
       name: "reminder_list",
       label: "List reminders",
       description:
-        "List reminders attached to the current Pi session, including recurring reminders.",
-      promptSnippet: "List reminders for this Pi session.",
+        "List reminders attached to the current conversation, including recurring reminders.",
+      promptSnippet: "List reminders for this conversation.",
       parameters: Type.Object({}),
       exposure: "deferred",
       async execute() {
-        const reminders = await store.listForSession(sessionKey);
+        const reminders = await store.listForScope(channelId, accessScope);
         return {
           content: [
             {
               type: "text",
               text:
                 reminders.length === 0
-                  ? "このセッションにリマインダーはありません。"
+                  ? "この会話にリマインダーはありません。"
                   : reminders.map(formatReminder).join("\n"),
             },
           ],
@@ -122,19 +121,20 @@ export function createReminderTools(
     defineTool({
       name: "reminder_delete",
       label: "Delete reminder",
-      description: "Delete one reminder by its ID. Use reminder_list to find the ID.",
+      description:
+        "Delete one reminder in the current conversation by its ID. Use reminder_list to find the ID.",
       promptSnippet: "Delete a reminder by ID.",
       parameters: Type.Object({ id: Type.String({ minLength: 1 }) }),
       exposure: "deferred",
       async execute(_toolCallId, params) {
-        const deleted = await store.delete(sessionKey, params.id);
+        const deleted = await store.delete(channelId, accessScope, params.id);
         return {
           content: [
             {
               type: "text",
               text: deleted
                 ? `リマインダー ${params.id} を削除しました。`
-                : `このセッションにID ${params.id} のリマインダーはありません。`,
+                : `この会話にID ${params.id} のリマインダーはありません。`,
             },
           ],
           details: { id: params.id, deleted },

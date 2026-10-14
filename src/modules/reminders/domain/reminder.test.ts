@@ -53,9 +53,8 @@ test("skips missed recurring occurrences and returns the next future time", () =
   const next = getNextReminderDueAt(
     {
       id: "daily",
-      sessionKey: "session",
       channelId: "channel",
-      ownerFeaturesAllowed: false,
+      accessScope: "public",
       message: "message",
       createdAt: "2026-10-13T00:00:00.000Z",
       dueAt: "2026-10-13T23:00:00.000Z",

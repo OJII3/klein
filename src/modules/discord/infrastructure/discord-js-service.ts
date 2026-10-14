@@ -9,7 +9,7 @@ import {
 } from "discord.js";
 import type { Logger } from "pino";
 
-import type { DiscordAccessPolicy } from "../domain/discord-access-policy";
+import type { DiscordAccessPolicy, DiscordAccessTarget } from "../domain/discord-access-policy";
 import {
   DiscordOperatingState,
   type DiscordOperatingMode,
@@ -158,6 +158,21 @@ export class DiscordJsService implements DiscordService {
       { event: "discord_operating_mode_changed", mode },
       "Changed Discord operating mode",
     );
+  }
+
+  async getChannelLocation(
+    channelId: string,
+  ): Promise<Pick<DiscordAccessTarget, "guildId" | "channelId" | "threadId">> {
+    const channel = await this.client.channels.fetch(channelId);
+    if (!channel?.isTextBased()) {
+      throw new Error(`Discord channel cannot contain messages: ${channelId}`);
+    }
+    const thread = channel.isThread() ? channel : undefined;
+    return {
+      guildId: "guildId" in channel ? channel.guildId : undefined,
+      channelId: thread?.parentId ?? channel.id,
+      threadId: thread?.id,
+    };
   }
 
   async sendTyping(channelId: string): Promise<void> {

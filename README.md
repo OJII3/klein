@@ -83,6 +83,21 @@ Set `"profile"` in `config/config.jsonc` to switch profiles (defaults to `"klein
 
 When `features.memory.enabled` is true, Klein periodically extracts durable guild facts and notes from recent conversations into `.runtime/memory/{guildId}/MEMORY.json` using an optional background model.
 
+### Reminders
+
+Reminders belong to a Discord channel (or thread) and its access scope: `public` or
+`owner:<userId>`. They remain available to list and delete after conversation sessions
+rotate. Notifications enter the current conversation session, and delivery checks the
+current channel access rules and owner ID. Reminders whose scope is no longer allowed
+remain stored without being delivered.
+
+At startup, existing reminder files under `<runtime.agentDir>/reminders` are migrated
+to this ownership model. The migration removes `sessionKey` and `ownerFeaturesAllowed`;
+normal reads accept only the new format. If an old owner reminder does not identify its
+owner in the session key, startup fails before modifying any reminder files. Correct
+that file's `sessionKey` to include the original `owner:<userId>` scope and restart.
+Use the original owner's ID, even if the configured owner has since changed.
+
 ### Remote MCP Tools
 
 Register MCP tools directly into Pi's agent directory (`.runtime/pi`):

@@ -370,3 +370,46 @@ test("message reads enforce inherited access and trusted requester identity", as
     await service.stop();
   }
 });
+
+test("resolves current channel locations, including thread parents and direct messages", async () => {
+  const service = new DiscordJsService(
+    "token",
+    createDiscordAccessPolicy({ default: "allow", directMessages: "allow" }),
+  );
+  const testableService = service as unknown as TestableDiscordJsService;
+  const fetched: string[] = [];
+  testableService.client.channels.fetch = async (id) => {
+    fetched.push(id);
+    if (id === "missing") return null;
+    if (id === "voice") return { isTextBased: () => false };
+    return {
+      id,
+      ...(id !== "dm" ? { guildId: "guild-123" } : {}),
+      parentId: id === "thread" ? "parent-channel" : null,
+      isTextBased: () => true,
+      isThread: () => id === "thread",
+    };
+  };
+  try {
+    assert.deepEqual(await service.getChannelLocation("channel"), {
+      guildId: "guild-123",
+      channelId: "channel",
+      threadId: undefined,
+    });
+    assert.deepEqual(await service.getChannelLocation("thread"), {
+      guildId: "guild-123",
+      channelId: "parent-channel",
+      threadId: "thread",
+    });
+    assert.deepEqual(await service.getChannelLocation("dm"), {
+      guildId: undefined,
+      channelId: "dm",
+      threadId: undefined,
+    });
+    await assert.rejects(service.getChannelLocation("missing"), /cannot contain messages/);
+    await assert.rejects(service.getChannelLocation("voice"), /cannot contain messages/);
+    assert.deepEqual(fetched, ["channel", "thread", "dm", "missing", "voice"]);
+  } finally {
+    await service.stop();
+  }
+});
