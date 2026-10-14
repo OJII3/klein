@@ -201,9 +201,16 @@ original posting time, author and reply text, conversation guidance, memory,
 and channel rules. Voice transcripts use their receipt time.
 
 New producers can use the same runtime interface for reminders, MCP notifications,
-and messages from other agents. Their scheduling, subscriptions, and routing are
-not implemented yet. Tool permissions are fixed when the agent is created and
-apply to every event it processes, including reminders and MCP notifications.
+and messages from other agents. Discord Pi sessions provide deferred
+`reminder_add`, `reminder_list`, and `reminder_delete` tools. Reminders can run
+once after a duration (minimum one minute), once at the next occurrence of a
+time or at a specific date and time, or repeatedly at a JST time every day or
+on selected weekdays. They are stored
+under the Pi agent directory and delivered to the session that created them;
+overdue repeating reminders fire once after a restart and then resume their
+schedule. MCP notification subscriptions are not implemented yet. Tool
+permissions are fixed when the agent is created and apply to every event it
+processes, including reminders and MCP notifications.
 `prompt(event)` and `steer(event)` need no per-input permission options.
 Owner-only tools require an owner-enabled session established by trusted
 application access checks; event content cannot grant owner access.

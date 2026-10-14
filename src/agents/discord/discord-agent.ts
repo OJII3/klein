@@ -9,6 +9,8 @@ import { createDiscordSendTool } from "./tools/discord-send";
 import { createDiscordVoiceTool } from "./tools/discord-voice";
 import { createDiscordSpeakTool } from "./tools/discord-speak";
 import type { TextToSpeech } from "@modules/tts/infrastructure/sbv2-tts";
+import { createReminderTools } from "./tools/reminder";
+import type { ReminderStore } from "@modules/reminders/ports/reminder-store";
 
 const BOT_MESSAGE_GUIDANCE = `
 
@@ -39,6 +41,8 @@ export class DiscordAgent {
       readonly ownerUserId?: string;
       readonly tts?: TextToSpeech;
       readonly speak?: (text: string, toolCallId?: string) => Promise<void>;
+      readonly reminderStore?: ReminderStore;
+      readonly resumeExistingSession?: boolean;
     } = {},
   ): Promise<DiscordAgent> {
     let runtime: AgentRuntime | undefined;
@@ -66,12 +70,23 @@ export class DiscordAgent {
       ...(!options.speak && options.tts
         ? [createDiscordVoiceTool(discordService, channelId, options.tts)]
         : []),
+      ...(options.reminderStore
+        ? createReminderTools(
+            options.reminderStore,
+            options.sessionKey ?? `discord-channel:${channelId}`,
+            channelId,
+            ownerFeaturesAllowed,
+          )
+        : []),
     ];
     const toolNames = options.speak
       ? [...DISCORD_AGENT_TOOL_NAMES.filter((name) => name !== "discord_send"), "discord_speak"]
       : options.tts
         ? [...DISCORD_AGENT_TOOL_NAMES, "discord_voice"]
-        : DISCORD_AGENT_TOOL_NAMES;
+        : [...DISCORD_AGENT_TOOL_NAMES];
+    if (options.reminderStore) {
+      toolNames.push("reminder_add", "reminder_list", "reminder_delete");
+    }
 
     runtime = await agentFactory.create(
       {
@@ -87,6 +102,7 @@ export class DiscordAgent {
           : undefined,
         sessionKey: options.sessionKey ?? `discord-channel:${channelId}`,
         ownerFeaturesAllowed,
+        resumeExistingSession: options.resumeExistingSession,
       },
     );
 
@@ -95,6 +111,10 @@ export class DiscordAgent {
 
   prompt(message: DiscordMessage, guildMemory?: string, channelRule?: string): Promise<void> {
     return this.runtime.prompt(this.createEvent(message, guildMemory, channelRule));
+  }
+
+  promptEvent(event: AgentEvent): Promise<void> {
+    return this.runtime.prompt(event);
   }
 
   steer(message: DiscordMessage, guildMemory?: string, channelRule?: string): Promise<void> {
