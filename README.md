@@ -91,12 +91,9 @@ rotate. Notifications enter the current conversation session, and delivery check
 current channel access rules and owner ID. Reminders whose scope is no longer allowed
 remain stored without being delivered.
 
-At startup, existing reminder files under `<runtime.agentDir>/reminders` are migrated
-to this ownership model. The migration removes `sessionKey` and `ownerFeaturesAllowed`;
-normal reads accept only the new format. If an old owner reminder does not identify its
-owner in the session key, startup fails before modifying any reminder files. Correct
-that file's `sessionKey` to include the original `owner:<userId>` scope and restart.
-Use the original owner's ID, even if the configured owner has since changed.
+Reminder files under `<runtime.agentDir>/reminders` use this ownership model.
+Legacy records containing `sessionKey` or `ownerFeaturesAllowed` are rejected;
+the application does not migrate them at startup.
 
 ### Remote MCP Tools
 

@@ -50,76 +50,18 @@ const legacyReminder = {
   dueAt: "2026-10-14T00:01:00.000Z",
 };
 
-for (const [sessionKey, ownerFeaturesAllowed, accessScope] of [
-  ["discord-channel:123", false, "public"],
-  ["discord-channel:123:rotation:2026-10-14", false, "public"],
-  ["discord-channel:123:public:rotation:2026-10-14", false, "public"],
-  ["discord-channel:123:owner:456", true, "owner:456"],
-  ["discord-channel:123:owner:456:rotation:2026-10-14", true, "owner:456"],
-] as const) {
-  test(`fully migrates ${sessionKey} and is idempotent`, async () => {
-    const directory = await mkdtemp(join(tmpdir(), "klein-reminders-"));
-    const path = join(directory, "legacy.json");
-    const store = new FileReminderStore(directory);
-    const legacy = {
-      ...legacyReminder,
-      sessionKey,
-      ownerFeaturesAllowed,
-      repeat: "daily",
-      time: "09:00",
-    };
-    try {
-      await writeFile(path, JSON.stringify(legacy));
-      assert.equal(await store.migrateLegacyReminders(), 1);
-      const { sessionKey: _, ownerFeaturesAllowed: __, ...fields } = legacy;
-      const expected = { ...fields, accessScope };
-      assert.deepEqual(JSON.parse(await readFile(path, "utf8")), expected);
-      assert.deepEqual(await store.listForScope("123", accessScope), [expected]);
-      assert.equal(await store.migrateLegacyReminders(), 0);
-    } finally {
-      await rm(directory, { recursive: true, force: true });
-    }
-  });
-}
-
 test("rejects legacy records during normal reads and deletion", async () => {
   const directory = await mkdtemp(join(tmpdir(), "klein-reminders-"));
   const store = new FileReminderStore(directory);
   try {
     await writeFile(join(directory, "legacy.json"), JSON.stringify(legacyReminder));
-    await assert.rejects(store.listForScope("123", "public"), /移行/u);
-    await assert.rejects(store.listDue(Date.now()), /移行/u);
-    await assert.rejects(store.delete("123", "public", "legacy"), /移行/u);
+    await assert.rejects(store.listForScope("123", "public"), /旧形式には対応していません/u);
+    await assert.rejects(store.listDue(Date.now()), /旧形式には対応していません/u);
+    await assert.rejects(store.delete("123", "public", "legacy"), /旧形式には対応していません/u);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
 });
-
-for (const [sessionKey, ownerFeaturesAllowed] of [
-  ["discord-channel:123", true],
-  ["discord-channel:123:rotation:2026-10-14", true],
-  ["discord-channel:123:public", true],
-  ["discord-channel:123:owner:456", false],
-  ["discord-channel:999:public", false],
-] as const) {
-  test(`retains every file when ownership is ambiguous or inconsistent: ${sessionKey}`, async () => {
-    const directory = await mkdtemp(join(tmpdir(), "klein-reminders-"));
-    const store = new FileReminderStore(directory);
-    const publicPath = join(directory, "a-public.json");
-    const ambiguousPath = join(directory, "legacy.json");
-    const publicJson = JSON.stringify({ ...legacyReminder, id: "a-public" });
-    const ambiguousJson = JSON.stringify({ ...legacyReminder, sessionKey, ownerFeaturesAllowed });
-    try {
-      await writeFile(publicPath, publicJson);
-      await writeFile(ambiguousPath, ambiguousJson);
-      await assert.rejects(store.migrateLegacyReminders(), /所有者を確定できません/u);
-      assert.equal(await readFile(publicPath, "utf8"), publicJson);
-      assert.equal(await readFile(ambiguousPath, "utf8"), ambiguousJson);
-    } finally {
-      await rm(directory, { recursive: true, force: true });
-    }
-  });
-}
 
 for (const invalidFields of [
   { id: undefined },
@@ -134,43 +76,20 @@ for (const invalidFields of [
   { repeat: "weekly", time: "09:00", weekdays: [] },
   { repeat: "weekly", time: "09:00", weekdays: ["invalid"] },
 ]) {
-  test(`rejects invalid reminder contents before migration: ${JSON.stringify(invalidFields)}`, async () => {
+  test(`rejects invalid reminder contents during reads: ${JSON.stringify(invalidFields)}`, async () => {
     const directory = await mkdtemp(join(tmpdir(), "klein-reminders-"));
     const store = new FileReminderStore(directory);
     const path = join(directory, "legacy.json");
     try {
-      const legacyJson = JSON.stringify({ ...legacyReminder, ...invalidFields });
-      await writeFile(path, legacyJson);
-      await assert.rejects(store.migrateLegacyReminders());
-      assert.equal(await readFile(path, "utf8"), legacyJson);
-
       const { sessionKey: _, ownerFeaturesAllowed: __, ...fields } = legacyReminder;
       const newJson = JSON.stringify({ ...fields, accessScope: "public", ...invalidFields });
       await writeFile(path, newJson);
-      await assert.rejects(store.migrateLegacyReminders());
       await assert.rejects(store.listDue(Date.now()));
+      await assert.rejects(store.listForScope("123", "public"));
+      await assert.rejects(store.delete("123", "public", "legacy"));
       assert.equal(await readFile(path, "utf8"), newJson);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
   });
 }
-
-test("rejects mismatched filenames before writing any migrated reminder", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "klein-reminders-"));
-  const store = new FileReminderStore(directory);
-  const publicPath = join(directory, "a-public.json");
-  const mismatchedPath = join(directory, "wrong.json");
-  const publicJson = JSON.stringify({ ...legacyReminder, id: "a-public" });
-  const mismatchedJson = JSON.stringify(legacyReminder);
-  try {
-    await writeFile(publicPath, publicJson);
-    await writeFile(mismatchedPath, mismatchedJson);
-    await assert.rejects(store.migrateLegacyReminders(), /ファイル名がIDと一致しません/u);
-    assert.equal(await readFile(publicPath, "utf8"), publicJson);
-    assert.equal(await readFile(mismatchedPath, "utf8"), mismatchedJson);
-    await assert.rejects(readFile(join(directory, "legacy.json")), { code: "ENOENT" });
-  } finally {
-    await rm(directory, { recursive: true, force: true });
-  }
-});
