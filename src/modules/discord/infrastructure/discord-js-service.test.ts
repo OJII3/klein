@@ -250,7 +250,7 @@ test("handles status slash subcommands for members with Manage Server", async ()
     id: "bot-123",
     setStatus: () => undefined,
   };
-  const replies: Array<{ content: string; ephemeral: boolean }> = [];
+  const replies: Array<{ description: string | undefined; ephemeral: boolean | undefined }> = [];
   let subcommand = "idle";
   const interaction = {
     commandName: "status",
@@ -264,8 +264,14 @@ test("handles status slash subcommands for members with Manage Server", async ()
     memberPermissions: {
       has: () => true,
     },
-    reply: async (response: { content: string; ephemeral: boolean }) => {
-      replies.push(response);
+    reply: async (response: {
+      embeds: Array<{ toJSON: () => { description?: string } }>;
+      ephemeral?: boolean;
+    }) => {
+      replies.push({
+        description: response.embeds[0]?.toJSON().description,
+        ephemeral: response.ephemeral,
+      });
     },
   } as unknown as Interaction;
 
@@ -279,8 +285,8 @@ test("handles status slash subcommands for members with Manage Server", async ()
 
     assert.equal(operatingState.mode, "active");
     assert.deepEqual(replies, [
-      { content: "Botを一時停止しました。", ephemeral: true },
-      { content: "Botを再開しました。", ephemeral: true },
+      { description: "Botを一時停止しました。", ephemeral: false },
+      { description: "Botを再開しました。", ephemeral: false },
     ]);
   } finally {
     await service.stop();
