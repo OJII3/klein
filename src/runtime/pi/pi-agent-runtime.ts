@@ -525,7 +525,7 @@ export function createPiAgentFactory({
       const sessionManager = createPiSessionManager(
         agentDir,
         options.sessionKey,
-        options.resumeExistingSession ? "resume" : sessionMode,
+        sessionMode,
         process.cwd(),
       );
       const sessionId = sessionManager.getSessionId();

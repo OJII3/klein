@@ -3,11 +3,12 @@ export const REMINDER_WEEKDAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat
 export type ReminderWeekday = (typeof REMINDER_WEEKDAYS)[number];
 export type ReminderRepeat = "daily" | "weekly";
 
+export type ReminderAccessScope = "public" | `owner:${string}`;
+
 export interface Reminder {
   readonly id: string;
-  readonly sessionKey: string;
   readonly channelId: string;
-  readonly ownerFeaturesAllowed: boolean;
+  readonly accessScope: ReminderAccessScope;
   readonly message: string;
   readonly createdAt: string;
   readonly dueAt: string;

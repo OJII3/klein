@@ -5,7 +5,7 @@ import type { Reminder } from "@modules/reminders/domain/reminder";
 import type { ReminderStore } from "@modules/reminders/ports/reminder-store";
 import { createReminderTools } from "./reminder";
 
-test("provides deferred add, list, and delete tools scoped to the Pi session", async () => {
+test("provides deferred add, list, and delete tools scoped to the conversation", async () => {
   let created: Reminder | undefined;
   let deletedId: string | undefined;
   const tools = createReminderTools(
@@ -13,23 +13,24 @@ test("provides deferred add, list, and delete tools scoped to the Pi session", a
       async create(reminder) {
         created = reminder;
       },
-      async listForSession(sessionKey) {
-        assert.equal(sessionKey, "session-a");
+      async listForScope(channelId, accessScope) {
+        assert.equal(channelId, "channel-a");
+        assert.equal(accessScope, "public");
         return created ? [created] : [];
       },
       async listDue() {
         return [];
       },
-      async delete(sessionKey, reminderId) {
-        assert.equal(sessionKey, "session-a");
+      async delete(channelId, accessScope, reminderId) {
+        assert.equal(channelId, "channel-a");
+        assert.equal(accessScope, "public");
         deletedId = reminderId;
         return true;
       },
       async updateDueAt() {},
     } satisfies ReminderStore,
-    "session-a",
     "channel-a",
-    false,
+    "public",
   );
   const [addTool, listTool, deleteTool] = tools;
 
@@ -44,7 +45,7 @@ test("provides deferred add, list, and delete tools scoped to the Pi session", a
     undefined,
     {} as never,
   );
-  assert.equal(created?.sessionKey, "session-a");
+  assert.equal(created?.accessScope, "public");
   assert.equal(created?.channelId, "channel-a");
   assert.equal(created?.message, "定例会");
   assert.match(

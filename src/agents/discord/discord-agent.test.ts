@@ -8,6 +8,8 @@ import type { AgentRuntime } from "../core/agent-runtime";
 import { DiscordAgent } from "./discord-agent";
 import type { AgentEvent } from "../core/agent-event";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
+import type { Reminder } from "@modules/reminders/domain/reminder";
+import type { ReminderStore } from "@modules/reminders/ports/reminder-store";
 import type { DiscordService } from "@modules/discord/ports/discord-service";
 
 const message: DiscordMessage = {
@@ -102,6 +104,9 @@ test("wires the runtime image analyzer into discord_read", async () => {
     async start() {},
     stopAccepting() {},
     setActivity() {},
+    async getChannelLocation(channelId) {
+      return { channelId };
+    },
     async sendTyping() {},
     async sendMessage() {},
     async sendAudio() {},
@@ -161,6 +166,9 @@ test("adds bot-specific conversation guidance only for bot messages", async () =
     async start() {},
     stopAccepting() {},
     setActivity() {},
+    async getChannelLocation(channelId) {
+      return { channelId };
+    },
     async sendTyping() {},
     async sendMessage() {},
     async sendAudio() {},
@@ -208,6 +216,9 @@ test("injects the current guild memory into the agent prompt", async () => {
     async start() {},
     stopAccepting() {},
     setActivity() {},
+    async getChannelLocation(channelId) {
+      return { channelId };
+    },
     async sendTyping() {},
     async sendMessage() {},
     async sendAudio() {},
@@ -287,3 +298,94 @@ function eventText(event: AgentEvent | undefined): string {
       .join("\n\n") ?? ""
   );
 }
+
+test("keeps reminders across session rotation and isolates channel and access scopes", async () => {
+  const reminders = new Map<string, Reminder>();
+  const store: ReminderStore = {
+    async create(reminder) {
+      reminders.set(reminder.id, reminder);
+    },
+    async listForScope(channelId, accessScope) {
+      return [...reminders.values()].filter(
+        (reminder) => reminder.channelId === channelId && reminder.accessScope === accessScope,
+      );
+    },
+    async listDue() {
+      return [];
+    },
+    async delete(channelId, accessScope, id) {
+      const reminder = reminders.get(id);
+      if (reminder?.channelId !== channelId || reminder.accessScope !== accessScope) return false;
+      return reminders.delete(id);
+    },
+    async updateDueAt() {},
+  };
+  async function createTools(
+    sessionKey: string,
+    channelId: string,
+    ownerFeaturesAllowed: boolean,
+    ownerUserId?: string,
+  ) {
+    let tools: readonly ToolDefinition[] = [];
+    await DiscordAgent.create(
+      {
+        async create(_definition, registeredTools) {
+          tools = registeredTools as readonly ToolDefinition[];
+          return { async prompt() {}, dispose() {} };
+        },
+      },
+      {} as DiscordService,
+      channelId,
+      "system",
+      { sessionKey, ownerFeaturesAllowed, ownerUserId, reminderStore: store },
+    );
+    return tools;
+  }
+  async function execute(tools: readonly ToolDefinition[], name: string, params: unknown) {
+    const tool = tools.find((tool) => tool.name === name);
+    assert.ok(tool);
+    return tool.execute("call", params, undefined, undefined, {} as never);
+  }
+  const original = await createTools("session-old", "channel-a", false, "123");
+  const added = await execute(original, "reminder_add", {
+    message: "定例会",
+    schedule: { type: "after", minutes: 1 },
+  });
+  const id = (added.details as { id: string }).id;
+  const rotated = await createTools("session-new", "channel-a", false, "123");
+  assert.equal(
+    ((await execute(rotated, "reminder_list", {})).details as { reminders: Reminder[] }).reminders
+      .length,
+    1,
+  );
+  for (const tools of [
+    await createTools("session-new", "channel-b", false, "123"),
+    await createTools("session-new", "channel-a", true, "123"),
+    await createTools("session-new", "channel-a", true, "456"),
+  ]) {
+    assert.deepEqual(
+      ((await execute(tools, "reminder_list", {})).details as { reminders: Reminder[] }).reminders,
+      [],
+    );
+    assert.equal(
+      ((await execute(tools, "reminder_delete", { id })).details as { deleted: boolean }).deleted,
+      false,
+    );
+  }
+  assert.equal(
+    ((await execute(rotated, "reminder_delete", { id })).details as { deleted: boolean }).deleted,
+    true,
+  );
+  for (const [allowed, userId, expectedScope] of [
+    [true, "123", "owner:123"],
+    [true, undefined, "public"],
+    [false, "123", "public"],
+  ] as const) {
+    const tools = await createTools("session-any", "channel-a", allowed, userId);
+    const result = await execute(tools, "reminder_add", {
+      message: "通知",
+      schedule: { type: "after", minutes: 1 },
+    });
+    assert.equal(reminders.get((result.details as { id: string }).id)?.accessScope, expectedScope);
+  }
+});

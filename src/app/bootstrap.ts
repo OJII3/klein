@@ -84,6 +84,13 @@ export async function bootstrap(): Promise<void> {
     resolve(agentDir, "channel-session-state"),
   );
   const reminderStore = new FileReminderStore(resolve(agentDir, "reminders"));
+  const migratedReminders = await reminderStore.migrateLegacyReminders();
+  if (migratedReminders > 0) {
+    logger.info(
+      { event: "reminders_migrated", count: migratedReminders },
+      "Migrated reminders to channel access scopes",
+    );
+  }
   const channelRuleStore = new FileDiscordChannelRuleStore(resolve(agentDir, "channel-rules"));
   const modelRuntime = await createPiModelRuntime(agentDir);
   const reactionConfiguration = voiceChatConfiguration?.enabled
@@ -136,14 +143,12 @@ export async function bootstrap(): Promise<void> {
     sessionKey: string,
     handoffContext?: string,
     ownerFeaturesAllowed = false,
-    resumeExistingSession = false,
   ) =>
     DiscordAgent.create(piAgentFactory, discordService, channelId, systemPrompt, {
       handoffContext,
       ownerFeaturesAllowed,
       ownerUserId,
       reminderStore,
-      resumeExistingSession,
       sessionKey,
       tts,
     });
