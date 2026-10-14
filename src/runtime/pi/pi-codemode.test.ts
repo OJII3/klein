@@ -81,7 +81,8 @@ for (const restricted of [false, true]) {
       provider.setResponses([
         (context) => {
           requests.push(context);
-          return fauxAssistantMessage(
+          return fauxAssistantMessage([
+            { type: "text", text: "Checking the two messages before replying." },
             fauxToolCall("codemode", {
               code: `const results = await Promise.allSettled([
             tools.discord_read({ messageId: "first" }),
@@ -90,7 +91,7 @@ for (const restricted of [false, true]) {
           text(results.filter(result => result.status === "fulfilled").length);
           text({ canSend: "discord_send" in tools, canBash: "bash" in tools });`,
             }),
-          );
+          ]);
         },
         (context) => {
           requests.push(context);
@@ -128,7 +129,29 @@ for (const restricted of [false, true]) {
         assert.match(output, /"canBash":false/);
       }
       assert.doesNotMatch(output, /Unfiltered research content/);
+      const currentAssistant = requests[1].messages.find((message) => message.role === "assistant");
+      assert.ok(currentAssistant && currentAssistant.role === "assistant");
+      assert.ok(
+        currentAssistant.content.some(
+          (block) =>
+            block.type === "text" && block.text === "Checking the two messages before replying.",
+        ),
+      );
       assert.deepEqual(readIds.sort(), restricted ? [] : ["first", "second"]);
+      assert.deepEqual(sent, ["……確認したよ"]);
+
+      provider.setResponses([
+        (context) => {
+          const previousAssistant = context.messages.find(
+            (message) => message.role === "assistant",
+          );
+          assert.ok(previousAssistant && previousAssistant.role === "assistant");
+          assert.ok(previousAssistant.content.some((block) => block.type === "toolCall"));
+          assert.ok(previousAssistant.content.every((block) => block.type !== "text"));
+          return fauxAssistantMessage("No further reply needed");
+        },
+      ]);
+      await runtime.prompt({ text: "ありがとう", images: [] });
       assert.deepEqual(sent, ["……確認したよ"]);
     } finally {
       runtime.dispose();
