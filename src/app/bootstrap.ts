@@ -40,9 +40,11 @@ import { PinoJsonlReader } from "@modules/webui/infrastructure/pino-jsonl-reader
 import { PiSessionReader } from "@modules/webui/infrastructure/pi-session-reader";
 import { Sbv2Tts } from "@modules/tts/infrastructure/sbv2-tts";
 import { WebSocketAsrClient } from "@modules/asr/infrastructure/websocket-asr-client";
+import { FileReminderStore } from "@modules/reminders/infrastructure/file-reminder-store";
 
 const DISCORD_USAGE_STATUS_REFRESH_INTERVAL_MS = 60 * 60 * 1_000;
 const CHANNEL_CONTEXT_ROTATION_CHECK_INTERVAL_MS = 60 * 1_000;
+const REMINDER_CHECK_INTERVAL_MS = 10 * 1_000;
 
 export async function bootstrap(): Promise<void> {
   const { sessionMode } = parseCliOptions(process.argv.slice(2));
@@ -81,6 +83,7 @@ export async function bootstrap(): Promise<void> {
   const channelSessionStateStore = new ChannelSessionStateStore(
     resolve(agentDir, "channel-session-state"),
   );
+  const reminderStore = new FileReminderStore(resolve(agentDir, "reminders"));
   const channelRuleStore = new FileDiscordChannelRuleStore(resolve(agentDir, "channel-rules"));
   const modelRuntime = await createPiModelRuntime(agentDir);
   const reactionConfiguration = voiceChatConfiguration?.enabled
@@ -133,11 +136,14 @@ export async function bootstrap(): Promise<void> {
     sessionKey: string,
     handoffContext?: string,
     ownerFeaturesAllowed = false,
+    resumeExistingSession = false,
   ) =>
     DiscordAgent.create(piAgentFactory, discordService, channelId, systemPrompt, {
       handoffContext,
       ownerFeaturesAllowed,
       ownerUserId,
+      reminderStore,
+      resumeExistingSession,
       sessionKey,
       tts,
     });
@@ -210,6 +216,7 @@ export async function bootstrap(): Promise<void> {
     logger,
     memoryCoordinator,
     operatingState: discordOperatingState,
+    reminderStore,
     taskCoordinator,
   });
   const usageProvider =
@@ -250,6 +257,7 @@ export async function bootstrap(): Promise<void> {
 
   let usageStatusInterval: ReturnType<typeof setInterval> | undefined;
   let contextRotationInterval: ReturnType<typeof setInterval> | undefined;
+  let reminderCheckInterval: ReturnType<typeof setInterval> | undefined;
   let shuttingDown = false;
   const shutdown = async (signal: string): Promise<void> => {
     if (shuttingDown) return;
@@ -263,6 +271,10 @@ export async function bootstrap(): Promise<void> {
     if (contextRotationInterval) {
       clearInterval(contextRotationInterval);
       contextRotationInterval = undefined;
+    }
+    if (reminderCheckInterval) {
+      clearInterval(reminderCheckInterval);
+      reminderCheckInterval = undefined;
     }
     await webUi?.stop();
     discordService.stopAccepting();
@@ -305,6 +317,10 @@ export async function bootstrap(): Promise<void> {
         );
       });
   }, CHANNEL_CONTEXT_ROTATION_CHECK_INTERVAL_MS);
+  void agentCoordinator.deliverDueReminders();
+  reminderCheckInterval = setInterval(() => {
+    void agentCoordinator.deliverDueReminders();
+  }, REMINDER_CHECK_INTERVAL_MS);
   await updateDiscordUsageStatus();
   usageStatusInterval = setInterval(() => {
     void updateDiscordUsageStatus();

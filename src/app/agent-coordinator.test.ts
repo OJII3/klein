@@ -9,6 +9,8 @@ import type { AgentEvent } from "@agents/core/agent-event";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import { DiscordOperatingState } from "@modules/discord/domain/discord-operating-state";
 import type { DiscordService } from "@modules/discord/ports/discord-service";
+import type { Reminder } from "@modules/reminders/domain/reminder";
+import type { ReminderStore } from "@modules/reminders/ports/reminder-store";
 import { TaskCoordinator } from "./task-coordinator";
 import { AgentCoordinator } from "./agent-coordinator";
 
@@ -16,14 +18,17 @@ interface TestHarness {
   readonly agentCoordinator: AgentCoordinator;
   readonly createdSessionKeys: string[];
   readonly prompts: Map<string, AgentEvent[]>;
+  readonly resumeExistingSessions: boolean[];
 }
 
-function createHarness(createGate?: Promise<void>): TestHarness {
+function createHarness(createGate?: Promise<void>, reminderStore?: ReminderStore): TestHarness {
   const createdSessionKeys: string[] = [];
   const prompts = new Map<string, AgentEvent[]>();
+  const resumeExistingSessions: boolean[] = [];
   const agentFactory: AgentFactory = {
     async create(_definition, _tools, options): Promise<AgentRuntime> {
       createdSessionKeys.push(options.sessionKey);
+      resumeExistingSessions.push(options.resumeExistingSession ?? false);
       if (createGate) await createGate;
 
       const channelId = options.sessionKey.slice("discord-channel:".length);
@@ -54,15 +59,20 @@ function createHarness(createGate?: Promise<void>): TestHarness {
 
   return {
     agentCoordinator: new AgentCoordinator({
-      createDiscordAgent: (channelId) =>
-        DiscordAgent.create(agentFactory, discordService, channelId, "system prompt"),
+      createDiscordAgent: (channelId, sessionKey, _handoffContext, _owner, resumeExistingSession) =>
+        DiscordAgent.create(agentFactory, discordService, channelId, "system prompt", {
+          sessionKey,
+          resumeExistingSession,
+        }),
       discordService,
       logger: pino({ level: "silent" }),
       operatingState: new DiscordOperatingState(),
+      reminderStore,
       taskCoordinator: new TaskCoordinator(),
     }),
     createdSessionKeys,
     prompts,
+    resumeExistingSessions,
   };
 }
 
@@ -214,6 +224,52 @@ test("does not create duplicate agents while a channel agent is initializing", a
     );
   } finally {
     releaseCreation();
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+test("delivers due reminders to their originating Pi session as AgentEvents", async () => {
+  const reminder: Reminder = {
+    id: "reminder-1",
+    sessionKey: "discord-channel:test-channel:rotation:2026-10-13",
+    channelId: "test-channel",
+    ownerFeaturesAllowed: false,
+    message: "定例会が始まります",
+    createdAt: "2026-10-14T00:00:00.000Z",
+    dueAt: "2026-10-14T00:01:00.000Z",
+  };
+  let storedReminder: Reminder | undefined = reminder;
+  const reminderStore: ReminderStore = {
+    async create() {},
+    async listForSession(sessionKey) {
+      return storedReminder?.sessionKey === sessionKey ? [storedReminder] : [];
+    },
+    async listDue(now) {
+      return storedReminder && Date.parse(storedReminder.dueAt) <= now ? [storedReminder] : [];
+    },
+    async delete(_sessionKey, reminderId) {
+      if (storedReminder?.id !== reminderId) return false;
+      storedReminder = undefined;
+      return true;
+    },
+    async updateDueAt() {},
+  };
+  const harness = createHarness(undefined, reminderStore);
+
+  try {
+    await harness.agentCoordinator.deliverDueReminders(Date.parse("2026-10-14T00:02:00.000Z"));
+
+    assert.deepEqual(harness.createdSessionKeys, [reminder.sessionKey]);
+    assert.deepEqual(harness.resumeExistingSessions, [true]);
+    assert.equal(storedReminder, undefined);
+    const event = harness.prompts.get("test-channel:rotation:2026-10-13")?.[0];
+    assert.equal(event?.type, "reminder.due");
+    assert.equal(event?.source, "reminder");
+    assert.match(
+      event?.content[0]?.type === "text" ? event.content[0].text : "",
+      /定例会が始まります/u,
+    );
+  } finally {
     await harness.agentCoordinator.dispose();
   }
 });
