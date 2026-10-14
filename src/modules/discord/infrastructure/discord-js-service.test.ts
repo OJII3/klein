@@ -255,6 +255,7 @@ test("handles idle and online slash commands for members with Manage Server", as
     inGuild: () => true,
     channelId: "channel-123",
     channel: { isThread: () => false },
+    user: { id: "user-123", bot: false },
     isChatInputCommand: () => true,
     isModalSubmit: () => false,
     memberPermissions: {
