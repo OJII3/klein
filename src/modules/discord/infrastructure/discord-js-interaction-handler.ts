@@ -6,12 +6,14 @@ import {
   TextInputBuilder,
   TextInputStyle,
   type ApplicationCommandDataResolvable,
+  type Channel,
   type ChatInputCommandInteraction,
   type Interaction,
   type ModalSubmitInteraction,
 } from "discord.js";
 
 import type { DiscordOperatingMode } from "../domain/discord-operating-state";
+import type { DiscordAccessPolicy } from "../domain/discord-access-policy";
 import type { DiscordChannelRuleStore } from "../ports/discord-channel-rule-store";
 import { DiscordVoiceChatController, VOICE_COMMAND } from "./discord-voice-chat-controller";
 
@@ -41,6 +43,7 @@ export class DiscordJsInteractionHandler {
   readonly commands: readonly ApplicationCommandDataResolvable[];
 
   constructor(
+    private readonly accessPolicy: DiscordAccessPolicy,
     private readonly setOperatingMode: (mode: DiscordOperatingMode) => void,
     private readonly voiceChatController?: DiscordVoiceChatController,
     private readonly channelRuleStore?: DiscordChannelRuleStore,
@@ -54,12 +57,25 @@ export class DiscordJsInteractionHandler {
 
   async handle(interaction: Interaction): Promise<void> {
     if (interaction.isModalSubmit()) {
-      if (interaction.customId === CHANNEL_RULE_MODAL_ID) {
-        await this.saveChannelRule(interaction);
+      if (interaction.customId !== CHANNEL_RULE_MODAL_ID) return;
+      if (!(await this.canUseCommandsInChannel(interaction))) {
+        await interaction.reply({
+          content: "このチャンネルではコマンドを利用できません。",
+          ephemeral: true,
+        });
+        return;
       }
+      await this.saveChannelRule(interaction);
       return;
     }
     if (!interaction.isChatInputCommand()) return;
+    if (!(await this.canUseCommandsInChannel(interaction))) {
+      await interaction.reply({
+        content: "このチャンネルではコマンドを利用できません。",
+        ephemeral: true,
+      });
+      return;
+    }
 
     if (interaction.commandName === "rule") {
       await this.openChannelRuleEditor(interaction);
@@ -108,6 +124,28 @@ export class DiscordJsInteractionHandler {
     await interaction.reply({
       content: mode === "active" ? "Botを再開しました。" : "Botを一時停止しました。",
       ephemeral: true,
+    });
+  }
+
+  private async canUseCommandsInChannel(
+    interaction: ChatInputCommandInteraction | ModalSubmitInteraction,
+  ): Promise<boolean> {
+    const channelId = interaction.channelId;
+    if (!channelId) return false;
+
+    let channel: Channel | null = interaction.channel;
+    if (!channel && interaction.inGuild()) {
+      channel = await interaction.client.channels.fetch(channelId).catch(() => null);
+      if (!channel) return false;
+    }
+
+    const thread = channel?.isThread() ? channel : undefined;
+    return this.accessPolicy.canReceive({
+      guildId: interaction.guildId ?? undefined,
+      channelId: thread?.parentId ?? channelId,
+      threadId: thread?.id,
+      userId: interaction.user.id,
+      userIsBot: interaction.user.bot,
     });
   }
 
