@@ -6,7 +6,6 @@ import test from "node:test";
 import pino from "pino";
 
 import type { AgentCreationOptions, AgentFactory } from "@agents/core/agent-factory";
-import type { AgentExecutionOptions } from "@agents/core/agent-runtime";
 import type { AgentEvent } from "@agents/core/agent-event";
 import { DiscordAgent } from "@agents/discord/discord-agent";
 import {
@@ -35,16 +34,14 @@ const message: DiscordMessage = {
 function createHarness(store: ChannelSessionStateStore, channelRule: { access: DiscordAccess }) {
   const creations: AgentCreationOptions[] = [];
   const prompts: AgentEvent[] = [];
-  const executionOptions: (AgentExecutionOptions | undefined)[] = [];
   const remembered: DiscordMessage[] = [];
   let disposed = 0;
   const factory: AgentFactory = {
     async create(_definition, _tools, options) {
       creations.push(options);
       return {
-        async prompt(prompt, options) {
+        async prompt(prompt) {
           prompts.push(prompt);
-          executionOptions.push(options);
         },
         async compactForHandoff() {
           return "private conversation summary";
@@ -96,7 +93,6 @@ function createHarness(store: ChannelSessionStateStore, channelRule: { access: D
     coordinator,
     creations,
     prompts,
-    executionOptions,
     remembered,
     disposed: () => disposed,
   };
@@ -119,7 +115,6 @@ test("only owner messages create private sessions and never enter shared memory"
     await harness.coordinator.handleDiscordMessage(message);
     assert.equal(harness.creations[0].sessionKey, "discord-channel:channel:owner:123");
     assert.equal(harness.creations[0].ownerFeaturesAllowed, true);
-    assert.equal(harness.executionOptions[0]?.ownerFeaturesAllowed, true);
     assert.equal(harness.remembered.length, 0);
   } finally {
     await harness.coordinator.dispose();
@@ -144,7 +139,6 @@ test("changing owner access to allow drops private history and handoff on restar
     assert.equal(publicHarness.creations[0].sessionKey, "discord-channel:channel:public");
     assert.equal(publicHarness.creations[0].ownerFeaturesAllowed, false);
     assert.equal(publicHarness.creations[0].initialContext, undefined);
-    assert.equal(publicHarness.executionOptions[0]?.ownerFeaturesAllowed, false);
     assert.doesNotMatch(JSON.stringify(publicHarness.prompts[0].content), /secret Obsidian/);
     assert.equal(publicHarness.remembered.length, 1);
   } finally {

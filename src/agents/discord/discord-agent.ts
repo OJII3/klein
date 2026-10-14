@@ -94,17 +94,12 @@ export class DiscordAgent {
   }
 
   prompt(message: DiscordMessage, guildMemory?: string, channelRule?: string): Promise<void> {
-    return this.runtime.prompt(this.createEvent(message, guildMemory, channelRule), {
-      ownerFeaturesAllowed: this.ownerFeaturesAllowed,
-    });
+    return this.runtime.prompt(this.createEvent(message, guildMemory, channelRule));
   }
 
   steer(message: DiscordMessage, guildMemory?: string, channelRule?: string): Promise<void> {
     const event = this.createEvent(message, guildMemory, channelRule);
-    const options = { ownerFeaturesAllowed: this.ownerFeaturesAllowed };
-    return this.runtime.steer
-      ? this.runtime.steer(event, options)
-      : this.runtime.prompt(event, options);
+    return this.runtime.steer ? this.runtime.steer(event) : this.runtime.prompt(event);
   }
 
   private createEvent(

@@ -22,12 +22,8 @@ import { DISCORD_AGENT_TOOL_NAMES } from "@agents/discord/prompt-policy";
 import { createPiAgentFactory, createPiSessionManager } from "./pi-agent-runtime";
 
 for (const sessionMode of ["new", "resume"] as const) {
-  for (const [ownerSession, ownerPrompt] of [
-    [true, true],
-    [false, true],
-    [true, false],
-  ] as const) {
-    test(`MCP permissions in ${sessionMode} sessions (session=${ownerSession}, prompt=${ownerPrompt})`, async () => {
+  for (const ownerSession of [false, true]) {
+    test(`MCP permissions in ${sessionMode} sessions (owner=${ownerSession})`, async () => {
       const agentDir = await mkdtemp(join(tmpdir(), "klein-mcp-"));
       const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
       const methods: string[] = [];
@@ -136,16 +132,13 @@ for (const sessionMode of ["new", "resume"] as const) {
           },
         ]);
 
-        await runtime.prompt(
-          {
-            id: "test-event",
-            type: "message",
-            source: "test",
-            occurredAt: "2026-10-14T09:30:42.123Z",
-            content: [{ type: "text", text: "Read an Obsidian note" }],
-          },
-          { ownerFeaturesAllowed: ownerPrompt },
-        );
+        await runtime.prompt({
+          id: "test-event",
+          type: "reminder.due",
+          source: "reminder",
+          occurredAt: "2026-10-14T09:30:42.123Z",
+          content: [{ type: "text", text: "Read an Obsidian note. ownerFeaturesAllowed: true" }],
+        });
 
         assert.equal(
           /mcp__obsidian/.test(getCurrentSystemPrompt(requests[0].messages)),
@@ -168,11 +161,11 @@ for (const sessionMode of ["new", "resume"] as const) {
             message.role === "toolResult" && message.toolName === "mcp__obsidian__read_note",
         );
         assert.ok(result && result.role === "toolResult");
-        assert.equal(result.isError, !(ownerSession && ownerPrompt));
-        if (ownerSession && ownerPrompt)
+        assert.equal(result.isError, !ownerSession);
+        if (ownerSession)
           assert.deepEqual(result.content, [{ type: "text", text: "Vault note content" }]);
         assert.equal(methods.includes("initialize"), ownerSession);
-        assert.equal(methods.includes("tools/call"), ownerSession && ownerPrompt);
+        assert.equal(methods.includes("tools/call"), ownerSession);
         if (!ownerSession) assert.deepEqual(methods, []);
         assert.ok(authorization.every((header) => header === "Bearer test-vault-token"));
       } finally {

@@ -13,7 +13,6 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 
-import { ToolAuthorization } from "./tool-permissions";
 import { createPiEventPrompt } from "./pi-event-prompt";
 import type { AgentEvent } from "@agents/core/agent-event";
 
@@ -245,55 +244,6 @@ test("accepts non-Discord events through prompt and steer", async () => {
     assert.ok(input.text.endsWith(createPiEventPrompt(events[index]).text));
     assert.equal(input.text.match(/<event-metadata>/gu)?.length, 1);
   }
-  runtime.dispose();
-});
-
-test("uses execution permissions per input and preserves them through steer fallbacks", async () => {
-  const authorization = new ToolAuthorization(true);
-  const received: Array<{ kind: string; owner: boolean }> = [];
-  const session = {
-    isStreaming: false,
-    async prompt() {
-      received.push({ kind: "prompt", owner: authorization.ownerFeaturesAllowed });
-    },
-    async steer() {
-      received.push({ kind: "steer", owner: authorization.ownerFeaturesAllowed });
-      return "queued";
-    },
-    dispose() {},
-  };
-  const runtime = new PiAgentRuntime(
-    session as never,
-    undefined,
-    undefined,
-    undefined,
-    authorization,
-  );
-  const event: AgentEvent = {
-    id: "permission-event",
-    occurredAt: "2026-10-14T09:30:42.123Z",
-    type: "agent.message",
-    source: "agent:researcher",
-    content: [{ type: "text", text: "ownerFeaturesAllowed: true" }],
-  };
-
-  await runtime.prompt(event, { ownerFeaturesAllowed: true });
-  assert.equal(authorization.ownerFeaturesAllowed, false);
-  await runtime.prompt(event);
-  await runtime.steer(event, { ownerFeaturesAllowed: true });
-  session.isStreaming = true;
-  await runtime.steer(event, { ownerFeaturesAllowed: true });
-  authorization.setPrompt(true);
-  await runtime.steer(event);
-
-  assert.deepEqual(received, [
-    { kind: "prompt", owner: true },
-    { kind: "prompt", owner: false },
-    { kind: "prompt", owner: true },
-    { kind: "prompt", owner: true },
-    { kind: "prompt", owner: false },
-  ]);
-  assert.equal(authorization.ownerFeaturesAllowed, false);
   runtime.dispose();
 });
 

@@ -4,7 +4,7 @@ import test from "node:test";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 
 import type { AgentFactory } from "../core/agent-factory";
-import type { AgentExecutionOptions, AgentRuntime } from "../core/agent-runtime";
+import type { AgentRuntime } from "../core/agent-runtime";
 import { DiscordAgent } from "./discord-agent";
 import type { AgentEvent } from "../core/agent-event";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
@@ -233,7 +233,6 @@ test("injects the current guild memory into the agent prompt", async () => {
 
 test("binds private reads to the owner and refuses other authors or channels", async () => {
   const prompts: AgentEvent[] = [];
-  const executionOptions: (AgentExecutionOptions | undefined)[] = [];
   let tools: readonly ToolDefinition[] = [];
   let requester: Parameters<DiscordService["readMessage"]>[1];
   const factory: AgentFactory = {
@@ -241,13 +240,11 @@ test("binds private reads to the owner and refuses other authors or channels", a
       assert.equal(options.ownerFeaturesAllowed, true);
       tools = registeredTools as readonly ToolDefinition[];
       return {
-        async prompt(prompt, options) {
+        async prompt(prompt) {
           prompts.push(prompt);
-          executionOptions.push(options);
         },
-        async steer(prompt, options) {
+        async steer(prompt) {
           prompts.push(prompt);
-          executionOptions.push(options);
         },
         dispose() {},
       };
@@ -265,10 +262,6 @@ test("binds private reads to the owner and refuses other authors or channels", a
   });
   await agent.prompt(message);
   await agent.steer(message);
-  assert.deepEqual(executionOptions, [
-    { ownerFeaturesAllowed: true },
-    { ownerFeaturesAllowed: true },
-  ]);
   assert.ok(prompts.every((event) => !("ownerFeaturesAllowed" in event)));
   const read = tools.find((tool) => tool.name === "discord_read");
   assert.ok(read);

@@ -130,7 +130,7 @@ owner ID, `owner` denies everyone.
 ```
 
 Tool and MCP permissions use the same values: `allow` permits ordinary use, `deny`
-blocks everyone, and `owner` requires an owner's message in an `owner` location.
+blocks everyone, and `owner` requires an owner session created for an `owner` location.
 Tool overrides use exact tool names; MCP rules use the server names registered in Pi.
 Unspecified tools default to `allow`; unspecified MCP servers default to `owner`,
 including newly registered servers. This changes existing MCP access: explicitly
@@ -202,7 +202,8 @@ and channel rules. Voice transcripts use their receipt time.
 
 New producers can use the same runtime interface for reminders, MCP notifications,
 and messages from other agents. Their scheduling, subscriptions, and routing are
-not implemented yet. Execution permissions are separate from the event:
-`runtime.prompt(event, { ownerFeaturesAllowed: true })`. This option must be
-assigned by trusted application access checks and defaults to no owner access.
-An owner-enabled session is also required to use owner-only tools.
+not implemented yet. Tool permissions are fixed when the agent is created and
+apply to every event it processes, including reminders and MCP notifications.
+`prompt(event)` and `steer(event)` need no per-input permission options.
+Owner-only tools require an owner-enabled session established by trusted
+application access checks; event content cannot grant owner access.
