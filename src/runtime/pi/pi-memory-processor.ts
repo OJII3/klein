@@ -8,7 +8,7 @@ import type {
 } from "@earendil-works/pi-ai";
 import type { CreateAgentSessionOptions } from "@earendil-works/pi-coding-agent";
 
-import { renderMemoryDocument } from "@modules/memory/infrastructure/markdown-memory-store";
+import { renderMemoryContext } from "@modules/memory/infrastructure/markdown-memory-store";
 import type {
   MemoryDocument,
   MemoryMessage,
@@ -79,7 +79,7 @@ export class PiMemoryProcessor implements MemoryProcessor {
 }
 
 function buildUserPrompt(document: MemoryDocument, messages: readonly MemoryMessage[]): string {
-  const currentMemory = renderMemoryDocument(document).trim();
+  const currentMemory = renderMemoryContext(document, { includeIds: true }).trim();
   const messageBatch = messages
     .map(
       (message) =>

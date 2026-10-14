@@ -13,7 +13,7 @@ import {
 
 const MEMORY_FILE_HEADER = `# Guild Memory
 
-Klein がギルド内の複数チャンネルで共有するメモリです。
+Shared memory across channels in this guild.
 `;
 const MEMORY_BLOCK_PATTERN =
   /<!-- memory:start\n([\s\S]*?)\n-->\n([\s\S]*?)\n<!-- memory:end -->/gu;
@@ -212,6 +212,23 @@ source_message_ids: ${entry.sourceMessageIds.join(",")}
 ${entry.content}
 <!-- memory:end -->`,
   );
+
+  return `${MEMORY_FILE_HEADER}${blocks.length > 0 ? `\n${blocks.join("\n\n")}\n` : ""}`;
+}
+
+export function renderMemoryContext(
+  document: MemoryDocument,
+  options: { readonly includeIds?: boolean } = {},
+): string {
+  const blocks = document.entries.map((entry) => {
+    const details = [
+      `Kind: ${entry.kind}`,
+      `Updated: ${entry.updatedAt.slice(0, 10)}`,
+      ...(options.includeIds ? [`Memory ID: ${entry.id}`] : []),
+    ].join(" · ");
+
+    return `### ${entry.title}\n\n_${details}_\n\n${entry.content}`;
+  });
 
   return `${MEMORY_FILE_HEADER}${blocks.length > 0 ? `\n${blocks.join("\n\n")}\n` : ""}`;
 }

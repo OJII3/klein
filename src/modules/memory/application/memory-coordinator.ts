@@ -5,7 +5,7 @@ import type { TaskCoordinator } from "@app/task-coordinator";
 import {
   listMemoryGuildIds,
   MarkdownMemoryStore,
-  renderMemoryDocument,
+  renderMemoryContext,
 } from "../infrastructure/markdown-memory-store";
 import { selectMemoryEntries } from "./memory-context-selector";
 import { MemoryEntryNotFoundError } from "../domain/memory";
@@ -80,7 +80,7 @@ export class MemoryCoordinator implements MemoryReader, MemoryEditor {
       const document = await this.read(guildId);
       const selectedDocument = selectMemoryEntries(document, query);
       return selectedDocument.entries.length > 0
-        ? renderMemoryDocument(selectedDocument)
+        ? renderMemoryContext(selectedDocument)
         : undefined;
     } catch (error) {
       this.logger.warn(
