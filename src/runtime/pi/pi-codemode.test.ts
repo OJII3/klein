@@ -97,11 +97,14 @@ for (const restricted of [false, true]) {
           requests.push(context);
           return fauxAssistantMessage(fauxToolCall("discord_send", { content: "……確認したよ" }));
         },
-        fauxAssistantMessage(fauxToolCall("discord_send", { content: "……もう一通" })),
+        (context) => {
+          requests.push(context);
+          return fauxAssistantMessage("Finished");
+        },
       ]);
 
       await runtime.prompt({ text: "二つのメッセージを確認して", images: [] });
-      assert.equal(requests.length, 2);
+      assert.equal(requests.length, 3);
       assert.deepEqual(
         getCurrentTools(requests[0].messages)
           .map((tool) => tool.name)
@@ -147,7 +150,20 @@ for (const restricted of [false, true]) {
           );
           assert.ok(previousAssistant && previousAssistant.role === "assistant");
           assert.ok(previousAssistant.content.some((block) => block.type === "toolCall"));
-          assert.ok(previousAssistant.content.every((block) => block.type !== "text"));
+          assert.ok(
+            previousAssistant.content.some(
+              (block) =>
+                block.type === "text" &&
+                block.text === "Checking the two messages before replying.",
+            ),
+          );
+          assert.ok(
+            context.messages.some(
+              (message) =>
+                message.role === "assistant" &&
+                message.content.some((block) => block.type === "text" && block.text === "Finished"),
+            ),
+          );
           return fauxAssistantMessage("No further reply needed");
         },
       ]);

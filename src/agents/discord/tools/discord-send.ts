@@ -26,7 +26,6 @@ export function createDiscordSendTool(
       await discordService.sendMessage(channelId, params.content);
 
       return {
-        terminate: true,
         content: [
           {
             type: "text",
