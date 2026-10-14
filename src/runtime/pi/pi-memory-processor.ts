@@ -8,7 +8,7 @@ import type {
 } from "@earendil-works/pi-ai";
 import type { CreateAgentSessionOptions } from "@earendil-works/pi-coding-agent";
 
-import { renderMemoryContext } from "@modules/memory/infrastructure/markdown-memory-store";
+import { renderMemoryContext } from "@modules/memory/infrastructure/memory-context-renderer";
 import type {
   MemoryDocument,
   MemoryMessage,

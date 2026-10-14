@@ -2,11 +2,8 @@ import type { Logger } from "pino";
 
 import { formatDiscordMessage, type DiscordMessage } from "@modules/discord/domain/discord-message";
 import type { TaskCoordinator } from "@app/task-coordinator";
-import {
-  listMemoryGuildIds,
-  MarkdownMemoryStore,
-  renderMemoryContext,
-} from "../infrastructure/markdown-memory-store";
+import { JsonMemoryStore, listMemoryGuildIds } from "../infrastructure/json-memory-store";
+import { renderMemoryContext } from "../infrastructure/memory-context-renderer";
 import { selectMemoryEntries } from "./memory-context-selector";
 import { MemoryEntryNotFoundError } from "../domain/memory";
 import type {
@@ -108,7 +105,7 @@ export class MemoryCoordinator implements MemoryReader, MemoryEditor {
   }
 
   async read(guildId: string): Promise<MemoryDocument> {
-    const store = new MarkdownMemoryStore(resolveMemoryFilePath(this.options.filePath, guildId));
+    const store = new JsonMemoryStore(resolveMemoryFilePath(this.options.filePath, guildId));
     return store.read();
   }
 
@@ -116,7 +113,7 @@ export class MemoryCoordinator implements MemoryReader, MemoryEditor {
     if (this.disposed) return Promise.reject(new Error("Memory coordinator is disposed"));
 
     return this.runGuildOperation(guildId, async () => {
-      const store = new MarkdownMemoryStore(resolveMemoryFilePath(this.options.filePath, guildId));
+      const store = new JsonMemoryStore(resolveMemoryFilePath(this.options.filePath, guildId));
       const document = await store.read();
       if (!document.entries.some((entry) => entry.id === entryId)) {
         throw new MemoryEntryNotFoundError(guildId, entryId);
@@ -129,7 +126,7 @@ export class MemoryCoordinator implements MemoryReader, MemoryEditor {
   addRule(guildId: string, title: string, content: string): Promise<void> {
     if (this.disposed) return Promise.reject(new Error("Memory coordinator is disposed"));
     return this.runGuildOperation(guildId, async () => {
-      const store = new MarkdownMemoryStore(resolveMemoryFilePath(this.options.filePath, guildId));
+      const store = new JsonMemoryStore(resolveMemoryFilePath(this.options.filePath, guildId));
       await store.apply([{ type: "add", kind: "rule", title, content }], []);
     });
   }
@@ -170,9 +167,7 @@ export class MemoryCoordinator implements MemoryReader, MemoryEditor {
       let failed = false;
 
       try {
-        const store = new MarkdownMemoryStore(
-          resolveMemoryFilePath(this.options.filePath, guildId),
-        );
+        const store = new JsonMemoryStore(resolveMemoryFilePath(this.options.filePath, guildId));
         const document = await store.read();
         const operations = await this.options.processor.process(
           document,

@@ -11,15 +11,9 @@ import {
   type MemoryStore,
 } from "../domain/memory";
 
-const MEMORY_FILE_HEADER = `# Guild Memory
-
-Shared memory across channels in this guild.
-`;
-const MEMORY_BLOCK_PATTERN =
-  /<!-- memory:start\n([\s\S]*?)\n-->\n([\s\S]*?)\n<!-- memory:end -->/gu;
 const MEMORY_GUILD_ID_TOKEN = "{guildId}";
 
-export class MarkdownMemoryStore implements MemoryStore {
+export class JsonMemoryStore implements MemoryStore {
   private readonly filePath: string;
 
   constructor(filePath: string) {
@@ -31,10 +25,7 @@ export class MarkdownMemoryStore implements MemoryStore {
     try {
       content = await readFile(this.filePath, "utf8");
     } catch (error) {
-      if (isNodeError(error) && error.code === "ENOENT") {
-        return { entries: [] };
-      }
-
+      if (isNodeError(error) && error.code === "ENOENT") return { entries: [] };
       throw new Error(`Failed to read memory file: ${this.filePath}`, { cause: error });
     }
 
@@ -107,53 +98,38 @@ export class MarkdownMemoryStore implements MemoryStore {
 }
 
 export function parseMemoryDocument(content: string): MemoryDocument {
-  const entries: MemoryEntry[] = [];
-  const blockStarts = content.match(/<!-- memory:start\n/gu)?.length ?? 0;
-  const blockEnds = content.match(/\n<!-- memory:end -->/gu)?.length ?? 0;
-
-  if (blockStarts !== blockEnds) {
-    throw new Error("Memory file contains an unclosed memory entry");
+  let value: unknown;
+  try {
+    value = JSON.parse(content);
+  } catch (error) {
+    throw new Error("Memory file contains invalid JSON", { cause: error });
   }
 
-  for (const match of content.matchAll(MEMORY_BLOCK_PATTERN)) {
-    const metadata = parseMetadata(match[1] ?? "");
-    const body = (match[2] ?? "").trim();
-    const titleLine = body.split(/\r?\n/u)[0] ?? "";
-    const title = titleLine.startsWith("### ") ? titleLine.slice(4).trim() : "";
-    const entryContent = body.slice(titleLine.length).trim();
+  if (!isRecord(value) || !Array.isArray(value.entries)) {
+    throw new Error("Memory file contains an invalid document");
+  }
 
-    if (
-      !metadata.id ||
-      !isMemoryKind(metadata.kind) ||
-      !title ||
-      !entryContent ||
-      !metadata.created_at ||
-      !metadata.updated_at
-    ) {
-      throw new Error("Memory file contains a malformed memory entry");
-    }
-
-    if (entries.some((entry) => entry.id === metadata.id)) {
-      throw new Error(`Memory file contains a duplicate memory id: ${metadata.id}`);
-    }
-
-    entries.push({
-      content: entryContent,
-      createdAt: metadata.created_at,
-      id: metadata.id,
-      kind: metadata.kind,
-      sourceMessageIds: metadata.source_message_ids
-        ? metadata.source_message_ids.split(",").filter(Boolean)
-        : [],
-      title,
-      updatedAt: metadata.updated_at,
-    });
+  const entries = value.entries.map(parseMemoryEntry);
+  const ids = new Set<string>();
+  for (const entry of entries) {
+    if (ids.has(entry.id))
+      throw new Error(`Memory file contains a duplicate memory id: ${entry.id}`);
+    ids.add(entry.id);
   }
 
   return { entries };
 }
 
 export async function listMemoryGuildIds(filePath: string): Promise<string[]> {
+  const guildIds = await listGuildIdsForPath(filePath);
+  return guildIds.sort((left, right) => left.localeCompare(right));
+}
+
+export function renderMemoryDocument(document: MemoryDocument): string {
+  return `${JSON.stringify(document, null, 2)}\n`;
+}
+
+async function listGuildIdsForPath(filePath: string): Promise<string[]> {
   const absolutePath = resolve(filePath);
   const tokenIndex = absolutePath.indexOf(MEMORY_GUILD_ID_TOKEN);
   if (tokenIndex === -1) return [];
@@ -176,8 +152,8 @@ export async function listMemoryGuildIds(filePath: string): Promise<string[]> {
   for (const entry of entries) {
     if (!hasDirectoryPrefix && !entry.name.startsWith(namePrefix)) continue;
     if (hasDirectoryPrefix && !entry.isDirectory()) continue;
-
     if (!hasDirectoryPrefix && suffix && !entry.name.endsWith(suffix)) continue;
+
     const guildId = hasDirectoryPrefix
       ? entry.name
       : entry.name.slice(namePrefix.length, entry.name.length - suffix.length);
@@ -188,63 +164,47 @@ export async function listMemoryGuildIds(filePath: string): Promise<string[]> {
       : resolve(directory, entry.name);
 
     try {
-      const candidateStats = await stat(candidate);
-      if (candidateStats.isFile()) guildIds.push(guildId);
+      if ((await stat(candidate)).isFile()) guildIds.push(guildId);
     } catch (error) {
       if (!isNodeError(error) || error.code !== "ENOENT") throw error;
     }
   }
 
-  return guildIds.sort((left, right) => left.localeCompare(right));
+  return guildIds;
 }
 
-export function renderMemoryDocument(document: MemoryDocument): string {
-  const blocks = document.entries.map(
-    (entry) => `<!-- memory:start
-id: ${entry.id}
-kind: ${entry.kind}
-created_at: ${entry.createdAt}
-updated_at: ${entry.updatedAt}
-source_message_ids: ${entry.sourceMessageIds.join(",")}
--->
-### ${entry.title}
+function parseMemoryEntry(value: unknown): MemoryEntry {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== "string" ||
+    !isMemoryKind(value.kind) ||
+    typeof value.title !== "string" ||
+    typeof value.content !== "string" ||
+    typeof value.createdAt !== "string" ||
+    typeof value.updatedAt !== "string" ||
+    !Array.isArray(value.sourceMessageIds) ||
+    !value.sourceMessageIds.every((id) => typeof id === "string")
+  ) {
+    throw new Error("Memory file contains a malformed memory entry");
+  }
 
-${entry.content}
-<!-- memory:end -->`,
-  );
-
-  return `${MEMORY_FILE_HEADER}${blocks.length > 0 ? `\n${blocks.join("\n\n")}\n` : ""}`;
+  return {
+    content: value.content,
+    createdAt: value.createdAt,
+    id: value.id,
+    kind: value.kind,
+    sourceMessageIds: value.sourceMessageIds,
+    title: value.title,
+    updatedAt: value.updatedAt,
+  };
 }
 
-export function renderMemoryContext(
-  document: MemoryDocument,
-  options: { readonly includeIds?: boolean } = {},
-): string {
-  const blocks = document.entries.map((entry) => {
-    const details = [
-      `Kind: ${entry.kind}`,
-      `Updated: ${entry.updatedAt.slice(0, 10)}`,
-      ...(options.includeIds ? [`Memory ID: ${entry.id}`] : []),
-    ].join(" · ");
-
-    return `### ${entry.title}\n\n_${details}_\n\n${entry.content}`;
-  });
-
-  return `${MEMORY_FILE_HEADER}${blocks.length > 0 ? `\n${blocks.join("\n\n")}\n` : ""}`;
+function isMemoryKind(value: unknown): value is MemoryKind {
+  return typeof value === "string" && MEMORY_KINDS.includes(value as MemoryKind);
 }
 
-function parseMetadata(metadata: string): Record<string, string> {
-  return Object.fromEntries(
-    metadata
-      .split(/\r?\n/u)
-      .map((line) => line.match(/^([a-z_]+):\s*(.*)$/u))
-      .filter((match): match is RegExpMatchArray => match !== null)
-      .map((match) => [match[1]!, match[2] ?? ""]),
-  );
-}
-
-function isMemoryKind(value: string | undefined): value is MemoryKind {
-  return value !== undefined && MEMORY_KINDS.includes(value as MemoryKind);
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function unique(values: readonly string[]): string[] {
