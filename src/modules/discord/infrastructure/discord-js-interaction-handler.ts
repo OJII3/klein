@@ -208,7 +208,7 @@ export class DiscordJsInteractionHandler {
       embeds: [
         new EmbedBuilder()
           .setColor(rule.trim() ? 0x57f287 : 0x747f8d)
-          .setTitle(
+          .setDescription(
             rule.trim()
               ? "このチャンネル／スレッドのルールを保存しました。"
               : "このチャンネル／スレッドのルールを削除しました。",

@@ -266,7 +266,7 @@ export class DiscordVoiceChatController {
     if (!isSendableChannel(channel)) return;
     try {
       await channel.send({
-        embeds: [new EmbedBuilder().setColor(color).setTitle(title).setDescription(description)],
+        embeds: [new EmbedBuilder().setColor(color).setDescription(`${title}\n${description}`)],
       });
     } catch (error) {
       this.logger?.warn(
