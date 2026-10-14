@@ -1,5 +1,9 @@
 import type { Logger } from "pino";
-import { SlashCommandBuilder, type ChatInputCommandInteraction } from "discord.js";
+import {
+  EmbedBuilder,
+  SlashCommandBuilder,
+  type ChatInputCommandInteraction,
+} from "discord.js";
 import type { AsrClient } from "@modules/asr/domain/asr-client";
 import type { TextToSpeech } from "@modules/tts/infrastructure/sbv2-tts";
 import type { VoiceReactionPreset } from "@modules/discord/ports/voice-reaction-selector";
@@ -30,10 +34,11 @@ interface ActiveVoiceChat {
   readonly conversation: VoiceChatConversation;
   readonly session: DiscordVoiceCaptureSession;
   readonly userId: string;
+  readonly voiceChannelId: string;
 }
 
 interface SendableChannel {
-  send(content: string): Promise<unknown>;
+  send(options: { embeds: EmbedBuilder[] }): Promise<unknown>;
 }
 
 function isSendableChannel(value: unknown): value is SendableChannel {
@@ -108,6 +113,7 @@ export class DiscordVoiceChatController {
       await interaction.reply({ content: "VC会話の投稿先を取得できません。", ephemeral: true });
       return;
     }
+    const announcementChannel = interaction.channel;
 
     const textThread = interaction.channel.isThread() ? interaction.channel : undefined;
     const textChannelId = textThread?.parentId ?? interaction.channelId;
@@ -177,7 +183,12 @@ export class DiscordVoiceChatController {
         },
         voiceChannelId: voiceChannel.id,
       });
-      this.sessions.set(guildId, { conversation, session, userId: interaction.user.id });
+      this.sessions.set(guildId, {
+        conversation,
+        session,
+        userId: interaction.user.id,
+        voiceChannelId: voiceChannel.id,
+      });
       await session.start();
       this.logger?.info(
         {
@@ -189,6 +200,13 @@ export class DiscordVoiceChatController {
         "Started the voice conversation",
       );
       await interaction.editReply("VCに参加しました。返答を音声で読み上げます。");
+      await this.sendAnnouncement(
+        announcementChannel,
+        "VCに参加しました",
+        `<#${voiceChannel.id}> にクラインが参加しました。\n開始した人: <@${interaction.user.id}>`,
+        0x57f287,
+        guildId,
+      );
     } catch (error) {
       this.sessions.delete(guildId);
       await Promise.allSettled([session?.stop(), conversation?.stop()]);
@@ -233,5 +251,32 @@ export class DiscordVoiceChatController {
       "Stopped the voice conversation",
     );
     await interaction.reply({ content: "VCから退出しました。", ephemeral: true });
+    await this.sendAnnouncement(
+      interaction.channel,
+      "VCから退出しました",
+      `<#${active.voiceChannelId}> からクラインが退出しました。\n終了した人: <@${interaction.user.id}>`,
+      0x747f8d,
+      guildId,
+    );
+  }
+
+  private async sendAnnouncement(
+    channel: unknown,
+    title: string,
+    description: string,
+    color: number,
+    guildId: string,
+  ): Promise<void> {
+    if (!isSendableChannel(channel)) return;
+    try {
+      await channel.send({
+        embeds: [new EmbedBuilder().setColor(color).setTitle(title).setDescription(description)],
+      });
+    } catch (error) {
+      this.logger?.warn(
+        { err: error, event: "discord_voice_chat_announcement_failed", guildId },
+        "Failed to send a voice chat announcement",
+      );
+    }
   }
 }
