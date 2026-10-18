@@ -108,55 +108,9 @@ Restart Klein after modifying MCP configurations.
 
 ### Owner Access
 
-Set `owner.discord.userId` to the owner's Discord user ID. `discord.access` accepts
-`allow`, `deny`, and `owner` at every existing level: default, direct messages, guilds,
-channels, and threads. The most specific rule wins. `owner` accepts messages and
-slash commands only from the configured owner (never bots), and enables owner-only tools
-for that conversation.
-An owner's message in an `allow` channel does not enable owner-only tools. Without an
-owner ID, `owner` denies everyone.
-
-```jsonc
-{
-  "owner": { "discord": { "userId": "123456789012345678" } },
-  "discord": {
-    "access": {
-      "default": "deny",
-      "directMessages": "owner",
-      "guilds": {
-        "111111111111111111": {
-          "access": "allow",
-          "channels": {
-            "222222222222222222": { "access": "owner" },
-            "333333333333333333": { "access": "owner" },
-          },
-        },
-      },
-    },
-  },
-  "permissions": {
-    "tools": { "default": "allow", "overrides": { "discord_voice": "owner" } },
-    "mcp": { "default": "owner", "servers": { "obsidian": "owner", "docs": "allow" } },
-  },
-}
-```
-
-Tool and MCP permissions use the same values: `allow` permits ordinary use, `deny`
-blocks everyone, and `owner` requires an owner session created for an `owner` location.
-Tool overrides use exact tool names; MCP rules use the server names registered in Pi.
-Unspecified tools default to `allow`; unspecified MCP servers default to `owner`,
-including newly registered servers. This changes existing MCP access: explicitly
-set a server to `allow` to share it with ordinary conversations.
-
-Owner conversations use separate session histories and do not feed shared guild memory.
-Changing a location between `owner` and `allow`, or changing the owner ID, drops its
-handoff context and switches session scope. Discord message reads also enforce the
-target location's access rules, so ordinary conversations cannot read owner locations.
-Existing sessions from before access scoping are not resumed by the application.
-Existing facts already saved in guild memory are retained; review them separately if
-private conversations were previously included.
-Voice commands obey the posting location's access rules, but voice conversations do
-not enable owner-only tools because audio is delivered to a shared voice channel.
+Locations and tools can be restricted using `owner` alongside `allow` and `deny`.
+An `owner` location accepts interactions only from the bot owner, uses an isolated session history, and does not record conversations into shared guild memory.
+Tools and MCP servers requiring `owner` access only run within those owner conversations.
 
 ### Web UI Viewer
 
