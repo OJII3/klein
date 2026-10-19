@@ -9,10 +9,8 @@ import type {
   VoiceChatConversationFactory,
 } from "@modules/discord/ports/voice-chat-conversation";
 import type { VoiceReactionSelector } from "@modules/discord/ports/voice-reaction-selector";
-import type {
-  VoiceTranscriptQueueAction,
-  VoiceTranscriptQueueSelector,
-} from "@modules/discord/ports/voice-transcript-queue-selector";
+import type { VoiceTranscriptQueueSelector } from "@modules/discord/ports/voice-transcript-queue-selector";
+import { VoiceTranscriptQueue } from "./voice-transcript-queue";
 
 export interface VoiceChatCoordinatorDependencies {
   readonly createVoiceChatAgent: (
@@ -60,11 +58,8 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
     let stopPromise: Promise<void> | undefined;
     let processing: Promise<void> | undefined;
     const pendingSteers = new Set<Promise<void>>();
-    const pendingTranscripts: DiscordMessage[] = [];
     let currentTranscript: DiscordMessage | undefined;
-    let queueDecisionTimer: ReturnType<typeof setTimeout> | undefined;
-    let queueDecisionController: AbortController | undefined;
-    let queueRevision = 0;
+    let transcriptQueue: VoiceTranscriptQueue | undefined;
     let activeReaction: AbortController | undefined;
     let lastReaction: string | undefined;
     const recentTranscripts: string[] = [];
@@ -157,7 +152,7 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
         reactionController.abort();
         if (activeReaction !== reactionController) activeReaction?.abort();
         activeReaction = undefined;
-        if (pendingTranscripts.length > 0) scheduleQueueDecision();
+        transcriptQueue?.scheduleDecision();
       }
     };
 
@@ -170,11 +165,12 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
     };
 
     const processNextQueuedTranscript = (): void => {
-      if (stopped || processing || pendingTranscripts.length === 0) return;
-      const message = pendingTranscripts.shift()!;
+      const queue = transcriptQueue;
+      if (stopped || processing || !queue?.hasPending) return;
+      const message = queue.takeNext()!;
       const next = processTranscript(message, startReaction(message.content, message.id));
       trackProcessing(next);
-      if (pendingTranscripts.length > 0) scheduleQueueDecision();
+      if (queue.hasPending) queue.scheduleDecision();
     };
 
     const performSteer = async (message: DiscordMessage): Promise<void> => {
@@ -225,109 +221,17 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
       await steer;
     };
 
-    const applyQueueAction = async (
-      action: VoiceTranscriptQueueAction,
-      revision: number,
-      controller: AbortController,
-    ): Promise<void> => {
-      if (stopped || controller.signal.aborted || revision !== queueRevision) return;
-      if (action === "discard") {
-        const discarded = pendingTranscripts.shift();
-        logger.info(
-          {
-            event: "voice_chat_transcript_discarded",
-            messageId: discarded?.id,
-            queueLength: pendingTranscripts.length,
-          },
-          "Discarded a voice transcript based on the queue classification",
-        );
-        scheduleQueueDecision();
-        return;
-      }
-
-      if (action === "merge" && pendingTranscripts.length > 1) {
-        const first = pendingTranscripts[0]!;
-        const second = pendingTranscripts[1]!;
-        pendingTranscripts.splice(0, 2, {
-          ...first,
-          content: `${first.content}\n${second.content}`,
-        });
-        logger.info(
-          {
-            event: "voice_chat_transcripts_merged",
-            messageId: first.id,
-            queueLength: pendingTranscripts.length,
-          },
-          "Merged adjacent voice transcripts based on the queue classification",
-        );
-        scheduleQueueDecision();
-        return;
-      }
-
-      if (action === "steer" && typeof agent.steer === "function") {
-        const message = pendingTranscripts.shift();
-        if (message) await performSteer(message);
-        scheduleQueueDecision();
-        return;
-      }
-
-      if (!processing) processNextQueuedTranscript();
-    };
-
-    const decideTranscriptQueue = async (
-      revision: number,
-      controller: AbortController,
-    ): Promise<void> => {
-      const selector = this.dependencies.transcriptQueueSelector;
-      if (!selector || stopped || controller.signal.aborted || pendingTranscripts.length === 0) {
-        return;
-      }
-      if (!processing) {
-        processNextQueuedTranscript();
-        return;
-      }
-
-      let action: VoiceTranscriptQueueAction;
-      try {
-        action = await selector.select(
-          {
-            currentTranscript: currentTranscript?.content ?? "",
-            queuedTranscripts: pendingTranscripts.map((message) => message.content),
-          },
-          controller.signal,
-        );
-      } catch {
-        action = "keep";
-      }
-      if (controller.signal.aborted || revision !== queueRevision || stopped) return;
-      await applyQueueAction(action, revision, controller);
-    };
-
-    const scheduleQueueDecision = (): void => {
-      if (
-        !this.dependencies.transcriptQueueSelector ||
-        stopped ||
-        pendingTranscripts.length === 0
-      ) {
-        return;
-      }
-      queueRevision += 1;
-      queueDecisionController?.abort();
-      queueDecisionController = undefined;
-      if (queueDecisionTimer) clearTimeout(queueDecisionTimer);
-      const revision = queueRevision;
-      const controller = new AbortController();
-      queueDecisionController = controller;
-      queueDecisionTimer = setTimeout(
-        () => {
-          queueDecisionTimer = undefined;
-          void decideTranscriptQueue(revision, controller).finally(() => {
-            if (queueDecisionController === controller) queueDecisionController = undefined;
-          });
-        },
-        processing ? 80 : 0,
-      );
-    };
+    transcriptQueue = this.dependencies.transcriptQueueSelector
+      ? new VoiceTranscriptQueue({
+          selector: this.dependencies.transcriptQueueSelector,
+          logger,
+          isStopped: () => stopped,
+          isProcessing: () => processing !== undefined,
+          currentTranscript: () => currentTranscript?.content ?? "",
+          processNext: processNextQueuedTranscript,
+          steer: typeof agent.steer === "function" ? performSteer : undefined,
+        })
+      : undefined;
 
     return {
       handleTranscript: (text, requestId) => {
@@ -352,18 +256,18 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
           },
           "Received a voice transcript",
         );
-        if (this.dependencies.transcriptQueueSelector) {
-          if (processing || pendingTranscripts.length > 0) {
-            pendingTranscripts.push(message);
+        if (transcriptQueue) {
+          if (processing || transcriptQueue.hasPending) {
+            transcriptQueue.enqueue(message);
             logger.info(
               {
                 event: "voice_chat_transcript_queued",
                 messageId: message.id,
-                queueLength: pendingTranscripts.length,
+                queueLength: transcriptQueue.length,
               },
               "Queued a voice transcript for classification",
             );
-            scheduleQueueDecision();
+            transcriptQueue.scheduleDecision();
             return Promise.resolve();
           }
 
@@ -426,9 +330,7 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
       stop: () => {
         if (stopPromise) return stopPromise;
         stopped = true;
-        if (queueDecisionTimer) clearTimeout(queueDecisionTimer);
-        queueDecisionController?.abort();
-        pendingTranscripts.length = 0;
+        transcriptQueue?.stop();
         activeReaction?.abort();
         unsubscribeSpeechStart?.();
         stopPromise = (async () => {

@@ -131,6 +131,27 @@ function createCapture() {
   };
 }
 
+interface PlaybackTestAccess {
+  audioPlayer?: unknown;
+  readonly reactionAudio: Map<string, Uint8Array>;
+  currentPlayback?: { finish(played: boolean): void };
+  readonly options: {
+    audioResourceFactory?: (audio: Uint8Array) => unknown;
+    reactionPresets?: readonly {
+      id: string;
+      text: string;
+      description: string;
+      audioFile: string;
+    }[];
+    tts: { synthesize(text: string): Promise<Uint8Array> };
+  };
+  loadReactionAudio(): Promise<void>;
+}
+
+function playbackOf(capture: DiscordVoiceCaptureSession): PlaybackTestAccess {
+  return (capture as unknown as { playback: PlaybackTestAccess }).playback;
+}
+
 test("delivers ASR results in utterance order when inference completes out of order", async () => {
   const {
     capture,
@@ -182,16 +203,13 @@ test("aborting a preset reaction stops only that playback", async () => {
   const { capture } = createCapture();
   let stopCalls = 0;
   const played: unknown[] = [];
-  (capture as unknown as { audioPlayer: unknown }).audioPlayer = {
+  playbackOf(capture).audioPlayer = {
     play: (resource: unknown) => played.push(resource),
     stop: () => {
       stopCalls += 1;
     },
   };
-  (capture as unknown as { reactionAudio: Map<string, Uint8Array> }).reactionAudio.set(
-    "neutral",
-    new Uint8Array([1]),
-  );
+  playbackOf(capture).reactionAudio.set("neutral", new Uint8Array([1]));
   const controller = new AbortController();
   const playback = capture.playReaction("neutral", controller.signal);
   assert.equal(played.length, 1);
@@ -204,23 +222,18 @@ test("aborting a preset reaction stops only that playback", async () => {
 test("a ready reply preempts a reaction without allowing its stale completion to stop the reply", async () => {
   const synthesis = deferred<Uint8Array>();
   const { capture } = createCapture();
-  (
-    capture as unknown as { options: { tts: { synthesize(text: string): Promise<Uint8Array> } } }
-  ).options.tts = {
+  playbackOf(capture).options.tts = {
     synthesize: () => synthesis.promise,
   };
   let stopCalls = 0;
   const played: unknown[] = [];
-  (capture as unknown as { audioPlayer: unknown }).audioPlayer = {
+  playbackOf(capture).audioPlayer = {
     play: (resource: unknown) => played.push(resource),
     stop: () => {
       stopCalls += 1;
     },
   };
-  (capture as unknown as { reactionAudio: Map<string, Uint8Array> }).reactionAudio.set(
-    "thinking",
-    new Uint8Array([1]),
-  );
+  playbackOf(capture).reactionAudio.set("thinking", new Uint8Array([1]));
   const reactionController = new AbortController();
   const reaction = capture.playReaction("thinking", reactionController.signal);
   const reply = capture.speak("回答");
@@ -229,11 +242,8 @@ test("a ready reply preempts a reaction without allowing its stale completion to
   assert.equal(await reaction, false);
   assert.equal(played.length, 2);
   assert.equal(stopCalls, 1);
-  const current = (
-    capture as unknown as {
-      currentPlayback: { finish(played: boolean): void };
-    }
-  ).currentPlayback;
+  const current = playbackOf(capture).currentPlayback;
+  assert.ok(current);
   current.finish(true);
   reactionController.abort();
   await reply;
@@ -244,16 +254,13 @@ test("a ready reply preempts a reaction without allowing its stale completion to
 test("speech start cancels a playing reaction and suppresses reactions during speech", async () => {
   const { capture } = createCapture();
   let stopCalls = 0;
-  (capture as unknown as { audioPlayer: unknown }).audioPlayer = {
+  playbackOf(capture).audioPlayer = {
     play: () => undefined,
     stop: () => {
       stopCalls += 1;
     },
   };
-  (capture as unknown as { reactionAudio: Map<string, Uint8Array> }).reactionAudio.set(
-    "neutral",
-    new Uint8Array([1]),
-  );
+  playbackOf(capture).reactionAudio.set("neutral", new Uint8Array([1]));
   const reaction = capture.playReaction("neutral", new AbortController().signal);
   const onSpeechStart = (
     capture as unknown as {
@@ -277,21 +284,14 @@ test("speech start cancels a playing reaction and suppresses reactions during sp
 test("resource creation failure clears playback state for a later reaction", async () => {
   const { capture } = createCapture();
   let playCalls = 0;
-  (capture as unknown as { audioPlayer: unknown }).audioPlayer = {
+  playbackOf(capture).audioPlayer = {
     play: () => {
       playCalls += 1;
     },
     stop: () => undefined,
   };
-  (capture as unknown as { reactionAudio: Map<string, Uint8Array> }).reactionAudio.set(
-    "neutral",
-    new Uint8Array([1]),
-  );
-  const options = (
-    capture as unknown as {
-      options: { audioResourceFactory: (audio: Uint8Array) => unknown };
-    }
-  ).options;
+  playbackOf(capture).reactionAudio.set("neutral", new Uint8Array([1]));
+  const options = playbackOf(capture).options;
   options.audioResourceFactory = () => {
     throw new Error("resource creation failed");
   };
@@ -299,7 +299,7 @@ test("resource creation failure clears playback state for a later reaction", asy
     capture.playReaction("neutral", new AbortController().signal),
     /resource creation failed/,
   );
-  assert.equal((capture as unknown as { currentPlayback?: unknown }).currentPlayback, undefined);
+  assert.equal(playbackOf(capture).currentPlayback, undefined);
   options.audioResourceFactory = () => ({});
   const controller = new AbortController();
   const playback = capture.playReaction("neutral", controller.signal);
@@ -317,20 +317,7 @@ test("loads saved reaction audio without synthesizing it", async () => {
   const { capture } = createCapture();
   let synthesizeCalls = 0;
   let resourceAudio: Uint8Array | undefined;
-  const options = (
-    capture as unknown as {
-      options: {
-        reactionPresets: readonly {
-          id: string;
-          text: string;
-          description: string;
-          audioFile: string;
-        }[];
-        tts: { synthesize(text: string): Promise<Uint8Array> };
-        audioResourceFactory(audio: Uint8Array): unknown;
-      };
-    }
-  ).options;
+  const options = playbackOf(capture).options;
   options.reactionPresets = [
     { id: "neutral", text: "うん", description: "相槌", audioFile },
     {
@@ -350,25 +337,20 @@ test("loads saved reaction audio without synthesizing it", async () => {
     resourceAudio = audio;
     return {};
   };
-  (capture as unknown as { audioPlayer: unknown }).audioPlayer = {
+  playbackOf(capture).audioPlayer = {
     play: () => undefined,
     stop: () => undefined,
   };
 
   try {
-    await (capture as unknown as { loadReactionAudio(): Promise<void> }).loadReactionAudio();
+    await playbackOf(capture).loadReactionAudio();
     const controller = new AbortController();
     const playback = capture.playReaction("neutral", controller.signal);
     assert.deepEqual(Array.from(resourceAudio ?? []), Array.from(expectedAudio));
     assert.equal(synthesizeCalls, 0);
     controller.abort();
     assert.equal(await playback, false);
-    assert.equal(
-      (capture as unknown as { reactionAudio: Map<string, Uint8Array> }).reactionAudio.has(
-        "missing",
-      ),
-      false,
-    );
+    assert.equal(playbackOf(capture).reactionAudio.has("missing"), false);
   } finally {
     await capture.stop();
     await rm(directory, { recursive: true, force: true });
@@ -412,7 +394,7 @@ test("traces out-of-order ASR results through ordered transcript delivery withou
 test("distinguishes synthesis completion from playback interrupted by session stop", async () => {
   const { capture, logs } = createCapture();
   const played = deferred<void>();
-  (capture as unknown as { audioPlayer: unknown }).audioPlayer = {
+  playbackOf(capture).audioPlayer = {
     play: () => played.resolve(),
     stop: () => undefined,
   };
