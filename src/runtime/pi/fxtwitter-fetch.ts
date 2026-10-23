@@ -1,5 +1,3 @@
-import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
-
 const FXTWITTER_API_BASE_URL = "https://api.fxtwitter.com/2/status";
 const X_HOSTNAMES = new Set([
   "x.com",
@@ -38,14 +36,4 @@ export function rewriteFxtwitterFetchInput(input: Record<string, unknown>): void
       typeof value === "string" ? (toFxTwitterApiUrl(value) ?? value) : value,
     );
   }
-}
-
-export function createFxtwitterFetchExtension(): ExtensionFactory {
-  return (pi) => {
-    pi.on("tool_call", (event) => {
-      if (event.toolName !== "fetch_content") return;
-
-      rewriteFxtwitterFetchInput(event.input as Record<string, unknown>);
-    });
-  };
 }
