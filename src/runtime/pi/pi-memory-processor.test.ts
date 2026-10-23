@@ -14,7 +14,7 @@ test("asks the configured model for structured memory operations", async () => {
       }
     | undefined;
   const processor = new PiMemoryProcessor(
-    resolveConfiguredModel("opencode-go", "deepseek-v4-flash"),
+    resolveConfiguredModel("opencode-go", "deepseek-v4.1-flash"),
     "low",
     async (model, context, options) => {
       received = {
@@ -76,7 +76,7 @@ test("asks the configured model for structured memory operations", async () => {
       type: "add",
     },
   ]);
-  assert.equal(received?.modelId, "deepseek-v4-flash");
+  assert.equal(received?.modelId, "deepseek-v4.1-flash");
   assert.equal(received?.reasoning, "low");
   assert.equal(received?.systemPrompt, MEMORY_PROCESSING_SYSTEM_PROMPT);
   assert.match(String(received?.content), /message-1/u);
@@ -86,7 +86,7 @@ test("asks the configured model for structured memory operations", async () => {
 });
 
 test("accepts a fenced JSON response and rejects unsupported operations", async () => {
-  const model = resolveConfiguredModel("opencode-go", "deepseek-v4-flash");
+  const model = resolveConfiguredModel("opencode-go", "deepseek-v4.1-flash");
   const fencedProcessor = new PiMemoryProcessor(model, undefined, async () => {
     return {
       role: "assistant",
