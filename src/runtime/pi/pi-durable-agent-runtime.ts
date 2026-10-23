@@ -193,16 +193,7 @@ export function createPiDurableAgentFactory({
   async function importLegacySession(
     conversation: Awaited<ReturnType<DurableHarness["createConversation"]>>,
     legacy: SessionManager,
-    sourceFile: string,
   ): Promise<void> {
-    const marker = await conversation.submit(
-      {
-        type: "write",
-        entry: { kind: "klein.legacy.session", data: { sourceFile } },
-      },
-      BACKGROUND_CONTEXT,
-    );
-    await marker.wait(BACKGROUND_CONTEXT);
     const projection = legacy.buildSessionProjection();
     for (const { sourceEntry, messages } of projection.entries) {
       const modelMessages = messages.filter(isPiAiMessage);
@@ -224,37 +215,18 @@ export function createPiDurableAgentFactory({
   async function migrateLegacySessions(
     harness: DurableHarness,
     sessionKey: string,
-    existingIds: ConversationId[],
   ): Promise<ConversationId[]> {
     const directory = resolve(legacyAgentDir, "sessions", encodeURIComponent(sessionKey));
     const legacySessions = await SessionManager.listAll(directory);
     legacySessions.sort((left, right) => left.modified.getTime() - right.modified.getTime());
-    const importedFiles = new Set<string>();
-    for (const id of existingIds) {
-      const conversation = await harness.conversation(id, BACKGROUND_CONTEXT);
-      if (!conversation) continue;
-      const context = await conversation.context(BACKGROUND_CONTEXT);
-      for (const entry of context.entries) {
-        if (
-          entry.kind === "klein.legacy.session" &&
-          typeof entry.data === "object" &&
-          entry.data !== null &&
-          !Array.isArray(entry.data) &&
-          typeof entry.data.sourceFile === "string"
-        ) {
-          importedFiles.add(entry.data.sourceFile);
-        }
-      }
-    }
-    const imported = [...existingIds];
+    const imported: ConversationId[] = [];
     for (const info of legacySessions) {
-      if (importedFiles.has(info.path)) continue;
       const legacy = SessionManager.open(info.path, directory, process.cwd());
       const conversation = await harness.createConversation(
         { ownership: { kind: "ownerless" } },
         BACKGROUND_CONTEXT,
       );
-      await importLegacySession(conversation, legacy, info.path);
+      await importLegacySession(conversation, legacy);
       await assignSession(sessionKey, conversation.id);
       imported.push(conversation.id);
     }
@@ -270,11 +242,11 @@ export function createPiDurableAgentFactory({
     if (!conversation) {
       conversation = (async () => {
         registry.install(extension);
-        const conversationIds = await migrateLegacySessions(
-          harness,
-          sessionKey,
-          (await loadSessionIndex())[sessionKey] ?? [],
-        );
+        const index = await loadSessionIndex();
+        let conversationIds = index[sessionKey] ?? [];
+        if (conversationIds.length === 0) {
+          conversationIds = await migrateLegacySessions(harness, sessionKey);
+        }
         const conversationId = sessionMode === "resume" ? conversationIds.at(-1) : undefined;
         const record =
           conversationId === undefined
