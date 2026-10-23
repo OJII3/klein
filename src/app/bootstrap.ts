@@ -12,11 +12,11 @@ import { TaskCoordinator } from "./task-coordinator";
 import { VoiceChatCoordinator } from "./voice-chat-coordinator";
 import { DiscordAgent } from "@agents/discord/discord-agent";
 import {
-  createPiAgentFactory,
   createPiModelRuntime,
   resolveConfiguredModel,
   withOpenCodeSessionHeader,
 } from "@runtime/pi/pi-agent-runtime";
+import { createPiDurableAgentFactory } from "@runtime/pi/pi-durable-agent-runtime";
 import { PiMemoryProcessor } from "@runtime/pi/pi-memory-processor";
 import { PiVoiceReactionSelector } from "@runtime/pi/pi-voice-reaction-selector";
 import { PiVoiceTranscriptQueueSelector } from "@runtime/pi/pi-voice-transcript-queue-selector";
@@ -37,7 +37,6 @@ import {
 } from "@modules/webui/domain/webui-config";
 import { startWebUi } from "@modules/webui/infrastructure/elysia-webui-app";
 import { PinoJsonlReader } from "@modules/webui/infrastructure/pino-jsonl-reader";
-import { PiSessionReader } from "@modules/webui/infrastructure/pi-session-reader";
 import { Sbv2Tts } from "@modules/tts/infrastructure/sbv2-tts";
 import { WebSocketAsrClient } from "@modules/asr/infrastructure/websocket-asr-client";
 import { FileReminderStore } from "@modules/reminders/infrastructure/file-reminder-store";
@@ -110,8 +109,8 @@ export async function bootstrap(): Promise<void> {
   const transcriptQueueSelector = reactionClassifierModel
     ? new PiVoiceTranscriptQueueSelector(modelRuntime, reactionClassifierModel)
     : undefined;
-  const piAgentFactory = createPiAgentFactory({
-    agentDir,
+  const piAgentFactory = createPiDurableAgentFactory({
+    agentDir: resolve(agentDir, "pi-durable"),
     llm: config.llm,
     skillsDirectory: profile.skillsDirectory,
     logger,
@@ -120,8 +119,8 @@ export async function bootstrap(): Promise<void> {
     permissions: config.permissions,
   });
   const voiceChatAgentFactory = voiceChatLlmConfiguration
-    ? createPiAgentFactory({
-        agentDir,
+    ? createPiDurableAgentFactory({
+        agentDir: resolve(agentDir, "pi-durable-voice"),
         llm: voiceChatLlmConfiguration,
         skillsDirectory: profile.skillsDirectory,
         logger,
@@ -219,7 +218,14 @@ export async function bootstrap(): Promise<void> {
   });
   const usageProvider =
     config.llm.provider === "google-vertex"
-      ? new VertexAiEstimatedUsageProvider(agentDir)
+      ? new VertexAiEstimatedUsageProvider(
+          agentDir,
+          async (monthStart) =>
+            (await piAgentFactory.getMonthlyProviderCost("google-vertex", monthStart)) +
+            (voiceChatAgentFactory === piAgentFactory
+              ? 0
+              : await voiceChatAgentFactory.getMonthlyProviderCost("google-vertex", monthStart)),
+        )
       : openCodeGoApiKey
         ? new OpenCodeGoUsageProvider(openCodeGoApiKey)
         : undefined;
@@ -245,7 +251,7 @@ export async function bootstrap(): Promise<void> {
         logger,
         memory: memoryCoordinator,
         memoryEditor: memoryCoordinator,
-        piSessions: new PiSessionReader(agentDir),
+        piSessions: piAgentFactory.sessions,
         pinoLogs: new PinoJsonlReader(logDirectory),
         port: webUiConfig.port,
         staticDirectory: resolveWebUiStaticDirectory(),
@@ -280,6 +286,8 @@ export async function bootstrap(): Promise<void> {
     await taskCoordinator.waitForCompletion();
     await discordService.stop();
     await agentCoordinator.dispose();
+    await piAgentFactory.close();
+    if (voiceChatAgentFactory !== piAgentFactory) await voiceChatAgentFactory.close();
     logger.info({ event: "shutdown_completed" }, "Shutdown complete");
     flushLogger(logger);
   };
