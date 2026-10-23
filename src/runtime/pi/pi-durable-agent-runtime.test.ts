@@ -12,9 +12,8 @@ import {
   InMemoryCredentialStore,
   type TranscriptContext,
 } from "@earendil-works/pi-ai";
-import { ModelRuntime } from "@earendil-works/pi-coding-agent";
+import { ModelRuntime, SessionManager } from "@earendil-works/pi-coding-agent";
 
-import { createPiSessionManager } from "./pi-agent-runtime";
 import { createPiDurableAgentFactory } from "./pi-durable-agent-runtime";
 
 test("imports every legacy Pi session and resumes the latest durable conversation", async () => {
@@ -30,7 +29,8 @@ test("imports every legacy Pi session and resumes the latest durable conversatio
   });
   modelRuntime.registerNativeProvider(provider.provider);
   const sessionKey = "discord-channel:migration";
-  const legacy = createPiSessionManager(legacyAgentDir, sessionKey, "new");
+  const legacySessionDir = join(legacyAgentDir, "sessions", encodeURIComponent(sessionKey));
+  const legacy = SessionManager.create(process.cwd(), legacySessionDir);
   legacy.appendMessage({ role: "user", content: "Previous conversation", timestamp: 10 });
   legacy.appendMessage(fauxAssistantMessage("Previous reply"));
   await utimes(
@@ -38,7 +38,7 @@ test("imports every legacy Pi session and resumes the latest durable conversatio
     new Date(Date.now() - 60_000),
     new Date(Date.now() - 60_000),
   );
-  const latest = createPiSessionManager(legacyAgentDir, sessionKey, "new");
+  const latest = SessionManager.create(process.cwd(), legacySessionDir);
   latest.appendMessage({ role: "user", content: "Latest conversation", timestamp: 20 });
   latest.appendMessage(fauxAssistantMessage("Latest reply"));
   const factory = createPiDurableAgentFactory({

@@ -58,7 +58,7 @@ import type { AgentEvent } from "@agents/core/agent-event";
 import type { AgentPrompt, AgentRuntime } from "@agents/core/agent-runtime";
 import { createPiEventPrompt } from "./pi-event-prompt";
 import { PiImageAnalyzer, type ImageAnalyzer } from "./pi-image-analyzer";
-import { resolveConfiguredModel, withOpenCodeSessionHeader } from "./pi-agent-runtime";
+import { resolveConfiguredModel, withOpenCodeSessionHeader } from "./pi-model-runtime";
 import { piMcpConfigLoader, ToolAuthorization, type ToolPermissions } from "./tool-permissions";
 import type { SessionMode } from "@app/cli-options";
 import type {

@@ -15,7 +15,7 @@ import {
   createPiModelRuntime,
   resolveConfiguredModel,
   withOpenCodeSessionHeader,
-} from "@runtime/pi/pi-agent-runtime";
+} from "@runtime/pi/pi-model-runtime";
 import { createPiDurableAgentFactory } from "@runtime/pi/pi-durable-agent-runtime";
 import { PiMemoryProcessor } from "@runtime/pi/pi-memory-processor";
 import { PiVoiceReactionSelector } from "@runtime/pi/pi-voice-reaction-selector";

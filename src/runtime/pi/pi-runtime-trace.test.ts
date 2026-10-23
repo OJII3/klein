@@ -1,15 +1,5 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import {
-  fauxAssistantMessage,
-  fauxProvider,
-  fauxToolCall,
-  InMemoryCredentialStore,
-} from "@earendil-works/pi-ai";
-import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import type {
   AgentSessionEvent,
   AgentSessionEventListener,
@@ -18,8 +8,6 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { createLogger } from "@app/logger";
 import { PiRuntimeTrace } from "./pi-runtime-trace";
-import { createPiAgentFactory } from "./pi-agent-runtime";
-import { createDiscordSpeakTool } from "@agents/discord/tools/discord-speak";
 
 async function createTrace() {
   const lines: string[] = [];
@@ -246,99 +234,4 @@ test("background cache warming cannot overwrite the active model's provider timi
   assert.equal(completed.providerRequestId, undefined);
   assert.ok(completed.llmCallId);
   assert.ok(entries.some((r) => r.event === "pi_llm_first_delta"));
-});
-
-test("real Pi keeps accepting steer while a spoken tool blocks the next model call", async () => {
-  const agentDir = await mkdtemp(join(tmpdir(), "klein-voice-trace-"));
-  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
-  const lines: string[] = [];
-  const logger = createLogger({ destination: { write: (line) => void lines.push(line) } });
-  const provider = fauxProvider({ tokensPerSecond: 100_000 });
-  const model = provider.getModel();
-  const modelRuntime = await ModelRuntime.create({
-    credentials: new InMemoryCredentialStore(),
-    modelsPath: null,
-    refreshOnCreate: false,
-  });
-  modelRuntime.registerNativeProvider(provider.provider);
-  let modelCalls = 0;
-  provider.setResponses([
-    () => {
-      modelCalls += 1;
-      return fauxAssistantMessage(fauxToolCall("discord_speak", { text: "reply" }));
-    },
-    () => {
-      modelCalls += 1;
-      return fauxAssistantMessage("done");
-    },
-  ]);
-  let releaseSpeak!: () => void;
-  let notifySpeak!: () => void;
-  const speaking = new Promise<void>((resolve) => {
-    notifySpeak = resolve;
-  });
-  const playback = new Promise<void>((resolve) => {
-    releaseSpeak = resolve;
-  });
-  const runtime = await createPiAgentFactory({
-    agentDir,
-    llm: { provider: model.provider, model: model.id },
-    logger,
-    modelRuntime,
-    sessionMode: "new",
-  }).create(
-    { systemPrompt: "Reply using discord_speak.", toolNames: ["discord_speak"] },
-    [
-      createDiscordSpeakTool(async () => {
-        notifySpeak();
-        await playback;
-      }),
-    ],
-    { sessionKey: "voice-trace-integration" },
-  );
-  const entries = () => lines.map((line) => JSON.parse(line) as Record<string, unknown>);
-  const processing = runtime.prompt({
-    id: "first-asr",
-    type: "discord.message",
-    source: "discord",
-    occurredAt: "2026-10-14T09:30:42.123Z",
-    content: [{ type: "text", text: "hello" }],
-  });
-  try {
-    await speaking;
-    assert.ok(runtime.steer);
-    await runtime.steer({
-      id: "second-asr",
-      type: "discord.message",
-      source: "discord",
-      occurredAt: "2026-10-14T09:30:42.123Z",
-      content: [{ type: "text", text: "more context" }],
-    });
-    assert.equal(modelCalls, 1);
-    assert.ok(entries().some((r) => r.event === "pi_queue_updated" && r.steeringCount === 1));
-    assert.ok(!entries().some((r) => r.event === "pi_tool_completed"));
-    releaseSpeak();
-    await processing;
-    assert.equal(modelCalls, 2);
-    const logs = entries();
-    const consumed = logs.filter((r) => r.event === "pi_input_consumed");
-    assert.deepEqual(
-      consumed.map((r) => r.inputId),
-      ["first-asr", "second-asr"],
-    );
-    assert.notEqual(consumed[0]!.llmCallId, consumed[1]!.llmCallId);
-    assert.equal(consumed[0]!.runId, consumed[1]!.runId);
-    const toolEnd = logs.findIndex((r) => r.event === "pi_tool_completed");
-    const secondTurn = logs.findIndex(
-      (r) => r.event === "pi_turn_started" && r.llmCallId === consumed[1]!.llmCallId,
-    );
-    assert.ok(toolEnd >= 0 && secondTurn > toolEnd);
-  } finally {
-    releaseSpeak();
-    await processing;
-    runtime.dispose();
-    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
-    await rm(agentDir, { recursive: true, force: true });
-  }
 });
