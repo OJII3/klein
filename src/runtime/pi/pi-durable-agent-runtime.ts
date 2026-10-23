@@ -57,6 +57,7 @@ import type { AgentFactory, AgentCreationOptions } from "@agents/core/agent-fact
 import type { AgentEvent } from "@agents/core/agent-event";
 import type { AgentPrompt, AgentRuntime } from "@agents/core/agent-runtime";
 import { createPiEventPrompt } from "./pi-event-prompt";
+import { rewriteFxtwitterFetchInput } from "./fxtwitter-fetch";
 import { PiImageAnalyzer, type ImageAnalyzer } from "./pi-image-analyzer";
 import { resolveConfiguredModel, withOpenCodeSessionHeader } from "./pi-model-runtime";
 import { piMcpConfigLoader, ToolAuthorization, type ToolPermissions } from "./tool-permissions";
@@ -735,6 +736,9 @@ function adaptPiWebAccessTools(
         deferred: tool.exposure === "deferred" ? true : undefined,
         replay: "unsafe",
         async execute(args, api, context) {
+          if (tool.name === "fetch_content") {
+            rewriteFxtwitterFetchInput(args as Record<string, unknown>);
+          }
           const piContext = await executionContext();
           const result = await tool
             .execute(api.callId, args as never, context.abortSignal, undefined, piContext as never)
