@@ -111,6 +111,7 @@ export async function bootstrap(): Promise<void> {
     : undefined;
   const piAgentFactory = createPiDurableAgentFactory({
     agentDir: resolve(agentDir, "pi-durable"),
+    legacyAgentDir: agentDir,
     llm: config.llm,
     skillsDirectory: profile.skillsDirectory,
     logger,
@@ -121,6 +122,7 @@ export async function bootstrap(): Promise<void> {
   const voiceChatAgentFactory = voiceChatLlmConfiguration
     ? createPiDurableAgentFactory({
         agentDir: resolve(agentDir, "pi-durable-voice"),
+        legacyAgentDir: agentDir,
         llm: voiceChatLlmConfiguration,
         skillsDirectory: profile.skillsDirectory,
         logger,
