@@ -221,7 +221,6 @@ export async function bootstrap(): Promise<void> {
   const usageProvider =
     config.llm.provider === "google-vertex"
       ? new VertexAiEstimatedUsageProvider(
-          agentDir,
           async (monthStart) =>
             (await piAgentFactory.getMonthlyProviderCost("google-vertex", monthStart)) +
             (voiceChatAgentFactory === piAgentFactory
