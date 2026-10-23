@@ -9,8 +9,8 @@ import test from "node:test";
 import { createLogger } from "@app/logger";
 import { startCloudflareTunnel } from "./cloudflare-tunnel";
 import { startWebUi } from "./elysia-webui-app";
-import { PiSessionReader } from "./pi-session-reader";
 import { PinoJsonlReader } from "./pino-jsonl-reader";
+import type { ViewerSessionReader } from "../ports/viewer-readers";
 
 function captureLogs() {
   const events = new EventEmitter();
@@ -116,7 +116,10 @@ test("serves local HTTP without a token and releases the listener when tunnel st
       host: "127.0.0.1",
       port: address.port,
       staticDirectory: directory,
-      piSessions: new PiSessionReader(directory),
+      piSessions: {
+        list: async () => ({ items: [], nextCursor: null }),
+        get: async () => undefined,
+      } satisfies ViewerSessionReader,
       pinoLogs: new PinoJsonlReader(directory),
     };
     process.env.PATH = directory;

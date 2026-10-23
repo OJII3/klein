@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { resolveConfiguredModel } from "./pi-agent-runtime";
+import { resolveConfiguredModel } from "./pi-model-runtime";
 import { MEMORY_PROCESSING_SYSTEM_PROMPT, PiMemoryProcessor } from "./pi-memory-processor";
 
 test("asks the configured model for structured memory operations", async () => {

@@ -9,7 +9,10 @@ import type { UsageLimitProvider } from "../ports/usage-limit-provider";
 const MONTHLY_BUDGET_USD = 10;
 
 export class VertexAiEstimatedUsageProvider implements UsageLimitProvider {
-  constructor(private readonly agentDirectory: string) {}
+  constructor(
+    private readonly agentDirectory: string,
+    private readonly getAdditionalCost?: (monthStart: number) => Promise<number>,
+  ) {}
 
   async getMonthlyUsageLimit(): Promise<MonthlyUsageLimit> {
     const now = new Date();
@@ -40,6 +43,7 @@ export class VertexAiEstimatedUsageProvider implements UsageLimitProvider {
         }
       }
     }
+    cost += (await this.getAdditionalCost?.(monthStart)) ?? 0;
 
     return {
       status: "ok",
