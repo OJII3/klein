@@ -276,7 +276,7 @@ export class DiscordVoiceChatController {
           new ContainerBuilder()
             .setAccentColor(color)
             .addTextDisplayComponents(
-              new TextDisplayBuilder().setContent(`**${title}**\n${description}`),
+              new TextDisplayBuilder().setContent(`${title}\n${description}`),
             ),
         ],
         flags: MessageFlags.IsComponentsV2,
