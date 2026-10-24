@@ -8,6 +8,8 @@ Goalの文は呼び出し側で固定するため、出力には箇条書きだ�
 
 export const HANDOFF_SUMMARY_MAX_TOKENS = 10_000;
 
+const HANDOFF_SUMMARY_MAX_CHARS = 400;
+
 export function buildHandoffSummaryPrompt(source: string, previousSummary?: string): string {
   return [
     "ユーザー発言と前回の要約を参考に、継続に必要な項目だけを箇条書きでまとめてください。",
@@ -38,13 +40,53 @@ export function extractTextContent(content: readonly unknown[]): string {
     .trim();
 }
 
+export function extractHandoffSource(
+  entries: readonly { readonly kind: string; readonly model?: readonly unknown[] }[],
+): { source: string; previousSummary?: string } {
+  const userMessages: string[] = [];
+  let previousSummary: string | undefined;
+
+  for (const entry of entries) {
+    for (const message of entry.model ?? []) {
+      if (typeof message !== "object" || message === null || !("role" in message)) continue;
+      if (message.role !== "user" || !("content" in message)) continue;
+      const content = message.content;
+      const text =
+        typeof content === "string"
+          ? content.trim()
+          : Array.isArray(content)
+            ? extractTextContent(content)
+            : "";
+      if (!text) continue;
+
+      if (entry.kind === "pi.compaction") previousSummary = text;
+      else userMessages.push(text);
+    }
+  }
+
+  return {
+    source: userMessages.join("\n\n"),
+    ...(previousSummary ? { previousSummary } : {}),
+  };
+}
+
 export function formatHandoffSummary(summary: string): string {
+  let summaryChars = 0;
   const bullets = summary
     .split("\n")
     .map((line) => line.trim())
     .filter((line) => /^[-*•]\s*/.test(line))
-    .map((line) => `- ${line.replace(/^[-*•]\s*/, "").slice(0, 80)}`)
-    .slice(0, 5);
+    .slice(0, 5)
+    .map((line) => {
+      const text = line.replace(/^[-*•]\s*/, "");
+      const separatorLength = summaryChars > 0 ? 1 : 2;
+      const remaining = HANDOFF_SUMMARY_MAX_CHARS - summaryChars - separatorLength - 2;
+      if (remaining <= 0) return "";
+      const bullet = `- ${text.slice(0, remaining)}`;
+      summaryChars += (summaryChars > 0 ? 1 : 0) + bullet.length;
+      return bullet;
+    })
+    .filter(Boolean);
 
   return [
     "## Goal",
