@@ -70,6 +70,12 @@ const LlmConfigurationSchema = Type.Object(
   {
     ...LlmModelConfigurationProperties,
     contextWindowRatio: Type.Optional(Type.Number({ minimum: 0.01, maximum: 1 })),
+    compaction: Type.Optional(
+      Type.Object(
+        { backgroundTokens: Type.Optional(Type.Integer({ minimum: 0 })) },
+        { additionalProperties: false },
+      ),
+    ),
     image: Type.Optional(LlmModelConfigurationSchema),
   },
   { additionalProperties: false },

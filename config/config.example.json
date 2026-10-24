@@ -25,6 +25,9 @@
     "model": "deepseek-v4.1-flash",
     "thinkingLevel": "high",
     "contextWindowRatio": 0.5,
+    "compaction": {
+      "backgroundTokens": 16384
+    },
     "image": {
       "provider": "opencode-go",
       "model": "deepseek-v4-flash-vision-exp"

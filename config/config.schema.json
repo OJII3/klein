@@ -183,6 +183,16 @@
           "minimum": 0.01,
           "maximum": 1
         },
+        "compaction": {
+          "type": "object",
+          "properties": {
+            "backgroundTokens": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false
+        },
         "image": {
           "type": "object",
           "required": ["provider", "model"],
