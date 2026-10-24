@@ -306,15 +306,7 @@ export async function bootstrap(): Promise<void> {
     await shutdown("startup_failed");
     throw error;
   }
-  void taskCoordinator
-    .run(() => agentCoordinator.rotateIdleChannels())
-    .catch((error: unknown) => {
-      logger.error(
-        { err: error, event: "channel_context_rotation_check_failed" },
-        "Failed to check Discord channel context rotation",
-      );
-    });
-  contextRotationInterval = setInterval(() => {
+  const runChannelContextRotationCheck = (): void => {
     void taskCoordinator
       .run(() => agentCoordinator.rotateIdleChannels())
       .catch((error: unknown) => {
@@ -323,7 +315,12 @@ export async function bootstrap(): Promise<void> {
           "Failed to check Discord channel context rotation",
         );
       });
-  }, CHANNEL_CONTEXT_ROTATION_CHECK_INTERVAL_MS);
+  };
+  runChannelContextRotationCheck();
+  contextRotationInterval = setInterval(
+    runChannelContextRotationCheck,
+    CHANNEL_CONTEXT_ROTATION_CHECK_INTERVAL_MS,
+  );
   void agentCoordinator.deliverDueReminders();
   reminderCheckInterval = setInterval(() => {
     void agentCoordinator.deliverDueReminders();
