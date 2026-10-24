@@ -158,7 +158,6 @@ export function createPiDurableAgentFactory({
         sessionId: durableOpenCodeSessionId(agentDir, id),
       });
     }
-    harness.resume();
     return harness;
   }
 
@@ -420,6 +419,7 @@ export function createPiDurableAgentFactory({
         BACKGROUND_CONTEXT,
       );
       await webAccess.activate(conversation);
+      harness.resume();
       const sessionImageModel = imageModel
         ? withOpenCodeSessionHeader(imageModel, String(id))
         : undefined;
