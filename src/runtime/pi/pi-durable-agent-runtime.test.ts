@@ -15,6 +15,7 @@ import {
 import { ModelRuntime, SessionManager } from "@earendil-works/pi-coding-agent";
 
 import { createPiDurableAgentFactory } from "./pi-durable-agent-runtime";
+import type { AgentRuntime } from "@agents/core/agent-runtime";
 
 test("imports every legacy Pi session and resumes the latest durable conversation", async () => {
   const agentDir = await mkdtemp(join(tmpdir(), "klein-pi-durable-migration-"));
@@ -51,11 +52,11 @@ test("imports every legacy Pi session and resumes the latest durable conversatio
   });
 
   try {
-    const runtime = await factory.create(
+    const runtime = (await factory.create(
       { systemPrompt: "Test system prompt", toolNames: [] },
       [],
       { sessionKey },
-    );
+    )) as AgentRuntime & { compactForHandoff(): Promise<string> };
     const requests: TranscriptContext[] = [];
     provider.setResponses([
       (context) => {
@@ -70,7 +71,6 @@ test("imports every legacy Pi session and resumes the latest durable conversatio
       occurredAt: "2026-10-14T09:30:42.123Z",
       content: [{ type: "text", text: "Continue from the latest conversation" }],
     });
-    runtime.dispose();
     const activeTools = getCurrentTools(requests[0]!.messages).map((tool) => tool.name);
     assert.ok(activeTools.includes("web_search"));
     assert.ok(activeTools.includes("source_check"));
@@ -95,6 +95,23 @@ test("imports every legacy Pi session and resumes the latest durable conversatio
     assert.ok(detail);
     assert.ok(detail.items.some((item) => item.summary === "Latest conversation"));
     assert.ok(detail.items.some((item) => item.summary === "Latest reply"));
+
+    provider.setResponses([
+      (context) => {
+        requests.push(context);
+        return fauxAssistantMessage("- 次の会話で続ける");
+      },
+    ]);
+    const handoff = await runtime.compactForHandoff();
+    assert.match(handoff, /次の会話で続ける/);
+    const summaryRequest = requests[1]!;
+    const summaryPrompt = summaryRequest.messages
+      .filter((message) => message.role === "user")
+      .map((message) => message.content)
+      .join("\n");
+    assert.match(summaryPrompt, /Continue from the latest conversation/);
+    assert.doesNotMatch(summaryPrompt, /Acknowledged/);
+    runtime.dispose();
   } finally {
     await factory.close();
     if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;

@@ -6,7 +6,6 @@ import type { Logger } from "pino";
 
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import {
-  CompactionEntry,
   Harness,
   createRegistry,
   defineExtension,
@@ -64,6 +63,14 @@ import { createPiEventPrompt } from "./pi-event-prompt";
 import { rewriteFxtwitterFetchInput } from "./fxtwitter-fetch";
 import { PiImageAnalyzer, type ImageAnalyzer } from "./pi-image-analyzer";
 import { resolveConfiguredModel, withOpenCodeSessionHeader } from "./pi-model-runtime";
+import {
+  buildHandoffSummaryPrompt,
+  extractHandoffSource,
+  extractTextContent,
+  formatHandoffSummary,
+  HANDOFF_SUMMARY_MAX_TOKENS,
+  HANDOFF_SUMMARY_SYSTEM_PROMPT,
+} from "./handoff-summary";
 import { piMcpConfigLoader, ToolAuthorization, type ToolPermissions } from "./tool-permissions";
 import type { SessionMode } from "@app/cli-options";
 import type {
@@ -452,6 +459,30 @@ export function createPiDurableAgentFactory({
       return new PiDurableAgentRuntime(
         harness,
         id,
+        async (source, previousSummary) => {
+          const response = await modelRuntime.completeSimple(
+            resolveConfiguredModel(llm.provider, llm.model, modelRuntime),
+            {
+              systemPrompt: HANDOFF_SUMMARY_SYSTEM_PROMPT,
+              messages: [
+                {
+                  role: "user",
+                  content: buildHandoffSummaryPrompt(source, previousSummary),
+                  timestamp: Date.now(),
+                },
+              ],
+            },
+            { maxTokens: HANDOFF_SUMMARY_MAX_TOKENS },
+          );
+          if (response.stopReason === "error" || response.stopReason === "aborted") {
+            throw new Error(
+              `Pi Durable handoff summary failed: ${response.errorMessage ?? response.stopReason}`,
+            );
+          }
+          const summary = extractTextContent(response.content);
+          if (!summary) throw new Error("Pi Durable handoff summary was empty");
+          return formatHandoffSummary(summary);
+        },
         imageAnalyzer,
         eventStream,
         options.initialContext,
@@ -1108,6 +1139,10 @@ export class PiDurableAgentRuntime implements AgentRuntime {
   constructor(
     private readonly harness: DurableHarness,
     private readonly conversationId: ConversationId,
+    private readonly summarizeHandoff: (
+      source: string,
+      previousSummary?: string,
+    ) => Promise<string>,
     private readonly imageAnalyzer?: ImageAnalyzer,
     private readonly eventStream?: Awaited<ReturnType<typeof watchEvents>>,
     private pendingInitialContext?: string,
@@ -1162,30 +1197,9 @@ export class PiDurableAgentRuntime implements AgentRuntime {
 
   async compactForHandoff(): Promise<string> {
     const conversation = await this.getConversation();
-    const taskId = await conversation.compact(
-      "Create the concise Japanese handoff summary requested by Klein.",
-      BACKGROUND_CONTEXT,
-    );
-    const task = await this.harness.waitForTask(taskId, BACKGROUND_CONTEXT);
-    if (task.state.status !== "terminal" || task.state.outcome.status !== "completed") {
-      throw new Error("Pi Durable handoff compaction failed");
-    }
     const context = await conversation.context(BACKGROUND_CONTEXT);
-    const latest = [...context.entries].reverse().find((entry) => CompactionEntry.is(entry));
-    const modelContent = latest?.model?.[0]?.content;
-    const summary =
-      typeof modelContent === "string"
-        ? modelContent
-        : Array.isArray(modelContent)
-          ? modelContent
-              .filter((item) => item.type === "text")
-              .map((item) => item.text)
-              .join("\n")
-          : "";
-    if (!summary.trim()) {
-      throw new Error("Pi Durable compaction did not produce a summary");
-    }
-    return summary.trim();
+    const { source, previousSummary } = extractHandoffSource(context.entries);
+    return this.summarizeHandoff(source, previousSummary);
   }
 
   dispose(): void {
