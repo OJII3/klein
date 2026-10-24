@@ -1,11 +1,13 @@
 import {
   ActionRowBuilder,
-  EmbedBuilder,
+  ContainerBuilder,
+  MessageFlags,
   ModalBuilder,
   PermissionFlagsBits,
   SlashCommandBuilder,
   TextInputBuilder,
   TextInputStyle,
+  TextDisplayBuilder,
   type ApplicationCommandDataResolvable,
   type Channel,
   type ChatInputCommandInteraction,
@@ -118,12 +120,14 @@ export class DiscordJsInteractionHandler {
 
     this.setOperatingMode(mode);
     await interaction.reply({
-      embeds: [
-        new EmbedBuilder().setDescription(
-          mode === "active" ? "Botを再開しました。" : "Botを一時停止しました。",
+      components: [
+        new ContainerBuilder().addTextDisplayComponents(
+          new TextDisplayBuilder().setContent(
+            mode === "active" ? "Botを再開しました。" : "Botを一時停止しました。",
+          ),
         ),
       ],
-      ephemeral: false,
+      flags: MessageFlags.IsComponentsV2,
     });
   }
 
@@ -209,15 +213,18 @@ export class DiscordJsInteractionHandler {
 
     await this.channelRuleStore?.set(guildId, channelId, rule);
     await interaction.reply({
-      embeds: [
-        new EmbedBuilder()
-          .setColor(rule.trim() ? 0x57f287 : 0x747f8d)
-          .setDescription(
-            rule.trim()
-              ? "このチャンネル／スレッドのルールを保存しました。"
-              : "このチャンネル／スレッドのルールを削除しました。",
+      components: [
+        new ContainerBuilder()
+          .setAccentColor(rule.trim() ? 0x57f287 : 0x747f8d)
+          .addTextDisplayComponents(
+            new TextDisplayBuilder().setContent(
+              rule.trim()
+                ? "このチャンネル／スレッドのルールを保存しました。"
+                : "このチャンネル／スレッドのルールを削除しました。",
+            ),
           ),
       ],
+      flags: MessageFlags.IsComponentsV2,
     });
   }
 }
