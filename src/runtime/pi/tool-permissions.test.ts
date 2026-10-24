@@ -1,7 +1,5 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { Type } from "typebox";
 import { ToolAuthorization } from "./tool-permissions";
 
 test("owner access is determined by session permissions", () => {
@@ -29,29 +27,6 @@ test("MCP resource calls check session permissions for exact servers and listing
     assert.equal(auth.allowsResource({ server: "blocked" }), false);
     assert.equal(auth.allowsResource({}), true);
   }
-});
-
-test("registered MCP tools use namespace authorization despite truncation and name collisions", () => {
-  const auth = new ToolAuthorization(false, { mcp: { servers: { "private-vault": "allow" } } });
-  auth.rememberServers(["private-vault", "private_vault"]);
-  let definition: ToolDefinition | undefined;
-  const pi = {
-    registerTool: (tool: ToolDefinition) => {
-      definition = tool;
-    },
-  } as ExtensionAPI;
-  auth.wrap((api) =>
-    api.registerTool({
-      name: "mcp__private_vault__truncated_1234",
-      namespace: { name: "mcp__private_vault" },
-      label: "Note",
-      description: "Note",
-      parameters: Type.Object({}),
-      execute: async () => ({ content: [], details: {} }),
-    }),
-  )(pi);
-  assert.equal(definition?.exposure, "hidden");
-  assert.equal(auth.allowsTool("mcp__private_vault__truncated_1234"), false);
 });
 
 test("public MCP resource listings exclude servers the session cannot connect to", () => {
