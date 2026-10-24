@@ -105,7 +105,6 @@ export interface PiDurableAgentFactoryOptions {
 }
 
 const TOOL_EXTENSION_PREFIX = "klein-tools-";
-const DEFAULT_BACKGROUND_COMPACTION_TOKENS = 16_384;
 
 export function createPiDurableAgentFactory({
   agentDir,
@@ -151,12 +150,9 @@ export function createPiDurableAgentFactory({
       {
         models: harnessModels,
         registry,
-        settings: {
-          compaction: {
-            backgroundTokens:
-              llm.compaction?.backgroundTokens ?? DEFAULT_BACKGROUND_COMPACTION_TOKENS,
-          },
-        },
+        ...(llm.compaction?.backgroundTokens === undefined
+          ? {}
+          : { settings: { compaction: { backgroundTokens: llm.compaction.backgroundTokens } } }),
         onReport(error) {
           logger.error(
             { err: error, event: "pi_durable_runtime_report" },
