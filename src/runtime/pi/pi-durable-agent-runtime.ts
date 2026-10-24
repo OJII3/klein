@@ -733,6 +733,7 @@ function adaptPiWebAccessTools(
           .filter(Boolean)
           .join("\n\n"),
         parameters: tool.parameters,
+        structuredOutputSchema: tool.outputSchema,
         deferred: tool.exposure === "deferred" ? true : undefined,
         replay: "unsafe",
         async execute(args, api, context) {
@@ -743,7 +744,12 @@ function adaptPiWebAccessTools(
           const result = await tool
             .execute(api.callId, args as never, context.abortSignal, undefined, piContext as never)
             .finally(flushEntries);
-          return { output: result.content as never, details: result.details as never };
+          return {
+            output: result.content as never,
+            structuredOutput: result.structuredContent as never,
+            isError: result.isError,
+            details: result.details as never,
+          };
         },
       }),
     );
@@ -1027,6 +1033,7 @@ function adaptDurableTools(
           .filter(Boolean)
           .join("\n\n"),
         parameters: tool.parameters,
+        structuredOutputSchema: tool.outputSchema,
         deferred: tool.exposure === "deferred" ? true : undefined,
         replay: isReadOnlyTool(tool.name) ? "safe" : "unsafe",
         async execute(args, api, context) {
@@ -1037,7 +1044,12 @@ function adaptDurableTools(
             undefined,
             {} as never,
           );
-          return { output: result.content as never, details: result.details as never };
+          return {
+            output: result.content as never,
+            structuredOutput: result.structuredContent as never,
+            isError: result.isError,
+            details: result.details as never,
+          };
         },
       }),
     );
