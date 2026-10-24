@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -29,12 +29,7 @@ import { CodemodeSandbox } from "@earendil-works/pi-codemode";
 import { createCodemodeExtension } from "@earendil-works/pi-durable/codemode";
 import { createToolSearchExtension } from "@earendil-works/pi-durable/tool-search";
 import { Type } from "typebox";
-import {
-  ModelRegistry,
-  SessionManager,
-  type SessionEntry,
-  type ToolDefinition,
-} from "@earendil-works/pi-coding-agent";
+import { ModelRegistry, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { Message } from "@earendil-works/pi-ai";
 import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import {
@@ -73,6 +68,8 @@ import {
 } from "./handoff-summary";
 import { piMcpConfigLoader, ToolAuthorization, type ToolPermissions } from "./tool-permissions";
 import type { SessionMode } from "@app/cli-options";
+import type { ChannelSessionStateStore } from "@app/channel-session-state-store";
+import { PiDurableSessionStore } from "./pi-durable-session-store";
 import type {
   PiViewerEvent,
   ViewerSessionDetail,
@@ -89,7 +86,7 @@ import {
 
 export interface PiDurableAgentFactoryOptions {
   readonly agentDir: string;
-  readonly legacyAgentDir?: string;
+  readonly configDir?: string;
   readonly permissions?: ToolPermissions;
   readonly modelRuntime: ModelRuntime;
   readonly skillsDirectory?: string;
@@ -115,7 +112,7 @@ const TOOL_EXTENSION_PREFIX = "klein-tools-";
 
 export function createPiDurableAgentFactory({
   agentDir,
-  legacyAgentDir = agentDir,
+  configDir = agentDir,
   llm,
   logger,
   modelRuntime,
@@ -125,18 +122,21 @@ export function createPiDurableAgentFactory({
 }: PiDurableAgentFactoryOptions): AgentFactory & {
   close(): Promise<void>;
   sessions: ViewerSessionReader;
+  channelSessionStateStore: ChannelSessionStateStore;
   getMonthlyProviderCost(provider: string, monthStart: number): Promise<number>;
 } {
-  process.env.PI_CODING_AGENT_DIR = resolve(legacyAgentDir);
+  process.env.PI_CODING_AGENT_DIR = resolve(configDir);
   const registry = createRegistry();
   const modelRegistry = new ModelRegistry(modelRuntime);
-  const harnessPromise = openHarness();
+  let resourcesPromise:
+    | Promise<{ harness: DurableHarness; store: PiDurableSessionStore }>
+    | undefined;
+  function getResources() {
+    return (resourcesPromise ??= openHarness());
+  }
   const conversations = new Map<string, Promise<ConversationId>>();
   const mcpConnections: McpServerConnection[] = [];
   const modelAliases = new Map<string, { modelId: string; sessionId: string }>();
-  const indexPath = resolve(agentDir, "pi-durable-sessions.json");
-  let sessionIndexPromise: Promise<Record<string, ConversationId[]>> | undefined;
-  let sessionIndexQueue = Promise.resolve();
   const imageModel = llm.image
     ? resolveConfiguredModel(llm.image.provider, llm.image.model, modelRuntime)
     : undefined;
@@ -148,9 +148,9 @@ export function createPiDurableAgentFactory({
     modelAliases,
   );
 
-  async function openHarness(): Promise<DurableHarness> {
+  async function openHarness(): Promise<{ harness: DurableHarness; store: PiDurableSessionStore }> {
     await mkdir(agentDir, { recursive: true });
-    process.env.PI_CODING_AGENT_DIR = resolve(legacyAgentDir);
+    process.env.PI_CODING_AGENT_DIR = resolve(configDir);
     const storage = await openNodeSqliteStorage(resolve(agentDir, "pi-durable.sqlite"));
     const harness = await Harness.open(
       storage,
@@ -169,101 +169,38 @@ export function createPiDurableAgentFactory({
       },
       BACKGROUND_CONTEXT,
     );
-    for (const id of Object.values(await loadSessionIndex()).flat()) {
-      modelAliases.set(`klein-session-${id}`, {
-        modelId: llm.model,
-        sessionId: durableOpenCodeSessionId(agentDir, id),
+    const store = new PiDurableSessionStore(harness, storage);
+    try {
+      for (const id of Object.values(await store.loadSessionIndex()).flat()) {
+        modelAliases.set(`klein-session-${id}`, {
+          modelId: llm.model,
+          sessionId: durableOpenCodeSessionId(agentDir, id),
+        });
+      }
+      return { harness, store };
+    } catch (error) {
+      await harness.close(BACKGROUND_CONTEXT).catch((closeError: unknown) => {
+        logger.warn({ err: closeError }, "Failed to close Pi Durable after initialization failed");
       });
+      throw error;
     }
-    return harness;
   }
 
   async function loadSessionIndex(): Promise<Record<string, ConversationId[]>> {
-    sessionIndexPromise ??= readFile(indexPath, "utf8")
-      .then((content) => JSON.parse(content) as Record<string, ConversationId[]>)
-      .catch((error: unknown) => {
-        if (error instanceof Error && "code" in error && error.code === "ENOENT") return {};
-        throw error;
-      });
-    return sessionIndexPromise;
-  }
-
-  async function saveSessionIndex(index: Record<string, ConversationId[]>): Promise<void> {
-    const temporaryPath = `${indexPath}.${process.pid}.tmp`;
-    await writeFile(temporaryPath, `${JSON.stringify(index, null, 2)}\n`, "utf8");
-    await rename(temporaryPath, indexPath);
-    sessionIndexPromise = Promise.resolve(index);
-  }
-
-  async function assignSession(sessionKey: string, conversationId: ConversationId): Promise<void> {
-    const operation = sessionIndexQueue.then(async () => {
-      const index = await loadSessionIndex();
-      await saveSessionIndex({
-        ...index,
-        [sessionKey]: [...(index[sessionKey] ?? []), conversationId],
-      });
-    });
-    sessionIndexQueue = operation.catch(() => undefined);
-    await operation;
-  }
-
-  async function importLegacySession(
-    conversation: Awaited<ReturnType<DurableHarness["createConversation"]>>,
-    legacy: SessionManager,
-  ): Promise<void> {
-    const projection = legacy.buildSessionProjection();
-    for (const { sourceEntry, messages } of projection.entries) {
-      const modelMessages = messages.filter(isPiAiMessage);
-      const submitted = await conversation.submit(
-        {
-          type: "write",
-          entry: {
-            kind: `klein.legacy.${sourceEntry.type}`,
-            data: legacyEntryData(sourceEntry),
-            ...(modelMessages.length > 0 ? { model: modelMessages } : {}),
-          },
-        },
-        BACKGROUND_CONTEXT,
-      );
-      await submitted.wait(BACKGROUND_CONTEXT);
-    }
-  }
-
-  async function migrateLegacySessions(
-    harness: DurableHarness,
-    sessionKey: string,
-  ): Promise<ConversationId[]> {
-    const directory = resolve(legacyAgentDir, "sessions", encodeURIComponent(sessionKey));
-    const legacySessions = await SessionManager.listAll(directory);
-    legacySessions.sort((left, right) => left.modified.getTime() - right.modified.getTime());
-    const imported: ConversationId[] = [];
-    for (const info of legacySessions) {
-      const legacy = SessionManager.open(info.path, directory, process.cwd());
-      const conversation = await harness.createConversation(
-        { ownership: { kind: "ownerless" } },
-        BACKGROUND_CONTEXT,
-      );
-      await importLegacySession(conversation, legacy);
-      await assignSession(sessionKey, conversation.id);
-      imported.push(conversation.id);
-    }
-    return imported;
+    return (await getResources()).store.loadSessionIndex();
   }
 
   async function getConversation(
     sessionKey: string,
     extension: Extension,
   ): Promise<{ harness: DurableHarness; id: ConversationId }> {
-    const harness = await harnessPromise;
+    const { harness, store } = await getResources();
+    // Rebinding a resumed session must replace its tools with the current trusted adapter.
+    registry.install(extension);
     let conversation = conversations.get(sessionKey);
     if (!conversation) {
       conversation = (async () => {
-        registry.install(extension);
-        const index = await loadSessionIndex();
-        let conversationIds = index[sessionKey] ?? [];
-        if (conversationIds.length === 0) {
-          conversationIds = await migrateLegacySessions(harness, sessionKey);
-        }
+        const conversationIds = await store.getConversationIds(sessionKey);
         const conversationId = sessionMode === "resume" ? conversationIds.at(-1) : undefined;
         const record =
           conversationId === undefined
@@ -275,10 +212,10 @@ export function createPiDurableAgentFactory({
             {
               ownership: { kind: "ownerless" },
               agent: { extensions: [extension] },
+              init: (tx, id) => store.registerConversation(tx, sessionKey, id),
             },
             BACKGROUND_CONTEXT,
           ));
-        if (!record) await assignSession(sessionKey, current.id);
         return current.id;
       })();
       conversations.set(sessionKey, conversation);
@@ -289,11 +226,25 @@ export function createPiDurableAgentFactory({
     return { harness, id: await conversation };
   }
 
-  const sessions = new PiDurableSessionReader(harnessPromise, loadSessionIndex);
+  const sessions = new PiDurableSessionReader(
+    async () => (await getResources()).harness,
+    loadSessionIndex,
+  );
   return {
     sessions,
+    channelSessionStateStore: {
+      async getOrCreate(channelId, rotationDate) {
+        return (await getResources()).store.channelStates.getOrCreate(channelId, rotationDate);
+      },
+      async list() {
+        return (await getResources()).store.channelStates.list();
+      },
+      async save(state) {
+        return (await getResources()).store.channelStates.save(state);
+      },
+    },
     async getMonthlyProviderCost(provider: string, monthStart: number): Promise<number> {
-      const harness = await harnessPromise;
+      const { harness } = await getResources();
       let cost = 0;
       const ids = Object.values(await loadSessionIndex()).flat();
       for (const id of ids) {
@@ -335,7 +286,7 @@ export function createPiDurableAgentFactory({
         isToolAllowed(tool.name, options.ownerFeaturesAllowed === true, permissions),
       );
       const mcpTools = await loadMcpTools({
-        agentDir: legacyAgentDir,
+        agentDir: configDir,
         ownerFeaturesAllowed: options.ownerFeaturesAllowed === true,
         permissions,
         modelRegistry,
@@ -345,7 +296,7 @@ export function createPiDurableAgentFactory({
       });
       let activeConversation: Conversation | undefined;
       const webAccess = await createPiWebAccessTools({
-        agentDir: legacyAgentDir,
+        agentDir: configDir,
         modelRuntime,
         modelRegistry,
         model: resolveConfiguredModel(llm.provider, llm.model, modelRuntime),
@@ -490,7 +441,8 @@ export function createPiDurableAgentFactory({
       );
     },
     async close() {
-      const harness = await harnessPromise;
+      if (!resourcesPromise) return;
+      const { harness } = await resourcesPromise;
       await Promise.allSettled(mcpConnections.map((connection) => connection.close()));
       await harness.close(BACKGROUND_CONTEXT);
     },
@@ -989,12 +941,12 @@ function adaptPiWebAccessTools(
 
 class PiDurableSessionReader implements ViewerSessionReader {
   constructor(
-    private readonly harnessPromise: Promise<DurableHarness>,
+    private readonly getHarness: () => Promise<DurableHarness>,
     private readonly loadIndex: () => Promise<Record<string, ConversationId[]>>,
   ) {}
 
   async list(query: ViewerSessionQuery = {}) {
-    const harness = await this.harnessPromise;
+    const harness = await this.getHarness();
     const index = await this.loadIndex();
     const sessions = await Promise.all(
       Object.entries(index).flatMap(([channelKey, ids]) =>
@@ -1031,7 +983,7 @@ class PiDurableSessionReader implements ViewerSessionReader {
     const numericId = Number(sessionId);
     if (!Number.isSafeInteger(numericId) || numericId < 0) return undefined;
     const id = numericId as ConversationId;
-    const harness = await this.harnessPromise;
+    const harness = await this.getHarness();
     const conversation = await harness.conversation(id, BACKGROUND_CONTEXT);
     if (!conversation) return undefined;
     const index = await this.loadIndex();
@@ -1245,48 +1197,6 @@ function isToolAllowed(
 
 function durableOpenCodeSessionId(agentDir: string, id: ConversationId): string {
   return `${createHash("sha256").update(resolve(agentDir)).digest("hex").slice(0, 16)}-${id}`;
-}
-
-function isPiAiMessage(message: unknown): message is Message {
-  return (
-    typeof message === "object" &&
-    message !== null &&
-    "role" in message &&
-    ["user", "assistant", "toolResult"].includes(String(message.role))
-  );
-}
-
-function legacyEntryData(entry: SessionEntry): JsonObject {
-  const legacy = entry as SessionEntry & Record<string, unknown>;
-  const data: Record<string, unknown> = {
-    legacyId: entry.id,
-    legacyType: entry.type,
-    timestamp: entry.timestamp,
-  };
-  for (const key of [
-    "summary",
-    "thinkingLevel",
-    "provider",
-    "modelId",
-    "kind",
-    "note",
-    "customType",
-    "name",
-    "label",
-  ]) {
-    const value = legacy[key];
-    if (
-      value !== undefined &&
-      (typeof value === "string" || typeof value === "number" || typeof value === "boolean")
-    ) {
-      data[key] = value;
-    }
-  }
-  if (entry.type === "usage") {
-    data.model = entry.model;
-    data.usage = entry.usage;
-  }
-  return data as JsonObject;
 }
 
 function compactAssistantContext(messages: readonly Message[]): Message[] {
