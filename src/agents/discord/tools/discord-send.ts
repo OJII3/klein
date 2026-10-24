@@ -1,4 +1,4 @@
-import { defineTool } from "@earendil-works/pi-coding-agent";
+import { defineTool } from "@earendil-works/pi-durable";
 import { Type } from "typebox";
 
 import type { DiscordService } from "@modules/discord/ports/discord-service";
@@ -9,24 +9,18 @@ export function createDiscordSendTool(
 ) {
   return defineTool({
     name: "discord_send",
-    exposure: "model-only",
-    label: "Send Discord message",
+    callers: ["model"],
     description: "Send a user-visible message to the current Discord conversation.",
-    promptSnippet: "Send a user-visible message to Discord.",
-    promptGuidelines: [
-      "Normal assistant text is not visible to the user; use discord_send for visible messages.",
-      "Do not call this tool when intentionally staying silent.",
-    ],
     parameters: Type.Object({
       content: Type.String({ minLength: 1 }),
     }),
-    async execute(_toolCallId, params) {
+    async execute(params) {
       await discordService.sendTyping(channelId);
       await new Promise((resolve) => setTimeout(resolve, 1_000));
       await discordService.sendMessage(channelId, params.content);
 
       return {
-        content: [
+        output: [
           {
             type: "text",
             text: `The message was sent to Discord.\nSent content:\n${params.content}`,

@@ -1,5 +1,6 @@
 import type { AgentDefinition } from "./agent-definition";
 import type { AgentRuntime } from "./agent-runtime";
+import type { ToolRegistration } from "@earendil-works/pi-durable";
 
 export interface AgentCreationOptions {
   readonly sessionKey: string;
@@ -8,9 +9,9 @@ export interface AgentCreationOptions {
 }
 
 export interface AgentFactory {
-  create<TTool>(
+  create(
     definition: AgentDefinition,
-    tools: readonly TTool[],
+    tools: readonly ToolRegistration[],
     options: AgentCreationOptions,
   ): Promise<AgentRuntime>;
 }

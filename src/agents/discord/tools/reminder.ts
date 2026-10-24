@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { defineTool } from "@earendil-works/pi-coding-agent";
+import { defineTool } from "@earendil-works/pi-durable";
 import { Type } from "typebox";
 
 import {
@@ -42,17 +42,15 @@ export function createReminderTools(
   return [
     defineTool({
       name: "reminder_add",
-      label: "Add reminder",
       description:
         "Add a one-time reminder after a duration or at a date and time, or a daily/weekly reminder. " +
         "Times use Japan Standard Time (JST). Weekly reminders require one or more weekdays: sun, mon, tue, wed, thu, fri, sat.",
-      promptSnippet: "Schedule a reminder for this conversation.",
       parameters: Type.Object({
         message: Type.String({ minLength: 1, maxLength: 2_000 }),
         schedule: scheduleSchema,
       }),
-      exposure: "deferred",
-      async execute(_toolCallId, params) {
+      deferred: true,
+      async execute(params) {
         const schedule = params.schedule as ReminderSchedule;
         const now = Date.now();
         const reminder: Reminder = {
@@ -75,7 +73,7 @@ export function createReminderTools(
         if (!reminder.message) throw new Error("リマインダーの内容を入力してください。");
         await store.create(reminder);
         return {
-          content: [
+          output: [
             {
               type: "text",
               text: `リマインダーを登録しました。ID: ${reminder.id} / ${formatReminderDateTime(reminder.dueAt)} JST`,
@@ -87,16 +85,15 @@ export function createReminderTools(
     }),
     defineTool({
       name: "reminder_list",
-      label: "List reminders",
       description:
         "List reminders attached to the current conversation, including recurring reminders.",
-      promptSnippet: "List reminders for this conversation.",
       parameters: Type.Object({}),
-      exposure: "deferred",
+      deferred: true,
+      replay: "safe",
       async execute() {
         const reminders = await store.listForScope(channelId, accessScope);
         return {
-          content: [
+          output: [
             {
               type: "text",
               text:
@@ -110,9 +107,9 @@ export function createReminderTools(
               id,
               dueAt,
               message,
-              repeat,
-              time,
-              weekdays,
+              ...(repeat ? { repeat } : {}),
+              ...(time ? { time } : {}),
+              ...(weekdays ? { weekdays: [...weekdays] } : {}),
             })),
           },
         };
@@ -120,16 +117,14 @@ export function createReminderTools(
     }),
     defineTool({
       name: "reminder_delete",
-      label: "Delete reminder",
       description:
         "Delete one reminder in the current conversation by its ID. Use reminder_list to find the ID.",
-      promptSnippet: "Delete a reminder by ID.",
       parameters: Type.Object({ id: Type.String({ minLength: 1 }) }),
-      exposure: "deferred",
-      async execute(_toolCallId, params) {
+      deferred: true,
+      async execute(params) {
         const deleted = await store.delete(channelId, accessScope, params.id);
         return {
-          content: [
+          output: [
             {
               type: "text",
               text: deleted

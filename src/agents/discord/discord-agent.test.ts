@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { ToolRegistration } from "@earendil-works/pi-durable";
 
 import type { AgentFactory } from "../core/agent-factory";
 import type { AgentRuntime } from "../core/agent-runtime";
@@ -34,7 +34,7 @@ const message: DiscordMessage = {
 };
 
 test("routes voice replies through discord_speak using the existing runtime prompt", async () => {
-  let tools: readonly ToolDefinition[] = [];
+  let tools: readonly ToolRegistration[] = [];
   let toolNames: readonly string[] = [];
   const spoken: string[] = [];
   const runtime: AgentRuntime = {
@@ -49,14 +49,14 @@ test("routes voice replies through discord_speak using the existing runtime prom
       ]);
       const tool = tools.find((tool) => tool.name === "discord_speak");
       assert.ok(tool);
-      await tool.execute("tool-call", { text: "LLMの返答" }, undefined, undefined, {} as never);
+      await tool.execute({ text: "LLMの返答" }, { callId: "tool-call" } as never, {} as never);
     },
     dispose() {},
   };
   const agentFactory: AgentFactory = {
     async create(definition, registeredTools) {
       assert.equal(definition.systemPrompt, "voice system prompt");
-      tools = registeredTools as readonly ToolDefinition[];
+      tools = registeredTools;
       toolNames = definition.toolNames;
       return runtime;
     },
@@ -84,7 +84,7 @@ test("routes voice replies through discord_speak using the existing runtime prom
 });
 
 test("wires the runtime image analyzer into discord_read", async () => {
-  let tools: readonly ToolDefinition[] = [];
+  let tools: readonly ToolRegistration[] = [];
   let analyzedPrompt: unknown;
   const runtime: AgentRuntime = {
     async analyzeImage(prompt) {
@@ -96,7 +96,7 @@ test("wires the runtime image analyzer into discord_read", async () => {
   };
   const agentFactory: AgentFactory = {
     async create(_definition, registeredTools) {
-      tools = registeredTools as readonly ToolDefinition[];
+      tools = registeredTools;
       return runtime;
     },
   };
@@ -126,10 +126,8 @@ test("wires the runtime image analyzer into discord_read", async () => {
   assert.ok(readTool);
 
   const result = await readTool.execute(
-    "tool-call",
     { messageId: "message-456" },
-    undefined,
-    undefined,
+    { callId: "tool-call" } as never,
     {} as never,
   );
 
@@ -137,7 +135,7 @@ test("wires the runtime image analyzer into discord_read", async () => {
     text: "さつき (@satsuki):\n読み取った本文\n[添付画像: sample.png]",
     images: [{ data: "c2VjcmV0", mimeType: "image/png" }],
   });
-  assert.deepEqual(result.content, [
+  assert.deepEqual(result.output, [
     {
       type: "text",
       text:
@@ -244,12 +242,12 @@ test("injects the current guild memory into the agent prompt", async () => {
 
 test("binds private reads to the owner and refuses other authors or channels", async () => {
   const prompts: AgentEvent[] = [];
-  let tools: readonly ToolDefinition[] = [];
+  let tools: readonly ToolRegistration[] = [];
   let requester: Parameters<DiscordService["readMessage"]>[1];
   const factory: AgentFactory = {
     async create(_definition, registeredTools, options) {
       assert.equal(options.ownerFeaturesAllowed, true);
-      tools = registeredTools as readonly ToolDefinition[];
+      tools = registeredTools;
       return {
         async prompt(prompt) {
           prompts.push(prompt);
@@ -276,7 +274,7 @@ test("binds private reads to the owner and refuses other authors or channels", a
   assert.ok(prompts.every((event) => !("ownerFeaturesAllowed" in event)));
   const read = tools.find((tool) => tool.name === "discord_read");
   assert.ok(read);
-  await read.execute("read", { messageId: message.id }, undefined, undefined, {} as never);
+  await read.execute({ messageId: message.id }, { callId: "read" } as never, {} as never);
   assert.deepEqual(requester, { userId: message.author.id });
   for (const invalid of [
     { ...message, author: { ...message.author, id: "other" } },
@@ -326,11 +324,11 @@ test("keeps reminders across session rotation and isolates channel and access sc
     ownerFeaturesAllowed: boolean,
     ownerUserId?: string,
   ) {
-    let tools: readonly ToolDefinition[] = [];
+    let tools: readonly ToolRegistration[] = [];
     await DiscordAgent.create(
       {
         async create(_definition, registeredTools) {
-          tools = registeredTools as readonly ToolDefinition[];
+          tools = registeredTools;
           return { async prompt() {}, dispose() {} };
         },
       },
@@ -341,10 +339,10 @@ test("keeps reminders across session rotation and isolates channel and access sc
     );
     return tools;
   }
-  async function execute(tools: readonly ToolDefinition[], name: string, params: unknown) {
+  async function execute(tools: readonly ToolRegistration[], name: string, params: unknown) {
     const tool = tools.find((tool) => tool.name === name);
     assert.ok(tool);
-    return tool.execute("call", params, undefined, undefined, {} as never);
+    return tool.execute(params, { callId: "call" } as never, {} as never);
   }
   const original = await createTools("session-old", "channel-a", false, "123");
   const added = await execute(original, "reminder_add", {
@@ -354,8 +352,8 @@ test("keeps reminders across session rotation and isolates channel and access sc
   const id = (added.details as { id: string }).id;
   const rotated = await createTools("session-new", "channel-a", false, "123");
   assert.equal(
-    ((await execute(rotated, "reminder_list", {})).details as { reminders: Reminder[] }).reminders
-      .length,
+    ((await execute(rotated, "reminder_list", {})).details as unknown as { reminders: Reminder[] })
+      .reminders.length,
     1,
   );
   for (const tools of [
@@ -364,7 +362,8 @@ test("keeps reminders across session rotation and isolates channel and access sc
     await createTools("session-new", "channel-a", true, "456"),
   ]) {
     assert.deepEqual(
-      ((await execute(tools, "reminder_list", {})).details as { reminders: Reminder[] }).reminders,
+      ((await execute(tools, "reminder_list", {})).details as unknown as { reminders: Reminder[] })
+        .reminders,
       [],
     );
     assert.equal(
