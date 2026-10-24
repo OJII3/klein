@@ -92,6 +92,9 @@ export interface PiDurableAgentFactoryOptions {
     readonly model: string;
     readonly thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "max" | "xhigh";
     readonly contextWindowRatio?: number;
+    readonly compaction?: {
+      readonly backgroundTokens?: number;
+    };
     readonly image?: {
       readonly provider: string;
       readonly model: string;
@@ -147,6 +150,9 @@ export function createPiDurableAgentFactory({
       {
         models: harnessModels,
         registry,
+        ...(llm.compaction?.backgroundTokens === undefined
+          ? {}
+          : { settings: { compaction: { backgroundTokens: llm.compaction.backgroundTokens } } }),
         onReport(error) {
           logger.error(
             { err: error, event: "pi_durable_runtime_report" },

@@ -67,7 +67,7 @@ Set `"profile"` in `config/config.jsonc` to switch profiles (defaults to `"klein
 ### LLM & Providers
 
 - Supports OpenCode Go (`opencode-go`) and Google Cloud Vertex AI Express Mode (`google-vertex`).
-- **Context window**: Adjust `llm.contextWindowRatio` (`0.01`–`1.0`) to cap context window usage for automatic compaction.
+- **Context window**: Adjust `llm.contextWindowRatio` (`0.01`–`1.0`) to cap context window usage for automatic compaction. Optionally set `llm.compaction.backgroundTokens` to control how many tokens before the blocking threshold background compaction starts (Pi Durable default `32768`; `0` disables background compaction).
 - **Image analysis**: Configure `llm.image` to use a separate one-shot vision model; its analysis is passed to the main conversation context.
 
 ### Voice Chat & TTS
