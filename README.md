@@ -48,10 +48,7 @@ conversations. Session keys are namespaced by the caller; each conversation rece
 the caller's tools, filtered by the current permissions, when its runtime is created
 or reattached.
 
-On the first open after upgrading, Klein imports `pi-durable-sessions.json` from each
-Pi Durable directory and `channel-session-state/*.json` from the agent directory into
-the database. The old files remain as backups and are ignored after migration.
-Back up the SQLite databases to preserve subsequent session and rotation changes.
+Back up the SQLite databases to preserve session history and rotation state.
 
 Separate build commands are also available:
 

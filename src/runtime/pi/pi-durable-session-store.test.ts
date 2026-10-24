@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -82,115 +82,6 @@ test("rolls back conversation creation and mapping together", async () => {
       BACKGROUND_CONTEXT,
     );
     assert.deepEqual(conversations.items, []);
-  } finally {
-    await session.close(BACKGROUND_CONTEXT);
-    await rm(directory, { recursive: true, force: true });
-  }
-});
-
-test("imports legacy JSON once, preserving ordered IDs and channel state", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "klein-durable-import-"));
-  let opened = await openStore(join(directory, "state.sqlite"));
-  try {
-    const ids = await opened.session.commit(async (tx) => {
-      const first = await tx.createConversation({ ownership: { kind: "ownerless" } });
-      const second = await tx.createConversation({ ownership: { kind: "ownerless" } });
-      return [first.id, second.id];
-    }, BACKGROUND_CONTEXT);
-    const sessionIndexPath = join(directory, "sessions.json");
-    const channelStateDirectory = join(directory, "channels");
-    const index = { "discord-channel:old": ids, "future-channel:old": [ids[0]] };
-    const state = {
-      channelId: "old",
-      sessionKey: "discord-channel:old:2026-10-25",
-      accessScope: "owner",
-      lastActivityAt: 100,
-      lastRotationDate: "2026-10-25",
-      hasActivitySinceRotation: false,
-      handoffContext: "Preserved handoff",
-    };
-    const content = JSON.stringify(index);
-    await writeFile(sessionIndexPath, content);
-    await mkdir(channelStateDirectory);
-    await writeFile(join(channelStateDirectory, "old.json"), JSON.stringify(state));
-    await opened.store.migrateLegacyJson({ sessionIndexPath, channelStateDirectory });
-    assert.deepEqual(await opened.store.loadSessionIndex(), index);
-    assert.deepEqual(await opened.store.channelStates.list(), [state]);
-    assert.equal(await readFile(sessionIndexPath, "utf8"), content);
-    await opened.session.close(BACKGROUND_CONTEXT);
-    opened = await openStore(join(directory, "state.sqlite"));
-    await writeFile(sessionIndexPath, "corrupted stale backup");
-    await writeFile(join(channelStateDirectory, "old.json"), "corrupted stale backup");
-    await opened.store.migrateLegacyJson({ sessionIndexPath, channelStateDirectory });
-    assert.deepEqual(await opened.store.loadSessionIndex(), index);
-    assert.deepEqual(await opened.store.channelStates.list(), [state]);
-  } finally {
-    await opened.session.close(BACKGROUND_CONTEXT);
-    await rm(directory, { recursive: true, force: true });
-  }
-});
-
-test("imports Discord state later when its directory was initially unspecified", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "klein-durable-import-later-"));
-  let opened = await openStore(join(directory, "state.sqlite"));
-  try {
-    const id = await opened.session.commit(
-      async (tx) => (await tx.createConversation({ ownership: { kind: "ownerless" } })).id,
-      BACKGROUND_CONTEXT,
-    );
-    const sessionIndexPath = join(directory, "sessions.json");
-    const channelStateDirectory = join(directory, "channels");
-    const index = { "discord-channel:42": [id] };
-    const state = {
-      channelId: "42",
-      sessionKey: "discord-channel:42",
-      lastActivityAt: null,
-      lastRotationDate: "2026-10-25",
-      hasActivitySinceRotation: true,
-    };
-    await writeFile(sessionIndexPath, JSON.stringify(index));
-    await mkdir(channelStateDirectory);
-    await writeFile(join(channelStateDirectory, "42.json"), JSON.stringify(state));
-    await opened.store.migrateLegacyJson({ sessionIndexPath });
-    assert.deepEqual(await opened.store.loadSessionIndex(), index);
-    assert.deepEqual(await opened.store.channelStates.list(), []);
-    await opened.session.close(BACKGROUND_CONTEXT);
-    opened = await openStore(join(directory, "state.sqlite"));
-    await writeFile(sessionIndexPath, "corrupted old index");
-    await opened.store.migrateLegacyJson({ sessionIndexPath, channelStateDirectory });
-    assert.deepEqual(await opened.store.loadSessionIndex(), index);
-    assert.deepEqual(await opened.store.channelStates.list(), [state]);
-    await writeFile(join(channelStateDirectory, "42.json"), "corrupted old state");
-    await opened.store.migrateLegacyJson({ sessionIndexPath, channelStateDirectory });
-    assert.deepEqual(await opened.store.channelStates.list(), [state]);
-  } finally {
-    await opened.session.close(BACKGROUND_CONTEXT);
-    await rm(directory, { recursive: true, force: true });
-  }
-});
-
-test("invalid legacy state leaves both imports and completion marker uncommitted", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "klein-durable-import-invalid-"));
-  const { session, store } = await openStore(join(directory, "state.sqlite"));
-  try {
-    const id = await session.commit(
-      async (tx) => (await tx.createConversation({ ownership: { kind: "ownerless" } })).id,
-      BACKGROUND_CONTEXT,
-    );
-    const sessionIndexPath = join(directory, "sessions.json");
-    const channelStateDirectory = join(directory, "channels");
-    await writeFile(sessionIndexPath, JSON.stringify({ "other:42": [id] }));
-    await mkdir(channelStateDirectory);
-    await writeFile(join(channelStateDirectory, "42.json"), "{}");
-    await assert.rejects(
-      store.migrateLegacyJson({ sessionIndexPath, channelStateDirectory }),
-      /Invalid legacy/,
-    );
-    assert.deepEqual(await store.loadSessionIndex(), {});
-    assert.deepEqual(await store.channelStates.list(), []);
-    await rm(join(channelStateDirectory, "42.json"));
-    await store.migrateLegacyJson({ sessionIndexPath, channelStateDirectory });
-    assert.deepEqual(await store.getConversationIds("other:42"), [id]);
   } finally {
     await session.close(BACKGROUND_CONTEXT);
     await rm(directory, { recursive: true, force: true });

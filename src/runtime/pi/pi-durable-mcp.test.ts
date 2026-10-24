@@ -70,7 +70,7 @@ test("calls a configured MCP tool through the durable runtime", async () => {
   modelRuntime.registerNativeProvider(provider.provider);
   const factory = createPiDurableAgentFactory({
     agentDir: join(agentDir, "durable"),
-    legacyAgentDir: agentDir,
+    configDir: agentDir,
     llm: { provider: model.provider, model: model.id },
     modelRuntime,
     sessionMode: "new",
