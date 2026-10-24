@@ -1,4 +1,4 @@
-import { defineTool } from "@earendil-works/pi-coding-agent";
+import { defineTool } from "@earendil-works/pi-durable";
 import { Type } from "typebox";
 
 import { formatDiscordMessage, type DiscordMessage } from "@modules/discord/domain/discord-message";
@@ -14,19 +14,14 @@ export function createDiscordReadTool(
 ) {
   return defineTool({
     name: "discord_read",
-    label: "Read Discord message",
     description:
       "Read a Discord message by ID, including image attachments. Use the current channel when channelId is omitted.",
-    promptSnippet: "Read a Discord message by ID.",
-    promptGuidelines: [
-      "When given a Discord message link, extract its channel ID and message ID.",
-      "Use channelId from search results when reading a message from another channel.",
-    ],
     parameters: Type.Object({
       messageId: Type.String({ minLength: 1 }),
       channelId: Type.Optional(Type.String({ minLength: 1 })),
     }),
-    async execute(_toolCallId, params) {
+    replay: "safe",
+    async execute(params) {
       const message = await discordService.readMessage(
         {
           channelId: params.channelId ?? currentChannelId,
@@ -38,7 +33,7 @@ export function createDiscordReadTool(
       const formattedMessage = formatDiscordMessage(message);
 
       return {
-        content: [
+        output: [
           {
             type: "text",
             text: imageAnalysis

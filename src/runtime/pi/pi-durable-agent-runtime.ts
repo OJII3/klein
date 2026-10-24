@@ -311,17 +311,15 @@ export function createPiDurableAgentFactory({
       }
       return cost;
     },
-    async create<TTool>(
+    async create(
       definition: AgentDefinition,
-      tools: readonly TTool[],
+      tools: readonly ToolRegistration[],
       options: AgentCreationOptions,
     ): Promise<AgentRuntime> {
       const sessionId = encodeURIComponent(options.sessionKey);
       resolveConfiguredModel(llm.provider, llm.model, modelRuntime);
-      const durableTools = adaptDurableTools(
-        tools as readonly ToolDefinition[],
-        options.ownerFeaturesAllowed === true,
-        permissions,
+      const durableTools = tools.filter((tool) =>
+        isToolAllowed(tool.name, options.ownerFeaturesAllowed === true, permissions),
       );
       const mcpTools = await loadMcpTools({
         agentDir: legacyAgentDir,
@@ -1216,42 +1214,6 @@ export class PiDurableAgentRuntime implements AgentRuntime {
   }
 }
 
-function adaptDurableTools(
-  tools: readonly ToolDefinition[],
-  ownerFeaturesAllowed: boolean,
-  permissions?: ToolPermissions,
-): ToolRegistration[] {
-  return tools
-    .filter((tool) => isToolAllowed(tool.name, ownerFeaturesAllowed, permissions))
-    .map((tool) =>
-      defineTool({
-        name: tool.name,
-        description: [tool.description, tool.promptSnippet, ...(tool.promptGuidelines ?? [])]
-          .filter(Boolean)
-          .join("\n\n"),
-        parameters: tool.parameters,
-        structuredOutputSchema: tool.outputSchema,
-        deferred: tool.exposure === "deferred" ? true : undefined,
-        replay: isReadOnlyTool(tool.name) ? "safe" : "unsafe",
-        async execute(args, api, context) {
-          const result = await tool.execute(
-            api.callId,
-            args as never,
-            context.abortSignal,
-            undefined,
-            {} as never,
-          );
-          return {
-            output: result.content as never,
-            structuredOutput: result.structuredContent as never,
-            isError: result.isError,
-            details: result.details as never,
-          };
-        },
-      }),
-    );
-}
-
 function isToolAllowed(
   name: string,
   ownerFeaturesAllowed: boolean,
@@ -1263,10 +1225,6 @@ function isToolAllowed(
 
 function durableOpenCodeSessionId(agentDir: string, id: ConversationId): string {
   return `${createHash("sha256").update(resolve(agentDir)).digest("hex").slice(0, 16)}-${id}`;
-}
-
-function isReadOnlyTool(name: string): boolean {
-  return name === "discord_read" || name === "reminder_list";
 }
 
 function isPiAiMessage(message: unknown): message is Message {

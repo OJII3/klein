@@ -31,10 +31,8 @@ test("reads a message using the current channel by default", async () => {
   );
 
   const result = await tool.execute(
-    "tool-call",
     { messageId: "message-456" },
-    undefined,
-    undefined,
+    { callId: "tool-call" } as never,
     {} as never,
   );
 
@@ -42,7 +40,7 @@ test("reads a message using the current channel by default", async () => {
     channelId: "current-channel",
     messageId: "message-456",
   });
-  assert.deepEqual(result.content, [{ type: "text", text: "さつき (@satsuki):\n読み取った本文" }]);
+  assert.deepEqual(result.output, [{ type: "text", text: "さつき (@satsuki):\n読み取った本文" }]);
 });
 
 test("returns image attachments as tool result content", async () => {
@@ -66,14 +64,12 @@ test("returns image attachments as tool result content", async () => {
   );
 
   const result = await tool.execute(
-    "tool-call",
     { messageId: "message-456" },
-    undefined,
-    undefined,
+    { callId: "tool-call" } as never,
     {} as never,
   );
 
-  assert.deepEqual(result.content, [
+  assert.deepEqual(result.output, [
     {
       type: "text",
       text: "さつき (@satsuki):\n読み取った本文\n[添付画像: sample.png]",
@@ -108,10 +104,8 @@ test("returns image analysis instead of image content when an analyzer is availa
   );
 
   const result = await tool.execute(
-    "tool-call",
     { messageId: "message-456" },
-    undefined,
-    undefined,
+    { callId: "tool-call" } as never,
     {} as never,
   );
 
@@ -126,7 +120,7 @@ test("returns image analysis instead of image content when an analyzer is availa
       },
     ],
   });
-  assert.deepEqual(result.content, [
+  assert.deepEqual(result.output, [
     {
       type: "text",
       text:
@@ -150,10 +144,8 @@ test("reads a message from the explicitly provided channel", async () => {
   );
 
   await tool.execute(
-    "tool-call",
     { channelId: "linked-channel", messageId: "linked-message" },
-    undefined,
-    undefined,
+    { callId: "tool-call" } as never,
     {} as never,
   );
 
