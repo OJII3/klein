@@ -4,6 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import pino from "pino";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import { createSession } from "@earendil-works/pi-durable";
+import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
+import { PiDurableSessionStore } from "@runtime/pi/pi-durable-session-store";
 
 import { DiscordAgent } from "@agents/discord/discord-agent";
 import type { AgentFactory } from "@agents/core/agent-factory";
@@ -20,7 +24,7 @@ import type { Reminder } from "@modules/reminders/domain/reminder";
 import type { ReminderStore } from "@modules/reminders/ports/reminder-store";
 import { TaskCoordinator } from "./task-coordinator";
 import { AgentCoordinator, type AgentCoordinatorDependencies } from "./agent-coordinator";
-import { ChannelSessionStateStore, getChannelRotationDate } from "./channel-session-state-store";
+import { getChannelRotationDate } from "./channel-session-state-store";
 
 interface TestHarness {
   readonly agentCoordinator: AgentCoordinator;
@@ -292,7 +296,9 @@ const dueReminder: Reminder = {
 
 test("delivers reminders to the current rotated session and reuses it for conversation", async () => {
   const directory = await mkdtemp(join(tmpdir(), "klein-reminder-session-"));
-  const channelSessionStateStore = new ChannelSessionStateStore(directory);
+  const storage = await openNodeSqliteStorage(join(directory, "sessions.sqlite"));
+  const session = createSession(storage);
+  const channelSessionStateStore = new PiDurableSessionStore(session, storage).channelStates;
   const sessionKey = "discord-channel:test-channel:public:rotation:2026-10-14";
   await channelSessionStateStore.save({
     channelId: dueReminder.channelId,
@@ -326,13 +332,16 @@ test("delivers reminders to the current rotated session and reuses it for conver
     assert.equal(events?.[1].type, "discord.message");
   } finally {
     await harness.agentCoordinator.dispose();
+    await session.close(BACKGROUND_CONTEXT);
     await rm(directory, { recursive: true, force: true });
   }
 });
 
 test("rotates an idle session before delivering a reminder into the new conversation", async () => {
   const directory = await mkdtemp(join(tmpdir(), "klein-reminder-rotation-"));
-  const channelSessionStateStore = new ChannelSessionStateStore(directory);
+  const storage = await openNodeSqliteStorage(join(directory, "sessions.sqlite"));
+  const session = createSession(storage);
+  const channelSessionStateStore = new PiDurableSessionStore(session, storage).channelStates;
   const oldKey = "discord-channel:test-channel:public:rotation:2000-01-01";
   const newKey = `discord-channel:test-channel:public:rotation:${getChannelRotationDate(Date.now())}`;
   await channelSessionStateStore.save({
@@ -365,6 +374,7 @@ test("rotates an idle session before delivering a reminder into the new conversa
     assert.equal(state.handoffContext, undefined);
   } finally {
     await harness.agentCoordinator.dispose();
+    await session.close(BACKGROUND_CONTEXT);
     await rm(directory, { recursive: true, force: true });
   }
 });

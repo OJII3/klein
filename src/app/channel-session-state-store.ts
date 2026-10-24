@@ -1,6 +1,3 @@
-import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
-
 export interface ChannelSessionState {
   readonly channelId: string;
   readonly accessScope?: string;
@@ -47,61 +44,8 @@ export function isChannelRotationDue(state: ChannelSessionState, timestamp: numb
   );
 }
 
-export class ChannelSessionStateStore {
-  constructor(private readonly directory: string) {}
-
-  async getOrCreate(channelId: string, rotationDate: string): Promise<ChannelSessionState> {
-    try {
-      const content = await readFile(this.getFilePath(channelId), "utf8");
-      const state = JSON.parse(content) as ChannelSessionState;
-      if (state.channelId !== channelId || !state.sessionKey) {
-        throw new Error(`Invalid channel session state: ${channelId}`);
-      }
-      return state;
-    } catch (error) {
-      if (!isFileNotFound(error)) throw error;
-    }
-
-    return {
-      channelId,
-      sessionKey: `discord-channel:${channelId}`,
-      lastActivityAt: null,
-      lastRotationDate: rotationDate,
-      hasActivitySinceRotation: true,
-    };
-  }
-
-  async list(): Promise<readonly ChannelSessionState[]> {
-    let entries;
-    try {
-      entries = await readdir(this.directory, { withFileTypes: true });
-    } catch (error) {
-      if (isFileNotFound(error)) return [];
-      throw error;
-    }
-
-    const paths = entries
-      .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
-      .map((entry) => resolve(this.directory, entry.name));
-
-    return Promise.all(
-      paths.map(async (path) => JSON.parse(await readFile(path, "utf8")) as ChannelSessionState),
-    );
-  }
-
-  async save(state: ChannelSessionState): Promise<void> {
-    await mkdir(this.directory, { recursive: true });
-    const filePath = this.getFilePath(state.channelId);
-    const temporaryPath = `${filePath}.${process.pid}.tmp`;
-    await writeFile(temporaryPath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
-    await rename(temporaryPath, filePath);
-  }
-
-  private getFilePath(channelId: string): string {
-    return resolve(this.directory, `${encodeURIComponent(channelId)}.json`);
-  }
-}
-
-function isFileNotFound(error: unknown): boolean {
-  return error instanceof Error && "code" in error && error.code === "ENOENT";
+export interface ChannelSessionStateStore {
+  getOrCreate(channelId: string, rotationDate: string): Promise<ChannelSessionState>;
+  list(): Promise<readonly ChannelSessionState[]>;
+  save(state: ChannelSessionState): Promise<void>;
 }

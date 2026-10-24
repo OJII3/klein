@@ -4,6 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import pino from "pino";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import { createSession } from "@earendil-works/pi-durable";
+import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
+import { PiDurableSessionStore } from "@runtime/pi/pi-durable-session-store";
 
 import type { AgentCreationOptions, AgentFactory } from "@agents/core/agent-factory";
 import type { AgentEvent } from "@agents/core/agent-event";
@@ -17,7 +21,10 @@ import { DiscordOperatingState } from "@modules/discord/domain/discord-operating
 import type { DiscordService } from "@modules/discord/ports/discord-service";
 import type { MemoryCoordinator } from "@modules/memory/application/memory-coordinator";
 import { AgentCoordinator } from "./agent-coordinator";
-import { ChannelSessionStateStore, getChannelRotationDate } from "./channel-session-state-store";
+import {
+  type ChannelSessionStateStore,
+  getChannelRotationDate,
+} from "./channel-session-state-store";
 import { TaskCoordinator } from "./task-coordinator";
 
 const ownerId = "123";
@@ -100,7 +107,10 @@ function createHarness(store: ChannelSessionStateStore, channelRule: { access: D
 
 test("only owner messages create private sessions and never enter shared memory", async () => {
   const directory = await mkdtemp(join(tmpdir(), "klein-owner-"));
-  const harness = createHarness(new ChannelSessionStateStore(directory), { access: "owner" });
+  const storage = await openNodeSqliteStorage(join(directory, "sessions.sqlite"));
+  const session = createSession(storage);
+  const store = new PiDurableSessionStore(session, storage).channelStates;
+  const harness = createHarness(store, { access: "owner" });
   try {
     await harness.coordinator.handleDiscordMessage({
       ...message,
@@ -118,13 +128,16 @@ test("only owner messages create private sessions and never enter shared memory"
     assert.equal(harness.remembered.length, 0);
   } finally {
     await harness.coordinator.dispose();
+    await session.close(BACKGROUND_CONTEXT);
     await rm(directory, { recursive: true, force: true });
   }
 });
 
 test("changing owner access to allow drops private history and handoff on restart", async () => {
   const directory = await mkdtemp(join(tmpdir(), "klein-owner-"));
-  const store = new ChannelSessionStateStore(directory);
+  const storage = await openNodeSqliteStorage(join(directory, "sessions.sqlite"));
+  const session = createSession(storage);
+  const store = new PiDurableSessionStore(session, storage).channelStates;
   const privateHarness = createHarness(store, { access: "owner" });
   const publicHarness = createHarness(store, { access: "allow" });
   try {
@@ -143,13 +156,16 @@ test("changing owner access to allow drops private history and handoff on restar
     assert.equal(publicHarness.remembered.length, 1);
   } finally {
     await publicHarness.coordinator.dispose();
+    await session.close(BACKGROUND_CONTEXT);
     await rm(directory, { recursive: true, force: true });
   }
 });
 
 test("owner access changes replace cached agents and preserve private session scope on rotation", async () => {
   const directory = await mkdtemp(join(tmpdir(), "klein-owner-"));
-  const store = new ChannelSessionStateStore(directory);
+  const storage = await openNodeSqliteStorage(join(directory, "sessions.sqlite"));
+  const session = createSession(storage);
+  const store = new PiDurableSessionStore(session, storage).channelStates;
   const rule: { access: DiscordAccess } = { access: "owner" };
   const harness = createHarness(store, rule);
   try {
@@ -180,6 +196,7 @@ test("owner access changes replace cached agents and preserve private session sc
       await resumed.coordinator.dispose();
     }
   } finally {
+    await session.close(BACKGROUND_CONTEXT);
     await rm(directory, { recursive: true, force: true });
   }
 });

@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 
 import { AgentCoordinator } from "./agent-coordinator";
-import { ChannelSessionStateStore } from "./channel-session-state-store";
 import { parseCliOptions } from "./cli-options";
 import { loadConfig } from "./config";
 import { createLogFilePath, createLogger, flushLogger } from "./logger";
@@ -79,9 +78,6 @@ export async function bootstrap(): Promise<void> {
   const taskCoordinator = new TaskCoordinator();
   const tts = config.features.tts?.enabled ? new Sbv2Tts(config.features.tts.serverUrl) : undefined;
   const agentDir = resolve(config.runtime.agentDir);
-  const channelSessionStateStore = new ChannelSessionStateStore(
-    resolve(agentDir, "channel-session-state"),
-  );
   const reminderStore = new FileReminderStore(resolve(agentDir, "reminders"));
   const channelRuleStore = new FileDiscordChannelRuleStore(resolve(agentDir, "channel-rules"));
   const modelRuntime = await createPiModelRuntime(agentDir);
@@ -111,6 +107,7 @@ export async function bootstrap(): Promise<void> {
     : undefined;
   const piAgentFactory = createPiDurableAgentFactory({
     agentDir: resolve(agentDir, "pi-durable"),
+    legacyChannelSessionStateDirectory: resolve(agentDir, "channel-session-state"),
     legacyAgentDir: agentDir,
     llm: config.llm,
     skillsDirectory: profile.skillsDirectory,
@@ -209,7 +206,7 @@ export async function bootstrap(): Promise<void> {
     accessPolicy: discordAccessPolicy,
     ownerUserId,
     createDiscordAgent,
-    channelSessionStateStore,
+    channelSessionStateStore: piAgentFactory.channelSessionStateStore,
     channelRuleStore,
     discordService,
     logger,
