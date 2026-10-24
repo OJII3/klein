@@ -1,5 +1,11 @@
 import type { Logger } from "pino";
-import { EmbedBuilder, SlashCommandBuilder, type ChatInputCommandInteraction } from "discord.js";
+import {
+  ContainerBuilder,
+  MessageFlags,
+  SlashCommandBuilder,
+  TextDisplayBuilder,
+  type ChatInputCommandInteraction,
+} from "discord.js";
 import type { AsrClient } from "@modules/asr/domain/asr-client";
 import type { TextToSpeech } from "@modules/tts/infrastructure/sbv2-tts";
 import type { VoiceReactionPreset } from "@modules/discord/ports/voice-reaction-selector";
@@ -34,7 +40,7 @@ interface ActiveVoiceChat {
 }
 
 interface SendableChannel {
-  send(options: { embeds: EmbedBuilder[] }): Promise<unknown>;
+  send(options: { components: ContainerBuilder[]; flags: MessageFlags }): Promise<unknown>;
 }
 
 function isSendableChannel(value: unknown): value is SendableChannel {
@@ -266,7 +272,14 @@ export class DiscordVoiceChatController {
     if (!isSendableChannel(channel)) return;
     try {
       await channel.send({
-        embeds: [new EmbedBuilder().setColor(color).setDescription(`${title}\n${description}`)],
+        components: [
+          new ContainerBuilder()
+            .setAccentColor(color)
+            .addTextDisplayComponents(
+              new TextDisplayBuilder().setContent(`## ${title}\n${description}`),
+            ),
+        ],
+        flags: MessageFlags.IsComponentsV2,
       });
     } catch (error) {
       this.logger?.warn(
