@@ -11,7 +11,7 @@
         "@earendil-works/pi-codemode": "1.4.0",
         "@earendil-works/pi-coding-agent": "^1.4.0",
         "@earendil-works/pi-durable": "^1.4.0",
-        "@earendil-works/pi-mcp": "1.4.0",
+        "@earendil-works/pi-mcp": "^1.4.0",
         "@elysia/eden": "^1.4.10",
         "@elysia/static": "^1.4.11",
         "@mantine/core": "^9.7.3",

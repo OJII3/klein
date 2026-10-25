@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, readdir, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,9 +16,15 @@ import {
   type TranscriptContext,
 } from "@earendil-works/pi-ai";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
+import {
+  McpOAuthAuthorizationRequiredError,
+  type McpOAuthState,
+  type OAuthChallenge,
+} from "@earendil-works/pi-mcp/oauth";
 
 import { createPiDurableAgentFactory } from "./pi-durable-agent-runtime";
 import {
+  createMcpAuthProvider,
   createMcpResultSchema,
   createMcpToolName,
   getMcpToolExposure,
@@ -440,6 +448,266 @@ test("serializes OAuth refresh and file writes across separate credential store 
     const beta = await storeA.forServer("beta", "https://beta.example.com/mcp").load();
     assert.equal(alpha?.tokens?.access_token, "alpha-token");
     assert.equal(beta?.tokens?.access_token, "beta-token");
+  } finally {
+    await rm(agentDir, { force: true, recursive: true });
+  }
+});
+
+async function lockDirectories(dir: string): Promise<string[]> {
+  return (await readdir(dir)).filter((name) => name.endsWith(".lock"));
+}
+
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve: () => void = () => undefined;
+  const promise = new Promise<void>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
+function runWorker(script: string, args: string[]): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ["-e", script, ...args], {
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+    let stderr = "";
+    child.stderr?.on("data", (chunk: unknown) => {
+      stderr += String(chunk);
+    });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`worker exited with ${code}: ${stderr}`));
+    });
+  });
+}
+
+test("serializes OAuth credential writes across processes", async () => {
+  const agentDir = await mkdtemp(join(tmpdir(), "klein-mcp-process-"));
+  const workers = 3;
+  const writesPerWorker = 10;
+  const moduleUrl = new URL("./pi-durable-mcp.ts", import.meta.url).href;
+  const script = `
+import { McpOAuthCredentialStore } from ${JSON.stringify(moduleUrl)};
+const [agentDir, worker] = process.argv.slice(1);
+const store = new McpOAuthCredentialStore(agentDir);
+for (let index = 0; index < ${writesPerWorker}; index += 1) {
+  const url = "https://example.com/" + worker + "/" + index;
+  await store.forServer("srv" + worker + "_" + index, url).save({
+    serverUrl: url,
+    tokens: { access_token: worker + "-" + index, token_type: "Bearer" },
+  });
+}
+`;
+  try {
+    await Promise.all(
+      Array.from({ length: workers }, (_, worker) => runWorker(script, [agentDir, String(worker)])),
+    );
+    const states = JSON.parse(await readFile(join(agentDir, "mcp-auth.json"), "utf8"));
+    assert.equal(Object.keys(states).length, workers * writesPerWorker);
+    assert.deepEqual(await lockDirectories(agentDir), []);
+  } finally {
+    await rm(agentDir, { force: true, recursive: true });
+  }
+});
+
+test("takes over a credential lock left by a crashed process", async () => {
+  const agentDir = await mkdtemp(join(tmpdir(), "klein-mcp-stale-"));
+  try {
+    const lockDir = join(agentDir, "mcp-auth.json.lock");
+    await mkdir(lockDir);
+    const old = new Date(Date.now() - 60_000);
+    await utimes(lockDir, old, old);
+
+    const started = Date.now();
+    const state = await new McpOAuthCredentialStore(agentDir)
+      .forServer("crashed", "https://example.com/mcp")
+      .load();
+    assert.equal(state, undefined);
+    assert.ok(Date.now() - started < 5_000);
+    assert.deepEqual(await lockDirectories(agentDir), []);
+  } finally {
+    await rm(agentDir, { force: true, recursive: true });
+  }
+});
+
+test("does not remove a lock another store took over as stale", async () => {
+  const agentDir = await mkdtemp(join(tmpdir(), "klein-mcp-lock-owner-"));
+  const serverUrl = "https://example.com/mcp";
+  const first = new McpOAuthCredentialStore(agentDir).forServer("shared", serverUrl);
+  const second = new McpOAuthCredentialStore(agentDir).forServer("shared", serverUrl);
+  const firstAcquired = deferred();
+  const firstRelease = deferred();
+  const secondAcquired = deferred();
+  const secondRelease = deferred();
+  let lockDir: string | undefined;
+
+  try {
+    const firstRun = first.withRefreshLock(async () => {
+      const lockName = (await readdir(agentDir)).find((name) =>
+        name.startsWith("mcp-auth-refresh-"),
+      );
+      assert.ok(lockName);
+      lockDir = join(agentDir, lockName);
+      const old = new Date(Date.now() - 60_000);
+      await utimes(lockDir, old, old);
+      firstAcquired.resolve();
+      await firstRelease.promise;
+    });
+    await firstAcquired.promise;
+
+    const secondRun = second.withRefreshLock(async () => {
+      secondAcquired.resolve();
+      await secondRelease.promise;
+    });
+    await secondAcquired.promise;
+
+    firstRelease.resolve();
+    await firstRun;
+    assert.ok(lockDir && existsSync(lockDir), "the second holder's lock must stay");
+
+    secondRelease.resolve();
+    await secondRun;
+    assert.deepEqual(await lockDirectories(agentDir), []);
+  } finally {
+    firstRelease.resolve();
+    secondRelease.resolve();
+    await rm(agentDir, { force: true, recursive: true });
+  }
+});
+
+function oauthState(serverUrl: string, overrides: Partial<McpOAuthState> = {}): McpOAuthState {
+  return {
+    serverUrl,
+    clientInformation: { client_id: "klein", redirect_uris: ["http://127.0.0.1/callback"] },
+    discovery: {
+      authorizationServerUrl: "https://auth.example.com",
+      authorizationServerMetadata: {
+        issuer: "https://auth.example.com",
+        authorization_endpoint: "https://auth.example.com/authorize",
+        token_endpoint: "https://auth.example.com/token",
+        response_types_supported: ["code"],
+        token_endpoint_auth_methods_supported: ["none"],
+      },
+    },
+    tokens: { access_token: "stale-token", refresh_token: "refresh-1", token_type: "Bearer" },
+    ...overrides,
+  };
+}
+
+function tokenEndpointFetch(
+  requests: RequestInit[],
+): (input: string | URL, init?: RequestInit) => Promise<Response> {
+  return async (input, init) => {
+    assert.equal(String(input), "https://auth.example.com/token");
+    requests.push(init ?? {});
+    return Response.json({
+      access_token: "fresh-token",
+      refresh_token: "refresh-2",
+      token_type: "Bearer",
+      expires_in: 3600,
+    });
+  };
+}
+
+test("refreshes an expired MCP OAuth token before a request", async () => {
+  const agentDir = await mkdtemp(join(tmpdir(), "klein-mcp-refresh-"));
+  const serverUrl = "https://mcp.example.com/mcp";
+  const requests: RequestInit[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = tokenEndpointFetch(requests) as typeof fetch;
+  try {
+    const store = new McpOAuthCredentialStore(agentDir).forServer("remote", serverUrl);
+    await store.save(oauthState(serverUrl, { tokensExpireAt: Date.now() - 1_000 }));
+    const provider = createMcpAuthProvider({
+      serverUrl,
+      store,
+      settings: () => ({}),
+      onChallenge: () => undefined,
+    });
+
+    assert.equal(await provider.token(), "fresh-token");
+    assert.equal(requests.length, 1);
+    assert.match(String(requests[0]?.body), /grant_type=refresh_token/);
+    assert.equal((await store.load())?.tokens?.refresh_token, "refresh-2");
+  } finally {
+    globalThis.fetch = originalFetch;
+    await rm(agentDir, { force: true, recursive: true });
+  }
+});
+
+test("refreshes an MCP OAuth token once after concurrent 401 responses", async () => {
+  const agentDir = await mkdtemp(join(tmpdir(), "klein-mcp-401-"));
+  const serverUrl = "https://mcp.example.com/mcp";
+  try {
+    const store = new McpOAuthCredentialStore(agentDir).forServer("remote", serverUrl);
+    await store.save(oauthState(serverUrl));
+    const requests: RequestInit[] = [];
+    const challenges: OAuthChallenge[] = [];
+    const provider = createMcpAuthProvider({
+      serverUrl,
+      store,
+      settings: () => ({}),
+      onChallenge: (challenge) => challenges.push(challenge),
+    });
+
+    assert.equal(await provider.token(), "stale-token");
+    const context = {
+      response: new Response(null, {
+        status: 401,
+        headers: { "www-authenticate": 'Bearer error="invalid_token"' },
+      }),
+      serverUrl: new URL(serverUrl),
+      fetch: tokenEndpointFetch(requests),
+      token: "stale-token",
+    };
+    await Promise.all([provider.onUnauthorized!(context), provider.onUnauthorized!(context)]);
+
+    assert.equal(requests.length, 1);
+    assert.deepEqual(
+      challenges.map((challenge) => challenge.error),
+      ["invalid_token", "invalid_token"],
+    );
+    assert.equal(await provider.token(), "fresh-token");
+    assert.equal((await store.load())?.tokens?.refresh_token, "refresh-2");
+  } finally {
+    await rm(agentDir, { force: true, recursive: true });
+  }
+});
+
+test("requires a new sign-in when the server asks for more scope", async () => {
+  const agentDir = await mkdtemp(join(tmpdir(), "klein-mcp-scope-"));
+  const serverUrl = "https://mcp.example.com/mcp";
+  try {
+    const store = new McpOAuthCredentialStore(agentDir).forServer("remote", serverUrl);
+    await store.save(oauthState(serverUrl));
+    const challenges: OAuthChallenge[] = [];
+    const provider = createMcpAuthProvider({
+      serverUrl,
+      store,
+      settings: () => ({}),
+      onChallenge: (challenge) => challenges.push(challenge),
+    });
+
+    await assert.rejects(
+      provider.onUnauthorized!({
+        response: new Response(null, {
+          status: 403,
+          headers: {
+            "www-authenticate": 'Bearer error="insufficient_scope", scope="files:write"',
+          },
+        }),
+        serverUrl: new URL(serverUrl),
+        fetch: async () => {
+          throw new Error("a scope upgrade must not refresh silently");
+        },
+        token: "stale-token",
+      }),
+      McpOAuthAuthorizationRequiredError,
+    );
+    assert.equal(challenges[0]?.error, "insufficient_scope");
+    assert.equal(challenges[0]?.scope, "files:write");
+    assert.equal(await provider.token(), "stale-token");
   } finally {
     await rm(agentDir, { force: true, recursive: true });
   }

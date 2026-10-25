@@ -1,7 +1,17 @@
+/**
+ * MCP integration for the pi-durable runtime: configuration, OAuth credentials, server connections,
+ * and the tools that expose them.
+ *
+ * Adapted from `@earendil-works/pi-coding-agent` 1.4.0 (MIT, Earendil Works):
+ * `dist/extensions/mcp/{config,oauth,runtime,tools}.js`, `dist/core/mcp-servers.js`, and
+ * `dist/core/resolve-config-value.js`. Keep this file in step with those sources when upgrading;
+ * the intentional differences are the credential store's own file locking and the lack of an
+ * interactive sign-in flow.
+ */
 import { execSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { mkdir, rmdir, stat, utimes, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -49,7 +59,8 @@ import { ToolAuthorization, type ToolPermissions } from "./tool-permissions";
 
 const CONFIG_DIR_NAME = ".pi";
 const CLIENT_NAME = "pi";
-const CLIENT_VERSION = "1.0.0";
+// Reported to MCP servers in `initialize`. Keep in step with package.json.
+const CLIENT_VERSION = "0.1.0";
 const DEFAULT_TIMEOUT_SECONDS = 60;
 const STDERR_TAIL_CHARS = 2_000;
 const CONNECT_RETRY_DELAYS_MS = [250, 1_000];
@@ -436,6 +447,8 @@ export function loadMcpConfig(options: {
 // Config value resolution ($ENV, ${ENV}, !cmd)
 const ENV_VAR_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const ENV_VAR_NAME_PREFIX_RE = /^[A-Za-z_][A-Za-z0-9_]*/;
+/** Command results live for the process: a `!command` secret may prompt the user. */
+const commandResultCache = new Map<string, string | undefined>();
 
 type TemplatePart = { type: "literal"; value: string } | { type: "env"; name: string };
 
@@ -497,24 +510,32 @@ function resolveEnvConfigValue(name: string, env?: Record<string, string>): stri
   return env?.[name] || process.env[name] || undefined;
 }
 
+function resolveShellCommand(config: string): string | undefined {
+  if (commandResultCache.has(config)) return commandResultCache.get(config);
+  let output: string | undefined;
+  try {
+    output = execSync(config.slice(1), {
+      encoding: "utf-8",
+      timeout: 10_000,
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    output = undefined;
+  }
+  const result = output || undefined;
+  commandResultCache.set(config, result);
+  return result;
+}
+
 function resolveConfigValueOrThrow(
   config: string,
   description: string,
   env?: Record<string, string>,
 ): string {
   if (config.startsWith("!")) {
-    const command = config.slice(1);
-    try {
-      const output = execSync(command, {
-        encoding: "utf-8",
-        timeout: 10_000,
-        stdio: ["ignore", "pipe", "ignore"],
-      }).trim();
-      if (output) return output;
-    } catch {
-      // Handled below
-    }
-    throw new Error(`Failed to resolve ${description} from shell command: ${command}`);
+    const output = resolveShellCommand(config);
+    if (output) return output;
+    throw new Error(`Failed to resolve ${description} from shell command: ${config.slice(1)}`);
   }
   const parts = parseConfigValueTemplate(config);
   const missingEnvVars: string[] = [];
@@ -621,6 +642,18 @@ function notifyInProcessWaiters(lockDir: string): void {
   for (const notify of waiters) notify();
 }
 
+function lockOwnerPath(lockDir: string): string {
+  return join(lockDir, "owner");
+}
+
+/**
+ * Remove a lock directory. `rm` rather than `rmdir`: the directory holds the owner file, and a
+ * directory left by a killed process may still have one.
+ */
+async function removeLockDir(lockDir: string): Promise<void> {
+  await rm(lockDir, { recursive: true, force: true }).catch(() => undefined);
+}
+
 async function acquireDirectoryLock(
   targetPath: string,
   options: DirectoryLockOptions,
@@ -637,6 +670,14 @@ async function acquireDirectoryLock(
   while (true) {
     try {
       await mkdir(lockDir, { mode: 0o700 });
+      // The owner token lets a holder that lost its lock as stale leave the new holder's lock alone.
+      const owner = randomBytes(16).toString("hex");
+      try {
+        await writeFile(lockOwnerPath(lockDir), owner, { ...AUTH_FILE_WRITE_OPTIONS, flag: "wx" });
+      } catch (error) {
+        await removeLockDir(lockDir);
+        throw error;
+      }
       const updateIntervalMs = Math.max(500, Math.floor(options.staleMs / 2));
       const heartbeat = setInterval(() => {
         const now = new Date();
@@ -649,7 +690,8 @@ async function acquireDirectoryLock(
         if (released) return;
         released = true;
         clearInterval(heartbeat);
-        await rmdir(lockDir).catch(() => undefined);
+        const current = await readFile(lockOwnerPath(lockDir), "utf-8").catch(() => undefined);
+        if (current === owner) await removeLockDir(lockDir);
         notifyInProcessWaiters(lockDir);
       };
     } catch (error) {
@@ -660,7 +702,7 @@ async function acquireDirectoryLock(
         try {
           const stats = await stat(lockDir);
           if (stats.mtimeMs < Date.now() - options.staleMs) {
-            await rmdir(lockDir).catch(() => undefined);
+            await removeLockDir(lockDir);
             allowStaleTakeover = false;
             continue;
           }
