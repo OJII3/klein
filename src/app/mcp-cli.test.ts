@@ -12,7 +12,6 @@ const AUTHORIZATION_CODE = "test-code";
 
 interface OAuthMcpServer {
   url: string;
-  origin: string;
   close: () => Promise<void>;
 }
 
@@ -119,7 +118,6 @@ async function startOAuthMcpServer(): Promise<OAuthMcpServer> {
   origin = `http://127.0.0.1:${address.port}`;
   return {
     url: `${origin}/mcp`,
-    origin,
     close: () =>
       new Promise<void>((resolve, reject) =>
         server.close((error) => (error ? reject(error) : resolve())),
