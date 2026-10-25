@@ -39,6 +39,7 @@ import { PinoJsonlReader } from "@modules/webui/infrastructure/pino-jsonl-reader
 import { Sbv2Tts } from "@modules/tts/infrastructure/sbv2-tts";
 import { WebSocketAsrClient } from "@modules/asr/infrastructure/websocket-asr-client";
 import { FileReminderStore } from "@modules/reminders/infrastructure/file-reminder-store";
+import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 
 const DISCORD_USAGE_STATUS_REFRESH_INTERVAL_MS = 60 * 60 * 1_000;
 const CHANNEL_CONTEXT_ROTATION_CHECK_INTERVAL_MS = 60 * 1_000;
@@ -297,7 +298,21 @@ export async function bootstrap(): Promise<void> {
   });
 
   try {
-    await discordService.start((message) => agentCoordinator.handleDiscordMessage(message));
+    const pendingMessages: DiscordMessage[] = [];
+    let restoring = true;
+    await discordService.start((message) => {
+      if (restoring) {
+        pendingMessages.push(message);
+        return Promise.resolve();
+      }
+      return agentCoordinator.handleDiscordMessage(message);
+    });
+    await agentCoordinator.initialize();
+    await piAgentFactory.resume();
+    restoring = false;
+    await Promise.all(
+      pendingMessages.map((message) => agentCoordinator.handleDiscordMessage(message)),
+    );
   } catch (error) {
     await shutdown("startup_failed");
     throw error;

@@ -152,6 +152,84 @@ test("reuses one Pi session for messages in the same Discord channel", async () 
   }
 });
 
+test("initializes every saved channel agent during startup", async () => {
+  const states = ["channel-a", "channel-b"].map((channelId) => ({
+    channelId,
+    sessionKey: `discord-channel:${channelId}`,
+    lastActivityAt: null,
+    lastRotationDate: getChannelRotationDate(Date.now()),
+    hasActivitySinceRotation: false,
+  }));
+  const channelSessionStateStore = {
+    async getOrCreate(channelId: string) {
+      return states.find((state) => state.channelId === channelId)!;
+    },
+    async list() {
+      return states;
+    },
+    async save() {},
+  };
+  const harness = createHarness(undefined, undefined, { channelSessionStateStore });
+
+  try {
+    await harness.agentCoordinator.initialize();
+
+    assert.deepEqual(harness.createdSessionKeys, [
+      "discord-channel:channel-a",
+      "discord-channel:channel-b",
+    ]);
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+test("does not resume saved channel sessions after their access scope changes", async () => {
+  const states = ["channel-a", "channel-b"].map((channelId) => ({
+    channelId,
+    accessScope: "public",
+    sessionKey: `discord-channel:${channelId}:public`,
+    lastActivityAt: null,
+    lastRotationDate: getChannelRotationDate(Date.now()),
+    hasActivitySinceRotation: false,
+  }));
+  const channelSessionStateStore = {
+    async getOrCreate(channelId: string) {
+      return states.find((state) => state.channelId === channelId)!;
+    },
+    async list() {
+      return states;
+    },
+    async save() {},
+  };
+  const harness = createHarness(undefined, undefined, {
+    accessPolicy: createDiscordAccessPolicy(
+      {
+        default: "deny",
+        directMessages: "deny",
+        guilds: {
+          "guild-123": {
+            channels: {
+              "channel-a": { access: "allow" },
+              "channel-b": { access: "owner" },
+            },
+          },
+        },
+      },
+      "user-123",
+    ),
+    channelSessionStateStore,
+    ownerUserId: "user-123",
+  });
+
+  try {
+    await harness.agentCoordinator.initialize();
+
+    assert.deepEqual(harness.createdSessionKeys, ["discord-channel:channel-a:public"]);
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
 test("isolates Pi sessions between Discord channels", async () => {
   const harness = createHarness();
 

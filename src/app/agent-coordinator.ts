@@ -43,6 +43,7 @@ export class AgentCoordinator {
       accessPolicy: dependencies.accessPolicy,
       channelSessionStateStore: dependencies.channelSessionStateStore,
       createDiscordAgent: dependencies.createDiscordAgent,
+      discordService: dependencies.discordService,
       logger: this.logger,
       ownerUserId: dependencies.ownerUserId,
     });
@@ -69,6 +70,10 @@ export class AgentCoordinator {
 
   async rotateIdleChannels(): Promise<void> {
     await this.sessionManager.rotateIdleChannels();
+  }
+
+  async initialize(): Promise<void> {
+    await this.sessionManager.initialize();
   }
 
   async deliverDueReminders(now = Date.now()): Promise<void> {

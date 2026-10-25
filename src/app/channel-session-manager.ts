@@ -1,6 +1,7 @@
 import type { Logger } from "pino";
 
 import { DiscordAgent } from "@agents/discord/discord-agent";
+import type { DiscordService } from "@modules/discord/ports/discord-service";
 import type { DiscordAccessPolicy } from "@modules/discord/domain/discord-access-policy";
 import {
   CHANNEL_ROTATION_IDLE_MS,
@@ -19,6 +20,7 @@ export interface ChannelSessionManagerDependencies {
     handoffContext?: string,
     ownerFeaturesAllowed?: boolean,
   ) => Promise<DiscordAgent>;
+  readonly discordService: DiscordService;
   readonly logger: Logger;
   readonly ownerUserId?: string;
 }
@@ -35,6 +37,36 @@ export class ChannelSessionManager {
 
   recordInbound(channelId: string): void {
     this.latestInboundAt.set(channelId, Date.now());
+  }
+
+  async initialize(): Promise<void> {
+    const states = await this.dependencies.channelSessionStateStore?.list();
+    for (const state of states ?? []) {
+      const accessPolicy = this.dependencies.accessPolicy;
+      if (accessPolicy) {
+        let location: Awaited<ReturnType<DiscordService["getChannelLocation"]>>;
+        try {
+          location = await this.dependencies.discordService.getChannelLocation(state.channelId);
+        } catch (error) {
+          this.dependencies.logger.warn(
+            { channelId: state.channelId, err: error, event: "channel_agent_restore_failed" },
+            "Failed to restore a saved Discord channel agent",
+          );
+          continue;
+        }
+        const target = {
+          ...location,
+          userId: this.dependencies.ownerUserId,
+          userIsBot: false,
+        };
+        if (!accessPolicy.canReceive(target)) continue;
+        const currentScope = accessPolicy.canUseOwnerFeatures(target)
+          ? `owner:${this.dependencies.ownerUserId}`
+          : "public";
+        if (state.accessScope !== currentScope) continue;
+      }
+      await this.getDiscordAgent(state.channelId, state);
+    }
   }
 
   runForChannel(channelId: string, operation: () => Promise<void>): Promise<void> {
