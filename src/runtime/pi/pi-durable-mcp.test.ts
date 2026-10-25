@@ -373,3 +373,74 @@ test("exposes MCP resource listing and reading tools when server supports resour
     await rm(agentDir, { force: true, recursive: true });
   }
 });
+
+test("serializes OAuth refresh and file writes across separate credential store instances", async () => {
+  const agentDir = await mkdtemp(join(tmpdir(), "klein-mcp-lock-"));
+  try {
+    const serverUrl = "https://example.com/mcp";
+    const storeA = new McpOAuthCredentialStore(agentDir);
+    const storeB = new McpOAuthCredentialStore(agentDir);
+
+    const serverStoreA = storeA.forServer("shared", serverUrl);
+    const serverStoreB = storeB.forServer("shared", serverUrl);
+    await serverStoreA.save({
+      serverUrl,
+      tokens: {
+        access_token: "stale-token",
+        refresh_token: "refresh-1",
+        token_type: "Bearer",
+      },
+    });
+
+    const events: string[] = [];
+    let refreshes = 0;
+    const runRefresh = async (label: string, store: typeof serverStoreA) =>
+      store.withRefreshLock(async () => {
+        events.push(`${label}:start`);
+        const current = await store.load();
+        if (current?.tokens?.access_token !== "stale-token") {
+          events.push(`${label}:reused`);
+          return current?.tokens?.access_token;
+        }
+        refreshes += 1;
+        await new Promise((resolve) => setTimeout(resolve, 40));
+        await store.save({
+          serverUrl,
+          tokens: {
+            access_token: "fresh-token",
+            refresh_token: "refresh-2",
+            token_type: "Bearer",
+          },
+        });
+        events.push(`${label}:refreshed`);
+        return "fresh-token";
+      });
+
+    const [tokenA, tokenB] = await Promise.all([
+      runRefresh("A", serverStoreA),
+      runRefresh("B", serverStoreB),
+    ]);
+    assert.equal(tokenA, "fresh-token");
+    assert.equal(tokenB, "fresh-token");
+    assert.equal(refreshes, 1);
+    assert.deepEqual(events, ["A:start", "A:refreshed", "B:start", "B:reused"]);
+
+    await Promise.all([
+      storeA.forServer("alpha", "https://alpha.example.com/mcp").save({
+        serverUrl: "https://alpha.example.com/mcp",
+        tokens: { access_token: "alpha-token", token_type: "Bearer" },
+      }),
+      storeB.forServer("beta", "https://beta.example.com/mcp").save({
+        serverUrl: "https://beta.example.com/mcp",
+        tokens: { access_token: "beta-token", token_type: "Bearer" },
+      }),
+    ]);
+
+    const alpha = await storeB.forServer("alpha", "https://alpha.example.com/mcp").load();
+    const beta = await storeA.forServer("beta", "https://beta.example.com/mcp").load();
+    assert.equal(alpha?.tokens?.access_token, "alpha-token");
+    assert.equal(beta?.tokens?.access_token, "beta-token");
+  } finally {
+    await rm(agentDir, { force: true, recursive: true });
+  }
+});

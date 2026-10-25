@@ -1,7 +1,7 @@
 import { execSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { writeFile } from "node:fs/promises";
+import { mkdir, rmdir, stat, utimes, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -64,6 +64,12 @@ const CLIENT_METADATA_BASE_URL = "https://pi.dev/oauth";
 const FALLBACK_REDIRECT_URL = `http://${CALLBACK_HOST}${CALLBACK_PATH}`;
 const REFRESH_SKEW_MS = 30_000;
 const OAUTH_REQUEST_TIMEOUT_MS = 15_000;
+const REFRESH_LOCK_STALE_MS = 20_000;
+const REFRESH_LOCK_WAIT_MS = 25_000;
+const REFRESH_LOCK_RETRY_MS = 100;
+const AUTH_LOCK_STALE_MS = 30_000;
+const AUTH_LOCK_WAIT_MS = 30_000;
+const AUTH_LOCK_RETRY_MS = 20;
 
 export const LIST_MCP_RESOURCES_TOOL = "list_mcp_resources";
 export const LIST_MCP_RESOURCE_TEMPLATES_TOOL = "list_mcp_resource_templates";
@@ -582,20 +588,134 @@ function storeKeys(name: string, serverUrl: string): { key: string; legacyKey: s
   return { key: `${mcpNamespace(name)}|${legacyKey}`, legacyKey };
 }
 
+interface DirectoryLockOptions {
+  staleMs: number;
+  waitMs: number;
+  retryMs: number;
+}
+
+const inProcessWaiters = new Map<string, Set<() => void>>();
+
+function waitForReleaseOrTimeout(lockDir: string, delayMs: number): Promise<void> {
+  return new Promise((resolveWait) => {
+    let waiters = inProcessWaiters.get(lockDir);
+    if (!waiters) {
+      waiters = new Set();
+      inProcessWaiters.set(lockDir, waiters);
+    }
+    const onRelease = () => {
+      clearTimeout(timer);
+      waiters?.delete(onRelease);
+      if (waiters?.size === 0) inProcessWaiters.delete(lockDir);
+      resolveWait();
+    };
+    const timer = setTimeout(onRelease, delayMs);
+    waiters.add(onRelease);
+  });
+}
+
+function notifyInProcessWaiters(lockDir: string): void {
+  const waiters = inProcessWaiters.get(lockDir);
+  if (!waiters) return;
+  inProcessWaiters.delete(lockDir);
+  for (const notify of waiters) notify();
+}
+
+async function acquireDirectoryLock(
+  targetPath: string,
+  options: DirectoryLockOptions,
+): Promise<() => Promise<void>> {
+  const normalizedTarget = resolve(targetPath);
+  const parentDir = dirname(normalizedTarget);
+  if (!existsSync(parentDir)) {
+    mkdirSync(parentDir, { recursive: true, mode: 0o700 });
+  }
+  const lockDir = `${normalizedTarget}.lock`;
+  const deadline = Date.now() + options.waitMs;
+  let allowStaleTakeover = true;
+
+  while (true) {
+    try {
+      await mkdir(lockDir, { mode: 0o700 });
+      const updateIntervalMs = Math.max(500, Math.floor(options.staleMs / 2));
+      const heartbeat = setInterval(() => {
+        const now = new Date();
+        void utimes(lockDir, now, now).catch(() => undefined);
+      }, updateIntervalMs);
+      heartbeat.unref();
+
+      let released = false;
+      return async () => {
+        if (released) return;
+        released = true;
+        clearInterval(heartbeat);
+        await rmdir(lockDir).catch(() => undefined);
+        notifyInProcessWaiters(lockDir);
+      };
+    } catch (error) {
+      const code = error instanceof Error && "code" in error ? error.code : undefined;
+      if (code !== "EEXIST") throw error;
+
+      if (allowStaleTakeover && options.staleMs > 0) {
+        try {
+          const stats = await stat(lockDir);
+          if (stats.mtimeMs < Date.now() - options.staleMs) {
+            await rmdir(lockDir).catch(() => undefined);
+            allowStaleTakeover = false;
+            continue;
+          }
+        } catch (statError) {
+          const statCode =
+            statError instanceof Error && "code" in statError ? statError.code : undefined;
+          if (statCode === "ENOENT") {
+            allowStaleTakeover = false;
+            continue;
+          }
+          throw statError;
+        }
+      }
+      allowStaleTakeover = true;
+
+      const remainingMs = deadline - Date.now();
+      if (remainingMs <= 0) {
+        throw Object.assign(new Error(`Lock file is already being held: ${normalizedTarget}`), {
+          code: "ELOCKED",
+          file: normalizedTarget,
+        });
+      }
+      await waitForReleaseOrTimeout(lockDir, Math.min(options.retryMs, remainingMs));
+    }
+  }
+}
+
+async function withDirectoryLock<T>(
+  targetPath: string,
+  options: DirectoryLockOptions,
+  fn: () => Promise<T> | T,
+): Promise<T> {
+  const release = await acquireDirectoryLock(targetPath, options);
+  try {
+    return await fn();
+  } finally {
+    await release();
+  }
+}
+
 export class McpOAuthCredentialStore {
   private readonly authPath: string;
-  private readonly refreshChains = new Map<string, Promise<unknown>>();
+  private readonly lockDir: string;
 
   constructor(agentDir: string) {
-    this.authPath = join(agentDir, "mcp-auth.json");
+    this.lockDir = resolve(agentDir);
+    this.authPath = join(this.lockDir, "mcp-auth.json");
   }
 
-  private readStates(): Record<string, McpOAuthState> {
+  private readStatesUnlocked(): Record<string, McpOAuthState> {
     if (!existsSync(this.authPath)) return {};
     return parseStates(readFileSync(this.authPath, "utf-8"));
   }
 
-  private writeStates(states: Record<string, McpOAuthState>): void {
+  private writeStatesUnlocked(states: Record<string, McpOAuthState>): void {
     const dir = dirname(this.authPath);
     if (!existsSync(dir)) {
       mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -603,36 +723,60 @@ export class McpOAuthCredentialStore {
     writeFileSync(this.authPath, serializeStates(states), AUTH_FILE_WRITE_OPTIONS);
   }
 
+  private withAuthFileLock<T>(
+    fn: (states: Record<string, McpOAuthState>) => {
+      result: T;
+      write?: boolean;
+    },
+  ): Promise<T> {
+    return withDirectoryLock(
+      this.authPath,
+      {
+        staleMs: AUTH_LOCK_STALE_MS,
+        waitMs: AUTH_LOCK_WAIT_MS,
+        retryMs: AUTH_LOCK_RETRY_MS,
+      },
+      () => {
+        const states = this.readStatesUnlocked();
+        const { result, write } = fn(states);
+        if (write) {
+          this.writeStatesUnlocked(states);
+        }
+        return result;
+      },
+    );
+  }
+
   forServer(name: string, serverUrl: string): McpOAuthServerStore {
     const { key, legacyKey } = storeKeys(name, serverUrl);
     return {
-      load: () => {
-        const states = this.readStates();
-        if (states[key] || !states[legacyKey]) return states[key];
-        states[key] = states[legacyKey];
-        delete states[legacyKey];
-        this.writeStates(states);
-        return states[key];
-      },
-      save: (state) => {
-        const states = this.readStates();
-        states[key] = state;
-        this.writeStates(states);
-      },
+      load: () =>
+        this.withAuthFileLock((states) => {
+          if (states[key] || !states[legacyKey]) return { result: states[key] };
+          states[key] = states[legacyKey];
+          delete states[legacyKey];
+          return { result: states[key], write: true };
+        }),
+      save: (state) =>
+        this.withAuthFileLock((states) => {
+          states[key] = state;
+          return { result: undefined, write: true };
+        }),
       withRefreshLock: (fn) => this.withRefreshLock(key, fn),
     };
   }
 
-  private async withRefreshLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
-    const previous = this.refreshChains.get(key) ?? Promise.resolve();
-    const current = previous.catch(() => undefined).then(fn);
-    const tracked = current.finally(() => {
-      if (this.refreshChains.get(key) === tracked) {
-        this.refreshChains.delete(key);
-      }
-    });
-    this.refreshChains.set(key, tracked);
-    return current;
+  private withRefreshLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+    const hash = createHash("sha256").update(key).digest("hex").slice(0, 16);
+    return withDirectoryLock(
+      join(this.lockDir, `mcp-auth-refresh-${hash}`),
+      {
+        staleMs: REFRESH_LOCK_STALE_MS,
+        waitMs: REFRESH_LOCK_WAIT_MS,
+        retryMs: REFRESH_LOCK_RETRY_MS,
+      },
+      fn,
+    );
   }
 }
 
