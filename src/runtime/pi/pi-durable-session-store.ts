@@ -17,6 +17,7 @@ const SessionConversations = defineDocFamily<{ conversationIds: ConversationId[]
   version: 1,
   scope: "session",
   family: true,
+  checkpointWhen: () => false,
   initial: () => ({ conversationIds: [] }),
 });
 
@@ -35,6 +36,7 @@ const DiscordChannelStates = defineDocFamily<StoredChannelState, StoredChannelSt
   version: 1,
   scope: "session",
   family: true,
+  checkpointWhen: () => false,
   initial: (state) => state,
 });
 
