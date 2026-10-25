@@ -121,6 +121,7 @@ export function createPiDurableAgentFactory({
   permissions,
 }: PiDurableAgentFactoryOptions): AgentFactory & {
   close(): Promise<void>;
+  resume(): Promise<void>;
   sessions: ViewerSessionReader;
   channelSessionStateStore: ChannelSessionStateStore;
   getMonthlyProviderCost(provider: string, monthStart: number): Promise<number>;
@@ -232,6 +233,10 @@ export function createPiDurableAgentFactory({
   );
   return {
     sessions,
+    async resume() {
+      const { harness } = await getResources();
+      harness.resume();
+    },
     channelSessionStateStore: {
       async getOrCreate(channelId, rotationDate) {
         return (await getResources()).store.channelStates.getOrCreate(channelId, rotationDate);
@@ -385,7 +390,6 @@ export function createPiDurableAgentFactory({
         BACKGROUND_CONTEXT,
       );
       await webAccess.activate(conversation);
-      harness.resume();
       const sessionImageModel = imageModel
         ? withOpenCodeSessionHeader(imageModel, String(id))
         : undefined;
