@@ -110,8 +110,18 @@ Register MCP tools directly into Pi's agent directory (`.runtime/pi`):
 
 ```sh
 PI_CODING_AGENT_DIR=.runtime/pi bunx pi mcp add docs --url https://mcp.example.com/mcp --exposure deferred
-PI_CODING_AGENT_DIR=.runtime/pi bunx pi mcp login docs
 ```
+
+When a server answers 401, sign in from the command line (after `bun run build:server`):
+
+```sh
+bun dist/klein mcp login docs
+```
+
+The command serves the OAuth callback on `127.0.0.1` and prints the authorization URL. If the
+browser runs on another machine, paste the URL it was redirected to instead. Credentials are
+stored in `<runtime.agentDir>/mcp-auth.json`; set `oauth.callbackPort` or `oauth.callbackUrl`
+in `mcp.json` when the OAuth client is registered with a fixed redirect URI.
 
 Restart Klein after modifying MCP configurations.
 

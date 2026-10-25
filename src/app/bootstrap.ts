@@ -5,6 +5,7 @@ import { AgentCoordinator } from "./agent-coordinator";
 import { parseCliOptions } from "./cli-options";
 import { loadConfig } from "./config";
 import { createLogFilePath, createLogger, flushLogger } from "./logger";
+import { runMcpCommand } from "./mcp-cli";
 import { loadPromptFile } from "./prompt";
 import { resolveProfile } from "./profile";
 import { TaskCoordinator } from "./task-coordinator";
@@ -343,7 +344,17 @@ export async function bootstrap(): Promise<void> {
 }
 
 try {
-  await bootstrap();
+  const args = process.argv.slice(2);
+  if (args[0] === "mcp") {
+    try {
+      process.exitCode = await runMcpCommand(args.slice(1));
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : String(error));
+      process.exitCode = 1;
+    }
+  } else {
+    await bootstrap();
+  }
 } catch (error) {
   createLogger().fatal({ err: error, event: "bootstrap_failed" }, "Klein failed to start");
   process.exitCode = 1;
