@@ -1,5 +1,3 @@
-import { loadMcpConfig } from "../../../node_modules/@earendil-works/pi-coding-agent/dist/extensions/mcp/config.js";
-
 export type ToolAccess = "allow" | "deny" | "owner";
 export interface ToolPermissions {
   readonly tools?: {
@@ -47,7 +45,3 @@ export class ToolAuthorization {
     return access === "allow" || (access === "owner" && this.ownerSession);
   }
 }
-
-// Pi's public entry exposes the MCP extension but not its default config loader. This static
-// import also includes the loader in Klein's server bundle, preserving Pi's config semantics.
-export const piMcpConfigLoader = loadMcpConfig;

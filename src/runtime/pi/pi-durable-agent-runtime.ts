@@ -8,7 +8,6 @@ import {
   Harness,
   createRegistry,
   defineExtension,
-  defineTool,
   hook,
   section,
   watchEvents,
@@ -26,27 +25,9 @@ import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite
 import { CodemodeSandbox } from "@earendil-works/pi-codemode";
 import { createCodemodeExtension } from "@earendil-works/pi-durable/codemode";
 import { createToolSearchExtension } from "@earendil-works/pi-durable/tool-search";
-import { Type } from "typebox";
 import { ModelRegistry } from "@earendil-works/pi-coding-agent";
 import type { Message } from "@earendil-works/pi-ai";
 import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
-import {
-  createDefaultTransport,
-  McpServerConnection,
-} from "../../../node_modules/@earendil-works/pi-coding-agent/dist/extensions/mcp/runtime.js";
-import { McpOAuthCredentialStore } from "../../../node_modules/@earendil-works/pi-coding-agent/dist/extensions/mcp/oauth.js";
-import {
-  createMcpResultSchema,
-  createMcpToolName,
-  limitMcpContent,
-  toModelContent,
-} from "../../../node_modules/@earendil-works/pi-coding-agent/dist/extensions/mcp/tools.js";
-import {
-  getMcpToolExposure,
-  LIST_MCP_RESOURCE_TEMPLATES_TOOL,
-  LIST_MCP_RESOURCES_TOOL,
-  READ_MCP_RESOURCE_TOOL,
-} from "../../../node_modules/@earendil-works/pi-coding-agent/dist/core/mcp-servers.js";
 
 import type { AgentDefinition } from "@agents/core/agent-definition";
 import type { AgentFactory, AgentCreationOptions } from "@agents/core/agent-factory";
@@ -54,6 +35,7 @@ import type { AgentEvent } from "@agents/core/agent-event";
 import type { AgentPrompt, AgentRuntime } from "@agents/core/agent-runtime";
 import { createPiEventPrompt } from "./pi-event-prompt";
 import { PiImageAnalyzer, type ImageAnalyzer } from "./pi-image-analyzer";
+import { loadMcpTools, type McpServerConnection } from "./pi-durable-mcp";
 import { adaptPiWebAccessTools, createPiWebAccessTools } from "./pi-web-access-durable";
 import { resolveConfiguredModel, withOpenCodeSessionHeader } from "./pi-model-runtime";
 import {
@@ -64,7 +46,7 @@ import {
   HANDOFF_SUMMARY_MAX_TOKENS,
   HANDOFF_SUMMARY_SYSTEM_PROMPT,
 } from "./handoff-summary";
-import { piMcpConfigLoader, ToolAuthorization, type ToolPermissions } from "./tool-permissions";
+import type { ToolPermissions } from "./tool-permissions";
 import type { SessionMode } from "@app/cli-options";
 import type { ChannelSessionStateStore } from "@app/channel-session-state-store";
 import { PiDurableSessionStore } from "./pi-durable-session-store";
@@ -292,7 +274,7 @@ export function createPiDurableAgentFactory({
         agentDir: configDir,
         ownerFeaturesAllowed: options.ownerFeaturesAllowed === true,
         permissions,
-        modelRegistry,
+        providerToken: (provider: string) => modelRegistry.getApiKeyForProvider(provider),
         logger,
         existingNames: new Set(durableTools.map((tool) => tool.name)),
         connections: mcpConnections,
@@ -447,319 +429,6 @@ export function createPiDurableAgentFactory({
       await harness.close(BACKGROUND_CONTEXT);
     },
   };
-}
-
-async function loadMcpTools(options: {
-  agentDir: string;
-  ownerFeaturesAllowed: boolean;
-  permissions?: ToolPermissions;
-  modelRegistry: ModelRegistry;
-  logger: Logger;
-  existingNames: Set<string>;
-  connections: McpServerConnection[];
-}): Promise<ToolRegistration[]> {
-  const {
-    agentDir,
-    ownerFeaturesAllowed,
-    permissions,
-    modelRegistry,
-    logger,
-    existingNames,
-    connections,
-  } = options;
-  const loaded = piMcpConfigLoader({ agentDir, cwd: process.cwd(), projectTrusted: true });
-  for (const error of loaded.errors)
-    logger.warn(
-      { event: "pi_mcp_config_error", error },
-      "Failed to load an MCP server configuration",
-    );
-
-  const authorization = new ToolAuthorization(ownerFeaturesAllowed, permissions);
-  authorization.rememberServers(loaded.servers.map((server) => server.name));
-  const credentials = new McpOAuthCredentialStore();
-  const connected: Array<{
-    entry: (typeof loaded.servers)[number];
-    connection: McpServerConnection;
-  }> = [];
-  for (const entry of loaded.servers) {
-    if (entry.config.enabled === false || !authorization.allowsServer(entry.name)) continue;
-    const connection = new McpServerConnection({
-      entry,
-      cwd: process.cwd(),
-      createTransport: createDefaultTransport,
-      credentials,
-      providerToken: (provider: string) => modelRegistry.getApiKeyForProvider(provider),
-      onTools: () => undefined,
-      onChange: (changed) =>
-        logger.info(
-          { event: "pi_mcp_server_changed", server: changed.name, state: changed.state },
-          "MCP server state changed",
-        ),
-    });
-    connections.push(connection);
-    try {
-      await connection.getClient();
-      connected.push({ entry, connection });
-    } catch (error) {
-      logger.warn(
-        { err: error, event: "pi_mcp_server_connect_failed", server: entry.name },
-        "Failed to connect to MCP server",
-      );
-    }
-  }
-
-  const tools: ToolRegistration[] = [];
-  for (const { entry, connection } of connected) {
-    for (const tool of connection.tools) {
-      const exposure = getMcpToolExposure(entry.config, tool.name);
-      if (exposure === "hidden") continue;
-      const name = createMcpToolName(entry.name, tool.name, (candidate) =>
-        existingNames.has(candidate),
-      );
-      existingNames.add(name);
-      if (!authorization.allowsTool(name)) continue;
-      tools.push(
-        defineTool({
-          name,
-          description: [entry.config.description?.trim(), connection.instructions, tool.description]
-            .filter(Boolean)
-            .join("\n\n"),
-          parameters: Type.Unsafe(tool.inputSchema as never),
-          structuredOutputSchema: Type.Unsafe(createMcpResultSchema(tool.outputSchema)),
-          deferred: exposure === "deferred" || exposure === "codemode" ? true : undefined,
-          callers: exposure === "codemode" ? ["tools"] : undefined,
-          replay: tool.annotations?.readOnlyHint ? "safe" : "unsafe",
-          async execute(args) {
-            const result = await connection.callTool(tool.name, args as Record<string, unknown>, {
-              timeoutMs: connection.timeoutMs,
-            });
-            const modelContent = await toModelContent(entry.name, result.content, {
-              readableResources: connection.hasResources,
-            });
-            const limited = await limitMcpContent(modelContent);
-            return {
-              output: limited.content,
-              structuredOutput: {
-                content: result.content,
-                ...(result.structuredContent === undefined
-                  ? {}
-                  : { structuredContent: result.structuredContent }),
-                ...(result.isError === undefined ? {} : { isError: result.isError }),
-              } as never,
-              isError: result.isError,
-              details: {
-                server: entry.name,
-                tool: tool.name,
-                ...(limited.fullOutputPath ? { fullOutputPath: limited.fullOutputPath } : {}),
-              },
-            };
-          },
-        }),
-      );
-    }
-  }
-
-  const resourceServers = connected
-    .filter(
-      ({ entry, connection }) => connection.hasResources && authorization.allowsServer(entry.name),
-    )
-    .map(({ connection }) => connection);
-  const resourceExposure = ["direct", "codemode", "deferred"].find((candidate) =>
-    connected.some(
-      ({ entry, connection }) =>
-        connection.hasResources &&
-        (entry.config.exposure ?? "codemode") === candidate &&
-        authorization.allowsServer(entry.name),
-    ),
-  ) as "direct" | "codemode" | "deferred" | undefined;
-  if (resourceExposure) {
-    for (const tool of createDurableMcpResourceTools(resourceExposure, () => resourceServers)) {
-      if (!authorization.allowsTool(tool.name)) continue;
-      tools.push(tool);
-    }
-  }
-  return tools;
-}
-
-function createDurableMcpResourceTools(
-  exposure: "direct" | "codemode" | "deferred",
-  getServers: () => readonly McpServerConnection[],
-): ToolRegistration[] {
-  const parameters = Type.Unsafe({
-    type: "object",
-    properties: {
-      server: { type: "string" },
-      cursor: { type: "string" },
-    },
-    additionalProperties: false,
-  });
-  const outputSchema = Type.Unsafe({ type: "object", additionalProperties: true });
-  const options: {
-    deferred?: true;
-    callers?: readonly ["tools"];
-    replay: "safe";
-  } = {
-    deferred: exposure !== "direct" ? true : undefined,
-    callers: exposure === "codemode" ? (["tools"] as const) : undefined,
-    replay: "safe" as const,
-  };
-  const listResources = createMcpResourceListTool(
-    LIST_MCP_RESOURCES_TOOL,
-    "resources",
-    parameters,
-    outputSchema,
-    options,
-    getServers,
-  );
-  const listTemplates = createMcpResourceListTool(
-    LIST_MCP_RESOURCE_TEMPLATES_TOOL,
-    "resourceTemplates",
-    parameters,
-    outputSchema,
-    options,
-    getServers,
-  );
-  const readParameters = Type.Unsafe({
-    type: "object",
-    properties: { server: { type: "string" }, uri: { type: "string" } },
-    required: ["server", "uri"],
-    additionalProperties: false,
-  });
-  const readResource = defineTool({
-    name: READ_MCP_RESOURCE_TOOL,
-    description: "Read a specific resource from an MCP server given its server name and URI.",
-    parameters: readParameters,
-    structuredOutputSchema: outputSchema,
-    deferred: options.deferred,
-    callers: options.callers,
-    replay: "safe",
-    async execute(args) {
-      const input = args as { server: string; uri: string };
-      const server = getServers().find((candidate) => candidate.name === input.server);
-      if (!server) throw new Error(`MCP server does not provide resources: ${input.server}`);
-      const resource = await server.readResource(input.uri, {
-        timeoutMs: server.timeoutMs,
-      });
-      const contents = resource.contents.map(({ _meta: _ignored, ...content }) => content);
-      const blocks = resource.contents.flatMap((content) => [
-        ...(resource.contents.length > 1
-          ? [{ type: "text" as const, text: `${content.uri}:` }]
-          : []),
-        { type: "resource" as const, resource: content },
-      ]);
-      const modelContent = await toModelContent(server.name, blocks);
-      const limited = await limitMcpContent(modelContent);
-      return {
-        output: limited.content,
-        structuredOutput: { server: server.name, uri: input.uri, contents } as never,
-        details: {
-          server: server.name,
-          tool: READ_MCP_RESOURCE_TOOL,
-          ...(limited.fullOutputPath ? { fullOutputPath: limited.fullOutputPath } : {}),
-        },
-      };
-    },
-  });
-  return [listResources, listTemplates, readResource];
-}
-
-function createMcpResourceListTool(
-  name: string,
-  key: "resources" | "resourceTemplates",
-  parameters: ReturnType<typeof Type.Unsafe>,
-  outputSchema: ReturnType<typeof Type.Unsafe>,
-  options: {
-    deferred?: true;
-    callers?: readonly ["tools"];
-    replay: "safe";
-  },
-  getServers: () => readonly McpServerConnection[],
-): ToolRegistration {
-  return defineTool({
-    name,
-    description:
-      key === "resources"
-        ? "Lists resources provided by MCP servers."
-        : "Lists resource templates provided by MCP servers.",
-    parameters,
-    structuredOutputSchema: outputSchema,
-    deferred: options.deferred,
-    callers: options.callers,
-    replay: options.replay,
-    async execute(args) {
-      const input = args as { server?: string; cursor?: string };
-      const serverName = typeof input.server === "string" ? input.server.trim() : "";
-      const cursor = typeof input.cursor === "string" ? input.cursor.trim() : "";
-      let payload: Record<string, unknown>;
-      if (serverName) {
-        const server = getServers().find((candidate) => candidate.name === serverName);
-        if (!server) throw new Error(`MCP server does not provide resources: ${serverName}`);
-        const requestOptions = { timeoutMs: server.timeoutMs };
-        let items: readonly unknown[];
-        let nextCursor: string | undefined;
-        if (key === "resources") {
-          const page = await server.resourcesPage(cursor || undefined, requestOptions);
-          items = page.resources;
-          nextCursor = page.nextCursor;
-        } else {
-          const page = await server.resourceTemplatesPage(cursor || undefined, requestOptions);
-          items = page.resourceTemplates;
-          nextCursor = page.nextCursor;
-        }
-        payload = {
-          server: serverName,
-          [key]: items
-            .filter((item) => isVisibleMcpResource(item as never))
-            .map((item) => ({ server: serverName, ...(item as object) })),
-          ...(nextCursor ? { nextCursor } : {}),
-        };
-      } else {
-        if (cursor) throw new Error("cursor can only be used when a server is specified");
-        const servers = [...getServers()].sort((a, b) => a.name.localeCompare(b.name));
-        const results = await Promise.allSettled(
-          servers.map((server) =>
-            key === "resources"
-              ? server.allResources({ timeoutMs: server.timeoutMs })
-              : server.allResourceTemplates({ timeoutMs: server.timeoutMs }),
-          ),
-        );
-        const values: unknown[] = [];
-        const errors: { server: string; error: string }[] = [];
-        results.forEach((result, index) => {
-          const server = servers[index]!;
-          if (result.status === "fulfilled") {
-            values.push(
-              ...result.value
-                .filter((item) => isVisibleMcpResource(item as never))
-                .map((item) => ({ server: server.name, ...(item as object) })),
-            );
-          } else {
-            errors.push({ server: server.name, error: String(result.reason) });
-          }
-        });
-        payload = { [key]: values, ...(errors.length ? { errors } : {}) };
-      }
-      const limited = await limitMcpContent([{ type: "text", text: JSON.stringify(payload) }]);
-      return {
-        output: limited.content,
-        structuredOutput: payload as never,
-        details: {
-          server: serverName,
-          tool: name,
-          ...(limited.fullOutputPath ? { fullOutputPath: limited.fullOutputPath } : {}),
-        },
-      };
-    },
-  });
-}
-
-function isVisibleMcpResource(item: {
-  uri?: string;
-  uriTemplate?: string;
-  mimeType?: string;
-}): boolean {
-  const uri = item.uri ?? item.uriTemplate ?? "";
-  return !uri.startsWith("ui://") && !/;\s*profile\s*=\s*"?mcp-app"?/i.test(item.mimeType ?? "");
 }
 
 class PiDurableSessionReader implements ViewerSessionReader {
