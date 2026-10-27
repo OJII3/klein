@@ -1,5 +1,6 @@
 import type { AgentEvent } from "../core/agent-event";
 import type { AgentEventRouter } from "../core/agent-event-router";
+import { formatAgentTurn, type AgentTurn, type AgentTurnContext } from "../core/agent-turn";
 import type { ChannelAgent } from "../core/channel-agent";
 import type { AgentFactory } from "../core/agent-factory";
 import type { AgentPrompt, AgentPromptResult, AgentRuntime } from "../core/agent-runtime";
@@ -33,7 +34,6 @@ export class DomainAgent implements ChannelAgent {
   private constructor(
     readonly agentId: string,
     private readonly runtime: AgentRuntime,
-    private readonly ownerUserId: string,
     private readonly channelId?: string,
     private readonly discordService?: DiscordService,
   ) {}
@@ -98,40 +98,22 @@ export class DomainAgent implements ChannelAgent {
       },
     );
 
-    return new DomainAgent(
-      options.agentId,
-      runtime,
-      options.ownerUserId,
-      options.channelId,
-      options.discordService,
-    );
+    return new DomainAgent(options.agentId, runtime, options.channelId, options.discordService);
   }
 
-  prompt(
-    message: DiscordMessage,
-    guildMemory?: string,
-    channelRule?: string,
-    ownerMemory?: string,
-  ): Promise<void> {
-    const event = this.createMessageEvent(message, guildMemory, channelRule, ownerMemory);
+  prompt(turn: AgentTurn): Promise<void> {
+    const event = formatAgentTurn(turn);
     return this.runtime.prompt(event).then((result) => this.deliverAssistantText(result));
   }
 
-  steer(
-    message: DiscordMessage,
-    guildMemory?: string,
-    channelRule?: string,
-    ownerMemory?: string,
-  ): Promise<void> {
-    const event = this.createMessageEvent(message, guildMemory, channelRule, ownerMemory);
+  steer(turn: AgentTurn): Promise<void> {
+    const event = formatAgentTurn(turn);
     const execution = this.runtime.steer ? this.runtime.steer(event) : this.runtime.prompt(event);
     return execution.then((result) => this.deliverAssistantText(result));
   }
 
-  promptEvent(event: AgentEvent, ownerMemory?: string): Promise<void> {
-    return this.runtime
-      .prompt(this.withOwnerMemory(event, ownerMemory))
-      .then((result) => this.deliverAssistantText(result));
+  promptEvent(event: AgentEvent, context: AgentTurnContext = {}): Promise<void> {
+    return this.prompt({ event, context });
   }
 
   compactForHandoff(): Promise<string> | undefined {
@@ -140,67 +122,6 @@ export class DomainAgent implements ChannelAgent {
 
   dispose(): void {
     this.runtime.dispose();
-  }
-
-  private createMessageEvent(
-    message: DiscordMessage,
-    guildMemory?: string,
-    channelRule?: string,
-    ownerMemory?: string,
-  ): AgentEvent {
-    if (
-      message.author.bot ||
-      message.author.id !== this.ownerUserId ||
-      (this.channelId !== undefined && message.channelId !== this.channelId)
-    ) {
-      throw new Error("Only the owner can use this domain agent in its configured channel");
-    }
-
-    return {
-      id: message.id,
-      occurredAt: message.occurredAt,
-      type: "discord.message",
-      source: "discord",
-      content: [
-        {
-          type: "text",
-          text: [
-            ownerMemory ? `<owner-memory>\n${ownerMemory}\n</owner-memory>` : undefined,
-            guildMemory ? `<guild-memory>\n${guildMemory}\n</guild-memory>` : undefined,
-            channelRule ? `<channel-rule>\n${channelRule}\n</channel-rule>` : undefined,
-            formatDiscordMessage(message),
-          ]
-            .filter((context): context is string => context !== undefined)
-            .join("\n\n"),
-        },
-        ...message.images.map(({ data, mimeType }) => ({ type: "image" as const, data, mimeType })),
-      ],
-    };
-  }
-
-  private withOwnerMemory(event: AgentEvent, ownerMemory?: string): AgentEvent {
-    if (!ownerMemory) return event;
-    const textIndex = event.content.findIndex((block) => block.type === "text");
-    if (textIndex === -1) {
-      return {
-        ...event,
-        content: [
-          { type: "text", text: `<owner-memory>\n${ownerMemory}\n</owner-memory>` },
-          ...event.content,
-        ],
-      };
-    }
-    return {
-      ...event,
-      content: event.content.map((block, index) =>
-        index === textIndex && block.type === "text"
-          ? {
-              type: "text",
-              text: `<owner-memory>\n${ownerMemory}\n</owner-memory>\n\n${block.text}`,
-            }
-          : block,
-      ),
-    };
   }
 
   private async deliverAssistantText(result: AgentPromptResult | void): Promise<void> {

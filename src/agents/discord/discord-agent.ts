@@ -1,11 +1,14 @@
 import type { AgentEvent } from "../core/agent-event";
 import type { AgentEventRouter } from "../core/agent-event-router";
+import { formatAgentTurn, type AgentTurn, type AgentTurnContext } from "../core/agent-turn";
 import type { ChannelAgent } from "../core/channel-agent";
 import type { AgentFactory } from "../core/agent-factory";
 import type { AgentPrompt, AgentRuntime } from "../core/agent-runtime";
 import { formatDiscordMessage, type DiscordMessage } from "@modules/discord/domain/discord-message";
 import type { DiscordService } from "@modules/discord/ports/discord-service";
 import type { OwnerMemoryStore } from "@modules/memory/application/owner-memory-store";
+import { createDiscordMessageAgentTurn } from "./discord-message-agent-turn";
+import { BOT_MESSAGE_GUIDANCE } from "./prompt-policy";
 import { createDiscordReadTool } from "./tools/discord-read";
 import { createDiscordSendTool } from "./tools/discord-send";
 import { createDiscordVoiceTool } from "./tools/discord-voice";
@@ -15,15 +18,6 @@ import { createReminderTools } from "./tools/reminder";
 import type { ReminderStore } from "@modules/reminders/ports/reminder-store";
 import { createOwnerMemoryTools } from "../tools/owner-memory";
 import { createAgentSendEventTool } from "../tools/agent-send-event";
-
-const BOT_MESSAGE_GUIDANCE = `
-
-The latest Discord message was sent by another bot. Do not respond merely because it is addressed to you. Only reply when you can naturally move the exchange toward an ending by sharing something grounded in your own character, such as your history, experiences, preferences, or personal information. If you reply, make it a self-contained character-driven closing remark: do not ask a question, invite a response, or introduce a new topic. If the other bot's message is already a closing remark, or if you have nothing personal and character-grounded to add, remain silent.`;
-
-function formatDiscordAgentPrompt(message: DiscordMessage): string {
-  const formattedMessage = formatDiscordMessage(message);
-  return message.author.bot ? `${formattedMessage}${BOT_MESSAGE_GUIDANCE}` : formattedMessage;
-}
 
 export class DiscordAgent implements ChannelAgent {
   private constructor(
@@ -112,94 +106,47 @@ export class DiscordAgent implements ChannelAgent {
     return new DiscordAgent(runtime, channelId, options.ownerUserId, ownerFeaturesAllowed);
   }
 
-  prompt(
-    message: DiscordMessage,
-    guildMemory?: string,
-    channelRule?: string,
-    ownerMemory?: string,
-  ): Promise<void> {
-    const event = this.createEvent(message, guildMemory, channelRule, ownerMemory);
-    return this.runtime.prompt(event).then(() => undefined);
+  prompt(turn: AgentTurn): Promise<void> {
+    return this.runtime.prompt(this.formatTurn(turn)).then(() => undefined);
   }
 
-  promptEvent(event: AgentEvent, ownerMemory?: string): Promise<void> {
-    return this.runtime.prompt(this.withOwnerMemory(event, ownerMemory)).then(() => undefined);
+  promptEvent(event: AgentEvent, context: AgentTurnContext = {}): Promise<void> {
+    return this.prompt({ event, context });
   }
 
-  steer(
-    message: DiscordMessage,
-    guildMemory?: string,
-    channelRule?: string,
-    ownerMemory?: string,
-  ): Promise<void> {
-    const event = this.createEvent(message, guildMemory, channelRule, ownerMemory);
+  steer(turn: AgentTurn): Promise<void> {
+    const event = this.formatTurn(turn);
     return (this.runtime.steer ? this.runtime.steer(event) : this.runtime.prompt(event)).then(
       () => undefined,
     );
   }
 
-  private createEvent(
-    message: DiscordMessage,
-    guildMemory?: string,
-    channelRule?: string,
-    ownerMemory?: string,
-  ): AgentEvent {
-    if (
-      this.ownerFeaturesAllowed &&
-      (message.author.bot ||
-        message.author.id !== this.ownerUserId ||
-        message.channelId !== this.channelId)
-    ) {
-      throw new Error("Only the owner can use this Discord agent in its configured channel");
-    }
-
-    return {
-      id: message.id,
-      occurredAt: message.occurredAt,
-      type: "discord.message",
-      source: "discord",
-      content: [
-        {
-          type: "text",
-          text: [
-            this.ownerFeaturesAllowed && ownerMemory
-              ? `<owner-memory>\n${ownerMemory}\n</owner-memory>`
-              : undefined,
-            guildMemory ? `<guild-memory>\n${guildMemory}\n</guild-memory>` : undefined,
-            channelRule ? `<channel-rule>\n${channelRule}\n</channel-rule>` : undefined,
-            formatDiscordAgentPrompt(message),
-          ]
-            .filter((context): context is string => context !== undefined)
-            .join("\n\n"),
-        },
-        ...message.images.map(({ data, mimeType }) => ({ type: "image" as const, data, mimeType })),
-      ],
-    };
+  promptMessage(message: DiscordMessage, context: AgentTurnContext = {}): Promise<void> {
+    return this.prompt(this.createMessageTurn(message, context));
   }
 
-  private withOwnerMemory(event: AgentEvent, ownerMemory?: string): AgentEvent {
-    if (!this.ownerFeaturesAllowed || !ownerMemory) return event;
-    const textIndex = event.content.findIndex((block) => block.type === "text");
-    if (textIndex === -1) {
-      return {
-        ...event,
-        content: [
-          { type: "text", text: `<owner-memory>\n${ownerMemory}\n</owner-memory>` },
-          ...event.content,
-        ],
-      };
-    }
-    return {
-      ...event,
-      content: event.content.map((block, index) =>
-        index === textIndex && block.type === "text"
-          ? {
-              type: "text",
-              text: `<owner-memory>\n${ownerMemory}\n</owner-memory>\n\n${block.text}`,
-            }
-          : block,
-      ),
-    };
+  steerMessage(message: DiscordMessage, context: AgentTurnContext = {}): Promise<void> {
+    return this.steer(this.createMessageTurn(message, context));
+  }
+
+  private createMessageTurn(message: DiscordMessage, context: AgentTurnContext): AgentTurn {
+    return createDiscordMessageAgentTurn(message, context, {
+      botMessageGuidance: BOT_MESSAGE_GUIDANCE,
+      ownerValidation:
+        this.ownerFeaturesAllowed && this.ownerUserId
+          ? { userId: this.ownerUserId, channelId: this.channelId }
+          : undefined,
+    });
+  }
+
+  private formatTurn(turn: AgentTurn): AgentEvent {
+    return formatAgentTurn({
+      ...turn,
+      context: {
+        ...turn.context,
+        ownerMemory: this.ownerFeaturesAllowed ? turn.context.ownerMemory : undefined,
+      },
+    });
   }
 
   compactForHandoff(): Promise<string> | undefined {
