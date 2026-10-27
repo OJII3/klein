@@ -23,7 +23,7 @@ import type { AgentRuntime } from "@agents/core/agent-runtime";
 test("provides web tools and summarizes a durable conversation for handoff", async () => {
   const agentDir = await mkdtemp(join(tmpdir(), "klein-pi-durable-handoff-"));
   const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
-  const provider = fauxProvider({ tokensPerSecond: 100_000 });
+  const provider = fauxProvider({ provider: "opencode-go", tokensPerSecond: 100_000 });
   const model = provider.getModel();
   const modelRuntime = await ModelRuntime.create({
     credentials: new InMemoryCredentialStore(),
@@ -47,9 +47,11 @@ test("provides web tools and summarizes a durable conversation for handoff", asy
       { sessionKey },
     )) as AgentRuntime & { compactForHandoff(): Promise<string> };
     const requests: TranscriptContext[] = [];
+    const sessionHeaders: Array<string | undefined> = [];
     provider.setResponses([
-      (context) => {
+      (context, _options, _state, requestModel) => {
         requests.push(context);
+        sessionHeaders.push(requestModel.headers?.["x-opencode-session"]);
         return fauxAssistantMessage("Acknowledged");
       },
     ]);
@@ -71,13 +73,16 @@ test("provides web tools and summarizes a durable conversation for handoff", asy
     assert.ok(detail.items.some((item) => item.summary === "Acknowledged"));
 
     provider.setResponses([
-      (context) => {
+      (context, _options, _state, requestModel) => {
         requests.push(context);
+        sessionHeaders.push(requestModel.headers?.["x-opencode-session"]);
         return fauxAssistantMessage("- 次の会話で続ける");
       },
     ]);
     const handoff = await runtime.compactForHandoff();
     assert.match(handoff, /次の会話で続ける/);
+    assert.ok(sessionHeaders[0]);
+    assert.equal(sessionHeaders[1], sessionHeaders[0]);
     const summaryRequest = requests[1]!;
     const summaryPrompt = summaryRequest.messages
       .filter((message) => message.role === "user")

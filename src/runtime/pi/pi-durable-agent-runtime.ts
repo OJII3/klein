@@ -394,7 +394,10 @@ export function createPiDurableAgentFactory({
         id,
         async (source, previousSummary) => {
           const response = await modelRuntime.completeSimple(
-            resolveConfiguredModel(llm.provider, llm.model, modelRuntime),
+            withOpenCodeSessionHeader(
+              resolveConfiguredModel(llm.provider, llm.model, modelRuntime),
+              durableOpenCodeSessionId(agentDir, id),
+            ),
             {
               systemPrompt: HANDOFF_SUMMARY_SYSTEM_PROMPT,
               messages: [
