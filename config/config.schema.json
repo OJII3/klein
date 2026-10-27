@@ -27,9 +27,39 @@
               "type": "string",
               "minLength": 1,
               "pattern": "^[0-9]+$"
+            },
+            "communicationChannelId": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^[0-9]+$"
             }
           },
           "additionalProperties": false
+        },
+        "memoryFilePath": {
+          "type": "string",
+          "minLength": 1
+        },
+        "agents": {
+          "type": "object",
+          "patternProperties": {
+            "^[a-z0-9]+(?:-[a-z0-9]+)*$": {
+              "type": "object",
+              "required": ["promptFile"],
+              "properties": {
+                "channelId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "^[0-9]+$"
+                },
+                "promptFile": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "additionalProperties": false
+            }
+          }
         }
       },
       "additionalProperties": false

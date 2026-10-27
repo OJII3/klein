@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 
-import { AgentCoordinator } from "./agent-coordinator";
+import { AgentCoordinator, type DomainAgentRegistration } from "./agent-coordinator";
 import { parseCliOptions } from "./cli-options";
 import { loadConfig } from "./config";
 import { createLogFilePath, createLogger, flushLogger } from "./logger";
@@ -11,6 +11,7 @@ import { resolveProfile } from "./profile";
 import { TaskCoordinator } from "./task-coordinator";
 import { VoiceChatCoordinator } from "./voice-chat-coordinator";
 import { DiscordAgent } from "@agents/discord/discord-agent";
+import { DomainAgent } from "@agents/domain/domain-agent";
 import {
   createPiModelRuntime,
   resolveConfiguredModel,
@@ -26,6 +27,10 @@ import { DiscordJsService } from "@modules/discord/infrastructure/discord-js-ser
 import { loadVoiceReactionPresets } from "@modules/discord/infrastructure/voice-reaction-presets";
 import { FileDiscordChannelRuleStore } from "@modules/discord/infrastructure/file-discord-channel-rule-store";
 import { MemoryCoordinator } from "@modules/memory/application/memory-coordinator";
+import {
+  createWebUiMemoryAccessor,
+  OwnerMemoryStore,
+} from "@modules/memory/application/owner-memory-store";
 import { createGetMonthlyUsageLimit } from "@modules/usage/application/get-monthly-usage-limit";
 import { formatMonthlyUsageStatus } from "@modules/usage/application/format-monthly-usage-status";
 import { OpenCodeGoUsageProvider } from "@modules/usage/infrastructure/opencode-go-usage-provider";
@@ -73,7 +78,19 @@ export async function bootstrap(): Promise<void> {
   }
   const discordOperatingState = new DiscordOperatingState();
   const ownerUserId = config.owner?.discord.userId;
-  const discordAccessPolicy = createDiscordAccessPolicy(config.discord.access, ownerUserId);
+  const communicationChannelId = config.owner?.discord.communicationChannelId;
+  const configuredDomainAgents = config.owner?.agents ?? {};
+  const ownerChannelIds = [
+    ...(communicationChannelId ? [communicationChannelId] : []),
+    ...Object.values(configuredDomainAgents)
+      .map((agent) => agent.channelId)
+      .filter((channelId): channelId is string => channelId !== undefined),
+  ];
+  const discordAccessPolicy = createDiscordAccessPolicy(
+    config.discord.access,
+    ownerUserId,
+    ownerChannelIds,
+  );
   const voiceSystemPrompt = voiceChatConfiguration?.enabled
     ? await loadPromptFile(profile.voiceSystemPromptFile)
     : undefined;
@@ -82,6 +99,11 @@ export async function bootstrap(): Promise<void> {
   const agentDir = resolve(config.runtime.agentDir);
   const reminderStore = new FileReminderStore(resolve(agentDir, "reminders"));
   const channelRuleStore = new FileDiscordChannelRuleStore(resolve(agentDir, "channel-rules"));
+  const ownerMemoryStore = ownerUserId
+    ? new OwnerMemoryStore(
+        resolve(config.owner?.memoryFilePath ?? resolve(agentDir, "owner-memory/MEMORY.json")),
+      )
+    : undefined;
   const modelRuntime = await createPiModelRuntime(agentDir);
   const reactionConfiguration = voiceChatConfiguration?.enabled
     ? voiceChatConfiguration.reactions
@@ -130,6 +152,29 @@ export async function bootstrap(): Promise<void> {
       })
     : piAgentFactory;
   let discordService!: DiscordJsService;
+  let agentCoordinator!: AgentCoordinator;
+  const domainAgents: Record<string, DomainAgentRegistration> = {};
+  if (ownerUserId) {
+    for (const [agentId, domainConfig] of Object.entries(configuredDomainAgents)) {
+      const domainPrompt = await loadPromptFile(resolve(domainConfig.promptFile));
+      domainAgents[agentId] = {
+        channelId: domainConfig.channelId,
+        createAgent: (sessionKey, handoffContext) =>
+          DomainAgent.create(piAgentFactory, {
+            agentId,
+            channelId: domainConfig.channelId,
+            discordService,
+            eventRouter: agentCoordinator,
+            handoffContext,
+            ownerMemoryStore,
+            ownerUserId,
+            reminderStore,
+            sessionKey,
+            systemPrompt: domainPrompt,
+          }),
+      };
+    }
+  }
   const createDiscordAgent = (
     channelId: string,
     sessionKey: string,
@@ -137,8 +182,10 @@ export async function bootstrap(): Promise<void> {
     ownerFeaturesAllowed = false,
   ) =>
     DiscordAgent.create(piAgentFactory, discordService, channelId, systemPrompt, {
+      eventRouter: agentCoordinator,
       handoffContext,
       ownerFeaturesAllowed,
+      ownerMemoryStore,
       ownerUserId,
       reminderStore,
       sessionKey,
@@ -203,15 +250,18 @@ export async function bootstrap(): Promise<void> {
         taskCoordinator,
       })
     : undefined;
-  const agentCoordinator = new AgentCoordinator({
+  agentCoordinator = new AgentCoordinator({
     accessPolicy: discordAccessPolicy,
+    communicationChannelId,
     ownerUserId,
     createDiscordAgent,
+    domainAgents,
     channelSessionStateStore: piAgentFactory.channelSessionStateStore,
     channelRuleStore,
     discordService,
     logger,
     memoryCoordinator,
+    ownerMemoryStore,
     operatingState: discordOperatingState,
     reminderStore,
     taskCoordinator,
@@ -244,12 +294,15 @@ export async function bootstrap(): Promise<void> {
     }
   };
   const webUiConfig = resolveWebUiConfig(config);
+  const webUiMemory = ownerMemoryStore
+    ? createWebUiMemoryAccessor(ownerMemoryStore, memoryCoordinator)
+    : memoryCoordinator;
   const webUi = webUiConfig.enabled
     ? await startWebUi({
         host: webUiConfig.host,
         logger,
-        memory: memoryCoordinator,
-        memoryEditor: memoryCoordinator,
+        memory: webUiMemory,
+        memoryEditor: webUiMemory,
         piSessions: piAgentFactory.sessions,
         pinoLogs: new PinoJsonlReader(logDirectory),
         port: webUiConfig.port,

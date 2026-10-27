@@ -11,9 +11,13 @@ export interface AgentPrompt {
   readonly images: readonly AgentImage[];
 }
 
+export interface AgentPromptResult {
+  readonly assistantText?: string;
+}
+
 export interface AgentRuntime {
-  prompt(event: AgentEvent): Promise<void>;
-  steer?(event: AgentEvent): Promise<void>;
+  prompt(event: AgentEvent): Promise<AgentPromptResult | void>;
+  steer?(event: AgentEvent): Promise<AgentPromptResult | void>;
   abort?(): Promise<void>;
   analyzeImage?(prompt: AgentPrompt): Promise<string>;
   compactForHandoff?(): Promise<string>;

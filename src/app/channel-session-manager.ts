@@ -1,6 +1,7 @@
 import type { Logger } from "pino";
 
-import { DiscordAgent } from "@agents/discord/discord-agent";
+import type { AgentEvent } from "@agents/core/agent-event";
+import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import type { DiscordService } from "@modules/discord/ports/discord-service";
 import type { DiscordAccessPolicy } from "@modules/discord/domain/discord-access-policy";
 import {
@@ -11,6 +12,25 @@ import {
   type ChannelSessionStateStore,
 } from "./channel-session-state-store";
 
+export interface ChannelAgent {
+  prompt(
+    message: DiscordMessage,
+    guildMemory?: string,
+    channelRule?: string,
+    ownerMemory?: string,
+  ): Promise<void>;
+  promptEvent(event: AgentEvent, ownerMemory?: string): Promise<void>;
+  steer(
+    message: DiscordMessage,
+    guildMemory?: string,
+    channelRule?: string,
+    ownerMemory?: string,
+  ): Promise<void>;
+  compactForHandoff(): Promise<string> | undefined;
+  abort(): Promise<void>;
+  dispose(): void;
+}
+
 export interface ChannelSessionManagerDependencies {
   readonly accessPolicy?: DiscordAccessPolicy;
   readonly channelSessionStateStore?: ChannelSessionStateStore;
@@ -19,14 +39,14 @@ export interface ChannelSessionManagerDependencies {
     sessionKey: string,
     handoffContext?: string,
     ownerFeaturesAllowed?: boolean,
-  ) => Promise<DiscordAgent>;
+  ) => Promise<ChannelAgent>;
   readonly discordService: DiscordService;
   readonly logger: Logger;
   readonly ownerUserId?: string;
 }
 
 export class ChannelSessionManager {
-  private readonly agents = new Map<string, Promise<DiscordAgent>>();
+  private readonly agents = new Map<string, Promise<ChannelAgent>>();
   private readonly agentSessionKeys = new Map<string, string>();
   private readonly channelOperations = new Map<string, Promise<void>>();
   private readonly inMemoryChannelStates = new Map<string, ChannelSessionState>();
@@ -43,7 +63,7 @@ export class ChannelSessionManager {
     const states = await this.dependencies.channelSessionStateStore?.list();
     for (const state of states ?? []) {
       const accessPolicy = this.dependencies.accessPolicy;
-      if (accessPolicy) {
+      if (accessPolicy && !state.channelId.startsWith("domain-agent:")) {
         let location: Awaited<ReturnType<DiscordService["getChannelLocation"]>>;
         try {
           location = await this.dependencies.discordService.getChannelLocation(state.channelId);
@@ -155,7 +175,7 @@ export class ChannelSessionManager {
     return this.dependencies.channelSessionStateStore?.save(state) ?? Promise.resolve();
   }
 
-  getDiscordAgent(channelId: string, state: ChannelSessionState): Promise<DiscordAgent> {
+  getDiscordAgent(channelId: string, state: ChannelSessionState): Promise<ChannelAgent> {
     const existing = this.agents.get(channelId);
     if (existing && this.agentSessionKeys.get(channelId) === state.sessionKey) return existing;
     if (existing) {
@@ -181,6 +201,25 @@ export class ChannelSessionManager {
     });
 
     return created;
+  }
+
+  async findLatestOwnerChannelId(
+    excludedChannelIds: ReadonlySet<string> = new Set(),
+  ): Promise<string | undefined> {
+    if (!this.dependencies.ownerUserId) return undefined;
+    const ownerScope = `owner:${this.dependencies.ownerUserId}`;
+    const states = this.dependencies.channelSessionStateStore
+      ? await this.dependencies.channelSessionStateStore.list()
+      : [...this.inMemoryChannelStates.values()];
+    const candidates = states
+      .filter(
+        (state) =>
+          state.accessScope === ownerScope &&
+          !state.channelId.startsWith("domain-agent:") &&
+          !excludedChannelIds.has(state.channelId),
+      )
+      .sort((left, right) => (right.lastActivityAt ?? 0) - (left.lastActivityAt ?? 0));
+    return candidates[0]?.channelId;
   }
 
   async rotateChannelIfDue(
