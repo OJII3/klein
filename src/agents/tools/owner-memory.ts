@@ -10,6 +10,21 @@ import {
 import type { OwnerMemoryStore } from "@modules/memory/application/owner-memory-store";
 
 const memoryKindSchema = Type.Union(MEMORY_KINDS.map((kind) => Type.Literal(kind)));
+const ownerMemoryUpdateParameters = Type.Object({
+  id: Type.String({ minLength: 1 }),
+  kind: Type.Optional(memoryKindSchema),
+  title: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
+  content: Type.Optional(Type.String({ minLength: 1, maxLength: 10_000 })),
+});
+
+type OwnerMemoryUpdateDetails =
+  | {
+      readonly id: string;
+      readonly kind: MemoryKind;
+      readonly title: string;
+      readonly updated: true;
+    }
+  | { readonly id: string; readonly updated: false };
 
 export function createOwnerMemoryTools(store: OwnerMemoryStore, sourceId = "agent") {
   return [
@@ -81,16 +96,11 @@ export function createOwnerMemoryTools(store: OwnerMemoryStore, sourceId = "agen
         };
       },
     }),
-    defineTool({
+    defineTool<typeof ownerMemoryUpdateParameters, OwnerMemoryUpdateDetails>({
       name: "owner_memory_update",
       description:
         "Update an existing entry in the shared owner memory by its ID (e.g., mem_...). Use owner_memory_list to find IDs if needed.",
-      parameters: Type.Object({
-        id: Type.String({ minLength: 1 }),
-        kind: Type.Optional(memoryKindSchema),
-        title: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
-        content: Type.Optional(Type.String({ minLength: 1, maxLength: 10_000 })),
-      }),
+      parameters: ownerMemoryUpdateParameters,
       deferred: true,
       async execute(params) {
         try {

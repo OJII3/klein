@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import type { ToolRegistration } from "@earendil-works/pi-durable";
 
 import {
   createWebUiMemoryAccessor,
@@ -69,10 +70,10 @@ test("createOwnerMemoryTools executes list, add, update, and delete", async () =
   try {
     const store = new OwnerMemoryStore(join(tempDir, "MEMORY.json"));
     const tools = createOwnerMemoryTools(store, "agent:mail");
-    const findTool = (name: string) => {
+    const findTool = (name: string): ToolRegistration => {
       const tool = tools.find((item) => item.name === name);
       assert.ok(tool, `Expected tool ${name}`);
-      return tool;
+      return tool as unknown as ToolRegistration;
     };
 
     const addResult = await findTool("owner_memory_add").execute(
