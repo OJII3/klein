@@ -1,7 +1,6 @@
 import type { Logger } from "pino";
 
-import type { AgentEvent } from "@agents/core/agent-event";
-import type { DiscordMessage } from "@modules/discord/domain/discord-message";
+import type { ChannelAgent } from "@agents/core/channel-agent";
 import type { DiscordService } from "@modules/discord/ports/discord-service";
 import type { DiscordAccessPolicy } from "@modules/discord/domain/discord-access-policy";
 import {
@@ -11,25 +10,6 @@ import {
   type ChannelSessionState,
   type ChannelSessionStateStore,
 } from "./channel-session-state-store";
-
-export interface ChannelAgent {
-  prompt(
-    message: DiscordMessage,
-    guildMemory?: string,
-    channelRule?: string,
-    ownerMemory?: string,
-  ): Promise<void>;
-  promptEvent(event: AgentEvent, ownerMemory?: string): Promise<void>;
-  steer(
-    message: DiscordMessage,
-    guildMemory?: string,
-    channelRule?: string,
-    ownerMemory?: string,
-  ): Promise<void>;
-  compactForHandoff(): Promise<string> | undefined;
-  abort(): Promise<void>;
-  dispose(): void;
-}
 
 export interface ChannelSessionManagerDependencies {
   readonly accessPolicy?: DiscordAccessPolicy;

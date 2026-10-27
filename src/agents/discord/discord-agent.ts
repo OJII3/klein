@@ -1,11 +1,11 @@
 import type { AgentEvent } from "../core/agent-event";
 import type { AgentEventRouter } from "../core/agent-event-router";
+import type { ChannelAgent } from "../core/channel-agent";
 import type { AgentFactory } from "../core/agent-factory";
 import type { AgentPrompt, AgentRuntime } from "../core/agent-runtime";
 import { formatDiscordMessage, type DiscordMessage } from "@modules/discord/domain/discord-message";
 import type { DiscordService } from "@modules/discord/ports/discord-service";
 import type { OwnerMemoryStore } from "@modules/memory/application/owner-memory-store";
-import { DISCORD_AGENT_TOOL_NAMES } from "./prompt-policy";
 import { createDiscordReadTool } from "./tools/discord-read";
 import { createDiscordSendTool } from "./tools/discord-send";
 import { createDiscordVoiceTool } from "./tools/discord-voice";
@@ -25,7 +25,7 @@ function formatDiscordAgentPrompt(message: DiscordMessage): string {
   return message.author.bot ? `${formattedMessage}${BOT_MESSAGE_GUIDANCE}` : formattedMessage;
 }
 
-export class DiscordAgent {
+export class DiscordAgent implements ChannelAgent {
   private constructor(
     private readonly runtime: AgentRuntime,
     private readonly channelId: string,
@@ -93,25 +93,9 @@ export class DiscordAgent {
       ...ownerMemoryTools,
       ...eventRouterTools,
     ];
-    const toolNames = options.speak
-      ? [...DISCORD_AGENT_TOOL_NAMES.filter((name) => name !== "discord_send"), "discord_speak"]
-      : options.tts
-        ? [...DISCORD_AGENT_TOOL_NAMES, "discord_voice"]
-        : [...DISCORD_AGENT_TOOL_NAMES];
-    if (options.reminderStore) {
-      toolNames.push("reminder_add", "reminder_list", "reminder_delete");
-    }
-    for (const tool of ownerMemoryTools) {
-      toolNames.push(tool.name);
-    }
-    for (const tool of eventRouterTools) {
-      toolNames.push(tool.name);
-    }
-
     runtime = await agentFactory.create(
       {
         systemPrompt,
-        toolNames,
       },
       tools,
       {

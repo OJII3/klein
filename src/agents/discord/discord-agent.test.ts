@@ -35,7 +35,6 @@ const message: DiscordMessage = {
 
 test("routes voice replies through discord_speak using the existing runtime prompt", async () => {
   let tools: readonly ToolRegistration[] = [];
-  let toolNames: readonly string[] = [];
   const spoken: string[] = [];
   const runtime: AgentRuntime = {
     async prompt(prompt) {
@@ -57,7 +56,6 @@ test("routes voice replies through discord_speak using the existing runtime prom
     async create(definition, registeredTools) {
       assert.equal(definition.systemPrompt, "voice system prompt");
       tools = registeredTools;
-      toolNames = definition.toolNames;
       return runtime;
     },
   };
@@ -74,9 +72,7 @@ test("routes voice replies through discord_speak using the existing runtime prom
     },
   );
 
-  assert.ok(toolNames.includes("discord_speak"));
-  assert.ok(!toolNames.includes("discord_send"));
-  assert.ok(!toolNames.includes("discord_voice"));
+  assert.ok(tools.some((tool) => tool.name === "discord_speak"));
   assert.ok(!tools.some((tool) => tool.name === "discord_send" || tool.name === "discord_voice"));
   await agent.prompt(message);
   assert.deepEqual(spoken, ["LLMの返答"]);

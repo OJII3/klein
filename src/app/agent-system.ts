@@ -1,7 +1,7 @@
 import type { Logger } from "pino";
 
 import type { AgentEventRouter } from "@agents/core/agent-event-router";
-import type { ChannelAgent } from "./channel-session-manager";
+import type { ChannelAgent } from "@agents/core/channel-agent";
 import { ChannelSessionManager } from "./channel-session-manager";
 import { AgentCoordinator } from "./agent-coordinator";
 import { DiscordAgentEventRouter } from "./discord-agent-event-router";

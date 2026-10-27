@@ -116,11 +116,10 @@ test("calls a configured MCP tool through the durable runtime", async () => {
         },
       }),
     );
-    runtime = await factory.create(
-      { systemPrompt: "Read notes when requested.", toolNames: [] },
-      [],
-      { sessionKey: "discord-channel:durable-mcp", ownerFeaturesAllowed: true },
-    );
+    runtime = await factory.create({ systemPrompt: "Read notes when requested." }, [], {
+      sessionKey: "discord-channel:durable-mcp",
+      ownerFeaturesAllowed: true,
+    });
     const requests: TranscriptContext[] = [];
     provider.setResponses([
       (context) => {
