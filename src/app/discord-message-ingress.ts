@@ -1,5 +1,7 @@
 import type { Logger } from "pino";
 
+import { createDiscordMessageAgentTurn } from "@agents/discord/discord-message-agent-turn";
+import { BOT_MESSAGE_GUIDANCE } from "@agents/discord/prompt-policy";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import type { DiscordAccessPolicy } from "@modules/discord/domain/discord-access-policy";
 import type { DiscordOperatingState } from "@modules/discord/domain/discord-operating-state";
@@ -119,7 +121,18 @@ export class DiscordMessageIngress {
       const ownerMemory = ownerFeaturesAllowed
         ? await this.dependencies.ownerMemoryStore?.getContext(query)
         : undefined;
-      await agent.prompt(message, guildMemory, channelRule, ownerMemory);
+      const turn = createDiscordMessageAgentTurn(
+        message,
+        { ownerMemory, guildMemory, channelRule },
+        {
+          botMessageGuidance: isDomainChannel ? undefined : BOT_MESSAGE_GUIDANCE,
+          ownerValidation:
+            ownerFeaturesAllowed && this.dependencies.ownerUserId
+              ? { userId: this.dependencies.ownerUserId, channelId: message.channelId }
+              : undefined,
+        },
+      );
+      await agent.prompt(turn);
       logger.debug(
         {
           durationMs: Date.now() - startedAt,

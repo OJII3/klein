@@ -8,6 +8,7 @@ import type { AgentFactory } from "../core/agent-factory";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import type { DiscordService } from "@modules/discord/ports/discord-service";
 import { DomainAgent } from "./domain-agent";
+import { createDiscordMessageAgentTurn } from "../discord/discord-message-agent-turn";
 
 const ownerMessage: DiscordMessage = {
   author: {
@@ -75,7 +76,17 @@ test("DomainAgent uses assistant_text mode, sends assistantText to Discord chann
 
   assert.equal(outputMode, "assistant_text");
 
-  await agent.prompt(ownerMessage, undefined, undefined, "### オーナー設定\n朝は9時始業");
+  const ownerValidation = {
+    userId: ownerMessage.author.id,
+    channelId: ownerMessage.channelId,
+  };
+  await agent.prompt(
+    createDiscordMessageAgentTurn(
+      ownerMessage,
+      { ownerMemory: "### オーナー設定\n朝は9時始業" },
+      { ownerValidation },
+    ),
+  );
   assert.equal(sentMessages.length, 1);
   assert.deepEqual(sentMessages[0], {
     channelId: "calendar-channel",
@@ -88,13 +99,16 @@ test("DomainAgent uses assistant_text mode, sends assistantText to Discord chann
 
   // Background event returning NO_ACTION does not post to Discord channel
   nextAssistantText = "NO_ACTION";
-  await agent.promptEvent({
-    id: "evt-1",
-    occurredAt: "2026-10-14T10:00:00.000Z",
-    type: "reminder.due",
-    source: "reminder",
-    content: [{ type: "text", text: "定期チェック" }],
-  });
+  await agent.promptEvent(
+    {
+      id: "evt-1",
+      occurredAt: "2026-10-14T10:00:00.000Z",
+      type: "reminder.due",
+      source: "reminder",
+      content: [{ type: "text", text: "定期チェック" }],
+    },
+    { ownerMemory: "### オーナー設定\n朝は9時始業" },
+  );
   assert.equal(sentMessages.length, 1);
 
   // Can dispatch event to communication agent via agent_send_event tool
@@ -117,10 +131,14 @@ test("DomainAgent uses assistant_text mode, sends assistantText to Discord chann
   // Rejects non-owner messages
   assert.throws(
     () =>
-      agent.prompt({
-        ...ownerMessage,
-        author: { ...ownerMessage.author, id: "someone-else" },
-      }),
+      createDiscordMessageAgentTurn(
+        {
+          ...ownerMessage,
+          author: { ...ownerMessage.author, id: "someone-else" },
+        },
+        {},
+        { ownerValidation },
+      ),
     /Only the owner/,
   );
 

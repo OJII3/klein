@@ -96,7 +96,7 @@ export class DiscordAgentEventRouter implements AgentEventRouter {
         const ownerMemory = await this.dependencies.ownerMemoryStore?.getContext(
           buildEventMemoryQuery(event),
         );
-        await agent.promptEvent(event, ownerMemory);
+        await agent.promptEvent(event, { ownerMemory });
         this.dependencies.logger.info(
           {
             channelId: channelKey,

@@ -137,7 +137,7 @@ export class ReminderDeliveryCoordinator {
     };
 
     try {
-      await agent.promptEvent(event, ownerMemory);
+      await agent.promptEvent(event, { ownerMemory });
       if (reminder.repeat) {
         const nextDueAt = getNextReminderDueAt(reminder, Date.now());
         if (nextDueAt) await reminderStore.updateDueAt(reminder, nextDueAt);
