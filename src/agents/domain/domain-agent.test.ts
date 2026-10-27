@@ -52,8 +52,8 @@ test("DomainAgent uses assistant_text mode, sends assistantText to Discord chann
       outputMode = definition.outputMode;
       registeredTools = tools;
       assert.equal(options.ownerFeaturesAllowed, true);
-      assert.ok(!definition.toolNames.includes("discord_send"));
-      assert.ok(definition.toolNames.includes("agent_send_event"));
+      assert.ok(!tools.some((tool) => tool.name === "discord_send"));
+      assert.ok(tools.some((tool) => tool.name === "agent_send_event"));
       return {
         async prompt(event) {
           receivedEvents.push(event);

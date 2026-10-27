@@ -1,5 +1,6 @@
 import type { Logger } from "pino";
 
+import type { ChannelAgent } from "@agents/core/channel-agent";
 import type { AgentEvent } from "@agents/core/agent-event";
 import type { AgentEventRouter } from "@agents/core/agent-event-router";
 import type { DiscordAccessPolicy } from "@modules/discord/domain/discord-access-policy";
@@ -12,7 +13,7 @@ import type { DiscordChannelRuleStore } from "@modules/discord/ports/discord-cha
 import type { ReminderStore } from "@modules/reminders/ports/reminder-store";
 import type { TaskCoordinator } from "./task-coordinator";
 import type { ChannelSessionState, ChannelSessionStateStore } from "./channel-session-state-store";
-import { ChannelSessionManager, type ChannelAgent } from "./channel-session-manager";
+import { ChannelSessionManager } from "./channel-session-manager";
 import { ReminderDeliveryCoordinator } from "./reminder-delivery-coordinator";
 
 export const COMMUNICATION_AGENT_ID = "communication";

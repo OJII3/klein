@@ -1,5 +1,6 @@
 import type { AgentEvent } from "../core/agent-event";
 import type { AgentEventRouter } from "../core/agent-event-router";
+import type { ChannelAgent } from "../core/channel-agent";
 import type { AgentFactory } from "../core/agent-factory";
 import type { AgentPrompt, AgentPromptResult, AgentRuntime } from "../core/agent-runtime";
 import { formatDiscordMessage, type DiscordMessage } from "@modules/discord/domain/discord-message";
@@ -10,7 +11,7 @@ import { createDiscordReadTool } from "../discord/tools/discord-read";
 import { createReminderTools } from "../discord/tools/reminder";
 import { createOwnerMemoryTools } from "../tools/owner-memory";
 import { createAgentSendEventTool } from "../tools/agent-send-event";
-import { createDomainAgentSystemPrompt, DOMAIN_AGENT_BASE_TOOL_NAMES } from "./prompt-policy";
+import { createDomainAgentSystemPrompt } from "./prompt-policy";
 
 const DISCORD_MAX_MESSAGE_LENGTH = 2_000;
 const NO_ACTION_TOKEN = "NO_ACTION";
@@ -28,7 +29,7 @@ export interface DomainAgentCreateOptions {
   readonly eventRouter?: AgentEventRouter;
 }
 
-export class DomainAgent {
+export class DomainAgent implements ChannelAgent {
   private constructor(
     readonly agentId: string,
     private readonly runtime: AgentRuntime,
@@ -76,11 +77,6 @@ export class DomainAgent {
       : [];
 
     const tools = [...discordTools, ...reminderTools, ...ownerMemoryTools, ...eventRouterTools];
-    const toolNames: string[] = [
-      ...DOMAIN_AGENT_BASE_TOOL_NAMES,
-      ...tools.map((tool) => tool.name),
-    ];
-
     const composedPrompt = createDomainAgentSystemPrompt(options.agentId, options.systemPrompt, {
       availableTargets: options.eventRouter?.listTargets(),
     });
@@ -88,7 +84,6 @@ export class DomainAgent {
     runtime = await agentFactory.create(
       {
         systemPrompt: composedPrompt,
-        toolNames,
         outputMode: "assistant_text",
       },
       tools,
@@ -141,10 +136,6 @@ export class DomainAgent {
 
   compactForHandoff(): Promise<string> | undefined {
     return this.runtime.compactForHandoff?.();
-  }
-
-  abort(): Promise<void> {
-    return this.runtime.abort?.() ?? Promise.resolve();
   }
 
   dispose(): void {

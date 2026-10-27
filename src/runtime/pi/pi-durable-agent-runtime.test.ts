@@ -41,11 +41,9 @@ test("provides web tools and summarizes a durable conversation for handoff", asy
   });
 
   try {
-    const runtime = (await factory.create(
-      { systemPrompt: "Test system prompt", toolNames: [] },
-      [],
-      { sessionKey },
-    )) as AgentRuntime & { compactForHandoff(): Promise<string> };
+    const runtime = (await factory.create({ systemPrompt: "Test system prompt" }, [], {
+      sessionKey,
+    })) as AgentRuntime & { compactForHandoff(): Promise<string> };
     const requests: TranscriptContext[] = [];
     const sessionHeaders: Array<string | undefined> = [];
     provider.setResponses([
@@ -124,7 +122,7 @@ test("isolates channel histories and tool bindings when sessions resume or start
   const ownerKey = "web-chat:shared:owner:123";
   const createRuntime = async (sessionKey: string, destination: string, owner = false) => {
     const runtime = await factory.create(
-      { systemPrompt: `Reply in ${destination}`, toolNames: ["reply", "owner_note"] },
+      { systemPrompt: `Reply in ${destination}` },
       [
         defineTool({
           name: "reply",
@@ -281,7 +279,6 @@ test("returns assistantText and preserves assistant messages in assistant_text o
     const runtime = await factory.create(
       {
         systemPrompt: "Domain agent prompt",
-        toolNames: [],
         outputMode: "assistant_text",
       },
       [],
