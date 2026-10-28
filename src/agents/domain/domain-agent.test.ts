@@ -8,6 +8,7 @@ import type { AgentFactory } from "../core/agent-factory";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import type { DiscordService } from "@modules/discord/ports/discord-service";
 import { DomainAgent } from "./domain-agent";
+import { createDomainAgentDiscordAdapter } from "../discord/domain-agent-discord-adapter";
 import { createDiscordMessageAgentTurn } from "../discord/discord-message-agent-turn";
 
 const ownerMessage: DiscordMessage = {
@@ -24,10 +25,9 @@ const ownerMessage: DiscordMessage = {
   images: [],
 };
 
-test("DomainAgent uses assistant_text mode, sends assistantText to Discord channel, and suppresses NO_ACTION", async () => {
+test("DomainAgent passes runtime output through its configured channel adapter", async () => {
   const sentMessages: Array<{ channelId: string; text: string }> = [];
   let registeredTools: readonly ToolRegistration[] = [];
-  let outputMode: string | undefined;
   let nextAssistantText = "明日は10:00から定例MTGがあります。";
   const receivedEvents: AgentEvent[] = [];
 
@@ -49,32 +49,37 @@ test("DomainAgent uses assistant_text mode, sends assistantText to Discord chann
   };
 
   const agentFactory: AgentFactory = {
-    async create(definition, tools, options) {
-      outputMode = definition.outputMode;
+    async create(_definition, tools, options) {
       registeredTools = tools;
       assert.equal(options.ownerFeaturesAllowed, true);
+      assert.ok(options.outputSink);
+      assert.ok(tools.some((tool) => tool.name === "discord_read"));
       assert.ok(!tools.some((tool) => tool.name === "discord_send"));
       assert.ok(tools.some((tool) => tool.name === "agent_send_event"));
       return {
         async prompt(event) {
           receivedEvents.push(event);
-          return { assistantText: nextAssistantText };
+          await options.outputSink?.writeAssistantText(nextAssistantText);
         },
         dispose() {},
       };
     },
   };
 
+  const discordAdapter = createDomainAgentDiscordAdapter(
+    discordService,
+    "calendar-channel",
+    ownerMessage.author.id,
+  );
   const agent = await DomainAgent.create(agentFactory, {
     agentId: "calendar",
     channelId: "calendar-channel",
-    discordService,
+    channelTools: discordAdapter.channelTools,
     eventRouter,
+    outputSink: discordAdapter.outputSink,
     ownerUserId: ownerMessage.author.id,
     systemPrompt: "カレンダー管理エージェントです。",
   });
-
-  assert.equal(outputMode, "assistant_text");
 
   const ownerValidation = {
     userId: ownerMessage.author.id,
