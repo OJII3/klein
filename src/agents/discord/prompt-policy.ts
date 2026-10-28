@@ -1,8 +1,3 @@
-export const DISCORD_AGENT_TOOL_NAMES = [
-  "codemode",
-  "discord_read",
-  "discord_send",
-  "web_search",
-  "fetch_content",
-  "get_search_content",
-] as const;
+export const BOT_MESSAGE_GUIDANCE = `
+
+The latest Discord message was sent by another bot. Do not respond merely because it is addressed to you. Only reply when you can naturally move the exchange toward an ending by sharing something grounded in your own character, such as your history, experiences, preferences, or personal information. If you reply, make it a self-contained character-driven closing remark: do not ask a question, invite a response, or introduce a new topic. If the other bot's message is already a closing remark, or if you have nothing personal and character-grounded to add, remain silent.`;

@@ -11,6 +11,10 @@ import type {
   ChannelSessionState,
   ChannelSessionStateStore,
 } from "../../app/channel-session-state-store";
+import {
+  createConversationSessionKey,
+  serializeConversationKey,
+} from "../../app/channel-session-state-store";
 
 const SessionConversations = defineDocFamily<{ conversationIds: ConversationId[] }, null>({
   kind: "klein.session-conversations",
@@ -21,8 +25,8 @@ const SessionConversations = defineDocFamily<{ conversationIds: ConversationId[]
   initial: () => ({ conversationIds: [] }),
 });
 
-type StoredChannelState = {
-  channelId: string;
+type StoredConversationState = {
+  conversationKey: ChannelSessionState["conversationKey"];
   accessScope: string | null;
   sessionKey: string;
   lastActivityAt: number | null;
@@ -31,8 +35,8 @@ type StoredChannelState = {
   handoffContext: string | null;
 };
 
-const DiscordChannelStates = defineDocFamily<StoredChannelState, StoredChannelState>({
-  kind: "klein.discord-channel-state",
+const ConversationStates = defineDocFamily<StoredConversationState, StoredConversationState>({
+  kind: "klein.conversation-state",
   version: 1,
   scope: "session",
   family: true,
@@ -48,13 +52,17 @@ export class PiDurableSessionStore {
     private readonly storage: Storage,
   ) {
     this.channelStates = {
-      getOrCreate: async (channelId, rotationDate) => {
-        const state = await session.snapshot(DiscordChannelStates, channelId, BACKGROUND_CONTEXT);
+      getOrCreate: async (conversationKey, rotationDate) => {
+        const state = await session.snapshot(
+          ConversationStates,
+          serializeConversationKey(conversationKey),
+          BACKGROUND_CONTEXT,
+        );
         return state
           ? fromStoredState(state)
           : {
-              channelId,
-              sessionKey: `discord-channel:${channelId}`,
+              conversationKey,
+              sessionKey: createConversationSessionKey(conversationKey),
               lastActivityAt: null,
               lastRotationDate: rotationDate,
               hasActivitySinceRotation: true,
@@ -62,8 +70,8 @@ export class PiDurableSessionStore {
       },
       list: async () => {
         const states: ChannelSessionState[] = [];
-        for (const key of await this.documentKeys(DiscordChannelStates.definition.kind)) {
-          const state = await session.snapshot(DiscordChannelStates, key, BACKGROUND_CONTEXT);
+        for (const key of await this.documentKeys(ConversationStates.definition.kind)) {
+          const state = await session.snapshot(ConversationStates, key, BACKGROUND_CONTEXT);
           if (state) states.push(fromStoredState(state));
         }
         return states;
@@ -71,7 +79,14 @@ export class PiDurableSessionStore {
       save: (state) =>
         session.commit(async (tx) => {
           const stored = toStoredState(state);
-          Object.assign(await tx.doc(DiscordChannelStates, state.channelId, stored), stored);
+          Object.assign(
+            await tx.doc(
+              ConversationStates,
+              serializeConversationKey(state.conversationKey),
+              stored,
+            ),
+            stored,
+          );
         }, BACKGROUND_CONTEXT),
     };
   }
@@ -119,9 +134,9 @@ export class PiDurableSessionStore {
   }
 }
 
-function toStoredState(state: ChannelSessionState): StoredChannelState {
+function toStoredState(state: ChannelSessionState): StoredConversationState {
   return {
-    channelId: state.channelId,
+    conversationKey: state.conversationKey,
     accessScope: state.accessScope ?? null,
     sessionKey: state.sessionKey,
     lastActivityAt: state.lastActivityAt,
@@ -131,9 +146,9 @@ function toStoredState(state: ChannelSessionState): StoredChannelState {
   };
 }
 
-function fromStoredState(state: Readonly<StoredChannelState>): ChannelSessionState {
+function fromStoredState(state: Readonly<StoredConversationState>): ChannelSessionState {
   return {
-    channelId: state.channelId,
+    conversationKey: state.conversationKey,
     ...(state.accessScope === null ? {} : { accessScope: state.accessScope }),
     sessionKey: state.sessionKey,
     lastActivityAt: state.lastActivityAt,

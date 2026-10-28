@@ -1,10 +1,3 @@
-export const DOMAIN_AGENT_BASE_TOOL_NAMES = [
-  "codemode",
-  "web_search",
-  "fetch_content",
-  "get_search_content",
-] as const;
-
 export function createDomainAgentSystemPrompt(
   agentId: string,
   basePrompt: string,

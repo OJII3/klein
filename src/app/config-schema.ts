@@ -10,7 +10,7 @@ const ThinkingLevelSchema = Type.Union([
   Type.Literal("max"),
 ]);
 
-const DiscordIdSchema = Type.String({ minLength: 1, pattern: "^[0-9]+$" });
+export const DiscordIdSchema = Type.String({ minLength: 1, pattern: "^[0-9]+$" });
 const DiscordAccessSchema = Type.Union([
   Type.Literal("allow"),
   Type.Literal("deny"),
@@ -144,7 +144,7 @@ const ProfileNameSchema = Type.String({
   pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$",
 });
 
-const AgentIdSchema = Type.String({
+export const AgentIdSchema = Type.String({
   minLength: 1,
   pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$",
 });

@@ -6,6 +6,7 @@ import type { ToolRegistration } from "@earendil-works/pi-durable";
 import type { AgentFactory } from "../core/agent-factory";
 import type { AgentRuntime } from "../core/agent-runtime";
 import { DiscordAgent } from "./discord-agent";
+import { createDiscordMessageAgentTurn } from "./discord-message-agent-turn";
 import type { AgentEvent } from "../core/agent-event";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import type { Reminder } from "@modules/reminders/domain/reminder";
@@ -35,7 +36,6 @@ const message: DiscordMessage = {
 
 test("routes voice replies through discord_speak using the existing runtime prompt", async () => {
   let tools: readonly ToolRegistration[] = [];
-  let toolNames: readonly string[] = [];
   const spoken: string[] = [];
   const runtime: AgentRuntime = {
     async prompt(prompt) {
@@ -57,7 +57,6 @@ test("routes voice replies through discord_speak using the existing runtime prom
     async create(definition, registeredTools) {
       assert.equal(definition.systemPrompt, "voice system prompt");
       tools = registeredTools;
-      toolNames = definition.toolNames;
       return runtime;
     },
   };
@@ -74,11 +73,9 @@ test("routes voice replies through discord_speak using the existing runtime prom
     },
   );
 
-  assert.ok(toolNames.includes("discord_speak"));
-  assert.ok(!toolNames.includes("discord_send"));
-  assert.ok(!toolNames.includes("discord_voice"));
+  assert.ok(tools.some((tool) => tool.name === "discord_speak"));
   assert.ok(!tools.some((tool) => tool.name === "discord_send" || tool.name === "discord_voice"));
-  await agent.prompt(message);
+  await agent.promptMessage(message);
   assert.deepEqual(spoken, ["LLMの返答"]);
   agent.dispose();
 });
@@ -182,8 +179,8 @@ test("adds bot-specific conversation guidance only for bot messages", async () =
     "system prompt",
   );
 
-  await agent.prompt(message);
-  await agent.prompt({
+  await agent.promptMessage(message);
+  await agent.promptMessage({
     ...message,
     author: { ...message.author, bot: true },
   });
@@ -232,11 +229,39 @@ test("injects the current guild memory into the agent prompt", async () => {
     "system prompt",
   );
 
-  await agent.prompt(message, "### 定例会の曜日\n\n毎週土曜日");
+  await agent.promptMessage(message, { guildMemory: "### 定例会の曜日\n\n毎週土曜日" });
 
   assert.match(eventText(receivedPrompt), /<guild-memory>/u);
   assert.match(eventText(receivedPrompt), /毎週土曜日/u);
   assert.match(eventText(receivedPrompt), /読み取った本文/u);
+  agent.dispose();
+});
+
+test("does not inject owner memory into a public agent turn", async () => {
+  let receivedPrompt: AgentEvent | undefined;
+  const runtime: AgentRuntime = {
+    async prompt(prompt) {
+      receivedPrompt = prompt;
+    },
+    dispose() {},
+  };
+  const agentFactory: AgentFactory = {
+    async create() {
+      return runtime;
+    },
+  };
+  const agent = await DiscordAgent.create(
+    agentFactory,
+    {} as DiscordService,
+    message.channelId,
+    "system prompt",
+  );
+
+  await agent.prompt(
+    createDiscordMessageAgentTurn(message, { ownerMemory: "private owner memory" }),
+  );
+
+  assert.doesNotMatch(eventText(receivedPrompt), /private owner memory/u);
   agent.dispose();
 });
 
@@ -269,8 +294,8 @@ test("binds private reads to the owner and refuses other authors or channels", a
     ownerUserId: message.author.id,
     ownerFeaturesAllowed: true,
   });
-  await agent.prompt(message);
-  await agent.steer(message);
+  await agent.promptMessage(message);
+  await agent.steerMessage(message);
   assert.ok(prompts.every((event) => !("ownerFeaturesAllowed" in event)));
   const read = tools.find((tool) => tool.name === "discord_read");
   assert.ok(read);
@@ -281,8 +306,8 @@ test("binds private reads to the owner and refuses other authors or channels", a
     { ...message, author: { ...message.author, bot: true } },
     { ...message, channelId: "another-channel" },
   ]) {
-    assert.throws(() => agent.prompt(invalid), /Only the owner/);
-    assert.throws(() => agent.steer(invalid), /Only the owner/);
+    assert.throws(() => agent.promptMessage(invalid), /Only the owner/);
+    assert.throws(() => agent.steerMessage(invalid), /Only the owner/);
   }
   assert.equal(prompts.length, 2);
   agent.dispose();

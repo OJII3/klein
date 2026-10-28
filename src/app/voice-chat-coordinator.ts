@@ -114,7 +114,7 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
           { event: "voice_chat_message_processing_started", messageId: message.id },
           "Processing a voice transcript with the agent",
         );
-        await agent.prompt(message);
+        await agent.promptMessage(message);
         logger.info(
           {
             event: "voice_chat_message_processed",
@@ -174,7 +174,7 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
     };
 
     const performSteer = async (message: DiscordMessage): Promise<void> => {
-      if (typeof agent.steer !== "function") return;
+      if (typeof agent.steerMessage !== "function") return;
       const reactionController = startReaction(message.content, message.id);
       logger.info(
         {
@@ -186,7 +186,7 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
       );
       const steerStartedAt = performance.now();
       const steer = agent
-        .steer(message)
+        .steerMessage(message)
         .then(() => {
           if (currentTranscript) {
             currentTranscript = {
@@ -229,7 +229,7 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
           isProcessing: () => processing !== undefined,
           currentTranscript: () => currentTranscript?.content ?? "",
           processNext: processNextQueuedTranscript,
-          steer: typeof agent.steer === "function" ? performSteer : undefined,
+          steer: typeof agent.steerMessage === "function" ? performSteer : undefined,
         })
       : undefined;
 
@@ -274,10 +274,10 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
           const reactionController = startReaction(text, message.id);
           const next = processTranscript(message, reactionController);
           trackProcessing(next);
-          return typeof agent.steer === "function" ? Promise.resolve() : next;
+          return typeof agent.steerMessage === "function" ? Promise.resolve() : next;
         }
 
-        if (processing && typeof agent.steer !== "function") {
+        if (processing && typeof agent.steerMessage !== "function") {
           const next = processing.then(() =>
             processTranscript(message, startReaction(text, message.id)),
           );
@@ -295,7 +295,8 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
             "Steering the active voice response with a new transcript",
           );
           const steerStartedAt = performance.now();
-          const steer = agent.steer!(message)
+          const steer = agent
+            .steerMessage(message)
             .then(() => {
               logger.info(
                 {
@@ -325,7 +326,7 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
 
         const next = processTranscript(message, reactionController);
         trackProcessing(next);
-        return typeof agent.steer === "function" ? Promise.resolve() : next;
+        return typeof agent.steerMessage === "function" ? Promise.resolve() : next;
       },
       stop: () => {
         if (stopPromise) return stopPromise;

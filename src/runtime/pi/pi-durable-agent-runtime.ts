@@ -27,13 +27,12 @@ import { CodemodeSandbox } from "@earendil-works/pi-codemode";
 import { createCodemodeExtension } from "@earendil-works/pi-durable/codemode";
 import { createToolSearchExtension } from "@earendil-works/pi-durable/tool-search";
 import { ModelRegistry } from "@earendil-works/pi-coding-agent";
-import type { Message } from "@earendil-works/pi-ai";
 import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
 
 import type { AgentDefinition } from "@agents/core/agent-definition";
 import type { AgentFactory, AgentCreationOptions } from "@agents/core/agent-factory";
 import type { AgentEvent } from "@agents/core/agent-event";
-import type { AgentPrompt, AgentPromptResult, AgentRuntime } from "@agents/core/agent-runtime";
+import type { AgentOutputSink, AgentPrompt, AgentRuntime } from "@agents/core/agent-runtime";
 import { createPiEventPrompt } from "./pi-event-prompt";
 import { PiImageAnalyzer, type ImageAnalyzer } from "./pi-image-analyzer";
 import { loadMcpTools, type McpServerConnection } from "./pi-durable-mcp";
@@ -309,13 +308,6 @@ export function createPiDurableAgentFactory({
         ],
         hooks: [
           hook(GenerationTask, {
-            ...(definition.outputMode === "assistant_text"
-              ? {}
-              : {
-                  beforeRequest: (request) => ({
-                    messages: compactAssistantContext(request.messages),
-                  }),
-                }),
             afterResponse: (message) => {
               logger.info(
                 {
@@ -430,6 +422,7 @@ export function createPiDurableAgentFactory({
         eventStream,
         options.initialContext,
         webAccess.dispose,
+        options.outputSink,
       );
     },
     async close() {
@@ -601,9 +594,10 @@ export class PiDurableAgentRuntime implements AgentRuntime {
     private readonly eventStream?: Awaited<ReturnType<typeof watchEvents>>,
     private pendingInitialContext?: string,
     private readonly onDispose?: () => void,
+    private readonly outputSink?: AgentOutputSink,
   ) {}
 
-  async prompt(event: AgentEvent): Promise<AgentPromptResult> {
+  async prompt(event: AgentEvent): Promise<void> {
     const conversation = await this.getConversation();
     const prompt = createPiEventPrompt(event);
     const content = await this.inputContent(prompt);
@@ -619,10 +613,10 @@ export class PiDurableAgentRuntime implements AgentRuntime {
     );
     const settled = await submission.wait(BACKGROUND_CONTEXT);
     this.pendingInitialContext = undefined;
-    return this.extractSettledResult(conversation, settled);
+    await this.writeSettledOutput(conversation, settled);
   }
 
-  async steer(event: AgentEvent): Promise<AgentPromptResult> {
+  async steer(event: AgentEvent): Promise<void> {
     const conversation = await this.getConversation();
     const prompt = createPiEventPrompt(event);
     const content = await this.inputContent(prompt);
@@ -638,7 +632,7 @@ export class PiDurableAgentRuntime implements AgentRuntime {
     );
     const settled = await submission.wait(BACKGROUND_CONTEXT);
     this.pendingInitialContext = undefined;
-    return this.extractSettledResult(conversation, settled);
+    await this.writeSettledOutput(conversation, settled);
   }
 
   async abort(): Promise<void> {
@@ -664,15 +658,15 @@ export class PiDurableAgentRuntime implements AgentRuntime {
     void this.eventStream?.stop();
   }
 
-  private async extractSettledResult(
+  private async writeSettledOutput(
     conversation: Conversation,
     settled: SettledSubmissionRecord,
-  ): Promise<AgentPromptResult> {
-    if (settled.type !== "input" || settled.status !== "done") return {};
+  ): Promise<void> {
+    if (settled.type !== "input" || settled.status !== "done") return;
     const entry = await conversation.commit((tx) => tx.entry(settled.answer), BACKGROUND_CONTEXT);
     const content = entry?.model?.[0]?.content;
     const assistantText = Array.isArray(content) ? extractTextContent(content) : undefined;
-    return assistantText ? { assistantText } : {};
+    if (assistantText) await this.outputSink?.writeAssistantText(assistantText);
   }
 
   private async getConversation() {
@@ -712,43 +706,6 @@ function isToolAllowed(
 
 function durableOpenCodeSessionId(agentDir: string, id: ConversationId): string {
   return `${createHash("sha256").update(resolve(agentDir)).digest("hex").slice(0, 16)}-${id}`;
-}
-
-function compactAssistantContext(messages: readonly Message[]): Message[] {
-  let completedTurnIndex = -1;
-  let seenUser = false;
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index]!;
-    if (message.role === "user") seenUser = true;
-    if (
-      seenUser &&
-      message.role === "assistant" &&
-      !message.content.some((block) => block.type === "toolCall")
-    ) {
-      completedTurnIndex = index;
-      break;
-    }
-  }
-
-  let sentMessage = false;
-  return messages.flatMap((message, index) => {
-    if (message.role === "toolResult" && message.toolName === "discord_send" && !message.isError) {
-      sentMessage = true;
-    }
-    if (message.role !== "assistant" || index > completedTurnIndex) return [message];
-
-    const content: typeof message.content = message.content.filter(
-      (block) => block.type !== "text",
-    );
-    if (!content.some((block) => block.type === "toolCall")) {
-      content.push({
-        type: "text",
-        text: sentMessage ? "Sent a message to Discord." : "Remained silent.",
-      });
-      sentMessage = false;
-    }
-    return content.length > 0 ? [{ ...message, content }] : [];
-  });
 }
 
 function withContextWindowRatio(
