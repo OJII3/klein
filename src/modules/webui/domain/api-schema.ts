@@ -18,7 +18,7 @@ export const SessionQuerySchema = t.Object({
   cursor: t.Optional(t.String({ minLength: 1, maxLength: 4096 })),
 });
 
-export const MemoryParamsSchema = t.Object({
+export const MemoryGuildParamsSchema = t.Object({
   guildId: t.String({
     minLength: 1,
     maxLength: 100,
@@ -26,13 +26,21 @@ export const MemoryParamsSchema = t.Object({
   }),
 });
 
-export const MemoryEntryParamsSchema = t.Object({
+export const MemoryGuildEntryParamsSchema = t.Object({
   entryId: t.String({
     minLength: 1,
     maxLength: 100,
     pattern: "^[A-Za-z0-9_-]+$",
   }),
   guildId: t.String({
+    minLength: 1,
+    maxLength: 100,
+    pattern: "^[A-Za-z0-9_-]+$",
+  }),
+});
+
+export const MemoryOwnerEntryParamsSchema = t.Object({
+  entryId: t.String({
     minLength: 1,
     maxLength: 100,
     pattern: "^[A-Za-z0-9_-]+$",

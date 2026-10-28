@@ -4,6 +4,7 @@ import type { AgentEvent } from "@agents/core/agent-event";
 import type { DiscordAccessPolicy } from "@modules/discord/domain/discord-access-policy";
 import type { DiscordOperatingState } from "@modules/discord/domain/discord-operating-state";
 import type { DiscordService } from "@modules/discord/ports/discord-service";
+import type { OwnerMemoryStore } from "@modules/memory/application/owner-memory-store";
 import { getNextReminderDueAt, type Reminder } from "@modules/reminders/domain/reminder";
 import type { ReminderStore } from "@modules/reminders/ports/reminder-store";
 import type { TaskCoordinator } from "./task-coordinator";
@@ -14,6 +15,7 @@ export interface ReminderDeliveryCoordinatorDependencies {
   readonly discordService: DiscordService;
   readonly logger: Logger;
   readonly operatingState: DiscordOperatingState;
+  readonly ownerMemoryStore?: OwnerMemoryStore;
   readonly ownerUserId?: string;
   readonly reminderStore?: ReminderStore;
   readonly sessionManager: ChannelSessionManager;
@@ -113,6 +115,11 @@ export class ReminderDeliveryCoordinator {
       lastActivityAt: now,
     };
     await this.dependencies.sessionManager.saveChannelState(channelState);
+    const ownerUserId = this.dependencies.ownerUserId;
+    const ownerMemory =
+      ownerUserId && reminder.accessScope === `owner:${ownerUserId}`
+        ? await this.dependencies.ownerMemoryStore?.getContext(reminder.message)
+        : undefined;
     const event: AgentEvent = {
       id: `reminder:${reminder.id}:${reminder.dueAt}`,
       occurredAt: new Date().toISOString(),
@@ -130,7 +137,7 @@ export class ReminderDeliveryCoordinator {
     };
 
     try {
-      await agent.promptEvent(event);
+      await agent.promptEvent(event, ownerMemory);
       if (reminder.repeat) {
         const nextDueAt = getNextReminderDueAt(reminder, Date.now());
         if (nextDueAt) await reminderStore.updateDueAt(reminder, nextDueAt);

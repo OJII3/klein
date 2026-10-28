@@ -1,8 +1,10 @@
 import type { AgentEvent } from "../core/agent-event";
+import type { AgentEventRouter } from "../core/agent-event-router";
 import type { AgentFactory } from "../core/agent-factory";
 import type { AgentPrompt, AgentRuntime } from "../core/agent-runtime";
 import { formatDiscordMessage, type DiscordMessage } from "@modules/discord/domain/discord-message";
 import type { DiscordService } from "@modules/discord/ports/discord-service";
+import type { OwnerMemoryStore } from "@modules/memory/application/owner-memory-store";
 import { DISCORD_AGENT_TOOL_NAMES } from "./prompt-policy";
 import { createDiscordReadTool } from "./tools/discord-read";
 import { createDiscordSendTool } from "./tools/discord-send";
@@ -11,6 +13,8 @@ import { createDiscordSpeakTool } from "./tools/discord-speak";
 import type { TextToSpeech } from "@modules/tts/infrastructure/sbv2-tts";
 import { createReminderTools } from "./tools/reminder";
 import type { ReminderStore } from "@modules/reminders/ports/reminder-store";
+import { createOwnerMemoryTools } from "../tools/owner-memory";
+import { createAgentSendEventTool } from "../tools/agent-send-event";
 
 const BOT_MESSAGE_GUIDANCE = `
 
@@ -42,6 +46,8 @@ export class DiscordAgent {
       readonly tts?: TextToSpeech;
       readonly speak?: (text: string, toolCallId?: string) => Promise<void>;
       readonly reminderStore?: ReminderStore;
+      readonly ownerMemoryStore?: OwnerMemoryStore;
+      readonly eventRouter?: AgentEventRouter;
     } = {},
   ): Promise<DiscordAgent> {
     let runtime: AgentRuntime | undefined;
@@ -56,6 +62,14 @@ export class DiscordAgent {
     };
 
     const ownerFeaturesAllowed = options.ownerFeaturesAllowed === true && !!options.ownerUserId;
+    const ownerMemoryTools =
+      ownerFeaturesAllowed && options.ownerMemoryStore
+        ? createOwnerMemoryTools(options.ownerMemoryStore, `communication:${channelId}`)
+        : [];
+    const eventRouterTools =
+      ownerFeaturesAllowed && options.eventRouter
+        ? [createAgentSendEventTool(options.eventRouter, "communication")]
+        : [];
     const tools = [
       createDiscordReadTool(
         discordService,
@@ -76,6 +90,8 @@ export class DiscordAgent {
             ownerFeaturesAllowed ? `owner:${options.ownerUserId!}` : "public",
           )
         : []),
+      ...ownerMemoryTools,
+      ...eventRouterTools,
     ];
     const toolNames = options.speak
       ? [...DISCORD_AGENT_TOOL_NAMES.filter((name) => name !== "discord_send"), "discord_speak"]
@@ -84,6 +100,12 @@ export class DiscordAgent {
         : [...DISCORD_AGENT_TOOL_NAMES];
     if (options.reminderStore) {
       toolNames.push("reminder_add", "reminder_list", "reminder_delete");
+    }
+    for (const tool of ownerMemoryTools) {
+      toolNames.push(tool.name);
+    }
+    for (const tool of eventRouterTools) {
+      toolNames.push(tool.name);
     }
 
     runtime = await agentFactory.create(
@@ -106,23 +128,37 @@ export class DiscordAgent {
     return new DiscordAgent(runtime, channelId, options.ownerUserId, ownerFeaturesAllowed);
   }
 
-  prompt(message: DiscordMessage, guildMemory?: string, channelRule?: string): Promise<void> {
-    return this.runtime.prompt(this.createEvent(message, guildMemory, channelRule));
+  prompt(
+    message: DiscordMessage,
+    guildMemory?: string,
+    channelRule?: string,
+    ownerMemory?: string,
+  ): Promise<void> {
+    const event = this.createEvent(message, guildMemory, channelRule, ownerMemory);
+    return this.runtime.prompt(event).then(() => undefined);
   }
 
-  promptEvent(event: AgentEvent): Promise<void> {
-    return this.runtime.prompt(event);
+  promptEvent(event: AgentEvent, ownerMemory?: string): Promise<void> {
+    return this.runtime.prompt(this.withOwnerMemory(event, ownerMemory)).then(() => undefined);
   }
 
-  steer(message: DiscordMessage, guildMemory?: string, channelRule?: string): Promise<void> {
-    const event = this.createEvent(message, guildMemory, channelRule);
-    return this.runtime.steer ? this.runtime.steer(event) : this.runtime.prompt(event);
+  steer(
+    message: DiscordMessage,
+    guildMemory?: string,
+    channelRule?: string,
+    ownerMemory?: string,
+  ): Promise<void> {
+    const event = this.createEvent(message, guildMemory, channelRule, ownerMemory);
+    return (this.runtime.steer ? this.runtime.steer(event) : this.runtime.prompt(event)).then(
+      () => undefined,
+    );
   }
 
   private createEvent(
     message: DiscordMessage,
     guildMemory?: string,
     channelRule?: string,
+    ownerMemory?: string,
   ): AgentEvent {
     if (
       this.ownerFeaturesAllowed &&
@@ -142,6 +178,9 @@ export class DiscordAgent {
         {
           type: "text",
           text: [
+            this.ownerFeaturesAllowed && ownerMemory
+              ? `<owner-memory>\n${ownerMemory}\n</owner-memory>`
+              : undefined,
             guildMemory ? `<guild-memory>\n${guildMemory}\n</guild-memory>` : undefined,
             channelRule ? `<channel-rule>\n${channelRule}\n</channel-rule>` : undefined,
             formatDiscordAgentPrompt(message),
@@ -151,6 +190,31 @@ export class DiscordAgent {
         },
         ...message.images.map(({ data, mimeType }) => ({ type: "image" as const, data, mimeType })),
       ],
+    };
+  }
+
+  private withOwnerMemory(event: AgentEvent, ownerMemory?: string): AgentEvent {
+    if (!this.ownerFeaturesAllowed || !ownerMemory) return event;
+    const textIndex = event.content.findIndex((block) => block.type === "text");
+    if (textIndex === -1) {
+      return {
+        ...event,
+        content: [
+          { type: "text", text: `<owner-memory>\n${ownerMemory}\n</owner-memory>` },
+          ...event.content,
+        ],
+      };
+    }
+    return {
+      ...event,
+      content: event.content.map((block, index) =>
+        index === textIndex && block.type === "text"
+          ? {
+              type: "text",
+              text: `<owner-memory>\n${ownerMemory}\n</owner-memory>\n\n${block.text}`,
+            }
+          : block,
+      ),
     };
   }
 

@@ -7,6 +7,7 @@ import { useMemory } from "./hooks/use-memory";
 import { LogsView } from "./features/logs/logs-view";
 import { MemoryView } from "./features/memory/memory-view";
 import { SessionsView } from "./features/sessions/sessions-view";
+import { memoryScopeKey } from "./api";
 
 export default function App() {
   const [view, setView] = useState<View>(() => viewFromPath(window.location.pathname));
@@ -38,20 +39,20 @@ export default function App() {
   const memory = useMemory({
     active: view === "memory",
     onUpdated,
-    initialGuildId: initialSearch.get("guild"),
+    initialScopeKey: initialSearch.get("scope"),
   });
 
   useEffect(() => {
     const url = new URL(window.location.href);
     url.searchParams.delete("session");
-    url.searchParams.delete("guild");
+    url.searchParams.delete("scope");
     if (view === "sessions" && sessions.selectedSessionId) {
       url.searchParams.set("session", sessions.selectedSessionId);
-    } else if (view === "memory" && memory.selectedGuildId) {
-      url.searchParams.set("guild", memory.selectedGuildId);
+    } else if (view === "memory" && memory.selectedScope) {
+      url.searchParams.set("scope", memoryScopeKey(memory.selectedScope));
     }
     window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
-  }, [memory.selectedGuildId, sessions.selectedSessionId, view]);
+  }, [memory.selectedScope, sessions.selectedSessionId, view]);
 
   const refreshCurrentView = useCallback(() => {
     if (view === "logs") logs.reload();
@@ -106,17 +107,17 @@ export default function App() {
           addRuleError={memory.addRuleError}
           enabled={memory.enabled}
           entries={memory.entries}
-          error={memory.guildsError}
-          guilds={memory.guilds}
-          loading={memory.guildsLoading}
+          error={memory.scopesError}
+          scopes={memory.scopes}
+          loading={memory.scopesLoading}
           loadingDetail={memory.detailLoading}
           onDelete={memory.deleteEntry}
           onAddRule={memory.createRule}
           onDismissDeleteError={memory.dismissDeleteError}
           onRetry={() => void memory.reload()}
           onRetryDetail={memory.retryDetail}
-          onSelect={memory.selectGuild}
-          selectedGuildId={memory.selectedGuildId}
+          onSelect={memory.selectScope}
+          selectedScope={memory.selectedScope}
         />
       )}
     </AppShell>

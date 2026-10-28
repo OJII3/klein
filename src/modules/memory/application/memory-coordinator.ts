@@ -7,12 +7,12 @@ import { renderMemoryContext } from "../infrastructure/memory-context-renderer";
 import { selectMemoryEntries } from "./memory-context-selector";
 import { MemoryEntryNotFoundError } from "../domain/memory";
 import type {
+  GuildMemoryEditor,
+  GuildMemoryReader,
   MemoryDocument,
-  MemoryEditor,
   MemoryGuildSummary,
   MemoryMessage,
   MemoryProcessor,
-  MemoryReader,
 } from "../domain/memory";
 
 interface GuildMemoryQueue {
@@ -32,7 +32,7 @@ export interface MemoryCoordinatorOptions {
   readonly taskCoordinator: TaskCoordinator;
 }
 
-export class MemoryCoordinator implements MemoryReader, MemoryEditor {
+export class MemoryCoordinator implements GuildMemoryReader, GuildMemoryEditor {
   private readonly logger: Logger;
   private readonly queues = new Map<string, GuildMemoryQueue>();
   private readonly guildOperations = new Map<string, Promise<void>>();
@@ -116,7 +116,7 @@ export class MemoryCoordinator implements MemoryReader, MemoryEditor {
       const store = new JsonMemoryStore(resolveMemoryFilePath(this.options.filePath, guildId));
       const document = await store.read();
       if (!document.entries.some((entry) => entry.id === entryId)) {
-        throw new MemoryEntryNotFoundError(guildId, entryId);
+        throw new MemoryEntryNotFoundError({ guildId, type: "guild" }, entryId);
       }
 
       await store.apply([{ id: entryId, type: "delete" }], []);

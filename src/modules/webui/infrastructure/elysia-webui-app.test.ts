@@ -8,7 +8,7 @@ import type { ViewerSessionReader } from "../ports/viewer-readers";
 import { createWebUiApp } from "./elysia-webui-app";
 import { PinoJsonlReader } from "./pino-jsonl-reader";
 
-test("serves health, logs, Pi sessions, and guild memory through Elysia", async () => {
+test("serves health, logs, Pi sessions, and scoped memory through Elysia", async () => {
   const rootDirectory = await mkdtemp(join(tmpdir(), "klein-webui-"));
 
   try {
@@ -75,10 +75,19 @@ test("serves health, logs, Pi sessions, and guild memory through Elysia", async 
 
     const app = createWebUiApp({
       memory: {
-        listGuilds: async () => [
-          { entryCount: 1, guildId: "guild-a", updatedAt: "2026-09-11T00:00:00.000Z" },
+        listScopes: async () => [
+          {
+            entryCount: 1,
+            scope: { type: "owner" },
+            updatedAt: "2026-09-11T00:00:00.000Z",
+          },
+          {
+            entryCount: 1,
+            scope: { type: "guild", guildId: "guild-a" },
+            updatedAt: "2026-09-11T00:00:00.000Z",
+          },
         ],
-        read: async (guildId) => ({
+        read: async (scope) => ({
           entries: [
             {
               content: "本文",
@@ -86,16 +95,18 @@ test("serves health, logs, Pi sessions, and guild memory through Elysia", async 
               id: "mem-1",
               kind: "fact" as const,
               sourceMessageIds: [],
-              title: `${guildId} の事実`,
+              title: scope.type === "owner" ? "オーナーの事実" : `${scope.guildId} の事実`,
               updatedAt: "2026-09-11T00:00:00.000Z",
             },
           ],
         }),
       },
       memoryEditor: {
-        addRule: async () => {},
-        deleteEntry: async (guildId, entryId) => {
-          assert.equal(guildId, "guild-a");
+        addRule: async (scope) => {
+          assert.ok(scope.type === "owner" || scope.guildId === "guild-a");
+        },
+        deleteEntry: async (scope, entryId) => {
+          assert.deepEqual(scope, { type: "guild", guildId: "guild-a" });
           assert.equal(entryId, "mem-1");
         },
       },
@@ -151,24 +162,50 @@ test("serves health, logs, Pi sessions, and guild memory through Elysia", async 
     assert.equal(memoryGuilds.status, 200);
     assert.deepEqual(await memoryGuilds.json(), {
       enabled: true,
-      items: [{ entryCount: 1, guildId: "guild-a", updatedAt: "2026-09-11T00:00:00.000Z" }],
+      items: [
+        {
+          entryCount: 1,
+          scope: { type: "owner" },
+          updatedAt: "2026-09-11T00:00:00.000Z",
+        },
+        {
+          entryCount: 1,
+          scope: { type: "guild", guildId: "guild-a" },
+          updatedAt: "2026-09-11T00:00:00.000Z",
+        },
+      ],
     });
 
-    const memory = await app.handle(new Request("http://localhost/api/memory/guild-a"));
+    const ownerMemory = await app.handle(new Request("http://localhost/api/memory/owner"));
+    assert.equal(ownerMemory.status, 200);
+    assert.equal((await ownerMemory.json()).entries[0].title, "オーナーの事実");
+
+    const memory = await app.handle(new Request("http://localhost/api/memory/guild/guild-a"));
     assert.equal(memory.status, 200);
     assert.equal((await memory.json()).entries[0].title, "guild-a の事実");
 
     const deletedMemory = await app.handle(
-      new Request("http://localhost/api/memory/guild-a/mem-1", { method: "DELETE" }),
+      new Request("http://localhost/api/memory/guild/guild-a/mem-1", { method: "DELETE" }),
     );
     assert.equal(deletedMemory.status, 200);
     assert.deepEqual(await deletedMemory.json(), { deleted: true });
 
-    const invalidMemory = await app.handle(new Request("http://localhost/api/memory/guild.a"));
+    const ownerRule = await app.handle(
+      new Request("http://localhost/api/memory/owner/rules", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ title: "ルール", content: "内容" }),
+      }),
+    );
+    assert.equal(ownerRule.status, 200);
+
+    const invalidMemory = await app.handle(
+      new Request("http://localhost/api/memory/guild/guild.a"),
+    );
     assert.equal(invalidMemory.status, 422);
 
     const invalidMemoryEntry = await app.handle(
-      new Request("http://localhost/api/memory/guild-a/mem.1", { method: "DELETE" }),
+      new Request("http://localhost/api/memory/guild/guild-a/mem.1", { method: "DELETE" }),
     );
     assert.equal(invalidMemoryEntry.status, 422);
 

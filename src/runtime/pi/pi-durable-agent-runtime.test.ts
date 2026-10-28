@@ -257,3 +257,74 @@ test("isolates channel histories and tool bindings when sessions resume or start
     await rm(agentDir, { force: true, recursive: true });
   }
 });
+
+test("returns assistantText and preserves assistant messages in assistant_text outputMode", async () => {
+  const agentDir = await mkdtemp(join(tmpdir(), "klein-durable-assistant-text-"));
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  const provider = fauxProvider({ tokensPerSecond: 100_000 });
+  const model = provider.getModel();
+  const modelRuntime = await ModelRuntime.create({
+    credentials: new InMemoryCredentialStore(),
+    modelsPath: null,
+    refreshOnCreate: false,
+  });
+  modelRuntime.registerNativeProvider(provider.provider);
+  const factory = createPiDurableAgentFactory({
+    agentDir: join(agentDir, "durable"),
+    modelRuntime,
+    sessionMode: "resume",
+    llm: { provider: model.provider, model: model.id },
+    logger: pino({ level: "silent" }),
+  });
+
+  try {
+    const runtime = await factory.create(
+      {
+        systemPrompt: "Domain agent prompt",
+        toolNames: [],
+        outputMode: "assistant_text",
+      },
+      [],
+      { sessionKey: "domain-agent:calendar" },
+    );
+    const requests: TranscriptContext[] = [];
+    provider.setResponses([
+      (context) => {
+        requests.push(context);
+        return fauxAssistantMessage("First domain reply");
+      },
+      (context) => {
+        requests.push(context);
+        return fauxAssistantMessage("Second domain reply");
+      },
+    ]);
+
+    const firstResult = await runtime.prompt({
+      id: "event-1",
+      type: "discord.message",
+      source: "discord",
+      occurredAt: "2026-10-25T01:00:00.000Z",
+      content: [{ type: "text", text: "What is on my schedule?" }],
+    });
+    assert.deepEqual(firstResult, { assistantText: "First domain reply" });
+
+    const secondResult = await runtime.prompt({
+      id: "event-2",
+      type: "discord.message",
+      source: "discord",
+      occurredAt: "2026-10-25T01:01:00.000Z",
+      content: [{ type: "text", text: "And tomorrow?" }],
+    });
+    assert.deepEqual(secondResult, { assistantText: "Second domain reply" });
+
+    const secondRequestText = JSON.stringify(requests[1]!.messages);
+    assert.match(secondRequestText, /First domain reply/);
+    assert.doesNotMatch(secondRequestText, /Remained silent\./);
+    runtime.dispose();
+  } finally {
+    await factory.close();
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+    await rm(agentDir, { force: true, recursive: true });
+  }
+});
