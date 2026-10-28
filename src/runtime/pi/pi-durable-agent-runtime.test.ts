@@ -282,7 +282,7 @@ test("returns assistantText and preserves assistant messages in assistant_text o
         outputMode: "assistant_text",
       },
       [],
-      { sessionKey: "domain-agent:calendar" },
+      { sessionKey: "agent:calendar" },
     );
     const requests: TranscriptContext[] = [];
     provider.setResponses([

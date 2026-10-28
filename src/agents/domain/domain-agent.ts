@@ -93,7 +93,7 @@ export class DomainAgent implements ChannelAgent {
             `This is background context for continuity, not a new message to answer.\n` +
             `${options.handoffContext}\n</previous-conversation-context>`
           : undefined,
-        sessionKey: options.sessionKey ?? `domain-agent:${options.agentId}`,
+        sessionKey: options.sessionKey ?? `agent:${options.agentId}`,
         ownerFeaturesAllowed: true,
       },
     );

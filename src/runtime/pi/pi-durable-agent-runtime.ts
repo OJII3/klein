@@ -228,6 +228,11 @@ export function createPiDurableAgentFactory({
       async save(state) {
         return (await getResources()).store.channelStates.save(state);
       },
+      async migrate(previous, next) {
+        const store = (await getResources()).store.channelStates;
+        if (store.migrate) return store.migrate(previous, next);
+        return store.save(next);
+      },
     },
     async getMonthlyProviderCost(provider: string, monthStart: number): Promise<number> {
       const { harness } = await getResources();

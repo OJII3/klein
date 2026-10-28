@@ -5,21 +5,26 @@ import type { DiscordService } from "@modules/discord/ports/discord-service";
 import type { DiscordAccessPolicy } from "@modules/discord/domain/discord-access-policy";
 import {
   CHANNEL_ROTATION_IDLE_MS,
+  createConversationSessionKey,
   getChannelRotationDate,
   isChannelRotationDue,
+  serializeConversationKey,
   type ChannelSessionState,
   type ChannelSessionStateStore,
+  type ConversationKey,
 } from "./channel-session-state-store";
 
 export interface ChannelSessionManagerDependencies {
   readonly accessPolicy?: DiscordAccessPolicy;
   readonly channelSessionStateStore?: ChannelSessionStateStore;
-  readonly createDiscordAgent: (
-    channelId: string,
+  readonly createAgent: (
+    conversationKey: ConversationKey,
     sessionKey: string,
     handoffContext?: string,
     ownerFeaturesAllowed?: boolean,
   ) => Promise<ChannelAgent>;
+  readonly isKnownAgent?: (agentId: string) => boolean;
+  readonly isDomainChannel?: (channelId: string) => boolean;
   readonly discordService: DiscordService;
   readonly logger: Logger;
   readonly ownerUserId?: string;
@@ -35,21 +40,41 @@ export class ChannelSessionManager {
 
   constructor(private readonly dependencies: ChannelSessionManagerDependencies) {}
 
-  recordInbound(channelId: string): void {
-    this.latestInboundAt.set(channelId, Date.now());
+  recordInbound(conversationKey: ConversationKey): void {
+    this.latestInboundAt.set(serializeConversationKey(conversationKey), Date.now());
   }
 
   async initialize(): Promise<void> {
     const states = await this.dependencies.channelSessionStateStore?.list();
     for (const state of states ?? []) {
-      const accessPolicy = this.dependencies.accessPolicy;
-      if (accessPolicy && !state.channelId.startsWith("domain-agent:")) {
+      const { conversationKey } = state;
+      if (
+        conversationKey.kind === "agent" &&
+        this.dependencies.isKnownAgent &&
+        !this.dependencies.isKnownAgent(conversationKey.agentId)
+      ) {
+        continue;
+      }
+      if (
+        conversationKey.kind === "discord" &&
+        this.dependencies.isDomainChannel?.(conversationKey.channelId)
+      ) {
+        continue;
+      }
+
+      if (conversationKey.kind === "discord" && this.dependencies.accessPolicy) {
         let location: Awaited<ReturnType<DiscordService["getChannelLocation"]>>;
         try {
-          location = await this.dependencies.discordService.getChannelLocation(state.channelId);
+          location = await this.dependencies.discordService.getChannelLocation(
+            conversationKey.channelId,
+          );
         } catch (error) {
           this.dependencies.logger.warn(
-            { channelId: state.channelId, err: error, event: "channel_agent_restore_failed" },
+            {
+              channelId: conversationKey.channelId,
+              err: error,
+              event: "channel_agent_restore_failed",
+            },
             "Failed to restore a saved Discord channel agent",
           );
           continue;
@@ -59,27 +84,31 @@ export class ChannelSessionManager {
           userId: this.dependencies.ownerUserId,
           userIsBot: false,
         };
-        if (!accessPolicy.canReceive(target)) continue;
-        const currentScope = accessPolicy.canUseOwnerFeatures(target)
+        if (!this.dependencies.accessPolicy.canReceive(target)) continue;
+        const currentScope = this.dependencies.accessPolicy.canUseOwnerFeatures(target)
           ? `owner:${this.dependencies.ownerUserId}`
           : "public";
         if (state.accessScope !== currentScope) continue;
       }
-      await this.getDiscordAgent(state.channelId, state);
+      await this.getAgent(conversationKey, state);
     }
   }
 
-  runForChannel(channelId: string, operation: () => Promise<void>): Promise<void> {
-    const previous = this.channelOperations.get(channelId) ?? Promise.resolve();
+  runForConversation(
+    conversationKey: ConversationKey,
+    operation: () => Promise<void>,
+  ): Promise<void> {
+    const key = serializeConversationKey(conversationKey);
+    const previous = this.channelOperations.get(key) ?? Promise.resolve();
     const current = previous.catch(() => undefined).then(operation);
     const tracked = current.then(
       () => undefined,
       () => undefined,
     );
-    this.channelOperations.set(channelId, tracked);
+    this.channelOperations.set(key, tracked);
     void tracked.then(() => {
-      if (this.channelOperations.get(channelId) === tracked) {
-        this.channelOperations.delete(channelId);
+      if (this.channelOperations.get(key) === tracked) {
+        this.channelOperations.delete(key);
       }
     });
     return current;
@@ -102,7 +131,6 @@ export class ChannelSessionManager {
         try {
           (await agentPromise).dispose();
         } catch (error) {
-          // The agent may fail to finish initialization during shutdown.
           this.dependencies.logger.warn(
             { err: error, event: "discord_agent_dispose_failed" },
             "Failed to dispose Discord agent",
@@ -114,69 +142,71 @@ export class ChannelSessionManager {
     this.agentSessionKeys.clear();
   }
 
-  async getChannelState(
-    channelId: string,
+  async getConversationState(
+    conversationKey: ConversationKey,
     now: number,
     accessScope?: string,
   ): Promise<ChannelSessionState> {
+    const key = serializeConversationKey(conversationKey);
     const rotationDate = getChannelRotationDate(now);
     const existing = this.dependencies.channelSessionStateStore
-      ? await this.dependencies.channelSessionStateStore.getOrCreate(channelId, rotationDate)
-      : this.inMemoryChannelStates.get(channelId);
-    if (
-      existing &&
-      (accessScope === undefined ||
-        existing.accessScope === accessScope ||
-        (!this.dependencies.accessPolicy && !existing.accessScope && accessScope === "public"))
-    ) {
-      return existing;
-    }
-    const previousAgent = this.agents.get(channelId);
+      ? await this.dependencies.channelSessionStateStore.getOrCreate(conversationKey, rotationDate)
+      : this.inMemoryChannelStates.get(key);
+    const scopeMatches =
+      conversationKey.kind === "agent" ||
+      accessScope === undefined ||
+      existing?.accessScope === accessScope ||
+      (!this.dependencies.accessPolicy && !existing?.accessScope && accessScope === "public");
+    if (existing && scopeMatches) return existing;
+
+    const previousAgent = this.agents.get(key);
     if (previousAgent) (await previousAgent).dispose();
-    this.agents.delete(channelId);
-    this.agentSessionKeys.delete(channelId);
+    this.agents.delete(key);
+    this.agentSessionKeys.delete(key);
 
     const created: ChannelSessionState = {
-      channelId,
+      conversationKey,
       accessScope,
-      sessionKey: this.dependencies.accessPolicy
-        ? `discord-channel:${channelId}:${accessScope ?? "public"}`
-        : `discord-channel:${channelId}`,
+      sessionKey: createConversationSessionKey(conversationKey, {
+        accessScope,
+        useAccessScope: conversationKey.kind === "discord" && !!this.dependencies.accessPolicy,
+      }),
       lastActivityAt: null,
       lastRotationDate: rotationDate,
       hasActivitySinceRotation: true,
     };
-    this.inMemoryChannelStates.set(channelId, created);
+    this.inMemoryChannelStates.set(key, created);
     return created;
   }
 
-  saveChannelState(state: ChannelSessionState): Promise<void> {
-    this.inMemoryChannelStates.set(state.channelId, state);
+  saveConversationState(state: ChannelSessionState): Promise<void> {
+    this.inMemoryChannelStates.set(serializeConversationKey(state.conversationKey), state);
     return this.dependencies.channelSessionStateStore?.save(state) ?? Promise.resolve();
   }
 
-  getDiscordAgent(channelId: string, state: ChannelSessionState): Promise<ChannelAgent> {
-    const existing = this.agents.get(channelId);
-    if (existing && this.agentSessionKeys.get(channelId) === state.sessionKey) return existing;
+  getAgent(conversationKey: ConversationKey, state: ChannelSessionState): Promise<ChannelAgent> {
+    const key = serializeConversationKey(conversationKey);
+    const existing = this.agents.get(key);
+    if (existing && this.agentSessionKeys.get(key) === state.sessionKey) return existing;
     if (existing) {
       void existing.then((agent) => agent.dispose()).catch(() => undefined);
-      this.agents.delete(channelId);
-      this.agentSessionKeys.delete(channelId);
+      this.agents.delete(key);
+      this.agentSessionKeys.delete(key);
     }
 
-    const created = this.dependencies.createDiscordAgent(
-      channelId,
+    const created = this.dependencies.createAgent(
+      conversationKey,
       state.sessionKey,
       state.handoffContext,
       state.accessScope === `owner:${this.dependencies.ownerUserId}` &&
         !!this.dependencies.ownerUserId,
     );
-    this.agents.set(channelId, created);
-    this.agentSessionKeys.set(channelId, state.sessionKey);
+    this.agents.set(key, created);
+    this.agentSessionKeys.set(key, state.sessionKey);
     void created.catch(() => {
-      if (this.agents.get(channelId) === created) {
-        this.agents.delete(channelId);
-        this.agentSessionKeys.delete(channelId);
+      if (this.agents.get(key) === created) {
+        this.agents.delete(key);
+        this.agentSessionKeys.delete(key);
       }
     });
 
@@ -194,22 +224,24 @@ export class ChannelSessionManager {
     const candidates = states
       .filter(
         (state) =>
+          state.conversationKey.kind === "discord" &&
           state.accessScope === ownerScope &&
-          !state.channelId.startsWith("domain-agent:") &&
-          !excludedChannelIds.has(state.channelId),
+          !this.dependencies.isDomainChannel?.(state.conversationKey.channelId) &&
+          !excludedChannelIds.has(state.conversationKey.channelId),
       )
       .sort((left, right) => (right.lastActivityAt ?? 0) - (left.lastActivityAt ?? 0));
-    return candidates[0]?.channelId;
+    const latest = candidates[0]?.conversationKey;
+    return latest?.kind === "discord" ? latest.channelId : undefined;
   }
 
-  async rotateChannelIfDue(
-    channelId: string,
+  async rotateConversationIfDue(
+    conversationKey: ConversationKey,
     state: ChannelSessionState,
     now: number,
   ): Promise<ChannelSessionState> {
     if (!isChannelRotationDue(state, now)) return state;
 
-    const agent = await this.getDiscordAgent(channelId, state);
+    const agent = await this.getAgent(conversationKey, state);
     const compaction = agent.compactForHandoff();
     if (!compaction) return state;
 
@@ -218,16 +250,16 @@ export class ChannelSessionManager {
       handoffContext = (await compaction).trim();
     } catch (error) {
       this.dependencies.logger.warn(
-        { channelId, err: error, event: "channel_context_compaction_failed" },
-        "Failed to compact the Discord channel context",
+        { conversationKey, err: error, event: "channel_context_compaction_failed" },
+        "Failed to compact the conversation context",
       );
       return state;
     }
 
     if (!handoffContext) {
       this.dependencies.logger.warn(
-        { channelId, event: "channel_context_compaction_empty" },
-        "Compaction produced no Discord channel handoff summary",
+        { conversationKey, event: "channel_context_compaction_empty" },
+        "Compaction produced an empty conversation handoff summary",
       );
       return state;
     }
@@ -238,47 +270,66 @@ export class ChannelSessionManager {
       handoffContext,
       hasActivitySinceRotation: false,
       lastRotationDate: rotationDate,
-      sessionKey: this.dependencies.accessPolicy
-        ? `discord-channel:${channelId}:${state.accessScope ?? "public"}:rotation:${rotationDate}`
-        : `discord-channel:${channelId}:rotation:${rotationDate}`,
+      sessionKey: createConversationSessionKey(conversationKey, {
+        accessScope: state.accessScope,
+        useAccessScope: conversationKey.kind === "discord" && !!this.dependencies.accessPolicy,
+        rotationDate,
+      }),
     };
-    await this.saveChannelState(nextState);
+    await this.saveConversationState(nextState);
     agent.dispose();
-    this.agents.delete(channelId);
-    this.agentSessionKeys.delete(channelId);
+    const key = serializeConversationKey(conversationKey);
+    this.agents.delete(key);
+    this.agentSessionKeys.delete(key);
     this.dependencies.logger.info(
-      { channelId, event: "channel_context_rotated", rotationDate },
-      "Rotated the Discord channel context",
+      { conversationKey, event: "channel_context_rotated", rotationDate },
+      "Rotated the conversation context",
     );
     return nextState;
   }
 
   private async checkIdleChannels(): Promise<void> {
-    let channelIds: readonly string[];
+    let conversations: readonly ConversationKey[];
     try {
-      channelIds = this.dependencies.channelSessionStateStore
-        ? (await this.dependencies.channelSessionStateStore.list()).map((state) => state.channelId)
-        : [...this.inMemoryChannelStates.keys()];
+      conversations = this.dependencies.channelSessionStateStore
+        ? (await this.dependencies.channelSessionStateStore.list()).map(
+            (state) => state.conversationKey,
+          )
+        : [...this.inMemoryChannelStates.values()].map((state) => state.conversationKey);
     } catch (error) {
       this.dependencies.logger.error(
         { err: error, event: "channel_session_state_list_failed" },
-        "Failed to list channel session state",
+        "Failed to list conversation session state",
       );
       return;
     }
 
-    for (const channelId of channelIds) {
-      await this.runForChannel(channelId, async () => {
+    for (const conversationKey of conversations) {
+      if (
+        conversationKey.kind === "agent" &&
+        this.dependencies.isKnownAgent &&
+        !this.dependencies.isKnownAgent(conversationKey.agentId)
+      ) {
+        continue;
+      }
+      if (
+        conversationKey.kind === "discord" &&
+        this.dependencies.isDomainChannel?.(conversationKey.channelId)
+      ) {
+        continue;
+      }
+      await this.runForConversation(conversationKey, async () => {
         try {
           const now = Date.now();
-          const latestInboundAt = this.latestInboundAt.get(channelId);
+          const key = serializeConversationKey(conversationKey);
+          const latestInboundAt = this.latestInboundAt.get(key);
           if (latestInboundAt && now - latestInboundAt < CHANNEL_ROTATION_IDLE_MS) return;
-          const state = await this.getChannelState(channelId, now);
-          await this.rotateChannelIfDue(channelId, state, now);
+          const state = await this.getConversationState(conversationKey, now);
+          await this.rotateConversationIfDue(conversationKey, state, now);
         } catch (error) {
           this.dependencies.logger.warn(
-            { channelId, err: error, event: "channel_context_rotation_failed" },
-            "Failed to rotate the Discord channel context",
+            { conversationKey, err: error, event: "channel_context_rotation_failed" },
+            "Failed to rotate the conversation context",
           );
         }
       });
