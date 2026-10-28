@@ -256,7 +256,7 @@ test("isolates channel histories and tool bindings when sessions resume or start
   }
 });
 
-test("returns assistantText and preserves assistant messages in assistant_text outputMode", async () => {
+test("writes assistant text to its output sink and preserves assistant messages", async () => {
   const agentDir = await mkdtemp(join(tmpdir(), "klein-durable-assistant-text-"));
   const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
   const provider = fauxProvider({ tokensPerSecond: 100_000 });
@@ -276,13 +276,20 @@ test("returns assistantText and preserves assistant messages in assistant_text o
   });
 
   try {
+    const deliveredText: string[] = [];
     const runtime = await factory.create(
       {
         systemPrompt: "Domain agent prompt",
-        outputMode: "assistant_text",
       },
       [],
-      { sessionKey: "domain-agent:calendar" },
+      {
+        sessionKey: "agent:calendar",
+        outputSink: {
+          writeAssistantText(text) {
+            deliveredText.push(text);
+          },
+        },
+      },
     );
     const requests: TranscriptContext[] = [];
     provider.setResponses([
@@ -296,23 +303,23 @@ test("returns assistantText and preserves assistant messages in assistant_text o
       },
     ]);
 
-    const firstResult = await runtime.prompt({
+    await runtime.prompt({
       id: "event-1",
       type: "discord.message",
       source: "discord",
       occurredAt: "2026-10-25T01:00:00.000Z",
       content: [{ type: "text", text: "What is on my schedule?" }],
     });
-    assert.deepEqual(firstResult, { assistantText: "First domain reply" });
+    assert.deepEqual(deliveredText, ["First domain reply"]);
 
-    const secondResult = await runtime.prompt({
+    await runtime.prompt({
       id: "event-2",
       type: "discord.message",
       source: "discord",
       occurredAt: "2026-10-25T01:01:00.000Z",
       content: [{ type: "text", text: "And tomorrow?" }],
     });
-    assert.deepEqual(secondResult, { assistantText: "Second domain reply" });
+    assert.deepEqual(deliveredText, ["First domain reply", "Second domain reply"]);
 
     const secondRequestText = JSON.stringify(requests[1]!.messages);
     assert.match(secondRequestText, /First domain reply/);

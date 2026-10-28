@@ -13,7 +13,6 @@ import { DiscordAgent } from "@agents/discord/discord-agent";
 import type { AgentFactory } from "@agents/core/agent-factory";
 import type { AgentRuntime } from "@agents/core/agent-runtime";
 import type { AgentEvent } from "@agents/core/agent-event";
-import type { AgentEventRouter } from "@agents/core/agent-event-router";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import {
   createDiscordAccessPolicy,
@@ -24,16 +23,13 @@ import type { DiscordService } from "@modules/discord/ports/discord-service";
 import type { Reminder } from "@modules/reminders/domain/reminder";
 import type { ReminderStore } from "@modules/reminders/ports/reminder-store";
 import { TaskCoordinator } from "./task-coordinator";
-import type { AgentCoordinator } from "./agent-coordinator";
-import type { DiscordMessageIngress } from "./discord-message-ingress";
-import { createAgentSystem, type AgentSystemDependencies } from "./agent-system";
+import { AgentCoordinator, type AgentCoordinatorDependencies } from "./agent-coordinator";
+import { buildAgentTopology } from "./agent-topology";
 import { getChannelRotationDate } from "./channel-session-state-store";
 
 interface TestHarness {
   readonly agentCoordinator: AgentCoordinator;
-  readonly discordMessageIngress: DiscordMessageIngress;
   readonly createdSessionKeys: string[];
-  readonly createdEventRouters: AgentEventRouter[];
   readonly prompts: Map<string, AgentEvent[]>;
   readonly ownerFeaturesAllowed: boolean[];
 }
@@ -42,12 +38,11 @@ function createHarness(
   createGate?: Promise<void>,
   reminderStore?: ReminderStore,
   options: Pick<
-    AgentSystemDependencies,
-    "channelSessionStateStore" | "accessPolicy" | "ownerUserId" | "agentEventRouter"
+    AgentCoordinatorDependencies,
+    "channelSessionStateStore" | "accessPolicy" | "ownerUserId"
   > = {},
 ): TestHarness {
   const createdSessionKeys: string[] = [];
-  const createdEventRouters: AgentEventRouter[] = [];
   const prompts = new Map<string, AgentEvent[]>();
   const ownerFeaturesAllowed: boolean[] = [];
   const agentFactory: AgentFactory = {
@@ -88,36 +83,27 @@ function createHarness(
     async stop() {},
   };
 
-  const agentSystem = createAgentSystem({
-    ...options,
-    createDiscordAgent: (
-      eventRouter,
-      channelId,
-      sessionKey,
-      handoffContext,
-      ownerFeaturesAllowed,
-    ) => {
-      createdEventRouters.push(eventRouter);
-      return DiscordAgent.create(agentFactory, discordService, channelId, "system prompt", {
-        sessionKey,
-        handoffContext,
-        ownerFeaturesAllowed,
-        ownerUserId: options.ownerUserId,
-        eventRouter,
-      });
-    },
-    discordService,
-    logger: pino({ level: "silent" }),
-    operatingState: new DiscordOperatingState(),
-    reminderStore,
-    taskCoordinator: new TaskCoordinator(),
-  });
-
   return {
-    agentCoordinator: agentSystem.agentCoordinator,
-    discordMessageIngress: agentSystem.discordMessageIngress,
+    agentCoordinator: new AgentCoordinator({
+      ...options,
+      topology: buildAgentTopology(undefined),
+      createDiscordAgent: (channelId, sessionKey, handoffContext, ownerFeaturesAllowed) =>
+        DiscordAgent.create(agentFactory, discordService, channelId, "system prompt", {
+          sessionKey,
+          handoffContext,
+          ownerFeaturesAllowed,
+          ownerUserId: options.ownerUserId,
+        }),
+      createDomainAgent: async (agentId) => {
+        throw new Error(`Unexpected domain agent: ${agentId}`);
+      },
+      discordService,
+      logger: pino({ level: "silent" }),
+      operatingState: new DiscordOperatingState(),
+      reminderStore,
+      taskCoordinator: new TaskCoordinator(),
+    }),
     createdSessionKeys,
-    createdEventRouters,
     prompts,
     ownerFeaturesAllowed,
   };
@@ -149,10 +135,10 @@ test("reuses one Pi session for messages in the same Discord channel", async () 
   const harness = createHarness();
 
   try {
-    await harness.discordMessageIngress.handleDiscordMessage(
+    await harness.agentCoordinator.handleDiscordMessage(
       createMessage("channel-a", "message-a", "最初のメッセージ"),
     );
-    await harness.discordMessageIngress.handleDiscordMessage(
+    await harness.agentCoordinator.handleDiscordMessage(
       createMessage("channel-a", "message-b", "次のメッセージ"),
     );
 
@@ -171,35 +157,17 @@ test("reuses one Pi session for messages in the same Discord channel", async () 
   }
 });
 
-test("passes the injected event router directly to agents", async () => {
-  const eventRouter: AgentEventRouter = {
-    listTargets: () => [],
-    async dispatch() {},
-  };
-  const harness = createHarness(undefined, undefined, { agentEventRouter: eventRouter });
-
-  try {
-    await harness.discordMessageIngress.handleDiscordMessage(
-      createMessage("channel-a", "message-a", "最初のメッセージ"),
-    );
-
-    assert.deepEqual(harness.createdEventRouters, [eventRouter]);
-  } finally {
-    await harness.agentCoordinator.dispose();
-  }
-});
-
 test("initializes every saved channel agent during startup", async () => {
   const states = ["channel-a", "channel-b"].map((channelId) => ({
-    channelId,
+    conversationKey: { kind: "discord" as const, channelId },
     sessionKey: `discord-channel:${channelId}`,
     lastActivityAt: null,
     lastRotationDate: getChannelRotationDate(Date.now()),
     hasActivitySinceRotation: false,
   }));
   const channelSessionStateStore = {
-    async getOrCreate(channelId: string) {
-      return states.find((state) => state.channelId === channelId)!;
+    async getOrCreate(conversationKey: { kind: "discord"; channelId: string }) {
+      return states.find((state) => state.conversationKey.channelId === conversationKey.channelId)!;
     },
     async list() {
       return states;
@@ -222,7 +190,7 @@ test("initializes every saved channel agent during startup", async () => {
 
 test("does not resume saved channel sessions after their access scope changes", async () => {
   const states = ["channel-a", "channel-b"].map((channelId) => ({
-    channelId,
+    conversationKey: { kind: "discord" as const, channelId },
     accessScope: "public",
     sessionKey: `discord-channel:${channelId}:public`,
     lastActivityAt: null,
@@ -230,8 +198,8 @@ test("does not resume saved channel sessions after their access scope changes", 
     hasActivitySinceRotation: false,
   }));
   const channelSessionStateStore = {
-    async getOrCreate(channelId: string) {
-      return states.find((state) => state.channelId === channelId)!;
+    async getOrCreate(conversationKey: { kind: "discord"; channelId: string }) {
+      return states.find((state) => state.conversationKey.channelId === conversationKey.channelId)!;
     },
     async list() {
       return states;
@@ -272,10 +240,10 @@ test("isolates Pi sessions between Discord channels", async () => {
 
   try {
     await Promise.all([
-      harness.discordMessageIngress.handleDiscordMessage(
+      harness.agentCoordinator.handleDiscordMessage(
         createMessage("channel-a", "message-a", "A のメッセージ"),
       ),
-      harness.discordMessageIngress.handleDiscordMessage(
+      harness.agentCoordinator.handleDiscordMessage(
         createMessage("channel-b", "message-b", "B のメッセージ"),
       ),
     ]);
@@ -311,14 +279,14 @@ test("uses a separate Pi session for each Discord thread", async () => {
   const harness = createHarness();
 
   try {
-    await harness.discordMessageIngress.handleDiscordMessage(
+    await harness.agentCoordinator.handleDiscordMessage(
       createMessage("thread-a", "message-a", "スレッド A", {
         guildId: "guild-123",
         parentChannelId: "channel-a",
         threadId: "thread-a",
       }),
     );
-    await harness.discordMessageIngress.handleDiscordMessage(
+    await harness.agentCoordinator.handleDiscordMessage(
       createMessage("thread-b", "message-b", "スレッド B", {
         guildId: "guild-123",
         parentChannelId: "channel-a",
@@ -343,10 +311,10 @@ test("does not create duplicate agents while a channel agent is initializing", a
   const harness = createHarness(createGate);
 
   try {
-    const first = harness.discordMessageIngress.handleDiscordMessage(
+    const first = harness.agentCoordinator.handleDiscordMessage(
       createMessage("channel-a", "message-a", "最初のメッセージ"),
     );
-    const second = harness.discordMessageIngress.handleDiscordMessage(
+    const second = harness.agentCoordinator.handleDiscordMessage(
       createMessage("channel-a", "message-b", "次のメッセージ"),
     );
 
@@ -416,7 +384,7 @@ test("delivers reminders to the current rotated session and reuses it for conver
   const channelSessionStateStore = new PiDurableSessionStore(session, storage).channelStates;
   const sessionKey = "discord-channel:test-channel:public:rotation:2026-10-14";
   await channelSessionStateStore.save({
-    channelId: dueReminder.channelId,
+    conversationKey: { kind: "discord", channelId: dueReminder.channelId },
     accessScope: "public",
     sessionKey,
     lastActivityAt: null,
@@ -440,7 +408,7 @@ test("delivers reminders to the current rotated session and reuses it for conver
       events?.[0].content[0]?.type === "text" ? events[0].content[0].text : "",
       /定例会が始まります/u,
     );
-    await harness.discordMessageIngress.handleDiscordMessage(
+    await harness.agentCoordinator.handleDiscordMessage(
       createMessage("test-channel", "reply", "ありがとう"),
     );
     assert.deepEqual(harness.createdSessionKeys, [sessionKey]);
@@ -460,7 +428,7 @@ test("rotates an idle session before delivering a reminder into the new conversa
   const oldKey = "discord-channel:test-channel:public:rotation:2000-01-01";
   const newKey = `discord-channel:test-channel:public:rotation:${getChannelRotationDate(Date.now())}`;
   await channelSessionStateStore.save({
-    channelId: dueReminder.channelId,
+    conversationKey: { kind: "discord", channelId: dueReminder.channelId },
     accessScope: "public",
     sessionKey: oldKey,
     lastActivityAt: Date.now() - 2 * 60 * 60 * 1000,
@@ -482,7 +450,7 @@ test("rotates an idle session before delivering a reminder into the new conversa
     );
     assert.equal(reminders.getStored(), undefined);
     const state = await channelSessionStateStore.getOrCreate(
-      dueReminder.channelId,
+      { kind: "discord", channelId: dueReminder.channelId },
       getChannelRotationDate(Date.now()),
     );
     assert.equal(state.sessionKey, newKey);
@@ -498,7 +466,7 @@ test("delivers reminders through an already active channel agent", async () => {
   const reminders = createReminderStore(dueReminder);
   const harness = createHarness(undefined, reminders.store);
   try {
-    await harness.discordMessageIngress.handleDiscordMessage(
+    await harness.agentCoordinator.handleDiscordMessage(
       createMessage("test-channel", "first", "こんにちは"),
     );
     await harness.agentCoordinator.deliverDueReminders(Date.parse("2026-10-14T00:02:00.000Z"));

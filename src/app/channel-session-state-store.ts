@@ -1,5 +1,30 @@
+export type ConversationKey =
+  | { readonly kind: "discord"; readonly channelId: string }
+  | { readonly kind: "agent"; readonly agentId: string };
+
+export function serializeConversationKey(key: ConversationKey): string {
+  return key.kind === "discord"
+    ? `discord:${encodeURIComponent(key.channelId)}`
+    : `agent:${encodeURIComponent(key.agentId)}`;
+}
+
+export function createConversationSessionKey(
+  key: ConversationKey,
+  options: {
+    readonly accessScope?: string;
+    readonly useAccessScope?: boolean;
+    readonly rotationDate?: string;
+  } = {},
+): string {
+  const sessionKey =
+    key.kind === "agent"
+      ? `agent:${key.agentId}`
+      : `discord-channel:${key.channelId}${options.useAccessScope ? `:${options.accessScope ?? "public"}` : ""}`;
+  return options.rotationDate ? `${sessionKey}:rotation:${options.rotationDate}` : sessionKey;
+}
+
 export interface ChannelSessionState {
-  readonly channelId: string;
+  readonly conversationKey: ConversationKey;
   readonly accessScope?: string;
   readonly sessionKey: string;
   readonly lastActivityAt: number | null;
@@ -45,7 +70,7 @@ export function isChannelRotationDue(state: ChannelSessionState, timestamp: numb
 }
 
 export interface ChannelSessionStateStore {
-  getOrCreate(channelId: string, rotationDate: string): Promise<ChannelSessionState>;
+  getOrCreate(conversationKey: ConversationKey, rotationDate: string): Promise<ChannelSessionState>;
   list(): Promise<readonly ChannelSessionState[]>;
   save(state: ChannelSessionState): Promise<void>;
 }

@@ -1,20 +1,10 @@
-import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import type { AgentEvent } from "./agent-event";
+import type { AgentTurn, AgentTurnContext } from "./agent-turn";
 
 export interface ChannelAgent {
-  prompt(
-    message: DiscordMessage,
-    guildMemory?: string,
-    channelRule?: string,
-    ownerMemory?: string,
-  ): Promise<void>;
-  promptEvent(event: AgentEvent, ownerMemory?: string): Promise<void>;
-  steer(
-    message: DiscordMessage,
-    guildMemory?: string,
-    channelRule?: string,
-    ownerMemory?: string,
-  ): Promise<void>;
+  prompt(turn: AgentTurn): Promise<void>;
+  promptEvent(event: AgentEvent, context?: AgentTurnContext): Promise<void>;
+  steer(turn: AgentTurn): Promise<void>;
   compactForHandoff(): Promise<string> | undefined;
   dispose(): void;
 }

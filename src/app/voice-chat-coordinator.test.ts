@@ -40,7 +40,7 @@ test("creates an isolated LLM session for each VC conversation", async () => {
         dispose: () => {
           disposeCount += 1;
         },
-        prompt: async (message: DiscordMessage) => {
+        promptMessage: async (message: DiscordMessage) => {
           promptedMessages.push(message);
           await speak(`返答: ${message.content}`);
         },
@@ -107,7 +107,7 @@ test("serializes voice turns and speaks an error response after LLM failures", a
     createVoiceChatAgent: async (_channelId, _sessionKey, speak) =>
       ({
         dispose: () => undefined,
-        prompt: async (message: { content: string }) => {
+        promptMessage: async (message: { content: string }) => {
           started.push(message.content);
           if (message.content === "一つ目") {
             await new Promise<void>((resolve) => {
@@ -155,7 +155,7 @@ test("selects and plays a preset reaction while the LLM is preparing its answer"
     createVoiceChatAgent: async () =>
       ({
         dispose: () => undefined,
-        prompt: async () =>
+        promptMessage: async () =>
           new Promise<void>((resolve) => {
             releasePrompt = resolve;
           }),
@@ -203,7 +203,7 @@ test("keeps reaction selection parallel and carries the last played preset into 
     createVoiceChatAgent: async () =>
       ({
         dispose: () => undefined,
-        prompt: async () =>
+        promptMessage: async () =>
           new Promise<void>((resolve) => {
             prompts.push(resolve);
           }),
@@ -257,7 +257,7 @@ test("does not wait for a selector that ignores cancellation", async () => {
     createVoiceChatAgent: async () =>
       ({
         dispose: () => undefined,
-        prompt: async () =>
+        promptMessage: async () =>
           new Promise<void>((resolve) => {
             releasePrompt = resolve;
           }),
@@ -296,7 +296,7 @@ test("speech start cancels a pending reaction decision", async () => {
     createVoiceChatAgent: async () =>
       ({
         dispose: () => undefined,
-        prompt: async () =>
+        promptMessage: async () =>
           new Promise<void>((resolve) => {
             releasePrompt = resolve;
           }),
@@ -351,13 +351,13 @@ test("preserves ASR request IDs for prompted and steered transcripts", async () 
     createVoiceChatAgent: async () =>
       ({
         dispose: () => undefined,
-        prompt: async (message: DiscordMessage) => {
+        promptMessage: async (message: DiscordMessage) => {
           prompted.push(message);
           await new Promise<void>((resolve) => {
             releasePrompt = resolve;
           });
         },
-        steer: async (message: DiscordMessage) => {
+        steerMessage: async (message: DiscordMessage) => {
           steered.push(message);
         },
       }) as unknown as DiscordAgent,
