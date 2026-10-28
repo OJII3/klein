@@ -1,7 +1,4 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import test from "node:test";
 import pino from "pino";
 import type { ToolRegistration } from "@earendil-works/pi-durable";
@@ -15,6 +12,12 @@ import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import { DiscordOperatingState } from "@modules/discord/domain/discord-operating-state";
 import type { DiscordService } from "@modules/discord/ports/discord-service";
 import { OwnerMemoryStore } from "@modules/memory/application/owner-memory-store";
+import type {
+  MemoryApplyResult,
+  MemoryEntry,
+  MemoryOperation,
+  MemoryStore,
+} from "@modules/memory/domain/memory";
 import { createAgentSystem } from "./agent-system";
 import { TaskCoordinator } from "./task-coordinator";
 
@@ -37,8 +40,7 @@ function createOwnerMessage(channelId: string, id: string, content: string): Dis
 }
 
 test("coordinates domain agent direct channel reply, owner memory update, and event routing to communication agent", async () => {
-  const tempDir = await mkdtemp(join(tmpdir(), "klein-multi-agent-"));
-  const ownerMemoryStore = new OwnerMemoryStore(join(tempDir, "owner-memory", "MEMORY.json"));
+  const ownerMemoryStore = new OwnerMemoryStore(new InMemoryMemoryStore());
   const taskCoordinator = new TaskCoordinator();
   const sentMessages: Array<{ channelId: string; text: string }> = [];
   const communicationEvents: AgentEvent[] = [];
@@ -191,6 +193,63 @@ test("coordinates domain agent direct channel reply, owner memory update, and ev
     assert.match(commText, /本日14:00に緊急の設計レビューMTGが入りました/);
   } finally {
     await agentCoordinator.dispose();
-    await rm(tempDir, { recursive: true, force: true });
   }
 });
+
+class InMemoryMemoryStore implements MemoryStore {
+  private entries: MemoryEntry[] = [];
+  private nextId = 1;
+
+  async read() {
+    return { entries: [...this.entries] };
+  }
+
+  async apply(
+    operations: readonly MemoryOperation[],
+    sourceMessageIds: readonly string[],
+  ): Promise<MemoryApplyResult> {
+    const result: { created: MemoryEntry[]; updated: MemoryEntry[]; deleted: MemoryEntry[] } = {
+      created: [],
+      updated: [],
+      deleted: [],
+    };
+    const now = new Date().toISOString();
+    for (const operation of operations) {
+      if (operation.type === "noop") continue;
+      if (operation.type === "add") {
+        const entry: MemoryEntry = {
+          content: operation.content,
+          createdAt: now,
+          id: `mem_${this.nextId++}`,
+          kind: operation.kind,
+          sourceMessageIds: [...new Set(sourceMessageIds)],
+          title: operation.title,
+          updatedAt: now,
+        };
+        this.entries.push(entry);
+        result.created.push(entry);
+        continue;
+      }
+
+      const index = this.entries.findIndex((entry) => entry.id === operation.id);
+      const previous = this.entries[index];
+      if (!previous) throw new Error(`Memory entry was not found: ${operation.id}`);
+      if (operation.type === "delete") {
+        this.entries.splice(index, 1);
+        result.deleted.push(previous);
+      } else {
+        const entry: MemoryEntry = {
+          ...previous,
+          content: operation.content,
+          kind: operation.kind,
+          sourceMessageIds: [...new Set([...previous.sourceMessageIds, ...sourceMessageIds])],
+          title: operation.title,
+          updatedAt: now,
+        };
+        this.entries[index] = entry;
+        result.updated.push(entry);
+      }
+    }
+    return result;
+  }
+}

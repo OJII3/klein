@@ -4,23 +4,28 @@ import {
   deleteMemory,
   addMemoryRule,
   getMemory,
-  listMemoryGuilds,
+  listMemoryScopes,
   type MemoryEntry,
-  type MemoryGuildSummary,
+  memoryScopeKey,
+  parseMemoryScopeKey,
+  type MemoryScope,
+  type MemoryScopeSummary,
 } from "../api";
 
 interface UseMemoryOptions {
   active: boolean;
   onUpdated: () => void;
-  initialGuildId: string | null;
+  initialScopeKey: string | null;
 }
 
-export function useMemory({ active, onUpdated, initialGuildId }: UseMemoryOptions) {
+export function useMemory({ active, onUpdated, initialScopeKey }: UseMemoryOptions) {
   const [enabled, setEnabled] = useState(false);
-  const [guilds, setGuilds] = useState<MemoryGuildSummary[]>([]);
-  const [guildsLoading, setGuildsLoading] = useState(false);
-  const [guildsError, setGuildsError] = useState<string | null>(null);
-  const [selectedGuildId, setSelectedGuildId] = useState<string | null>(initialGuildId);
+  const [scopes, setScopes] = useState<MemoryScopeSummary[]>([]);
+  const [scopesLoading, setScopesLoading] = useState(false);
+  const [scopesError, setScopesError] = useState<string | null>(null);
+  const [selectedScope, setSelectedScope] = useState<MemoryScope | null>(() =>
+    parseMemoryScopeKey(initialScopeKey),
+  );
   const [entries, setEntries] = useState<MemoryEntry[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
@@ -31,26 +36,29 @@ export function useMemory({ active, onUpdated, initialGuildId }: UseMemoryOption
   const [addingRule, setAddingRule] = useState(false);
 
   const load = useCallback(async () => {
-    setGuildsLoading(true);
-    setGuildsError(null);
+    setScopesLoading(true);
+    setScopesError(null);
 
     try {
-      const response = await listMemoryGuilds();
+      const response = await listMemoryScopes();
       setEnabled(response.enabled);
-      setGuilds(response.items);
-      setSelectedGuildId((current) =>
-        current && response.items.some((guild) => guild.guildId === current)
-          ? current
-          : (response.items[0]?.guildId ?? null),
-      );
+      setScopes(response.items);
+      setSelectedScope((current) => {
+        const currentKey = current ? memoryScopeKey(current) : null;
+        return (
+          response.items.find((item) => memoryScopeKey(item.scope) === currentKey)?.scope ??
+          response.items[0]?.scope ??
+          null
+        );
+      });
       if (response.items.length === 0) setEntries([]);
       onUpdated();
     } catch (requestError) {
-      setGuildsError(
+      setScopesError(
         requestError instanceof Error ? requestError.message : "メモリ一覧の取得に失敗しました",
       );
     } finally {
-      setGuildsLoading(false);
+      setScopesLoading(false);
     }
   }, [onUpdated]);
 
@@ -63,13 +71,13 @@ export function useMemory({ active, onUpdated, initialGuildId }: UseMemoryOption
   }, [active, load]);
 
   useEffect(() => {
-    if (!active || !selectedGuildId) return;
+    if (!active || !selectedScope) return;
 
     let current = true;
     setDetailLoading(true);
     setDetailError(null);
 
-    void getMemory(selectedGuildId)
+    void getMemory(selectedScope)
       .then((response) => {
         if (!current) return;
         setEntries(response.entries);
@@ -87,14 +95,14 @@ export function useMemory({ active, onUpdated, initialGuildId }: UseMemoryOption
     return () => {
       current = false;
     };
-  }, [active, detailReloadKey, selectedGuildId]);
+  }, [active, detailReloadKey, selectedScope]);
 
   const retryDetail = useCallback(() => {
     setDetailReloadKey((key) => key + 1);
   }, []);
 
-  const selectGuild = useCallback((guildId: string) => {
-    setSelectedGuildId(guildId);
+  const selectScope = useCallback((scope: MemoryScope) => {
+    setSelectedScope(scope);
     setDeleteError(null);
   }, []);
 
@@ -104,11 +112,11 @@ export function useMemory({ active, onUpdated, initialGuildId }: UseMemoryOption
 
   const createRule = useCallback(
     async (title: string, content: string) => {
-      if (!selectedGuildId || addingRule) return;
+      if (!selectedScope || addingRule) return;
       setAddingRule(true);
       setAddRuleError(null);
       try {
-        await addMemoryRule(selectedGuildId, { title, content });
+        await addMemoryRule(selectedScope, { title, content });
         setDetailReloadKey((key) => key + 1);
         void load();
       } catch (requestError) {
@@ -119,17 +127,17 @@ export function useMemory({ active, onUpdated, initialGuildId }: UseMemoryOption
         setAddingRule(false);
       }
     },
-    [addingRule, load, selectedGuildId],
+    [addingRule, load, selectedScope],
   );
 
   const deleteEntry = useCallback(
     async (entryId: string) => {
-      if (!selectedGuildId || deletingEntryId) return;
+      if (!selectedScope || deletingEntryId) return;
 
       setDeletingEntryId(entryId);
       setDeleteError(null);
       try {
-        await deleteMemory(selectedGuildId, entryId);
+        await deleteMemory(selectedScope, entryId);
         setEntries((current) => current.filter((entry) => entry.id !== entryId));
         void load();
       } catch (requestError) {
@@ -140,7 +148,7 @@ export function useMemory({ active, onUpdated, initialGuildId }: UseMemoryOption
         setDeletingEntryId(null);
       }
     },
-    [deletingEntryId, load, selectedGuildId],
+    [deletingEntryId, load, selectedScope],
   );
 
   const reload = useCallback(() => {
@@ -150,10 +158,10 @@ export function useMemory({ active, onUpdated, initialGuildId }: UseMemoryOption
 
   return {
     enabled,
-    guilds,
-    guildsLoading,
-    guildsError,
-    selectedGuildId,
+    scopes,
+    scopesLoading,
+    scopesError,
+    selectedScope,
     entries,
     detailLoading,
     detailError,
@@ -164,7 +172,7 @@ export function useMemory({ active, onUpdated, initialGuildId }: UseMemoryOption
     deleteError,
     deletingEntryId,
     dismissDeleteError,
-    selectGuild,
+    selectScope,
     reload,
     retryDetail,
   };

@@ -28,6 +28,7 @@ import { DiscordJsService } from "@modules/discord/infrastructure/discord-js-ser
 import { loadVoiceReactionPresets } from "@modules/discord/infrastructure/voice-reaction-presets";
 import { FileDiscordChannelRuleStore } from "@modules/discord/infrastructure/file-discord-channel-rule-store";
 import { MemoryCoordinator } from "@modules/memory/application/memory-coordinator";
+import { JsonMemoryStore } from "@modules/memory/infrastructure/json-memory-store";
 import {
   createWebUiMemoryAccessor,
   OwnerMemoryStore,
@@ -102,7 +103,9 @@ export async function bootstrap(): Promise<void> {
   const channelRuleStore = new FileDiscordChannelRuleStore(resolve(agentDir, "channel-rules"));
   const ownerMemoryStore = ownerUserId
     ? new OwnerMemoryStore(
-        resolve(config.owner?.memoryFilePath ?? resolve(agentDir, "owner-memory/MEMORY.json")),
+        new JsonMemoryStore(
+          resolve(config.owner?.memoryFilePath ?? resolve(agentDir, "owner-memory/MEMORY.json")),
+        ),
       )
     : undefined;
   const modelRuntime = await createPiModelRuntime(agentDir);
@@ -294,9 +297,7 @@ export async function bootstrap(): Promise<void> {
     }
   };
   const webUiConfig = resolveWebUiConfig(config);
-  const webUiMemory = ownerMemoryStore
-    ? createWebUiMemoryAccessor(ownerMemoryStore, memoryCoordinator)
-    : memoryCoordinator;
+  const webUiMemory = createWebUiMemoryAccessor(ownerMemoryStore, memoryCoordinator);
   const webUi = webUiConfig.enabled
     ? await startWebUi({
         host: webUiConfig.host,

@@ -4,6 +4,7 @@ import { basename, dirname, resolve, sep } from "node:path";
 
 import {
   MEMORY_KINDS,
+  type MemoryApplyResult,
   type MemoryDocument,
   type MemoryEntry,
   type MemoryKind,
@@ -35,18 +36,23 @@ export class JsonMemoryStore implements MemoryStore {
   async apply(
     operations: readonly MemoryOperation[],
     sourceMessageIds: readonly string[],
-  ): Promise<void> {
+  ): Promise<MemoryApplyResult> {
     const effectiveOperations = operations.filter((operation) => operation.type !== "noop");
-    if (effectiveOperations.length === 0) return;
+    if (effectiveOperations.length === 0) return emptyApplyResult();
 
     const document = await this.read();
     const entries = [...document.entries];
     const now = new Date().toISOString();
     const sourceIds = unique(sourceMessageIds);
+    const result: { created: MemoryEntry[]; updated: MemoryEntry[]; deleted: MemoryEntry[] } = {
+      created: [],
+      updated: [],
+      deleted: [],
+    };
 
     for (const operation of effectiveOperations) {
       if (operation.type === "add") {
-        entries.push({
+        const entry: MemoryEntry = {
           content: operation.content,
           createdAt: now,
           id: `mem_${randomUUID()}`,
@@ -54,7 +60,9 @@ export class JsonMemoryStore implements MemoryStore {
           sourceMessageIds: sourceIds,
           title: operation.title,
           updatedAt: now,
-        });
+        };
+        entries.push(entry);
+        result.created.push(entry);
         continue;
       }
 
@@ -64,13 +72,14 @@ export class JsonMemoryStore implements MemoryStore {
       }
 
       if (operation.type === "delete") {
-        entries.splice(index, 1);
+        const [deleted] = entries.splice(index, 1);
+        if (deleted) result.deleted.push(deleted);
         continue;
       }
 
       const previous = entries[index];
       if (!previous) throw new Error(`Memory entry was not found: ${operation.id}`);
-      entries[index] = {
+      const updated: MemoryEntry = {
         content: operation.content,
         createdAt: previous.createdAt,
         id: previous.id,
@@ -79,9 +88,12 @@ export class JsonMemoryStore implements MemoryStore {
         title: operation.title,
         updatedAt: now,
       };
+      entries[index] = updated;
+      result.updated.push(updated);
     }
 
     await this.write({ entries });
+    return result;
   }
 
   private async write(document: MemoryDocument): Promise<void> {
@@ -95,6 +107,10 @@ export class JsonMemoryStore implements MemoryStore {
       await unlink(temporaryPath).catch(() => undefined);
     }
   }
+}
+
+function emptyApplyResult(): MemoryApplyResult {
+  return { created: [], updated: [], deleted: [] };
 }
 
 export function parseMemoryDocument(content: string): MemoryDocument {
