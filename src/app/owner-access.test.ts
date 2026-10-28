@@ -26,6 +26,7 @@ import {
   getChannelRotationDate,
 } from "./channel-session-state-store";
 import { TaskCoordinator } from "./task-coordinator";
+import { buildAgentTopology } from "./agent-topology";
 
 const ownerId = "123";
 const message: DiscordMessage = {
@@ -66,6 +67,7 @@ function createHarness(store: ChannelSessionStateStore, channelRule: { access: D
     },
   } as unknown as DiscordService;
   const coordinator = new AgentCoordinator({
+    topology: buildAgentTopology(undefined),
     accessPolicy: createDiscordAccessPolicy(
       {
         default: "deny",
@@ -83,6 +85,9 @@ function createHarness(store: ChannelSessionStateStore, channelRule: { access: D
         ownerFeaturesAllowed,
         ownerUserId: ownerId,
       }),
+    createDomainAgent: async (agentId) => {
+      throw new Error(`Unexpected domain agent: ${agentId}`);
+    },
     discordService: service,
     memoryCoordinator: {
       async getContext() {
@@ -143,7 +148,10 @@ test("changing owner access to allow drops private history and handoff on restar
   try {
     await privateHarness.coordinator.handleDiscordMessage(message);
     await privateHarness.coordinator.dispose();
-    const state = await store.getOrCreate("channel", getChannelRotationDate(Date.now()));
+    const state = await store.getOrCreate(
+      { kind: "discord", channelId: "channel" },
+      getChannelRotationDate(Date.now()),
+    );
     await store.save({ ...state, handoffContext: "secret Obsidian note" });
     await publicHarness.coordinator.handleDiscordMessage({
       ...message,
@@ -170,7 +178,10 @@ test("owner access changes replace cached agents and preserve private session sc
   const harness = createHarness(store, rule);
   try {
     await harness.coordinator.handleDiscordMessage(message);
-    const oldState = await store.getOrCreate("channel", getChannelRotationDate(Date.now()));
+    const oldState = await store.getOrCreate(
+      { kind: "discord", channelId: "channel" },
+      getChannelRotationDate(Date.now()),
+    );
     await store.save({
       ...oldState,
       lastActivityAt: Date.now() - 2 * 60 * 60 * 1000,
@@ -181,7 +192,10 @@ test("owner access changes replace cached agents and preserve private session sc
     const resumed = createHarness(store, rule);
     try {
       await resumed.coordinator.rotateIdleChannels();
-      const rotated = await store.getOrCreate("channel", getChannelRotationDate(Date.now()));
+      const rotated = await store.getOrCreate(
+        { kind: "discord", channelId: "channel" },
+        getChannelRotationDate(Date.now()),
+      );
       assert.match(rotated.sessionKey, /^discord-channel:channel:owner:123:rotation:/);
       assert.equal(resumed.creations[0].ownerFeaturesAllowed, true);
       await resumed.coordinator.handleDiscordMessage(message);

@@ -14,29 +14,34 @@ import type { OwnerMemoryStore } from "@modules/memory/application/owner-memory-
 import type { DiscordChannelRuleStore } from "@modules/discord/ports/discord-channel-rule-store";
 import type { ReminderStore } from "@modules/reminders/ports/reminder-store";
 import type { TaskCoordinator } from "./task-coordinator";
-import type { ChannelSessionState, ChannelSessionStateStore } from "./channel-session-state-store";
+import type {
+  ChannelSessionState,
+  ChannelSessionStateStore,
+  ConversationKey,
+} from "./channel-session-state-store";
+import { createConversationSessionKey } from "./channel-session-state-store";
+import { COMMUNICATION_AGENT_ID, type AgentTopology } from "./agent-topology";
 import { ChannelSessionManager } from "./channel-session-manager";
 import { ReminderDeliveryCoordinator } from "./reminder-delivery-coordinator";
 
-export const COMMUNICATION_AGENT_ID = "communication";
-
-export interface DomainAgentRegistration {
-  readonly channelId?: string;
-  readonly createAgent: (sessionKey: string, handoffContext?: string) => Promise<ChannelAgent>;
-}
+export { COMMUNICATION_AGENT_ID };
 
 export interface AgentCoordinatorDependencies {
+  readonly topology: AgentTopology;
   readonly discordService: DiscordService;
   readonly accessPolicy?: DiscordAccessPolicy;
   readonly ownerUserId?: string;
-  readonly communicationChannelId?: string;
   readonly createDiscordAgent: (
     channelId: string,
     sessionKey: string,
     handoffContext?: string,
     ownerFeaturesAllowed?: boolean,
   ) => Promise<ChannelAgent>;
-  readonly domainAgents?: Readonly<Record<string, DomainAgentRegistration>>;
+  readonly createDomainAgent: (
+    agentId: string,
+    sessionKey: string,
+    handoffContext?: string,
+  ) => Promise<ChannelAgent>;
   readonly channelSessionStateStore?: ChannelSessionStateStore;
   readonly channelRuleStore?: DiscordChannelRuleStore;
   readonly logger: Logger;
@@ -51,38 +56,31 @@ export class AgentCoordinator implements AgentEventRouter {
   private readonly logger: Logger;
   private readonly sessionManager: ChannelSessionManager;
   private readonly reminderDeliveryCoordinator: ReminderDeliveryCoordinator;
-  private readonly domainAgentByChannelId = new Map<
-    string,
-    { readonly agentId: string; readonly registration: DomainAgentRegistration }
-  >();
-  private readonly domainChannelIds = new Set<string>();
 
   constructor(private readonly dependencies: AgentCoordinatorDependencies) {
     this.logger = dependencies.logger.child({ component: "agent-coordinator" });
-    for (const [agentId, registration] of Object.entries(dependencies.domainAgents ?? {})) {
-      const channelKey = registration.channelId ?? `domain-agent:${agentId}`;
-      this.domainAgentByChannelId.set(channelKey, { agentId, registration });
-      if (registration.channelId) {
-        this.domainChannelIds.add(registration.channelId);
-      }
-    }
 
     this.sessionManager = new ChannelSessionManager({
       accessPolicy: dependencies.accessPolicy,
       channelSessionStateStore: dependencies.channelSessionStateStore,
-      createDiscordAgent: (channelId, sessionKey, handoffContext, ownerFeaturesAllowed) => {
-        const domainEntry = this.domainAgentByChannelId.get(channelId);
-        if (domainEntry) {
-          return domainEntry.registration.createAgent(sessionKey, handoffContext);
+      createAgent: (conversationKey, sessionKey, handoffContext, ownerFeaturesAllowed) => {
+        if (conversationKey.kind === "agent") {
+          return dependencies.createDomainAgent(
+            conversationKey.agentId,
+            sessionKey,
+            handoffContext,
+          );
         }
         return dependencies.createDiscordAgent(
-          channelId,
+          conversationKey.channelId,
           sessionKey,
           handoffContext,
           ownerFeaturesAllowed,
         );
       },
       discordService: dependencies.discordService,
+      isKnownAgent: (agentId) => dependencies.topology.agents.has(agentId),
+      isDomainChannel: (channelId) => dependencies.topology.agentsByChannelId.has(channelId),
       logger: this.logger,
       ownerUserId: dependencies.ownerUserId,
     });
@@ -94,20 +92,21 @@ export class AgentCoordinator implements AgentEventRouter {
       ownerMemoryStore: dependencies.ownerMemoryStore,
       ownerUserId: dependencies.ownerUserId,
       reminderStore: dependencies.reminderStore,
+      resolveConversationKey: (channelId) => this.resolveDiscordMessageConversationKey(channelId),
       sessionManager: this.sessionManager,
       taskCoordinator: dependencies.taskCoordinator,
     });
   }
 
   listTargets(): readonly string[] {
-    return [COMMUNICATION_AGENT_ID, ...Object.keys(this.dependencies.domainAgents ?? {})];
+    return [COMMUNICATION_AGENT_ID, ...this.dependencies.topology.agents.keys()];
   }
 
   async dispatch(targetAgentId: string, event: AgentEvent): Promise<void> {
     if (!this.dependencies.operatingState.isActive()) return;
     if (
       targetAgentId !== COMMUNICATION_AGENT_ID &&
-      !this.dependencies.domainAgents?.[targetAgentId]
+      !this.dependencies.topology.agents.has(targetAgentId)
     ) {
       throw new Error(
         `Unknown target agent "${targetAgentId}". Available targets: ${this.listTargets().join(", ")}`,
@@ -120,9 +119,10 @@ export class AgentCoordinator implements AgentEventRouter {
   handleDiscordMessage(message: DiscordMessage): Promise<void> {
     if (!this.dependencies.operatingState.isActive()) return Promise.resolve();
 
-    this.sessionManager.recordInbound(message.channelId);
+    const conversationKey = this.resolveDiscordMessageConversationKey(message.channelId);
+    this.sessionManager.recordInbound(conversationKey);
     return this.dependencies.taskCoordinator.run(() =>
-      this.sessionManager.runForChannel(message.channelId, () => this.processMessage(message)),
+      this.sessionManager.runForConversation(conversationKey, () => this.processMessage(message)),
     );
   }
 
@@ -131,6 +131,25 @@ export class AgentCoordinator implements AgentEventRouter {
   }
 
   async initialize(): Promise<void> {
+    const stateStore = this.dependencies.channelSessionStateStore;
+    if (stateStore) {
+      for (const state of await stateStore.list()) {
+        if (state.conversationKey.kind !== "discord") continue;
+        const domainAgent = this.dependencies.topology.agentsByChannelId.get(
+          state.conversationKey.channelId,
+        );
+        if (!domainAgent) continue;
+        const nextState: ChannelSessionState = {
+          ...state,
+          conversationKey: domainAgent.conversationKey,
+          sessionKey: createConversationSessionKey(domainAgent.conversationKey, {
+            rotationDate: /:rotation:(\d{4}-\d{2}-\d{2})$/.exec(state.sessionKey)?.[1],
+          }),
+        };
+        if (stateStore.migrate) await stateStore.migrate(state, nextState);
+        else await stateStore.save(nextState);
+      }
+    }
     await this.sessionManager.initialize();
   }
 
@@ -142,11 +161,20 @@ export class AgentCoordinator implements AgentEventRouter {
     await this.sessionManager.dispose();
   }
 
+  private resolveDiscordMessageConversationKey(channelId: string): ConversationKey {
+    return (
+      this.dependencies.topology.agentsByChannelId.get(channelId)?.conversationKey ?? {
+        kind: "discord",
+        channelId,
+      }
+    );
+  }
+
   private async deliverAgentEvent(targetAgentId: string, event: AgentEvent): Promise<void> {
     if (!this.dependencies.operatingState.isActive() || !this.dependencies.ownerUserId) return;
 
-    const channelKey = await this.resolveTargetChannelKey(targetAgentId);
-    if (!channelKey) {
+    const conversationKey = await this.resolveTargetConversationKey(targetAgentId);
+    if (!conversationKey) {
       this.logger.warn(
         {
           event: "agent_event_target_channel_missing",
@@ -159,23 +187,31 @@ export class AgentCoordinator implements AgentEventRouter {
       return;
     }
 
-    await this.sessionManager.runForChannel(channelKey, async () => {
+    await this.sessionManager.runForConversation(conversationKey, async () => {
       if (!this.dependencies.operatingState.isActive()) return;
       const now = Date.now();
       const accessScope = `owner:${this.dependencies.ownerUserId}`;
       let channelState: ChannelSessionState | undefined;
 
       try {
-        channelState = await this.sessionManager.getChannelState(channelKey, now, accessScope);
-        channelState = await this.sessionManager.rotateChannelIfDue(channelKey, channelState, now);
-        const agent = await this.sessionManager.getDiscordAgent(channelKey, channelState);
+        channelState = await this.sessionManager.getConversationState(
+          conversationKey,
+          now,
+          accessScope,
+        );
+        channelState = await this.sessionManager.rotateConversationIfDue(
+          conversationKey,
+          channelState,
+          now,
+        );
+        const agent = await this.sessionManager.getAgent(conversationKey, channelState);
         channelState = {
           ...channelState,
           handoffContext: undefined,
           hasActivitySinceRotation: true,
           lastActivityAt: now,
         };
-        await this.sessionManager.saveChannelState(channelState);
+        await this.sessionManager.saveConversationState(channelState);
 
         const ownerMemory = await this.dependencies.ownerMemoryStore?.getContext(
           buildEventMemoryQuery(event),
@@ -183,7 +219,7 @@ export class AgentCoordinator implements AgentEventRouter {
         await agent.promptEvent(event, { ownerMemory });
         this.logger.info(
           {
-            channelId: channelKey,
+            conversationKey,
             event: "agent_event_delivered",
             eventId: event.id,
             eventType: event.type,
@@ -195,7 +231,7 @@ export class AgentCoordinator implements AgentEventRouter {
       } catch (error) {
         this.logger.error(
           {
-            channelId: channelKey,
+            conversationKey,
             err: error,
             event: "agent_event_delivery_failed",
             eventId: event.id,
@@ -207,7 +243,7 @@ export class AgentCoordinator implements AgentEventRouter {
       } finally {
         if (channelState) {
           try {
-            await this.sessionManager.saveChannelState({
+            await this.sessionManager.saveConversationState({
               ...channelState,
               hasActivitySinceRotation: true,
               lastActivityAt: Date.now(),
@@ -223,21 +259,24 @@ export class AgentCoordinator implements AgentEventRouter {
     });
   }
 
-  private async resolveTargetChannelKey(targetAgentId: string): Promise<string | undefined> {
+  private async resolveTargetConversationKey(
+    targetAgentId: string,
+  ): Promise<ConversationKey | undefined> {
     if (targetAgentId === COMMUNICATION_AGENT_ID) {
-      return (
-        this.dependencies.communicationChannelId ??
-        (await this.sessionManager.findLatestOwnerChannelId(this.domainChannelIds))
-      );
+      const channelId =
+        this.dependencies.topology.communicationChannelId ??
+        (await this.sessionManager.findLatestOwnerChannelId());
+      return channelId ? { kind: "discord", channelId } : undefined;
     }
-    const domainRegistration = this.dependencies.domainAgents?.[targetAgentId];
-    if (!domainRegistration) return undefined;
-    return domainRegistration.channelId ?? `domain-agent:${targetAgentId}`;
+    return this.dependencies.topology.agents.get(targetAgentId)?.conversationKey;
   }
 
   private async processMessage(message: DiscordMessage): Promise<void> {
     if (!this.dependencies.operatingState.isActive()) return;
-    const isDomainChannel = this.domainChannelIds.has(message.channelId);
+    const domainAgent = this.dependencies.topology.agentsByChannelId.get(message.channelId);
+    const isDomainChannel = domainAgent !== undefined;
+    const conversationKey =
+      domainAgent?.conversationKey ?? ({ kind: "discord", channelId: message.channelId } as const);
     const target = {
       guildId: message.guildId,
       channelId: message.parentChannelId ?? message.channelId,
@@ -274,13 +313,17 @@ export class AgentCoordinator implements AgentEventRouter {
 
     try {
       const now = Date.now();
-      channelState = await this.sessionManager.getChannelState(message.channelId, now, accessScope);
-      channelState = await this.sessionManager.rotateChannelIfDue(
-        message.channelId,
+      channelState = await this.sessionManager.getConversationState(
+        conversationKey,
+        now,
+        accessScope,
+      );
+      channelState = await this.sessionManager.rotateConversationIfDue(
+        conversationKey,
         channelState,
         now,
       );
-      const agent = await this.sessionManager.getDiscordAgent(message.channelId, channelState);
+      const agent = await this.sessionManager.getAgent(conversationKey, channelState);
       if (channelState.handoffContext) {
         channelState = { ...channelState, handoffContext: undefined };
       }
@@ -289,7 +332,7 @@ export class AgentCoordinator implements AgentEventRouter {
         hasActivitySinceRotation: true,
         lastActivityAt: now,
       };
-      await this.sessionManager.saveChannelState(channelState);
+      await this.sessionManager.saveConversationState(channelState);
 
       const query = buildMemoryQuery(message);
       const guildMemory = message.guildId
@@ -336,7 +379,7 @@ export class AgentCoordinator implements AgentEventRouter {
     } finally {
       if (channelState) {
         try {
-          await this.sessionManager.saveChannelState({
+          await this.sessionManager.saveConversationState({
             ...channelState,
             hasActivitySinceRotation: true,
             lastActivityAt: Date.now(),

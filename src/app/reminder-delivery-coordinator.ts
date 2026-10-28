@@ -9,6 +9,7 @@ import { getNextReminderDueAt, type Reminder } from "@modules/reminders/domain/r
 import type { ReminderStore } from "@modules/reminders/ports/reminder-store";
 import type { TaskCoordinator } from "./task-coordinator";
 import type { ChannelSessionManager } from "./channel-session-manager";
+import type { ConversationKey } from "./channel-session-state-store";
 
 export interface ReminderDeliveryCoordinatorDependencies {
   readonly accessPolicy?: DiscordAccessPolicy;
@@ -18,6 +19,7 @@ export interface ReminderDeliveryCoordinatorDependencies {
   readonly ownerMemoryStore?: OwnerMemoryStore;
   readonly ownerUserId?: string;
   readonly reminderStore?: ReminderStore;
+  readonly resolveConversationKey: (channelId: string) => ConversationKey;
   readonly sessionManager: ChannelSessionManager;
   readonly taskCoordinator: TaskCoordinator;
 }
@@ -37,9 +39,10 @@ export class ReminderDeliveryCoordinator {
       const reminders = await reminderStore.listDue(now);
       for (const reminder of reminders) {
         try {
+          const conversationKey = this.dependencies.resolveConversationKey(reminder.channelId);
           await this.dependencies.taskCoordinator.run(() =>
-            this.dependencies.sessionManager.runForChannel(reminder.channelId, () =>
-              this.deliverReminder(reminder),
+            this.dependencies.sessionManager.runForConversation(conversationKey, () =>
+              this.deliverReminder(reminder, conversationKey),
             ),
           );
         } catch (error) {
@@ -64,7 +67,10 @@ export class ReminderDeliveryCoordinator {
     }
   }
 
-  private async deliverReminder(reminder: Reminder): Promise<void> {
+  private async deliverReminder(
+    reminder: Reminder,
+    conversationKey: ConversationKey,
+  ): Promise<void> {
     if (!this.dependencies.operatingState.isActive()) return;
     const reminderStore = this.dependencies.reminderStore;
     if (!reminderStore) return;
@@ -94,27 +100,24 @@ export class ReminderDeliveryCoordinator {
     }
 
     const now = Date.now();
-    let channelState = await this.dependencies.sessionManager.getChannelState(
-      reminder.channelId,
+    let channelState = await this.dependencies.sessionManager.getConversationState(
+      conversationKey,
       now,
       reminder.accessScope,
     );
-    channelState = await this.dependencies.sessionManager.rotateChannelIfDue(
-      reminder.channelId,
+    channelState = await this.dependencies.sessionManager.rotateConversationIfDue(
+      conversationKey,
       channelState,
       now,
     );
-    const agent = await this.dependencies.sessionManager.getDiscordAgent(
-      reminder.channelId,
-      channelState,
-    );
+    const agent = await this.dependencies.sessionManager.getAgent(conversationKey, channelState);
     channelState = {
       ...channelState,
       handoffContext: undefined,
       hasActivitySinceRotation: true,
       lastActivityAt: now,
     };
-    await this.dependencies.sessionManager.saveChannelState(channelState);
+    await this.dependencies.sessionManager.saveConversationState(channelState);
     const ownerUserId = this.dependencies.ownerUserId;
     const ownerMemory =
       ownerUserId && reminder.accessScope === `owner:${ownerUserId}`
@@ -159,7 +162,7 @@ export class ReminderDeliveryCoordinator {
         "Failed to deliver reminder",
       );
     } finally {
-      await this.dependencies.sessionManager.saveChannelState({
+      await this.dependencies.sessionManager.saveConversationState({
         ...channelState,
         lastActivityAt: Date.now(),
       });
