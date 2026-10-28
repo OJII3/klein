@@ -15,7 +15,7 @@ import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import { DiscordOperatingState } from "@modules/discord/domain/discord-operating-state";
 import type { DiscordService } from "@modules/discord/ports/discord-service";
 import { OwnerMemoryStore } from "@modules/memory/application/owner-memory-store";
-import { AgentCoordinator } from "./agent-coordinator";
+import { createAgentSystem } from "./agent-system";
 import { TaskCoordinator } from "./task-coordinator";
 
 const OWNER_ID = "123456789012345678";
@@ -118,8 +118,7 @@ test("coordinates domain agent direct channel reply, owner memory update, and ev
     ["comm-channel", "calendar-channel"],
   );
 
-  let coordinator!: AgentCoordinator;
-  coordinator = new AgentCoordinator({
+  const agentSystem = createAgentSystem({
     accessPolicy,
     communicationChannelId: "comm-channel",
     ownerUserId: OWNER_ID,
@@ -128,9 +127,15 @@ test("coordinates domain agent direct channel reply, owner memory update, and ev
     logger: pino({ level: "silent" }),
     operatingState: new DiscordOperatingState(),
     taskCoordinator,
-    createDiscordAgent: (channelId, sessionKey, handoffContext, ownerFeaturesAllowed) =>
+    createDiscordAgent: (
+      eventRouter,
+      channelId,
+      sessionKey,
+      handoffContext,
+      ownerFeaturesAllowed,
+    ) =>
       DiscordAgent.create(agentFactory, discordService, channelId, "Communication SOUL", {
-        eventRouter: coordinator,
+        eventRouter,
         handoffContext,
         ownerFeaturesAllowed,
         ownerMemoryStore,
@@ -140,12 +145,12 @@ test("coordinates domain agent direct channel reply, owner memory update, and ev
     domainAgents: {
       calendar: {
         channelId: "calendar-channel",
-        createAgent: (sessionKey, handoffContext) =>
+        createAgent: (eventRouter, sessionKey, handoffContext) =>
           DomainAgent.create(agentFactory, {
             agentId: "calendar",
             channelId: "calendar-channel",
             discordService,
-            eventRouter: coordinator,
+            eventRouter,
             handoffContext,
             ownerMemoryStore,
             ownerUserId: OWNER_ID,
@@ -155,10 +160,11 @@ test("coordinates domain agent direct channel reply, owner memory update, and ev
       },
     },
   });
+  const { agentCoordinator, discordMessageIngress } = agentSystem;
 
   try {
     // 1. Owner sends a message to the calendar domain agent channel
-    await coordinator.handleDiscordMessage(
+    await discordMessageIngress.handleDiscordMessage(
       createOwnerMessage("calendar-channel", "msg-cal-1", "今日の予定をチェックして"),
     );
     // Wait for background dispatched event to communication agent to complete
@@ -184,7 +190,7 @@ test("coordinates domain agent direct channel reply, owner memory update, and ev
     assert.match(commText, /本日14:00に緊急の設計レビューMTGが追加された/);
     assert.match(commText, /本日14:00に緊急の設計レビューMTGが入りました/);
   } finally {
-    await coordinator.dispose();
+    await agentCoordinator.dispose();
     await rm(tempDir, { recursive: true, force: true });
   }
 });
