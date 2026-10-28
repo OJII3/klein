@@ -19,7 +19,6 @@ import type {
   ChannelSessionStateStore,
   ConversationKey,
 } from "./channel-session-state-store";
-import { createConversationSessionKey } from "./channel-session-state-store";
 import { COMMUNICATION_AGENT_ID, type AgentTopology } from "./agent-topology";
 import { ChannelSessionManager } from "./channel-session-manager";
 import { ReminderDeliveryCoordinator } from "./reminder-delivery-coordinator";
@@ -80,7 +79,6 @@ export class AgentCoordinator implements AgentEventRouter {
       },
       discordService: dependencies.discordService,
       isKnownAgent: (agentId) => dependencies.topology.agents.has(agentId),
-      isDomainChannel: (channelId) => dependencies.topology.agentsByChannelId.has(channelId),
       logger: this.logger,
       ownerUserId: dependencies.ownerUserId,
     });
@@ -131,25 +129,6 @@ export class AgentCoordinator implements AgentEventRouter {
   }
 
   async initialize(): Promise<void> {
-    const stateStore = this.dependencies.channelSessionStateStore;
-    if (stateStore) {
-      for (const state of await stateStore.list()) {
-        if (state.conversationKey.kind !== "discord") continue;
-        const domainAgent = this.dependencies.topology.agentsByChannelId.get(
-          state.conversationKey.channelId,
-        );
-        if (!domainAgent) continue;
-        const nextState: ChannelSessionState = {
-          ...state,
-          conversationKey: domainAgent.conversationKey,
-          sessionKey: createConversationSessionKey(domainAgent.conversationKey, {
-            rotationDate: /:rotation:(\d{4}-\d{2}-\d{2})$/.exec(state.sessionKey)?.[1],
-          }),
-        };
-        if (stateStore.migrate) await stateStore.migrate(state, nextState);
-        else await stateStore.save(nextState);
-      }
-    }
     await this.sessionManager.initialize();
   }
 

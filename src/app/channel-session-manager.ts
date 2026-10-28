@@ -24,7 +24,6 @@ export interface ChannelSessionManagerDependencies {
     ownerFeaturesAllowed?: boolean,
   ) => Promise<ChannelAgent>;
   readonly isKnownAgent?: (agentId: string) => boolean;
-  readonly isDomainChannel?: (channelId: string) => boolean;
   readonly discordService: DiscordService;
   readonly logger: Logger;
   readonly ownerUserId?: string;
@@ -55,13 +54,6 @@ export class ChannelSessionManager {
       ) {
         continue;
       }
-      if (
-        conversationKey.kind === "discord" &&
-        this.dependencies.isDomainChannel?.(conversationKey.channelId)
-      ) {
-        continue;
-      }
-
       if (conversationKey.kind === "discord" && this.dependencies.accessPolicy) {
         let location: Awaited<ReturnType<DiscordService["getChannelLocation"]>>;
         try {
@@ -213,9 +205,7 @@ export class ChannelSessionManager {
     return created;
   }
 
-  async findLatestOwnerChannelId(
-    excludedChannelIds: ReadonlySet<string> = new Set(),
-  ): Promise<string | undefined> {
+  async findLatestOwnerChannelId(): Promise<string | undefined> {
     if (!this.dependencies.ownerUserId) return undefined;
     const ownerScope = `owner:${this.dependencies.ownerUserId}`;
     const states = this.dependencies.channelSessionStateStore
@@ -223,11 +213,7 @@ export class ChannelSessionManager {
       : [...this.inMemoryChannelStates.values()];
     const candidates = states
       .filter(
-        (state) =>
-          state.conversationKey.kind === "discord" &&
-          state.accessScope === ownerScope &&
-          !this.dependencies.isDomainChannel?.(state.conversationKey.channelId) &&
-          !excludedChannelIds.has(state.conversationKey.channelId),
+        (state) => state.conversationKey.kind === "discord" && state.accessScope === ownerScope,
       )
       .sort((left, right) => (right.lastActivityAt ?? 0) - (left.lastActivityAt ?? 0));
     const latest = candidates[0]?.conversationKey;
@@ -309,12 +295,6 @@ export class ChannelSessionManager {
         conversationKey.kind === "agent" &&
         this.dependencies.isKnownAgent &&
         !this.dependencies.isKnownAgent(conversationKey.agentId)
-      ) {
-        continue;
-      }
-      if (
-        conversationKey.kind === "discord" &&
-        this.dependencies.isDomainChannel?.(conversationKey.channelId)
       ) {
         continue;
       }
