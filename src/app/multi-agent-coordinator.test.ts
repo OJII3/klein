@@ -6,6 +6,7 @@ import type { ToolRegistration } from "@earendil-works/pi-durable";
 import type { AgentEvent } from "@agents/core/agent-event";
 import type { AgentFactory } from "@agents/core/agent-factory";
 import { DiscordAgent } from "@agents/discord/discord-agent";
+import { createDomainAgentDiscordAdapter } from "@agents/discord/domain-agent-discord-adapter";
 import { DomainAgent } from "@agents/domain/domain-agent";
 import { createDiscordAccessPolicy } from "@modules/discord/domain/discord-access-policy";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
@@ -66,8 +67,8 @@ test("coordinates domain agent direct channel reply, owner memory update, and ev
 
   let calendarTools: readonly ToolRegistration[] = [];
   const agentFactory: AgentFactory = {
-    async create(definition, tools, options) {
-      if (definition.outputMode === "assistant_text") {
+    async create(_definition, tools, options) {
+      if (options.outputSink) {
         calendarTools = tools;
         return {
           async prompt(event) {
@@ -95,10 +96,9 @@ test("coordinates domain agent direct channel reply, owner memory update, and ev
               { callId: "evt-1" } as never,
               {} as never,
             );
-            return {
-              assistantText:
-                "カレンダーを確認し、14:00の緊急MTGをメモリに記録してコミュニケーションエージェントへ共有しました。",
-            };
+            await options.outputSink?.writeAssistantText(
+              "カレンダーを確認し、14:00の緊急MTGをメモリに記録してコミュニケーションエージェントへ共有しました。",
+            );
           },
           dispose() {},
         };
@@ -147,18 +147,25 @@ test("coordinates domain agent direct channel reply, owner memory update, and ev
     domainAgents: {
       calendar: {
         channelId: "calendar-channel",
-        createAgent: (eventRouter, sessionKey, handoffContext) =>
-          DomainAgent.create(agentFactory, {
+        createAgent: (eventRouter, sessionKey, handoffContext) => {
+          const discordAdapter = createDomainAgentDiscordAdapter(
+            discordService,
+            "calendar-channel",
+            OWNER_ID,
+          );
+          return DomainAgent.create(agentFactory, {
             agentId: "calendar",
             channelId: "calendar-channel",
-            discordService,
+            channelTools: discordAdapter.channelTools,
             eventRouter,
             handoffContext,
             ownerMemoryStore,
+            outputSink: discordAdapter.outputSink,
             ownerUserId: OWNER_ID,
             sessionKey,
             systemPrompt: "Calendar Agent Prompt",
-          }),
+          });
+        },
       },
     },
   });
@@ -172,7 +179,7 @@ test("coordinates domain agent direct channel reply, owner memory update, and ev
     // Wait for background dispatched event to communication agent to complete
     await taskCoordinator.waitForCompletion();
 
-    // 2. Domain agent's assistantText was sent directly to calendar-channel
+    // 2. Domain agent output was sent to calendar-channel through its sink
     assert.deepEqual(sentMessages, [
       {
         channelId: "calendar-channel",

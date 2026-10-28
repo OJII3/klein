@@ -13,6 +13,7 @@ import { VoiceChatCoordinator } from "./voice-chat-coordinator";
 import { DiscordAgent } from "@agents/discord/discord-agent";
 import { DomainAgent } from "@agents/domain/domain-agent";
 import type { AgentEventRouter } from "@agents/core/agent-event-router";
+import { createDomainAgentDiscordAdapter } from "@agents/discord/domain-agent-discord-adapter";
 import {
   createPiModelRuntime,
   resolveConfiguredModel,
@@ -220,19 +221,24 @@ export async function bootstrap(): Promise<void> {
       const domainPrompt = await loadPromptFile(resolve(domainConfig.promptFile));
       domainAgents[agentId] = {
         channelId: domainConfig.channelId,
-        createAgent: (eventRouter, sessionKey, handoffContext) =>
-          DomainAgent.create(piAgentFactory, {
+        createAgent: (eventRouter, sessionKey, handoffContext) => {
+          const discordAdapter = domainConfig.channelId
+            ? createDomainAgentDiscordAdapter(discordService, domainConfig.channelId, ownerUserId)
+            : undefined;
+          return DomainAgent.create(piAgentFactory, {
             agentId,
             channelId: domainConfig.channelId,
-            discordService,
+            channelTools: discordAdapter?.channelTools,
             eventRouter,
             handoffContext,
             ownerMemoryStore,
+            outputSink: discordAdapter?.outputSink,
             ownerUserId,
             reminderStore,
             sessionKey,
             systemPrompt: domainPrompt,
-          }),
+          });
+        },
       };
     }
   }
