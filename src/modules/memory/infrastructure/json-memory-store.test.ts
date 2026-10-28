@@ -13,7 +13,7 @@ test("applies memory operations to a JSON file", async () => {
   const store = new JsonMemoryStore(filePath);
 
   try {
-    await store.apply(
+    const addResult = await store.apply(
       [
         {
           content: "このギルドでは毎週金曜日に定例会を行う。",
@@ -27,10 +27,13 @@ test("applies memory operations to a JSON file", async () => {
 
     const added = (await store.read()).entries[0];
     assert.ok(added);
+    assert.deepEqual(addResult.created, [added]);
+    assert.deepEqual(addResult.updated, []);
+    assert.deepEqual(addResult.deleted, []);
     assert.equal(added.kind, "rule");
     assert.deepEqual(added.sourceMessageIds, ["message-1"]);
 
-    await store.apply(
+    const updateResult = await store.apply(
       [
         {
           content: "このギルドでは毎週土曜日に定例会を行う。",
@@ -45,12 +48,18 @@ test("applies memory operations to a JSON file", async () => {
 
     const updated = (await store.read()).entries[0];
     assert.ok(updated);
+    assert.deepEqual(updateResult.updated, [updated]);
+    assert.deepEqual(updateResult.created, []);
+    assert.deepEqual(updateResult.deleted, []);
     assert.equal(updated.content, "このギルドでは毎週土曜日に定例会を行う。");
     assert.equal(updated.kind, "decision");
     assert.deepEqual(updated.sourceMessageIds, ["message-1", "message-2"]);
 
-    await store.apply([{ id: updated.id, type: "delete" }], ["message-3"]);
+    const deleteResult = await store.apply([{ id: updated.id, type: "delete" }], ["message-3"]);
     assert.deepEqual((await store.read()).entries, []);
+    assert.deepEqual(deleteResult.created, []);
+    assert.deepEqual(deleteResult.updated, []);
+    assert.deepEqual(deleteResult.deleted, [updated]);
 
     const file = await readFile(filePath, "utf8");
     assert.deepEqual(JSON.parse(file), { entries: [] });

@@ -18,14 +18,19 @@ import {
   Title,
 } from "@mantine/core";
 
-import type { MemoryEntry, MemoryGuildSummary } from "../../api";
+import {
+  memoryScopeKey,
+  type MemoryEntry,
+  type MemoryScope,
+  type MemoryScopeSummary,
+} from "../../api";
 import { EmptyState, ErrorNotice, LoadingState } from "../../components/feedback";
 import { formatTimestamp } from "../../lib/format";
 
 interface MemoryViewProps {
   enabled: boolean;
-  guilds: MemoryGuildSummary[];
-  selectedGuildId: string | null;
+  scopes: MemoryScopeSummary[];
+  selectedScope: MemoryScope | null;
   entries: MemoryEntry[];
   loading: boolean;
   loadingDetail: boolean;
@@ -35,7 +40,7 @@ interface MemoryViewProps {
   deletingEntryId: string | null;
   addingRule: boolean;
   addRuleError: string | null;
-  onSelect: (guildId: string) => void;
+  onSelect: (scope: MemoryScope) => void;
   onDelete: (entryId: string) => void;
   onAddRule: (title: string, content: string) => void;
   onDismissDeleteError: () => void;
@@ -46,8 +51,8 @@ interface MemoryViewProps {
 export function MemoryView(props: MemoryViewProps) {
   const {
     enabled,
-    guilds,
-    selectedGuildId,
+    scopes,
+    selectedScope,
     entries,
     loading,
     loadingDetail,
@@ -70,65 +75,70 @@ export function MemoryView(props: MemoryViewProps) {
       <Group justify="space-between" align="end">
         <Stack gap={0}>
           <Text size="xs" c="teal">
-            PERSISTED GUILD CONTEXT
+            PERSISTED MEMORY CONTEXT
           </Text>
           <Title order={2} id="memory-heading">
             メモリ
           </Title>
         </Stack>
         <Text size="sm" c="dimmed">
-          {guilds.length.toLocaleString("ja-JP")} ギルド
+          {scopes.length.toLocaleString("ja-JP")} スコープ
         </Text>
       </Group>
       {error && <ErrorNotice message={error} onRetry={onRetry} />}
       {!error && !enabled ? (
         <EmptyState>メモリ機能が無効です</EmptyState>
-      ) : loading && guilds.length === 0 ? (
+      ) : loading && scopes.length === 0 ? (
         <LoadingState />
-      ) : guilds.length === 0 ? (
+      ) : scopes.length === 0 ? (
         <EmptyState>保存されたメモリがまだありません</EmptyState>
       ) : (
         <Grid>
           <Grid.Col span={{ base: 12, md: 4 }}>
             <Select
               hiddenFrom="md"
-              label="ギルド"
-              placeholder="ギルドを選択"
+              label="スコープ"
+              placeholder="スコープを選択"
               searchable
               maxDropdownHeight={300}
-              data={guilds.map((guild) => ({
-                value: guild.guildId,
-                label: `${guild.guildId} · ${guild.entryCount} 件`,
+              data={scopes.map((summary) => ({
+                value: memoryScopeKey(summary.scope),
+                label: `${scopeName(summary.scope)} · ${summary.entryCount} 件`,
               }))}
-              value={selectedGuildId}
-              onChange={(guildId) => {
-                if (guildId) onSelect(guildId);
+              value={selectedScope ? memoryScopeKey(selectedScope) : null}
+              onChange={(key) => {
+                const summary = scopes.find((item) => memoryScopeKey(item.scope) === key);
+                if (summary) onSelect(summary.scope);
               }}
             />
             <Paper visibleFrom="md" withBorder radius="md" p="xs">
               <ScrollArea.Autosize mah={360} type="auto">
-                <Stack gap="xs" role="list" aria-label="ギルドメモリ一覧">
-                  {guilds.map((guild) => {
-                    const selected = selectedGuildId === guild.guildId;
+                <Stack gap="xs" role="list" aria-label="メモリスコープ一覧">
+                  {scopes.map((summary) => {
+                    const selected =
+                      selectedScope !== null &&
+                      memoryScopeKey(selectedScope) === memoryScopeKey(summary.scope);
                     return (
                       <Card
-                        key={guild.guildId}
+                        key={memoryScopeKey(summary.scope)}
                         component="button"
                         withBorder
                         p="sm"
                         bg={selected ? "teal.9" : undefined}
-                        onClick={() => onSelect(guild.guildId)}
+                        onClick={() => onSelect(summary.scope)}
                       >
                         <Stack gap={4} w="100%" align="stretch">
                           <Group justify="space-between">
-                            <Badge variant="light">GUILD</Badge>
+                            <Badge variant="light">
+                              {summary.scope.type === "owner" ? "OWNER" : "GUILD"}
+                            </Badge>
                             <Text size="xs" c="dimmed">
-                              {guild.entryCount} 件
+                              {summary.entryCount} 件
                             </Text>
                           </Group>
-                          <Code>{guild.guildId}</Code>
+                          <Code>{scopeName(summary.scope)}</Code>
                           <Text size="xs" c="dimmed" ta="left">
-                            更新 {formatTimestamp(guild.updatedAt ?? undefined)}
+                            更新 {formatTimestamp(summary.updatedAt ?? undefined)}
                           </Text>
                         </Stack>
                       </Card>
@@ -150,18 +160,18 @@ export function MemoryView(props: MemoryViewProps) {
               {detailError && <ErrorNotice message={detailError} onRetry={onRetryDetail} />}
               {loadingDetail ? (
                 <LoadingState label="メモリを読み込み中…" />
-              ) : selectedGuildId ? (
+              ) : selectedScope ? (
                 <MemoryEntries
                   deletingEntryId={deletingEntryId}
                   entries={entries}
-                  guildId={selectedGuildId}
+                  scope={selectedScope}
                   onDelete={onDelete}
                   addingRule={addingRule}
                   addRuleError={addRuleError}
                   onAddRule={onAddRule}
                 />
               ) : (
-                <EmptyState>ギルドを選択してください</EmptyState>
+                <EmptyState>スコープを選択してください</EmptyState>
               )}
             </Stack>
           </Grid.Col>
@@ -174,7 +184,7 @@ export function MemoryView(props: MemoryViewProps) {
 function MemoryEntries({
   deletingEntryId,
   entries,
-  guildId,
+  scope,
   onDelete,
   addingRule,
   addRuleError,
@@ -182,7 +192,7 @@ function MemoryEntries({
 }: {
   deletingEntryId: string | null;
   entries: MemoryEntry[];
-  guildId: string;
+  scope: MemoryScope;
   onDelete: (entryId: string) => void;
   addingRule: boolean;
   addRuleError: string | null;
@@ -196,9 +206,9 @@ function MemoryEntries({
         <Group justify="space-between" mb="md">
           <Stack gap={0}>
             <Text size="xs" c="teal">
-              GUILD ID
+              {scope.type === "owner" ? "OWNER MEMORY" : "GUILD ID"}
             </Text>
-            <Code>{guildId}</Code>
+            <Code>{scopeName(scope)}</Code>
           </Stack>
           <Text size="sm" c="dimmed">
             {entries.length.toLocaleString("ja-JP")} 件
@@ -255,7 +265,7 @@ function MemoryEntries({
         </Accordion>
       </Paper>
       {entries.length === 0 ? (
-        <EmptyState>このギルドのメモリは空です</EmptyState>
+        <EmptyState>このスコープのメモリは空です</EmptyState>
       ) : (
         <ScrollArea.Autosize mah="70vh" type="auto">
           <Stack>
@@ -321,4 +331,8 @@ function MemoryEntries({
       )}
     </Stack>
   );
+}
+
+function scopeName(scope: MemoryScope): string {
+  return scope.type === "owner" ? "オーナー" : scope.guildId;
 }

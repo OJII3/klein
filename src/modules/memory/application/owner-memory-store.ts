@@ -1,19 +1,26 @@
 import {
   MemoryEntryNotFoundError,
+  type GuildMemoryEditor,
+  type GuildMemoryReader,
+  type MemoryApplyResult,
   type MemoryDocument,
-  type MemoryEditor,
   type MemoryEntry,
-  type MemoryGuildSummary,
   type MemoryKind,
   type MemoryOperation,
-  type MemoryReader,
+  type MemoryScope,
+  type MemoryScopeEditor,
+  type MemoryScopeReader,
+  type MemoryScopeSummary,
+  type MemoryStore,
 } from "../domain/memory";
-import { JsonMemoryStore } from "../infrastructure/json-memory-store";
 import { renderOwnerMemoryContext } from "../infrastructure/memory-context-renderer";
 import { selectMemoryEntries } from "./memory-context-selector";
 
-export const OWNER_MEMORY_GUILD_ID = "owner";
 const DEFAULT_RECENT_FALLBACK_LIMIT = 5;
+const MAX_OWNER_MEMORY_RULE_ENTRIES = 5;
+const MAX_OWNER_MEMORY_TEMPORARY_ENTRIES = 3;
+export const MAX_OWNER_MEMORY_CONTEXT_ENTRIES = 12;
+export const MAX_OWNER_MEMORY_CONTEXT_CHARACTERS = 8_000;
 
 export interface OwnerMemoryAddInput {
   readonly kind: MemoryKind;
@@ -31,12 +38,9 @@ export interface OwnerMemoryUpdateInput {
 }
 
 export class OwnerMemoryStore {
-  private readonly store: JsonMemoryStore;
   private operationQueue: Promise<void> = Promise.resolve();
 
-  constructor(filePath: string) {
-    this.store = new JsonMemoryStore(filePath);
-  }
+  constructor(private readonly store: MemoryStore) {}
 
   async read(): Promise<MemoryDocument> {
     return this.store.read();
@@ -45,7 +49,7 @@ export class OwnerMemoryStore {
   async apply(
     operations: readonly MemoryOperation[],
     sourceIds: readonly string[] = [],
-  ): Promise<void> {
+  ): Promise<MemoryApplyResult> {
     return this.runOperation(() => this.store.apply(operations, sourceIds));
   }
 
@@ -56,15 +60,11 @@ export class OwnerMemoryStore {
     if (!content) throw new Error("Owner memory content must not be empty");
 
     return this.runOperation(async () => {
-      const before = await this.store.read();
-      const beforeIds = new Set(before.entries.map((entry) => entry.id));
-      await this.store.apply(
+      const result = await this.store.apply(
         [{ type: "add", kind: input.kind, title, content }],
         input.sourceId ? [input.sourceId] : [],
       );
-      const after = await this.store.read();
-      const created =
-        after.entries.find((entry) => !beforeIds.has(entry.id)) ?? after.entries.at(-1);
+      const created = result.created[0];
       if (!created) throw new Error("Failed to create owner memory entry");
       return created;
     });
@@ -75,7 +75,7 @@ export class OwnerMemoryStore {
       const document = await this.store.read();
       const existing = document.entries.find((entry) => entry.id === input.id);
       if (!existing) {
-        throw new MemoryEntryNotFoundError(OWNER_MEMORY_GUILD_ID, input.id);
+        throw new MemoryEntryNotFoundError({ type: "owner" }, input.id);
       }
 
       const kind = input.kind ?? existing.kind;
@@ -84,12 +84,11 @@ export class OwnerMemoryStore {
       if (!title) throw new Error("Owner memory title must not be empty");
       if (!content) throw new Error("Owner memory content must not be empty");
 
-      await this.store.apply(
+      const result = await this.store.apply(
         [{ type: "update", id: input.id, kind, title, content }],
         input.sourceId ? [input.sourceId] : [],
       );
-      const after = await this.store.read();
-      const updated = after.entries.find((entry) => entry.id === input.id);
+      const updated = result.updated[0];
       if (!updated) throw new Error(`Failed to update owner memory entry: ${input.id}`);
       return updated;
     });
@@ -98,11 +97,9 @@ export class OwnerMemoryStore {
   async deleteEntry(id: string): Promise<boolean> {
     return this.runOperation(async () => {
       const document = await this.store.read();
-      if (!document.entries.some((entry) => entry.id === id)) {
-        return false;
-      }
-      await this.store.apply([{ type: "delete", id }], []);
-      return true;
+      if (!document.entries.some((entry) => entry.id === id)) return false;
+      const result = await this.store.apply([{ type: "delete", id }], []);
+      return result.deleted.length > 0;
     });
   }
 
@@ -131,74 +128,107 @@ export function selectOwnerMemoryEntries(
   query: string,
   recentFallbackLimit = DEFAULT_RECENT_FALLBACK_LIMIT,
 ): MemoryDocument {
-  const pinned = document.entries.filter(
-    (entry) => entry.kind === "rule" || entry.kind === "temporary",
-  );
+  const rules = mostRecentlyUpdated(
+    document.entries.filter((entry) => entry.kind === "rule"),
+  ).slice(0, MAX_OWNER_MEMORY_RULE_ENTRIES);
+  const temporary = mostRecentlyUpdated(
+    document.entries.filter((entry) => entry.kind === "temporary"),
+  ).slice(0, MAX_OWNER_MEMORY_TEMPORARY_ENTRIES);
+  const pinned = [...rules, ...temporary];
   const pinnedIds = new Set(pinned.map((entry) => entry.id));
-
-  const matched = selectMemoryEntries(document, query).entries.filter(
-    (entry) => !pinnedIds.has(entry.id),
+  const pinnedKindIds = new Set(
+    document.entries
+      .filter((entry) => entry.kind === "rule" || entry.kind === "temporary")
+      .map((entry) => entry.id),
   );
+
+  const matched = selectMemoryEntries(document, query, {
+    maxRelatedEntries: MAX_OWNER_MEMORY_CONTEXT_ENTRIES,
+  }).entries.filter((entry) => !pinnedKindIds.has(entry.id));
   const selectedIds = new Set([...pinnedIds, ...matched.map((entry) => entry.id)]);
 
   const recentFallback =
     matched.length >= recentFallbackLimit
       ? []
       : [...document.entries]
-          .filter((entry) => !selectedIds.has(entry.id))
+          .filter((entry) => !pinnedKindIds.has(entry.id) && !selectedIds.has(entry.id))
           .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
-          .slice(0, recentFallbackLimit - matched.length);
+          .slice(0, Math.max(0, recentFallbackLimit - matched.length));
 
-  return {
-    entries: [...pinned, ...matched, ...recentFallback],
-  };
+  const candidates = [...pinned, ...matched, ...recentFallback];
+  const entries: MemoryEntry[] = [];
+  for (const entry of candidates) {
+    if (entries.length >= MAX_OWNER_MEMORY_CONTEXT_ENTRIES) break;
+    const nextEntries = [...entries, entry];
+    if (
+      renderOwnerMemoryContext({ entries: nextEntries }, { includeIds: true }).length <=
+      MAX_OWNER_MEMORY_CONTEXT_CHARACTERS
+    ) {
+      entries.push(entry);
+    }
+  }
+
+  return { entries };
 }
 
 export function createWebUiMemoryAccessor(
-  ownerMemory: OwnerMemoryStore,
-  guildMemory?: MemoryReader & MemoryEditor,
-): MemoryReader & MemoryEditor {
+  ownerMemory?: OwnerMemoryStore,
+  guildMemory?: GuildMemoryReader & GuildMemoryEditor,
+): MemoryScopeReader & MemoryScopeEditor {
   return {
-    async listGuilds(): Promise<readonly MemoryGuildSummary[]> {
-      const ownerDoc = await ownerMemory.read();
-      const ownerSummary: MemoryGuildSummary = {
-        guildId: OWNER_MEMORY_GUILD_ID,
-        entryCount: ownerDoc.entries.length,
-        updatedAt: ownerDoc.entries.reduce<string | null>(
-          (latest, entry) =>
-            latest === null || entry.updatedAt > latest ? entry.updatedAt : latest,
-          null,
-        ),
-      };
-      const guildSummaries = guildMemory ? await guildMemory.listGuilds() : [];
-      return [
-        ownerSummary,
-        ...guildSummaries.filter((item) => item.guildId !== OWNER_MEMORY_GUILD_ID),
-      ];
+    async listScopes(): Promise<readonly MemoryScopeSummary[]> {
+      const ownerSummaries = ownerMemory
+        ? [createOwnerMemorySummary(await ownerMemory.read())]
+        : [];
+      const guildSummaries = guildMemory
+        ? (await guildMemory.listGuilds()).map((summary): MemoryScopeSummary => ({
+            entryCount: summary.entryCount,
+            scope: { guildId: summary.guildId, type: "guild" },
+            updatedAt: summary.updatedAt,
+          }))
+        : [];
+      return [...ownerSummaries, ...guildSummaries];
     },
-    async read(guildId: string): Promise<MemoryDocument> {
-      if (guildId === OWNER_MEMORY_GUILD_ID) {
-        return ownerMemory.read();
+    async read(scope: MemoryScope): Promise<MemoryDocument> {
+      if (scope.type === "owner") {
+        return ownerMemory ? ownerMemory.read() : { entries: [] };
       }
       if (!guildMemory) return { entries: [] };
-      return guildMemory.read(guildId);
+      return guildMemory.read(scope.guildId);
     },
-    async addRule(guildId: string, title: string, content: string): Promise<void> {
-      if (guildId === OWNER_MEMORY_GUILD_ID) {
+    async addRule(scope: MemoryScope, title: string, content: string): Promise<void> {
+      if (scope.type === "owner") {
+        if (!ownerMemory) throw new Error("Owner memory is disabled");
         await ownerMemory.addEntry({ kind: "rule", title, content, sourceId: "webui" });
         return;
       }
       if (!guildMemory) throw new Error("Guild memory is disabled");
-      await guildMemory.addRule(guildId, title, content);
+      await guildMemory.addRule(scope.guildId, title, content);
     },
-    async deleteEntry(guildId: string, entryId: string): Promise<void> {
-      if (guildId === OWNER_MEMORY_GUILD_ID) {
-        const deleted = await ownerMemory.deleteEntry(entryId);
-        if (!deleted) throw new MemoryEntryNotFoundError(OWNER_MEMORY_GUILD_ID, entryId);
+    async deleteEntry(scope: MemoryScope, entryId: string): Promise<void> {
+      if (scope.type === "owner") {
+        if (!ownerMemory || !(await ownerMemory.deleteEntry(entryId))) {
+          throw new MemoryEntryNotFoundError(scope, entryId);
+        }
         return;
       }
-      if (!guildMemory) throw new MemoryEntryNotFoundError(guildId, entryId);
-      await guildMemory.deleteEntry(guildId, entryId);
+      if (!guildMemory) throw new MemoryEntryNotFoundError(scope, entryId);
+      await guildMemory.deleteEntry(scope.guildId, entryId);
     },
   };
+}
+
+function createOwnerMemorySummary(document: MemoryDocument): MemoryScopeSummary {
+  return {
+    entryCount: document.entries.length,
+    scope: { type: "owner" },
+    updatedAt: document.entries.reduce<string | null>(
+      (latest, entry) => (latest === null || entry.updatedAt > latest ? entry.updatedAt : latest),
+      null,
+    ),
+  };
+}
+
+function mostRecentlyUpdated(entries: readonly MemoryEntry[]): MemoryEntry[] {
+  return [...entries].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
 }

@@ -75,19 +75,21 @@ export interface MemoryEntry {
   sourceMessageIds: string[];
 }
 
-export interface MemoryGuildSummary {
-  guildId: string;
+export type MemoryScope = { type: "owner" } | { type: "guild"; guildId: string };
+
+export interface MemoryScopeSummary {
+  scope: MemoryScope;
   entryCount: number;
   updatedAt: string | null;
 }
 
-export interface MemoryGuildsResponse {
+export interface MemoryScopesResponse {
   enabled: boolean;
-  items: MemoryGuildSummary[];
+  items: MemoryScopeSummary[];
 }
 
 export interface MemoryDetailResponse {
-  guildId: string;
+  scope: MemoryScope;
   entries: MemoryEntry[];
 }
 
@@ -145,21 +147,46 @@ export function getSession(
   );
 }
 
-export function listMemoryGuilds(): Promise<MemoryGuildsResponse> {
-  return unwrap<MemoryGuildsResponse>(client.api.memory.get());
+export function listMemoryScopes(): Promise<MemoryScopesResponse> {
+  return unwrap<MemoryScopesResponse>(client.api.memory.get());
 }
 
-export function getMemory(guildId: string): Promise<MemoryDetailResponse> {
-  return unwrap<MemoryDetailResponse>(client.api.memory({ guildId }).get());
+export function getMemory(scope: MemoryScope): Promise<MemoryDetailResponse> {
+  if (scope.type === "owner") {
+    return unwrap<MemoryDetailResponse>(client.api.memory.owner.get());
+  }
+  return unwrap<MemoryDetailResponse>(client.api.memory.guild({ guildId: scope.guildId }).get());
 }
 
-export function deleteMemory(guildId: string, entryId: string): Promise<{ deleted: boolean }> {
-  return unwrap<{ deleted: boolean }>(client.api.memory({ guildId })({ entryId }).delete());
+export function deleteMemory(scope: MemoryScope, entryId: string): Promise<{ deleted: boolean }> {
+  if (scope.type === "owner") {
+    return unwrap<{ deleted: boolean }>(client.api.memory.owner({ entryId }).delete());
+  }
+  return unwrap<{ deleted: boolean }>(
+    client.api.memory.guild({ guildId: scope.guildId })({ entryId }).delete(),
+  );
 }
 
 export function addMemoryRule(
-  guildId: string,
+  scope: MemoryScope,
   input: { title: string; content: string },
 ): Promise<{ created: boolean }> {
-  return unwrap<{ created: boolean }>(client.api.memory({ guildId }).rules.post(input));
+  if (scope.type === "owner") {
+    return unwrap<{ created: boolean }>(client.api.memory.owner.rules.post(input));
+  }
+  return unwrap<{ created: boolean }>(
+    client.api.memory.guild({ guildId: scope.guildId }).rules.post(input),
+  );
+}
+
+export function memoryScopeKey(scope: MemoryScope): string {
+  return scope.type === "owner" ? "owner" : `guild:${scope.guildId}`;
+}
+
+export function parseMemoryScopeKey(key: string | null): MemoryScope | null {
+  if (key === "owner") return { type: "owner" };
+  if (key?.startsWith("guild:") && key.length > "guild:".length) {
+    return { guildId: key.slice("guild:".length), type: "guild" };
+  }
+  return null;
 }
