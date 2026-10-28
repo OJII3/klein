@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 
-import { AgentCoordinator, type DomainAgentRegistration } from "./agent-coordinator";
+import { createAgentSystem, type DomainAgentRegistration } from "./agent-system";
 import { parseCliOptions } from "./cli-options";
 import { loadConfig } from "./config";
 import { createLogFilePath, createLogger, flushLogger } from "./logger";
@@ -12,6 +12,7 @@ import { TaskCoordinator } from "./task-coordinator";
 import { VoiceChatCoordinator } from "./voice-chat-coordinator";
 import { DiscordAgent } from "@agents/discord/discord-agent";
 import { DomainAgent } from "@agents/domain/domain-agent";
+import type { AgentEventRouter } from "@agents/core/agent-event-router";
 import {
   createPiModelRuntime,
   resolveConfiguredModel,
@@ -151,46 +152,6 @@ export async function bootstrap(): Promise<void> {
         permissions: config.permissions,
       })
     : piAgentFactory;
-  let discordService!: DiscordJsService;
-  let agentCoordinator!: AgentCoordinator;
-  const domainAgents: Record<string, DomainAgentRegistration> = {};
-  if (ownerUserId) {
-    for (const [agentId, domainConfig] of Object.entries(configuredDomainAgents)) {
-      const domainPrompt = await loadPromptFile(resolve(domainConfig.promptFile));
-      domainAgents[agentId] = {
-        channelId: domainConfig.channelId,
-        createAgent: (sessionKey, handoffContext) =>
-          DomainAgent.create(piAgentFactory, {
-            agentId,
-            channelId: domainConfig.channelId,
-            discordService,
-            eventRouter: agentCoordinator,
-            handoffContext,
-            ownerMemoryStore,
-            ownerUserId,
-            reminderStore,
-            sessionKey,
-            systemPrompt: domainPrompt,
-          }),
-      };
-    }
-  }
-  const createDiscordAgent = (
-    channelId: string,
-    sessionKey: string,
-    handoffContext?: string,
-    ownerFeaturesAllowed = false,
-  ) =>
-    DiscordAgent.create(piAgentFactory, discordService, channelId, systemPrompt, {
-      eventRouter: agentCoordinator,
-      handoffContext,
-      ownerFeaturesAllowed,
-      ownerMemoryStore,
-      ownerUserId,
-      reminderStore,
-      sessionKey,
-      tts,
-    });
   const voiceChatCoordinator =
     voiceSystemPrompt === undefined
       ? undefined
@@ -210,7 +171,7 @@ export async function bootstrap(): Promise<void> {
           reactionSelector,
           transcriptQueueSelector,
         });
-  discordService = new DiscordJsService(
+  const discordService = new DiscordJsService(
     token,
     discordAccessPolicy,
     logger,
@@ -250,11 +211,48 @@ export async function bootstrap(): Promise<void> {
         taskCoordinator,
       })
     : undefined;
-  agentCoordinator = new AgentCoordinator({
+  const domainAgents: Record<string, DomainAgentRegistration> = {};
+  if (ownerUserId) {
+    for (const [agentId, domainConfig] of Object.entries(configuredDomainAgents)) {
+      const domainPrompt = await loadPromptFile(resolve(domainConfig.promptFile));
+      domainAgents[agentId] = {
+        channelId: domainConfig.channelId,
+        createAgent: (eventRouter, sessionKey, handoffContext) =>
+          DomainAgent.create(piAgentFactory, {
+            agentId,
+            channelId: domainConfig.channelId,
+            discordService,
+            eventRouter,
+            handoffContext,
+            ownerMemoryStore,
+            ownerUserId,
+            reminderStore,
+            sessionKey,
+            systemPrompt: domainPrompt,
+          }),
+      };
+    }
+  }
+  const agentSystem = createAgentSystem({
     accessPolicy: discordAccessPolicy,
     communicationChannelId,
-    ownerUserId,
-    createDiscordAgent,
+    createDiscordAgent: (
+      eventRouter: AgentEventRouter,
+      channelId,
+      sessionKey,
+      handoffContext,
+      ownerFeaturesAllowed = false,
+    ) =>
+      DiscordAgent.create(piAgentFactory, discordService, channelId, systemPrompt, {
+        eventRouter,
+        handoffContext,
+        ownerFeaturesAllowed,
+        ownerMemoryStore,
+        ownerUserId,
+        reminderStore,
+        sessionKey,
+        tts,
+      }),
     domainAgents,
     channelSessionStateStore: piAgentFactory.channelSessionStateStore,
     channelRuleStore,
@@ -262,10 +260,12 @@ export async function bootstrap(): Promise<void> {
     logger,
     memoryCoordinator,
     ownerMemoryStore,
+    ownerUserId,
     operatingState: discordOperatingState,
     reminderStore,
     taskCoordinator,
   });
+  const { agentCoordinator, discordMessageIngress } = agentSystem;
   const usageProvider =
     config.llm.provider === "google-vertex"
       ? new VertexAiEstimatedUsageProvider(
@@ -359,13 +359,13 @@ export async function bootstrap(): Promise<void> {
         pendingMessages.push(message);
         return Promise.resolve();
       }
-      return agentCoordinator.handleDiscordMessage(message);
+      return discordMessageIngress.handleDiscordMessage(message);
     });
     await agentCoordinator.initialize();
     await piAgentFactory.resume();
     restoring = false;
     await Promise.all(
-      pendingMessages.map((message) => agentCoordinator.handleDiscordMessage(message)),
+      pendingMessages.map((message) => discordMessageIngress.handleDiscordMessage(message)),
     );
   } catch (error) {
     await shutdown("startup_failed");

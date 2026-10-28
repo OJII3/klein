@@ -11,6 +11,7 @@ import { PiDurableSessionStore } from "@runtime/pi/pi-durable-session-store";
 
 import type { AgentCreationOptions, AgentFactory } from "@agents/core/agent-factory";
 import type { AgentEvent } from "@agents/core/agent-event";
+import type { AgentEventRouter } from "@agents/core/agent-event-router";
 import { DiscordAgent } from "@agents/discord/discord-agent";
 import {
   createDiscordAccessPolicy,
@@ -20,7 +21,7 @@ import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import { DiscordOperatingState } from "@modules/discord/domain/discord-operating-state";
 import type { DiscordService } from "@modules/discord/ports/discord-service";
 import type { MemoryCoordinator } from "@modules/memory/application/memory-coordinator";
-import { AgentCoordinator } from "./agent-coordinator";
+import { createAgentSystem } from "./agent-system";
 import {
   type ChannelSessionStateStore,
   getChannelRotationDate,
@@ -65,7 +66,7 @@ function createHarness(store: ChannelSessionStateStore, channelRule: { access: D
       return message;
     },
   } as unknown as DiscordService;
-  const coordinator = new AgentCoordinator({
+  const agentSystem = createAgentSystem({
     accessPolicy: createDiscordAccessPolicy(
       {
         default: "deny",
@@ -76,8 +77,15 @@ function createHarness(store: ChannelSessionStateStore, channelRule: { access: D
     ),
     ownerUserId: ownerId,
     channelSessionStateStore: store,
-    createDiscordAgent: (channelId, sessionKey, handoffContext, ownerFeaturesAllowed) =>
+    createDiscordAgent: (
+      eventRouter: AgentEventRouter,
+      channelId,
+      sessionKey,
+      handoffContext,
+      ownerFeaturesAllowed,
+    ) =>
       DiscordAgent.create(factory, service, channelId, "system prompt", {
+        eventRouter,
         sessionKey,
         handoffContext,
         ownerFeaturesAllowed,
@@ -97,7 +105,8 @@ function createHarness(store: ChannelSessionStateStore, channelRule: { access: D
     taskCoordinator: new TaskCoordinator(),
   });
   return {
-    coordinator,
+    coordinator: agentSystem.agentCoordinator,
+    ingress: agentSystem.discordMessageIngress,
     creations,
     prompts,
     remembered,
@@ -112,17 +121,17 @@ test("only owner messages create private sessions and never enter shared memory"
   const store = new PiDurableSessionStore(session, storage).channelStates;
   const harness = createHarness(store, { access: "owner" });
   try {
-    await harness.coordinator.handleDiscordMessage({
+    await harness.ingress.handleDiscordMessage({
       ...message,
       author: { ...message.author, id: "other" },
     });
-    await harness.coordinator.handleDiscordMessage({
+    await harness.ingress.handleDiscordMessage({
       ...message,
       author: { ...message.author, bot: true },
     });
     assert.equal(harness.creations.length, 0);
     assert.equal(harness.remembered.length, 0);
-    await harness.coordinator.handleDiscordMessage(message);
+    await harness.ingress.handleDiscordMessage(message);
     assert.equal(harness.creations[0].sessionKey, "discord-channel:channel:owner:123");
     assert.equal(harness.creations[0].ownerFeaturesAllowed, true);
     assert.equal(harness.remembered.length, 0);
@@ -141,11 +150,11 @@ test("changing owner access to allow drops private history and handoff on restar
   const privateHarness = createHarness(store, { access: "owner" });
   const publicHarness = createHarness(store, { access: "allow" });
   try {
-    await privateHarness.coordinator.handleDiscordMessage(message);
+    await privateHarness.ingress.handleDiscordMessage(message);
     await privateHarness.coordinator.dispose();
     const state = await store.getOrCreate("channel", getChannelRotationDate(Date.now()));
     await store.save({ ...state, handoffContext: "secret Obsidian note" });
-    await publicHarness.coordinator.handleDiscordMessage({
+    await publicHarness.ingress.handleDiscordMessage({
       ...message,
       author: { ...message.author, id: "other" },
     });
@@ -169,7 +178,7 @@ test("owner access changes replace cached agents and preserve private session sc
   const rule: { access: DiscordAccess } = { access: "owner" };
   const harness = createHarness(store, rule);
   try {
-    await harness.coordinator.handleDiscordMessage(message);
+    await harness.ingress.handleDiscordMessage(message);
     const oldState = await store.getOrCreate("channel", getChannelRotationDate(Date.now()));
     await store.save({
       ...oldState,
@@ -184,10 +193,10 @@ test("owner access changes replace cached agents and preserve private session sc
       const rotated = await store.getOrCreate("channel", getChannelRotationDate(Date.now()));
       assert.match(rotated.sessionKey, /^discord-channel:channel:owner:123:rotation:/);
       assert.equal(resumed.creations[0].ownerFeaturesAllowed, true);
-      await resumed.coordinator.handleDiscordMessage(message);
+      await resumed.ingress.handleDiscordMessage(message);
       const disposedBeforeSwitch = resumed.disposed();
       rule.access = "allow";
-      await resumed.coordinator.handleDiscordMessage(message);
+      await resumed.ingress.handleDiscordMessage(message);
       assert.equal(resumed.disposed(), disposedBeforeSwitch + 1);
       assert.equal(resumed.creations.at(-1)?.sessionKey, "discord-channel:channel:public");
       assert.equal(resumed.creations.at(-1)?.initialContext, undefined);
