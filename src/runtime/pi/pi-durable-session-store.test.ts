@@ -97,7 +97,7 @@ test("keeps Discord and agent conversations separate when their IDs match", asyn
   }
 });
 
-test("restores legacy domain-agent state and its Pi conversation history", async () => {
+test("does not restore state written in the removed channel-state format", async () => {
   type LegacyChannelState = {
     channelId: string;
     accessScope: string | null;
@@ -129,27 +129,21 @@ test("restores legacy domain-agent state and its Pi conversation history", async
     handoffContext: "Continue the calendar conversation",
   };
   try {
-    const conversationId = await session.commit(async (tx) => {
+    await session.commit(async (tx) => {
       const conversation = await tx.createConversation({ ownership: { kind: "ownerless" } });
       await store.registerConversation(tx, oldSessionKey, conversation.id);
       Object.assign(await tx.doc(LegacyChannelStates, oldStorageKey, oldState), oldState);
-      return conversation.id;
     }, BACKGROUND_CONTEXT);
 
     const conversationKey = { kind: "agent", agentId: "calendar" } as const;
-    const restored = await store.channelStates.getOrCreate(conversationKey, "2099-01-01");
-    assert.deepEqual(restored, {
+    assert.deepEqual(await store.channelStates.getOrCreate(conversationKey, "2099-01-01"), {
       conversationKey,
-      accessScope: "owner:123",
       sessionKey: "agent:calendar",
-      lastActivityAt: 123,
-      lastRotationDate: "2026-10-25",
-      hasActivitySinceRotation: false,
-      handoffContext: "Continue the calendar conversation",
+      lastActivityAt: null,
+      lastRotationDate: "2099-01-01",
+      hasActivitySinceRotation: true,
     });
-    assert.deepEqual(await store.channelStates.list(), [restored]);
-    assert.deepEqual(await store.getConversationIds("agent:calendar"), [conversationId]);
-    assert.deepEqual(await store.getConversationIds(oldSessionKey), []);
+    assert.deepEqual(await store.channelStates.list(), []);
   } finally {
     await session.close(BACKGROUND_CONTEXT);
     await rm(directory, { recursive: true, force: true });

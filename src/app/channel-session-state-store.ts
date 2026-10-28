@@ -73,5 +73,4 @@ export interface ChannelSessionStateStore {
   getOrCreate(conversationKey: ConversationKey, rotationDate: string): Promise<ChannelSessionState>;
   list(): Promise<readonly ChannelSessionState[]>;
   save(state: ChannelSessionState): Promise<void>;
-  migrate?(previous: ChannelSessionState, next: ChannelSessionState): Promise<void>;
 }

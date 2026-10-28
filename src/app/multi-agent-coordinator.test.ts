@@ -4,9 +4,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import pino from "pino";
-import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import { createSession } from "@earendil-works/pi-durable";
-import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import type { ToolRegistration } from "@earendil-works/pi-durable";
 
 import type { AgentEvent } from "@agents/core/agent-event";
@@ -22,7 +19,6 @@ import { OwnerMemoryStore } from "@modules/memory/application/owner-memory-store
 import { AgentCoordinator } from "./agent-coordinator";
 import { buildAgentTopology } from "./agent-topology";
 import { TaskCoordinator } from "./task-coordinator";
-import { PiDurableSessionStore } from "@runtime/pi/pi-durable-session-store";
 
 const OWNER_ID = "123456789012345678";
 const COMMUNICATION_CHANNEL_ID = "123456789012345679";
@@ -46,9 +42,6 @@ function createOwnerMessage(channelId: string, id: string, content: string): Dis
 
 test("coordinates domain agent direct channel reply, owner memory update, and event routing to communication agent", async () => {
   const tempDir = await mkdtemp(join(tmpdir(), "klein-multi-agent-"));
-  const storage = await openNodeSqliteStorage(join(tempDir, "sessions.sqlite"));
-  const session = createSession(storage);
-  const durableStore = new PiDurableSessionStore(session, storage);
   const ownerMemoryStore = new OwnerMemoryStore(join(tempDir, "owner-memory", "MEMORY.json"));
   const taskCoordinator = new TaskCoordinator();
   const sentMessages: Array<{ channelId: string; text: string }> = [];
@@ -133,27 +126,12 @@ test("coordinates domain agent direct channel reply, owner memory update, and ev
     discord: { userId: OWNER_ID, communicationChannelId: COMMUNICATION_CHANNEL_ID },
     agents: { calendar: { channelId: CALENDAR_CHANNEL_ID, promptFile: "./calendar.md" } },
   });
-  const previousSessionKey = `discord-channel:${CALENDAR_CHANNEL_ID}:owner:${OWNER_ID}`;
-  const previousConversationId = await session.commit(async (tx) => {
-    const conversation = await tx.createConversation({ ownership: { kind: "ownerless" } });
-    await durableStore.registerConversation(tx, previousSessionKey, conversation.id);
-    return conversation.id;
-  }, BACKGROUND_CONTEXT);
-  await durableStore.channelStates.save({
-    conversationKey: { kind: "discord", channelId: CALENDAR_CHANNEL_ID },
-    accessScope: `owner:${OWNER_ID}`,
-    sessionKey: previousSessionKey,
-    lastActivityAt: null,
-    lastRotationDate: "2026-10-14",
-    hasActivitySinceRotation: false,
-  });
 
   let coordinator!: AgentCoordinator;
   coordinator = new AgentCoordinator({
     accessPolicy,
     topology,
     ownerUserId: OWNER_ID,
-    channelSessionStateStore: durableStore.channelStates,
     ownerMemoryStore,
     discordService,
     logger: pino({ level: "silent" }),
@@ -193,12 +171,6 @@ test("coordinates domain agent direct channel reply, owner memory update, and ev
   });
 
   try {
-    await coordinator.initialize();
-    assert.deepEqual(await durableStore.getConversationIds("agent:calendar"), [
-      previousConversationId,
-    ]);
-    assert.deepEqual(await durableStore.getConversationIds(previousSessionKey), []);
-
     // 1. Owner sends a message to the calendar domain agent channel
     await coordinator.handleDiscordMessage(
       createOwnerMessage(CALENDAR_CHANNEL_ID, "msg-cal-1", "今日の予定をチェックして"),
@@ -239,7 +211,6 @@ test("coordinates domain agent direct channel reply, owner memory update, and ev
     assert.equal(calendarEvents[1]?.id, "event-to-calendar");
   } finally {
     await coordinator.dispose();
-    await session.close(BACKGROUND_CONTEXT);
     await rm(tempDir, { recursive: true, force: true });
   }
 });
