@@ -283,7 +283,7 @@ test("writes assistant text to its output sink and preserves assistant messages"
       },
       [],
       {
-        sessionKey: "domain-agent:calendar",
+        sessionKey: "agent:calendar",
         outputSink: {
           writeAssistantText(text) {
             deliveredText.push(text);

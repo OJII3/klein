@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import { createSession } from "@earendil-works/pi-durable";
+import { createSession, defineDocFamily } from "@earendil-works/pi-durable";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { PiDurableSessionStore } from "./pi-durable-session-store";
 
@@ -29,9 +29,10 @@ test("persists opaque session keys and Discord state across SQLite reopening", a
         }, BACKGROUND_CONTEXT),
       ),
     );
-    const initial = await opened.store.channelStates.getOrCreate("42", "2026-10-25");
+    const conversationKey = { kind: "discord", channelId: "42" } as const;
+    const initial = await opened.store.channelStates.getOrCreate(conversationKey, "2026-10-25");
     assert.deepEqual(initial, {
-      channelId: "42",
+      conversationKey,
       sessionKey: "discord-channel:42",
       lastActivityAt: null,
       lastRotationDate: "2026-10-25",
@@ -54,12 +55,97 @@ test("persists opaque session keys and Discord state across SQLite reopening", a
       Object.fromEntries(keys.map((key, position) => [key, [ids[position]]])),
     );
     assert.deepEqual(await opened.store.getConversationIds("unknown:42"), []);
-    assert.deepEqual(await opened.store.channelStates.getOrCreate("42", "2099-01-01"), state);
+    assert.deepEqual(
+      await opened.store.channelStates.getOrCreate(conversationKey, "2099-01-01"),
+      state,
+    );
     assert.deepEqual(await opened.store.channelStates.list(), [state]);
     await opened.store.channelStates.save(initial);
-    assert.deepEqual(await opened.store.channelStates.getOrCreate("42", "2099-01-01"), initial);
+    assert.deepEqual(
+      await opened.store.channelStates.getOrCreate(conversationKey, "2099-01-01"),
+      initial,
+    );
   } finally {
     await opened.session.close(BACKGROUND_CONTEXT);
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("keeps Discord and agent conversations separate when their IDs match", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "klein-durable-key-types-"));
+  const { session, store } = await openStore(join(directory, "state.sqlite"));
+  try {
+    const discordKey = { kind: "discord", channelId: "calendar" } as const;
+    const agentKey = { kind: "agent", agentId: "calendar" } as const;
+    const discordState = await store.channelStates.getOrCreate(discordKey, "2026-10-25");
+    const agentState = await store.channelStates.getOrCreate(agentKey, "2026-10-25");
+    await Promise.all([
+      store.channelStates.save(discordState),
+      store.channelStates.save(agentState),
+    ]);
+
+    assert.notEqual(discordState.sessionKey, agentState.sessionKey);
+    assert.deepEqual(
+      (await store.channelStates.list())
+        .map((state) => state.conversationKey)
+        .sort((left, right) => left.kind.localeCompare(right.kind)),
+      [agentKey, discordKey],
+    );
+  } finally {
+    await session.close(BACKGROUND_CONTEXT);
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("does not restore state written in the removed channel-state format", async () => {
+  type LegacyChannelState = {
+    channelId: string;
+    accessScope: string | null;
+    sessionKey: string;
+    lastActivityAt: number | null;
+    lastRotationDate: string;
+    hasActivitySinceRotation: boolean;
+    handoffContext: string | null;
+  };
+  const LegacyChannelStates = defineDocFamily<LegacyChannelState, LegacyChannelState>({
+    kind: "klein.discord-channel-state",
+    version: 1,
+    scope: "session",
+    family: true,
+    checkpointWhen: () => false,
+    initial: (state) => state,
+  });
+  const directory = await mkdtemp(join(tmpdir(), "klein-durable-legacy-agent-"));
+  const { session, store } = await openStore(join(directory, "state.sqlite"));
+  const oldStorageKey = "domain-agent:calendar";
+  const oldSessionKey = "discord-channel:domain-agent:calendar:owner:123";
+  const oldState: LegacyChannelState = {
+    channelId: oldStorageKey,
+    accessScope: "owner:123",
+    sessionKey: oldSessionKey,
+    lastActivityAt: 123,
+    lastRotationDate: "2026-10-25",
+    hasActivitySinceRotation: false,
+    handoffContext: "Continue the calendar conversation",
+  };
+  try {
+    await session.commit(async (tx) => {
+      const conversation = await tx.createConversation({ ownership: { kind: "ownerless" } });
+      await store.registerConversation(tx, oldSessionKey, conversation.id);
+      Object.assign(await tx.doc(LegacyChannelStates, oldStorageKey, oldState), oldState);
+    }, BACKGROUND_CONTEXT);
+
+    const conversationKey = { kind: "agent", agentId: "calendar" } as const;
+    assert.deepEqual(await store.channelStates.getOrCreate(conversationKey, "2099-01-01"), {
+      conversationKey,
+      sessionKey: "agent:calendar",
+      lastActivityAt: null,
+      lastRotationDate: "2099-01-01",
+      hasActivitySinceRotation: true,
+    });
+    assert.deepEqual(await store.channelStates.list(), []);
+  } finally {
+    await session.close(BACKGROUND_CONTEXT);
     await rm(directory, { recursive: true, force: true });
   }
 });
