@@ -106,6 +106,37 @@ export class ChannelSessionManager {
     return current;
   }
 
+  async runTurn(
+    conversationKey: ConversationKey,
+    accessScope: string,
+    turn: (agent: ChannelAgent, state: ChannelSessionState) => Promise<void>,
+  ): Promise<void> {
+    const now = Date.now();
+    let state: ChannelSessionState | undefined;
+
+    try {
+      state = await this.ensureConversationState(conversationKey, now, accessScope);
+      state = await this.rotateConversationIfDue(conversationKey, state, now);
+      const agent = await this.getAgent(conversationKey, state);
+      state = {
+        ...state,
+        handoffContext: undefined,
+        hasActivitySinceRotation: true,
+        lastActivityAt: now,
+      };
+      await this.saveConversationState(state);
+      await turn(agent, state);
+    } finally {
+      if (state) {
+        await this.saveConversationState({
+          ...state,
+          hasActivitySinceRotation: true,
+          lastActivityAt: Date.now(),
+        });
+      }
+    }
+  }
+
   async rotateIdleChannels(): Promise<void> {
     if (this.rotationCheckRunning) return;
     this.rotationCheckRunning = true;
@@ -134,7 +165,7 @@ export class ChannelSessionManager {
     this.agentSessionKeys.clear();
   }
 
-  async getConversationState(
+  async ensureConversationState(
     conversationKey: ConversationKey,
     now: number,
     accessScope?: string,
@@ -304,7 +335,7 @@ export class ChannelSessionManager {
           const key = serializeConversationKey(conversationKey);
           const latestInboundAt = this.latestInboundAt.get(key);
           if (latestInboundAt && now - latestInboundAt < CHANNEL_ROTATION_IDLE_MS) return;
-          const state = await this.getConversationState(conversationKey, now);
+          const state = await this.ensureConversationState(conversationKey, now);
           await this.rotateConversationIfDue(conversationKey, state, now);
         } catch (error) {
           this.dependencies.logger.warn(

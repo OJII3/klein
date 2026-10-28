@@ -14,11 +14,7 @@ import type { OwnerMemoryStore } from "@modules/memory/application/owner-memory-
 import type { DiscordChannelRuleStore } from "@modules/discord/ports/discord-channel-rule-store";
 import type { ReminderStore } from "@modules/reminders/ports/reminder-store";
 import type { TaskCoordinator } from "./task-coordinator";
-import type {
-  ChannelSessionState,
-  ChannelSessionStateStore,
-  ConversationKey,
-} from "./channel-session-state-store";
+import type { ChannelSessionStateStore, ConversationKey } from "./channel-session-state-store";
 import { COMMUNICATION_AGENT_ID, type AgentTopology } from "./agent-topology";
 import { ChannelSessionManager } from "./channel-session-manager";
 import { ReminderDeliveryCoordinator } from "./reminder-delivery-coordinator";
@@ -168,45 +164,26 @@ export class AgentCoordinator implements AgentEventRouter {
 
     await this.sessionManager.runForConversation(conversationKey, async () => {
       if (!this.dependencies.operatingState.isActive()) return;
-      const now = Date.now();
       const accessScope = `owner:${this.dependencies.ownerUserId}`;
-      let channelState: ChannelSessionState | undefined;
 
       try {
-        channelState = await this.sessionManager.getConversationState(
-          conversationKey,
-          now,
-          accessScope,
-        );
-        channelState = await this.sessionManager.rotateConversationIfDue(
-          conversationKey,
-          channelState,
-          now,
-        );
-        const agent = await this.sessionManager.getAgent(conversationKey, channelState);
-        channelState = {
-          ...channelState,
-          handoffContext: undefined,
-          hasActivitySinceRotation: true,
-          lastActivityAt: now,
-        };
-        await this.sessionManager.saveConversationState(channelState);
-
-        const ownerMemory = await this.dependencies.ownerMemoryStore?.getContext(
-          buildEventMemoryQuery(event),
-        );
-        await agent.promptEvent(event, { ownerMemory });
-        this.logger.info(
-          {
-            conversationKey,
-            event: "agent_event_delivered",
-            eventId: event.id,
-            eventType: event.type,
-            source: event.source,
-            targetAgentId,
-          },
-          "Delivered inter-agent event",
-        );
+        await this.sessionManager.runTurn(conversationKey, accessScope, async (agent) => {
+          const ownerMemory = await this.dependencies.ownerMemoryStore?.getContext(
+            buildEventMemoryQuery(event),
+          );
+          await agent.promptEvent(event, { ownerMemory });
+          this.logger.info(
+            {
+              conversationKey,
+              event: "agent_event_delivered",
+              eventId: event.id,
+              eventType: event.type,
+              source: event.source,
+              targetAgentId,
+            },
+            "Delivered inter-agent event",
+          );
+        });
       } catch (error) {
         this.logger.error(
           {
@@ -219,21 +196,6 @@ export class AgentCoordinator implements AgentEventRouter {
           },
           "Failed to deliver inter-agent event",
         );
-      } finally {
-        if (channelState) {
-          try {
-            await this.sessionManager.saveConversationState({
-              ...channelState,
-              hasActivitySinceRotation: true,
-              lastActivityAt: Date.now(),
-            });
-          } catch (error) {
-            this.logger.error(
-              { err: error, event: "channel_session_state_save_failed" },
-              "Failed to save channel session state after agent event",
-            );
-          }
-        }
       }
     });
   }
@@ -288,60 +250,38 @@ export class AgentCoordinator implements AgentEventRouter {
     });
     const startedAt = Date.now();
     logger.debug({ event: "discord_message_processing_started" }, "Processing Discord message");
-    let channelState: ChannelSessionState | undefined;
-
     try {
-      const now = Date.now();
-      channelState = await this.sessionManager.getConversationState(
-        conversationKey,
-        now,
-        accessScope,
-      );
-      channelState = await this.sessionManager.rotateConversationIfDue(
-        conversationKey,
-        channelState,
-        now,
-      );
-      const agent = await this.sessionManager.getAgent(conversationKey, channelState);
-      if (channelState.handoffContext) {
-        channelState = { ...channelState, handoffContext: undefined };
-      }
-      channelState = {
-        ...channelState,
-        hasActivitySinceRotation: true,
-        lastActivityAt: now,
-      };
-      await this.sessionManager.saveConversationState(channelState);
-
-      const query = buildMemoryQuery(message);
-      const guildMemory = message.guildId
-        ? await this.dependencies.memoryCoordinator?.getContext(message.guildId, query)
-        : undefined;
-      const channelRule = message.guildId
-        ? await this.dependencies.channelRuleStore?.get(message.guildId, message.channelId)
-        : undefined;
-      const ownerMemory = ownerFeaturesAllowed
-        ? await this.dependencies.ownerMemoryStore?.getContext(query)
-        : undefined;
-      const turn = createDiscordMessageAgentTurn(
-        message,
-        { ownerMemory, guildMemory, channelRule },
-        {
-          botMessageGuidance: isDomainChannel ? undefined : BOT_MESSAGE_GUIDANCE,
-          ownerValidation:
-            ownerFeaturesAllowed && this.dependencies.ownerUserId
-              ? { userId: this.dependencies.ownerUserId, channelId: message.channelId }
-              : undefined,
-        },
-      );
-      await agent.prompt(turn);
-      logger.debug(
-        {
-          durationMs: Date.now() - startedAt,
-          event: "discord_message_processed",
-        },
-        "Processed Discord message",
-      );
+      await this.sessionManager.runTurn(conversationKey, accessScope, async (agent) => {
+        const query = buildMemoryQuery(message);
+        const guildMemory = message.guildId
+          ? await this.dependencies.memoryCoordinator?.getContext(message.guildId, query)
+          : undefined;
+        const channelRule = message.guildId
+          ? await this.dependencies.channelRuleStore?.get(message.guildId, message.channelId)
+          : undefined;
+        const ownerMemory = ownerFeaturesAllowed
+          ? await this.dependencies.ownerMemoryStore?.getContext(query)
+          : undefined;
+        const turn = createDiscordMessageAgentTurn(
+          message,
+          { ownerMemory, guildMemory, channelRule },
+          {
+            botMessageGuidance: isDomainChannel ? undefined : BOT_MESSAGE_GUIDANCE,
+            ownerValidation:
+              ownerFeaturesAllowed && this.dependencies.ownerUserId
+                ? { userId: this.dependencies.ownerUserId, channelId: message.channelId }
+                : undefined,
+          },
+        );
+        await agent.prompt(turn);
+        logger.debug(
+          {
+            durationMs: Date.now() - startedAt,
+            event: "discord_message_processed",
+          },
+          "Processed Discord message",
+        );
+      });
     } catch (error) {
       logger.error(
         {
@@ -356,20 +296,6 @@ export class AgentCoordinator implements AgentEventRouter {
         "ごめん、今はうまく返答できないみたい。",
       );
     } finally {
-      if (channelState) {
-        try {
-          await this.sessionManager.saveConversationState({
-            ...channelState,
-            hasActivitySinceRotation: true,
-            lastActivityAt: Date.now(),
-          });
-        } catch (error) {
-          logger.error(
-            { err: error, event: "channel_session_state_save_failed" },
-            "Failed to save Discord channel session state",
-          );
-        }
-      }
       if (!ownerFeaturesAllowed) this.dependencies.memoryCoordinator?.enqueue(message);
     }
   }
