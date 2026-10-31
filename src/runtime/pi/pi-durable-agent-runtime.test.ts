@@ -15,7 +15,7 @@ import {
 } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-durable";
 import { Type } from "typebox";
-import { ModelRuntime } from "@earendil-works/pi-coding-agent";
+import { ModelRuntime, SessionManager } from "@earendil-works/pi-coding-agent";
 
 import { createPiDurableAgentFactory } from "./pi-durable-agent-runtime";
 import type { AgentRuntime } from "@agents/core/agent-runtime";
@@ -90,6 +90,83 @@ test("provides web tools and summarizes a durable conversation for handoff", asy
     assert.doesNotMatch(summaryPrompt, /Acknowledged/);
     runtime.dispose();
   } finally {
+    await factory.close();
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+    await rm(agentDir, { force: true, recursive: true });
+  }
+});
+
+test("resumes durable history without importing legacy Pi sessions", async () => {
+  const agentDir = await mkdtemp(join(tmpdir(), "klein-durable-legacy-session-"));
+  const legacyAgentDir = join(agentDir, "legacy");
+  const durableAgentDir = join(agentDir, "durable");
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  const provider = fauxProvider({ tokensPerSecond: 100_000 });
+  const model = provider.getModel();
+  const modelRuntime = await ModelRuntime.create({
+    credentials: new InMemoryCredentialStore(),
+    modelsPath: null,
+    refreshOnCreate: false,
+  });
+  modelRuntime.registerNativeProvider(provider.provider);
+  const sessionKey = "discord-channel:legacy-session";
+  const legacySessionDir = join(legacyAgentDir, "sessions", encodeURIComponent(sessionKey));
+  const legacy = SessionManager.create(process.cwd(), legacySessionDir);
+  legacy.appendMessage({ role: "user", content: "Legacy-only history", timestamp: 10 });
+  legacy.appendMessage(fauxAssistantMessage("Legacy-only response"));
+  const options = {
+    agentDir: durableAgentDir,
+    configDir: legacyAgentDir,
+    modelRuntime,
+    sessionMode: "resume" as const,
+    llm: { provider: model.provider, model: model.id },
+    logger: pino({ level: "silent" }),
+  };
+  let factory = createPiDurableAgentFactory(options);
+  let runtime: AgentRuntime | undefined;
+
+  try {
+    runtime = await factory.create({ systemPrompt: "Test" }, [], { sessionKey });
+    const firstRequests: TranscriptContext[] = [];
+    provider.setResponses([
+      (context) => {
+        firstRequests.push(context);
+        return fauxAssistantMessage("Durable-only response");
+      },
+    ]);
+    await runtime.prompt({
+      id: "durable-only-event",
+      type: "chat.message",
+      source: "test",
+      occurredAt: "2026-10-29T12:00:00.000Z",
+      content: [{ type: "text", text: "Durable-only history" }],
+    });
+    assert.doesNotMatch(JSON.stringify(firstRequests), /Legacy-only history/);
+    runtime.dispose();
+    runtime = undefined;
+    await factory.close();
+
+    factory = createPiDurableAgentFactory(options);
+    runtime = await factory.create({ systemPrompt: "Test" }, [], { sessionKey });
+    const resumedRequests: TranscriptContext[] = [];
+    provider.setResponses([
+      (context) => {
+        resumedRequests.push(context);
+        return fauxAssistantMessage("Resumed response");
+      },
+    ]);
+    await runtime.prompt({
+      id: "resume-durable-event",
+      type: "chat.message",
+      source: "test",
+      occurredAt: "2026-10-29T12:01:00.000Z",
+      content: [{ type: "text", text: "Continue durable history" }],
+    });
+    assert.match(JSON.stringify(resumedRequests), /Durable-only history/);
+    assert.doesNotMatch(JSON.stringify(resumedRequests), /Legacy-only history/);
+  } finally {
+    runtime?.dispose();
     await factory.close();
     if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
     else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
