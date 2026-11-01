@@ -20,8 +20,13 @@ import {
 } from "@modules/discord/domain/discord-access-policy";
 import { DiscordOperatingState } from "@modules/discord/domain/discord-operating-state";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
-import type { Reminder } from "@modules/reminders/domain/reminder";
-import type { ReminderStore } from "@modules/reminders/ports/reminder-store";
+import type {
+  ReminderTask,
+  ScheduledTask,
+  WatchTask,
+} from "@modules/scheduling/domain/scheduled-task";
+import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
+import type { WatchCheckRunner } from "@modules/scheduling/application/watch-check-runner";
 import { TaskCoordinator } from "./task-coordinator";
 import { AgentCoordinator, type AgentCoordinatorDependencies } from "./agent-coordinator";
 import { buildAgentTopology } from "./agent-topology";
@@ -36,11 +41,16 @@ interface TestHarness {
 
 function createHarness(
   createGate?: Promise<void>,
-  reminderStore?: ReminderStore,
+  scheduledTaskStore?: ScheduledTaskStore,
   options: Pick<
     AgentCoordinatorDependencies,
     "channelSessionStateStore" | "accessPolicy" | "ownerUserId"
   > = {},
+  watchCheckRunner: WatchCheckRunner = {
+    async run() {
+      throw new Error("Unexpected watch check");
+    },
+  },
 ): TestHarness {
   const createdSessionKeys: string[] = [];
   const prompts = new Map<string, AgentEvent[]>();
@@ -97,7 +107,8 @@ function createHarness(
       channelApi,
       logger: pino({ level: "silent" }),
       operatingState: new DiscordOperatingState(),
-      reminderStore,
+      scheduledTaskStore,
+      watchCheckRunner,
       taskCoordinator: new TaskCoordinator(),
     }),
     createdSessionKeys,
@@ -336,21 +347,32 @@ test("does not create duplicate agents while a channel agent is initializing", a
   }
 });
 
-function createReminderStore(initial: Reminder) {
-  let stored: Reminder | undefined = initial;
-  const store: ReminderStore = {
-    async create(reminder) {
-      stored = reminder;
+function createScheduledTaskStore(initial: ScheduledTask) {
+  let stored: ScheduledTask | undefined = initial;
+  const store = {
+    async create(task: ScheduledTask) {
+      stored = task;
     },
-    async listForScope(channelId, accessScope) {
-      return stored?.channelId === channelId && stored.accessScope === accessScope ? [stored] : [];
+    async listForScope(kind: ScheduledTask["kind"], channelId: string, accessScope: string) {
+      return stored &&
+        stored.kind === kind &&
+        stored.channelId === channelId &&
+        stored.accessScope === accessScope
+        ? [stored]
+        : [];
     },
-    async listDue(now) {
-      return stored && Date.parse(stored.dueAt) <= now ? [stored] : [];
+    async listDue(now: number) {
+      return stored && Date.parse(stored.nextRunAt) <= now ? [stored] : [];
     },
-    async delete(channelId, accessScope, reminderId) {
+    async delete(
+      kind: ScheduledTask["kind"],
+      channelId: string,
+      accessScope: string,
+      taskId: string,
+    ) {
       if (
-        stored?.id !== reminderId ||
+        stored?.id !== taskId ||
+        stored.kind !== kind ||
         stored.channelId !== channelId ||
         stored.accessScope !== accessScope
       )
@@ -358,20 +380,39 @@ function createReminderStore(initial: Reminder) {
       stored = undefined;
       return true;
     },
-    async updateDueAt(reminder, dueAt) {
-      stored = { ...reminder, dueAt };
+    async update(task: ScheduledTask) {
+      stored = task;
     },
-  };
+  } as unknown as ScheduledTaskStore;
   return { store, getStored: () => stored };
 }
 
-const dueReminder: Reminder = {
+const dueReminder: ReminderTask = {
+  kind: "reminder",
   id: "reminder-1",
   channelId: "test-channel",
   accessScope: "public",
   message: "定例会が始まります",
   createdAt: "2026-10-14T00:00:00.000Z",
-  dueAt: "2026-10-14T00:01:00.000Z",
+  schedule: { type: "once", at: "2026-10-14T00:01:00.000Z" },
+  nextRunAt: "2026-10-14T00:01:00.000Z",
+};
+
+const dueWatch: WatchTask = {
+  kind: "watch",
+  id: "watch-1",
+  channelId: "test-channel",
+  accessScope: "owner:123",
+  name: "在庫監視",
+  command: "check-stock",
+  args: [],
+  condition: "change",
+  message: "在庫の変化を確認してください。",
+  cooldownMinutes: 0,
+  consecutiveFailures: 0,
+  createdAt: "2026-10-14T00:00:00.000Z",
+  schedule: { type: "every", minutes: 5 },
+  nextRunAt: "2026-10-14T00:05:00.000Z",
 };
 
 test("delivers reminders to the current rotated session and reuses it for conversation", async () => {
@@ -388,14 +429,14 @@ test("delivers reminders to the current rotated session and reuses it for conver
     lastRotationDate: "2026-10-14",
     hasActivitySinceRotation: false,
   });
-  const reminders = createReminderStore(dueReminder);
+  const reminders = createScheduledTaskStore(dueReminder);
   const harness = createHarness(undefined, reminders.store, {
     channelSessionStateStore,
     accessPolicy: createDiscordAccessPolicy({ default: "allow", directMessages: "allow" }),
   });
 
   try {
-    await harness.agentCoordinator.deliverDueReminders(Date.parse("2026-10-14T00:02:00.000Z"));
+    await harness.agentCoordinator.deliverDueTasks(Date.parse("2026-10-14T00:02:00.000Z"));
     assert.deepEqual(harness.createdSessionKeys, [sessionKey]);
     assert.equal(reminders.getStored(), undefined);
     const events = harness.prompts.get(sessionKey.slice("discord-channel:".length));
@@ -432,13 +473,13 @@ test("rotates an idle session before delivering a reminder into the new conversa
     lastRotationDate: "2000-01-01",
     hasActivitySinceRotation: true,
   });
-  const reminders = createReminderStore(dueReminder);
+  const reminders = createScheduledTaskStore(dueReminder);
   const harness = createHarness(undefined, reminders.store, {
     channelSessionStateStore,
     accessPolicy: createDiscordAccessPolicy({ default: "allow", directMessages: "allow" }),
   });
   try {
-    await harness.agentCoordinator.deliverDueReminders(Date.parse("2026-10-14T00:02:00.000Z"));
+    await harness.agentCoordinator.deliverDueTasks(Date.parse("2026-10-14T00:02:00.000Z"));
     assert.deepEqual(harness.createdSessionKeys, [oldKey, newKey]);
     assert.deepEqual(harness.prompts.get(oldKey.slice("discord-channel:".length)), []);
     assert.equal(
@@ -460,13 +501,13 @@ test("rotates an idle session before delivering a reminder into the new conversa
 });
 
 test("delivers reminders through an already active channel agent", async () => {
-  const reminders = createReminderStore(dueReminder);
+  const reminders = createScheduledTaskStore(dueReminder);
   const harness = createHarness(undefined, reminders.store);
   try {
     await harness.agentCoordinator.handleDiscordMessage(
       createMessage("test-channel", "first", "こんにちは"),
     );
-    await harness.agentCoordinator.deliverDueReminders(Date.parse("2026-10-14T00:02:00.000Z"));
+    await harness.agentCoordinator.deliverDueTasks(Date.parse("2026-10-14T00:02:00.000Z"));
     assert.deepEqual(harness.createdSessionKeys, ["discord-channel:test-channel"]);
     assert.deepEqual(
       harness.prompts.get("test-channel")?.map((event) => event.type),
@@ -488,20 +529,20 @@ for (const { scope, access, owner, delivered } of [
   { scope: "owner:123", access: "owner", owner: "456", delivered: false },
   { scope: "owner:123", access: "owner", owner: undefined, delivered: false },
 ] satisfies Array<{
-  scope: Reminder["accessScope"];
+  scope: ReminderTask["accessScope"];
   access: DiscordAccess;
   owner: string | undefined;
   delivered: boolean;
 }>) {
   test(`rechecks reminder scope ${scope} against ${access} with owner ${owner}`, async () => {
     const reminder = { ...dueReminder, accessScope: scope };
-    const reminders = createReminderStore(reminder);
+    const reminders = createScheduledTaskStore(reminder);
     const harness = createHarness(undefined, reminders.store, {
       ownerUserId: owner,
       accessPolicy: createDiscordAccessPolicy({ default: access, directMessages: "deny" }, owner),
     });
     try {
-      await harness.agentCoordinator.deliverDueReminders(Date.parse("2026-10-14T00:02:00.000Z"));
+      await harness.agentCoordinator.deliverDueTasks(Date.parse("2026-10-14T00:02:00.000Z"));
       assert.equal(harness.createdSessionKeys.length, delivered ? 1 : 0);
       assert.equal(reminders.getStored() === undefined, delivered);
       if (delivered) {
@@ -515,19 +556,142 @@ for (const { scope, access, owner, delivered } of [
 }
 
 test("advances a recurring reminder without changing its stable ownership", async () => {
-  const reminder: Reminder = { ...dueReminder, repeat: "daily", time: "09:00" };
-  const reminders = createReminderStore(reminder);
+  const reminder: ReminderTask = {
+    ...dueReminder,
+    schedule: { type: "daily", time: "09:00" },
+  };
+  const reminders = createScheduledTaskStore(reminder);
   const harness = createHarness(undefined, reminders.store);
   try {
     const before = Date.now();
-    await harness.agentCoordinator.deliverDueReminders(Date.parse("2026-10-14T00:02:00.000Z"));
+    await harness.agentCoordinator.deliverDueTasks(Date.parse("2026-10-14T00:02:00.000Z"));
     const stored = reminders.getStored();
     assert.ok(stored);
     assert.equal(stored.channelId, reminder.channelId);
     assert.equal(stored.accessScope, reminder.accessScope);
-    assert.ok(Date.parse(stored.dueAt) > before);
+    assert.ok(Date.parse(stored.nextRunAt) > before);
     assert.equal("sessionKey" in stored, false);
   } finally {
     await harness.agentCoordinator.dispose();
   }
 });
+
+test("delivers a watch only when its output changes", async () => {
+  let output = "one";
+  const runner: WatchCheckRunner = {
+    async run() {
+      return { output, exitCode: 0, durationMs: 1 };
+    },
+  };
+  const watches = createScheduledTaskStore({ ...dueWatch });
+  const harness = createHarness(
+    undefined,
+    watches.store,
+    {
+      accessPolicy: createDiscordAccessPolicy({ default: "owner", directMessages: "deny" }, "123"),
+      ownerUserId: "123",
+    },
+    runner,
+  );
+  try {
+    await harness.agentCoordinator.deliverDueTasks(Date.now());
+    const baseline = watches.getStored();
+    assert.ok(baseline?.kind === "watch");
+    assert.ok(baseline.lastOutputHash);
+    assert.equal(harness.prompts.size, 0);
+
+    output = "two";
+    await harness.agentCoordinator.deliverDueTasks(Date.parse(baseline.nextRunAt));
+    const first = watches.getStored();
+    assert.ok(first?.kind === "watch");
+    assert.ok(first.lastTriggeredAt);
+    const events = harness.prompts.get("test-channel:owner:123");
+    assert.equal(events?.length, 1);
+    assert.equal(events?.[0].type, "watch.triggered");
+    assert.equal(events?.[0].source, "watch");
+    assert.match(eventText(events?.[0]), /two/u);
+
+    await harness.agentCoordinator.deliverDueTasks(Date.parse(first.nextRunAt));
+    assert.equal(harness.prompts.get("test-channel:owner:123")?.length, 1);
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+test("suppresses watch events during cooldown and retries after it expires", async () => {
+  const lastTriggeredAt = new Date(Date.now() - 30 * 60_000).toISOString();
+  const runner: WatchCheckRunner = {
+    async run() {
+      return { output: "new", exitCode: 0, durationMs: 1 };
+    },
+  };
+  const watches = createScheduledTaskStore({
+    ...dueWatch,
+    cooldownMinutes: 60,
+    lastOutputHash: "old-hash",
+    lastTriggeredAt,
+  });
+  const harness = createHarness(
+    undefined,
+    watches.store,
+    {
+      accessPolicy: createDiscordAccessPolicy({ default: "owner", directMessages: "deny" }, "123"),
+      ownerUserId: "123",
+    },
+    runner,
+  );
+  try {
+    await harness.agentCoordinator.deliverDueTasks(Date.now());
+    const suppressed = watches.getStored();
+    assert.ok(suppressed?.kind === "watch");
+    assert.equal(suppressed.lastOutputHash, "old-hash");
+    assert.equal(suppressed.lastTriggeredAt, lastTriggeredAt);
+    assert.equal(harness.prompts.size, 0);
+
+    await harness.agentCoordinator.deliverDueTasks(Date.now() + 31 * 60_000);
+    assert.equal(harness.prompts.get("test-channel:owner:123")?.length, 1);
+    const delivered = watches.getStored();
+    assert.ok(delivered?.kind === "watch");
+    assert.notEqual(delivered.lastOutputHash, "old-hash");
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+test("records watch check failures without notifying the agent", async () => {
+  const runner: WatchCheckRunner = {
+    async run() {
+      throw new Error("check failed");
+    },
+  };
+  const watches = createScheduledTaskStore({ ...dueWatch });
+  const harness = createHarness(
+    undefined,
+    watches.store,
+    {
+      accessPolicy: createDiscordAccessPolicy({ default: "owner", directMessages: "deny" }, "123"),
+      ownerUserId: "123",
+    },
+    runner,
+  );
+  try {
+    await harness.agentCoordinator.deliverDueTasks(Date.now());
+    const stored = watches.getStored();
+    assert.ok(stored?.kind === "watch");
+    assert.equal(stored.lastStatus, "error");
+    assert.match(stored.lastError ?? "", /check failed/u);
+    assert.equal(stored.consecutiveFailures, 1);
+    assert.equal(harness.prompts.size, 0);
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+function eventText(event: AgentEvent | undefined): string {
+  return (
+    event?.content
+      .filter((block) => block.type === "text")
+      .map((block) => block.text)
+      .join("\n\n") ?? ""
+  );
+}

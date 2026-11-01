@@ -138,6 +138,11 @@ test("coordinates domain agent direct channel reply, owner memory update, and ev
     logger: pino({ level: "silent" }),
     operatingState: new DiscordOperatingState(),
     taskCoordinator,
+    watchCheckRunner: {
+      async run() {
+        throw new Error("Unexpected watch check");
+      },
+    },
     createDiscordAgent: (channelId, sessionKey, handoffContext, ownerFeaturesAllowed = false) =>
       DiscordAgent.create(agentFactory, channelId, "Communication SOUL", {
         handoffContext,

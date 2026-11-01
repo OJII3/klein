@@ -49,12 +49,13 @@ import { startWebUi } from "@modules/webui/infrastructure/elysia-webui-app";
 import { PinoJsonlReader } from "@modules/webui/infrastructure/pino-jsonl-reader";
 import { Sbv2Tts } from "@modules/tts/infrastructure/sbv2-tts";
 import { WebSocketAsrClient } from "@modules/asr/infrastructure/websocket-asr-client";
-import { FileReminderStore } from "@modules/reminders/infrastructure/file-reminder-store";
+import { FileScheduledTaskStore } from "@modules/scheduling/infrastructure/file-scheduled-task-store";
+import { ProcessWatchCheckRunner } from "@modules/scheduling/application/watch-check-runner";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 
 const DISCORD_USAGE_STATUS_REFRESH_INTERVAL_MS = 60 * 60 * 1_000;
 const CHANNEL_CONTEXT_ROTATION_CHECK_INTERVAL_MS = 60 * 1_000;
-const REMINDER_CHECK_INTERVAL_MS = 10 * 1_000;
+const SCHEDULED_TASK_CHECK_INTERVAL_MS = 10 * 1_000;
 
 export async function bootstrap(): Promise<void> {
   const { sessionMode } = parseCliOptions(process.argv.slice(2));
@@ -95,7 +96,8 @@ export async function bootstrap(): Promise<void> {
   const taskCoordinator = new TaskCoordinator();
   const tts = config.features.tts?.enabled ? new Sbv2Tts(config.features.tts.serverUrl) : undefined;
   const agentDir = resolve(config.runtime.agentDir);
-  const reminderStore = new FileReminderStore(resolve(agentDir, "reminders"));
+  const scheduledTaskStore = new FileScheduledTaskStore(resolve(agentDir, "schedules"));
+  const watchCheckRunner = new ProcessWatchCheckRunner();
   const channelRuleStore = new FileDiscordChannelRuleStore(resolve(agentDir, "channel-rules"));
   const ownerMemoryStore = ownerUserId
     ? new OwnerMemoryStore(
@@ -179,7 +181,7 @@ export async function bootstrap(): Promise<void> {
             ownerFeaturesAllowed,
             ownerMemoryStore,
             ownerUserId,
-            reminderStore,
+            scheduledTaskStore,
             tts,
           },
           analyzeImage,
@@ -277,7 +279,7 @@ export async function bootstrap(): Promise<void> {
               eventRouter: agentCoordinator,
               ownerMemoryStore,
               ownerUserId,
-              reminderStore,
+              scheduledTaskStore,
             },
             analyzeImage,
           ),
@@ -290,7 +292,8 @@ export async function bootstrap(): Promise<void> {
     memoryCoordinator,
     ownerMemoryStore,
     operatingState: discordOperatingState,
-    reminderStore,
+    scheduledTaskStore,
+    watchCheckRunner,
     taskCoordinator,
   });
   const usageProvider =
@@ -338,7 +341,7 @@ export async function bootstrap(): Promise<void> {
 
   let usageStatusInterval: ReturnType<typeof setInterval> | undefined;
   let contextRotationInterval: ReturnType<typeof setInterval> | undefined;
-  let reminderCheckInterval: ReturnType<typeof setInterval> | undefined;
+  let scheduledTaskCheckInterval: ReturnType<typeof setInterval> | undefined;
   let shuttingDown = false;
   const shutdown = async (signal: string): Promise<void> => {
     if (shuttingDown) return;
@@ -353,9 +356,9 @@ export async function bootstrap(): Promise<void> {
       clearInterval(contextRotationInterval);
       contextRotationInterval = undefined;
     }
-    if (reminderCheckInterval) {
-      clearInterval(reminderCheckInterval);
-      reminderCheckInterval = undefined;
+    if (scheduledTaskCheckInterval) {
+      clearInterval(scheduledTaskCheckInterval);
+      scheduledTaskCheckInterval = undefined;
     }
     await webUi?.stop();
     discordService.stopAccepting();
@@ -411,10 +414,10 @@ export async function bootstrap(): Promise<void> {
     runChannelContextRotationCheck,
     CHANNEL_CONTEXT_ROTATION_CHECK_INTERVAL_MS,
   );
-  void agentCoordinator.deliverDueReminders();
-  reminderCheckInterval = setInterval(() => {
-    void agentCoordinator.deliverDueReminders();
-  }, REMINDER_CHECK_INTERVAL_MS);
+  void agentCoordinator.deliverDueTasks();
+  scheduledTaskCheckInterval = setInterval(() => {
+    void agentCoordinator.deliverDueTasks();
+  }, SCHEDULED_TASK_CHECK_INTERVAL_MS);
   await updateDiscordUsageStatus();
   usageStatusInterval = setInterval(() => {
     void updateDiscordUsageStatus();

@@ -92,17 +92,37 @@ Set `"profile"` in `config/config.jsonc` to switch profiles (defaults to `"klein
 
 When `features.memory.enabled` is true, Klein periodically extracts durable guild facts and notes from recent conversations into `.runtime/memory/{guildId}/MEMORY.json` using an optional background model.
 
-### Reminders
+### Scheduling
 
-Reminders belong to a Discord channel (or thread) and its access scope: `public` or
-`owner:<userId>`. They remain available to list and delete after conversation sessions
-rotate. Notifications enter the current conversation session, and delivery checks the
-current channel access rules and owner ID. Reminders whose scope is no longer allowed
-remain stored without being delivered.
+Reminders and watches share one schedule store under `<runtime.agentDir>/schedules`.
+Each scheduled item belongs to a Discord channel (or thread) and remains available to
+list and delete after conversation sessions rotate. Delivery rechecks the current channel
+access rules and owner ID; items whose scope is no longer allowed stay stored without
+being delivered.
 
-Reminder files under `<runtime.agentDir>/reminders` use this ownership model.
-Legacy records containing `sessionKey` or `ownerFeaturesAllowed` are rejected;
-the application does not migrate them at startup.
+- **Reminders** deliver a fixed message once or repeatedly (`every` minutes, daily, or
+  weekly). They belong to `public` or `owner:<userId>` scope.
+- **Watches** run an executable on a recurring schedule and wake the agent only when the
+  output changes. The first successful check establishes the baseline; unchanged output
+  stays silent. `condition: "output"` can be used instead to notify whenever stdout is
+  non-empty. Watch tools are exposed only in owner sessions and always use owner scope.
+
+The watch executable is started directly with `command` and `args` (no shell). If a shell
+is needed, invoke it explicitly. Checks have a 30-second timeout and a 64 KiB output limit.
+Check failures are recorded in `watch_list` and do not wake the agent.
+
+Schedule files use the new unified format. The application does not read the old
+`<runtime.agentDir>/reminders` directory. To migrate it manually, run the dry run first,
+then apply:
+
+```sh
+bun run migrate:schedules
+bun run migrate:schedules -- --apply
+```
+
+The migration script leaves the old directory in place and skips IDs that already exist
+in the new store. Use `--overwrite` to replace existing IDs, or `--agent-dir <path>` to
+target a different runtime directory.
 
 ### Remote MCP Tools
 
@@ -185,17 +205,17 @@ and images. The event ID and full timestamp stay internal. Discord preserves its
 original posting time, author and reply text, conversation guidance, memory,
 and channel rules. Voice transcripts use their receipt time.
 
-New producers can use the same runtime interface for reminders, MCP notifications,
-and messages from other agents. Discord Pi sessions provide deferred
-`reminder_add`, `reminder_list`, and `reminder_delete` tools. Reminders can run
-once after a duration (minimum one minute), once at the next occurrence of a
-time or at a specific date and time, or repeatedly at a JST time every day or
-on selected weekdays. They are stored
-under the Pi agent directory and delivered to the session that created them;
-overdue repeating reminders fire once after a restart and then resume their
-schedule. MCP notification subscriptions are not implemented yet. Tool
-permissions are fixed when the agent is created and apply to every event it
-processes, including reminders and MCP notifications.
+New producers can use the same runtime interface for reminders, watches, MCP
+notifications, and messages from other agents. Discord Pi sessions provide deferred
+`reminder_add`, `reminder_list`, `reminder_delete`, `watch_add`, `watch_list`, and
+`watch_delete` tools. Reminders can run once after a duration (minimum one minute),
+once at the next occurrence of a time or at a specific date and time, or repeatedly
+every N minutes, every day, or on selected weekdays in JST. Watches run a command on a
+recurring schedule and emit `watch.triggered` only when the output changes. Scheduled
+items are delivered to the session that created them; overdue repeating items fire once
+after a restart and then resume their schedule. MCP notification subscriptions are not
+implemented yet. Tool permissions are fixed when the agent is created and apply to every
+event it processes, including reminders, watches, and MCP notifications.
 `prompt(event)` and `steer(event)` need no per-input permission options.
 Owner-only tools require an owner-enabled session established by trusted
 application access checks; event content cannot grant owner access.

@@ -2,10 +2,11 @@ import type { ToolRegistration } from "@earendil-works/pi-durable";
 
 import type { AgentEventRouter } from "../core/agent-event-router";
 import type { OwnerMemoryStore } from "@modules/memory/application/owner-memory-store";
-import type { ReminderStore } from "@modules/reminders/ports/reminder-store";
+import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
 import { createReminderTools } from "../discord/tools/reminder";
 import { createAgentSendEventTool } from "../tools/agent-send-event";
 import { createOwnerMemoryTools } from "../tools/owner-memory";
+import { createWatchTools } from "../tools/watch";
 import type { DomainAgentImageAnalyzer } from "./domain-agent";
 
 export interface DomainAgentToolsOptions {
@@ -13,7 +14,7 @@ export interface DomainAgentToolsOptions {
   readonly ownerUserId: string;
   readonly channelId?: string;
   readonly channelTools?: (analyzeImage: DomainAgentImageAnalyzer) => readonly ToolRegistration[];
-  readonly reminderStore?: ReminderStore;
+  readonly scheduledTaskStore?: ScheduledTaskStore;
   readonly ownerMemoryStore?: OwnerMemoryStore;
   readonly eventRouter?: AgentEventRouter;
 }
@@ -28,12 +29,15 @@ export function createDomainAgentTools(
 ): readonly ToolRegistration[] {
   return [
     ...(options.channelTools?.(analyzeImage) ?? []),
-    ...(options.reminderStore && options.channelId
+    ...(options.scheduledTaskStore && options.channelId
       ? createReminderTools(
-          options.reminderStore,
+          options.scheduledTaskStore,
           options.channelId,
           `owner:${options.ownerUserId}`,
         )
+      : []),
+    ...(options.scheduledTaskStore && options.channelId
+      ? createWatchTools(options.scheduledTaskStore, options.channelId, options.ownerUserId)
       : []),
     ...(options.ownerMemoryStore
       ? createOwnerMemoryTools(options.ownerMemoryStore, `agent:${options.agentId}`)
