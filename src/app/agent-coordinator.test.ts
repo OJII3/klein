@@ -613,6 +613,28 @@ test("delivers a watch only when its output changes", async () => {
   }
 });
 
+test("delivers a public watch without an access policy", async () => {
+  const runner: WatchCheckRunner = {
+    async run() {
+      return { output: "hello", exitCode: 0, durationMs: 1 };
+    },
+  };
+  const watches = createScheduledTaskStore({
+    ...dueWatch,
+    accessScope: "public",
+    condition: "output",
+  });
+  const harness = createHarness(undefined, watches.store, {}, runner);
+  try {
+    await harness.agentCoordinator.deliverDueTasks(Date.now());
+    const events = harness.prompts.get("test-channel");
+    assert.equal(events?.[0].type, "watch.triggered");
+    assert.match(eventText(events?.[0]), /hello/u);
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
 test("suppresses watch events during cooldown and retries after it expires", async () => {
   const lastTriggeredAt = new Date(Date.now() - 30 * 60_000).toISOString();
   const runner: WatchCheckRunner = {

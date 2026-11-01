@@ -36,6 +36,9 @@ export function createDiscordAgentTools(
   analyzeImage: DiscordImageAnalysis,
 ): readonly ToolRegistration[] {
   const ownerFeaturesAllowed = options.ownerFeaturesAllowed && !!options.ownerUserId;
+  const accessScope = ownerFeaturesAllowed
+    ? ownerAccessScope(options.ownerUserId!)
+    : PUBLIC_ACCESS_SCOPE;
   return [
     createDiscordReadTool(
       options.channelApi,
@@ -50,14 +53,10 @@ export function createDiscordAgentTools(
       ? [createDiscordVoiceTool(options.channelApi, options.channelId, options.tts)]
       : []),
     ...(options.scheduledTaskStore
-      ? createReminderTools(
-          options.scheduledTaskStore,
-          options.channelId,
-          ownerFeaturesAllowed ? ownerAccessScope(options.ownerUserId!) : PUBLIC_ACCESS_SCOPE,
-        )
+      ? createReminderTools(options.scheduledTaskStore, options.channelId, accessScope)
       : []),
-    ...(options.scheduledTaskStore && ownerFeaturesAllowed
-      ? createWatchTools(options.scheduledTaskStore, options.channelId, options.ownerUserId!)
+    ...(options.scheduledTaskStore
+      ? createWatchTools(options.scheduledTaskStore, options.channelId, accessScope)
       : []),
     ...(ownerFeaturesAllowed && options.ownerMemoryStore
       ? createOwnerMemoryTools(options.ownerMemoryStore, `communication:${options.channelId}`)

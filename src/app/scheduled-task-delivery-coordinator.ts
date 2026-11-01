@@ -100,7 +100,7 @@ export class ScheduledTaskDeliveryCoordinator {
   private async isAllowed(task: ScheduledTask): Promise<boolean> {
     const accessPolicy = this.dependencies.accessPolicy;
     if (!accessPolicy) {
-      return task.kind === "reminder" && task.accessScope === PUBLIC_ACCESS_SCOPE;
+      return task.accessScope === PUBLIC_ACCESS_SCOPE;
     }
 
     const location = await this.dependencies.channelApi.getChannelLocation(task.channelId);
