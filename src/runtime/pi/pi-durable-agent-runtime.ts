@@ -19,7 +19,6 @@ import {
   type EntryRecord,
   type Extension,
   type Harness as DurableHarness,
-  type SettledSubmissionRecord,
   type ToolRegistration,
 } from "@earendil-works/pi-durable";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
@@ -32,7 +31,7 @@ import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import type { AgentDefinition } from "@agents/core/agent-definition";
 import type { AgentFactory, AgentCreationOptions } from "@agents/core/agent-factory";
 import type { AgentEvent } from "@agents/core/agent-event";
-import type { AgentOutputSink, AgentPrompt, AgentRuntime } from "@agents/core/agent-runtime";
+import type { AgentPrompt, AgentRuntime } from "@agents/core/agent-runtime";
 import { createPiEventPrompt } from "./pi-event-prompt";
 import { PiImageAnalyzer, type ImageAnalyzer } from "./pi-image-analyzer";
 import { loadMcpTools, type McpServerConnection } from "./pi-durable-mcp";
@@ -422,7 +421,6 @@ export function createPiDurableAgentFactory({
         eventStream,
         options.initialContext,
         webAccess.dispose,
-        options.outputSink,
       );
     },
     async close() {
@@ -594,7 +592,6 @@ export class PiDurableAgentRuntime implements AgentRuntime {
     private readonly eventStream?: Awaited<ReturnType<typeof watchEvents>>,
     private pendingInitialContext?: string,
     private readonly onDispose?: () => void,
-    private readonly outputSink?: AgentOutputSink,
   ) {}
 
   async prompt(event: AgentEvent): Promise<void> {
@@ -611,9 +608,8 @@ export class PiDurableAgentRuntime implements AgentRuntime {
       },
       BACKGROUND_CONTEXT,
     );
-    const settled = await submission.wait(BACKGROUND_CONTEXT);
+    await submission.wait(BACKGROUND_CONTEXT);
     this.pendingInitialContext = undefined;
-    await this.writeSettledOutput(conversation, settled);
   }
 
   async steer(event: AgentEvent): Promise<void> {
@@ -630,9 +626,8 @@ export class PiDurableAgentRuntime implements AgentRuntime {
       },
       BACKGROUND_CONTEXT,
     );
-    const settled = await submission.wait(BACKGROUND_CONTEXT);
+    await submission.wait(BACKGROUND_CONTEXT);
     this.pendingInitialContext = undefined;
-    await this.writeSettledOutput(conversation, settled);
   }
 
   async abort(): Promise<void> {
@@ -656,17 +651,6 @@ export class PiDurableAgentRuntime implements AgentRuntime {
     this.closed = true;
     this.onDispose?.();
     void this.eventStream?.stop();
-  }
-
-  private async writeSettledOutput(
-    conversation: Conversation,
-    settled: SettledSubmissionRecord,
-  ): Promise<void> {
-    if (settled.type !== "input" || settled.status !== "done") return;
-    const entry = await conversation.commit((tx) => tx.entry(settled.answer), BACKGROUND_CONTEXT);
-    const content = entry?.model?.[0]?.content;
-    const assistantText = Array.isArray(content) ? extractTextContent(content) : undefined;
-    if (assistantText) await this.outputSink?.writeAssistantText(assistantText);
   }
 
   private async getConversation() {

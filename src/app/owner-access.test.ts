@@ -26,7 +26,6 @@ import {
   getChannelRotationDate,
 } from "./channel-session-state-store";
 import { TaskCoordinator } from "./task-coordinator";
-import { buildAgentTopology } from "./agent-topology";
 
 const ownerId = "123";
 const message: DiscordMessage = {
@@ -67,7 +66,6 @@ function createHarness(store: ChannelSessionStateStore, channelRule: { access: D
     },
   } as unknown as DiscordChannelApi;
   const coordinator = new AgentCoordinator({
-    topology: buildAgentTopology(undefined),
     accessPolicy: createDiscordAccessPolicy(
       {
         default: "deny",
@@ -86,9 +84,6 @@ function createHarness(store: ChannelSessionStateStore, channelRule: { access: D
         ownerUserId: ownerId,
         tools: () => [],
       }),
-    createDomainAgent: async (agentId) => {
-      throw new Error(`Unexpected domain agent: ${agentId}`);
-    },
     channelApi: service,
     memoryCoordinator: {
       async getContext() {

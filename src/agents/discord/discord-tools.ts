@@ -1,11 +1,9 @@
 import type { ToolRegistration } from "@earendil-works/pi-durable";
 
-import type { AgentEventRouter } from "../core/agent-event-router";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
 import type { OwnerMemoryStore } from "@modules/memory/application/owner-memory-store";
 import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
 import type { TextToSpeech } from "@modules/tts/infrastructure/sbv2-tts";
-import { createAgentSendEventTool } from "../tools/agent-send-event";
 import { createOwnerMemoryTools } from "../tools/owner-memory";
 import { createWatchTools } from "../tools/watch";
 import { createDiscordReadTool, type DiscordImageAnalysis } from "./tools/discord-read";
@@ -26,7 +24,6 @@ export interface DiscordAgentToolsOptions {
   readonly tts?: TextToSpeech;
   readonly scheduledTaskStore?: ScheduledTaskStore;
   readonly ownerMemoryStore?: OwnerMemoryStore;
-  readonly eventRouter?: AgentEventRouter;
 }
 
 /**
@@ -63,9 +60,6 @@ export function createDiscordAgentTools(
       : []),
     ...(ownerFeaturesAllowed && options.ownerMemoryStore
       ? createOwnerMemoryTools(options.ownerMemoryStore, `communication:${options.channelId}`)
-      : []),
-    ...(ownerFeaturesAllowed && options.eventRouter
-      ? [createAgentSendEventTool(options.eventRouter, "communication")]
       : []),
   ];
 }

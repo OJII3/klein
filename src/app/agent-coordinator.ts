@@ -1,8 +1,6 @@
 import type { Logger } from "pino";
 
 import type { ChannelAgent } from "@agents/core/channel-agent";
-import type { AgentEvent } from "@agents/core/agent-event";
-import type { AgentEventRouter } from "@agents/core/agent-event-router";
 import { createDiscordMessageAgentTurn } from "@agents/discord/discord-message-agent-turn";
 import { BOT_MESSAGE_GUIDANCE } from "@agents/discord/prompt-policy";
 import type { DiscordAccessPolicy } from "@modules/discord/domain/discord-access-policy";
@@ -15,15 +13,11 @@ import type { DiscordChannelRuleStore } from "@modules/discord/ports/discord-cha
 import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
 import type { WatchCheckRunner } from "@modules/scheduling/application/watch-check-runner";
 import type { TaskCoordinator } from "./task-coordinator";
-import type { ChannelSessionStateStore, ConversationKey } from "./channel-session-state-store";
-import { COMMUNICATION_AGENT_ID, type AgentTopology } from "./agent-topology";
+import type { ChannelSessionStateStore } from "./channel-session-state-store";
 import { ChannelSessionManager } from "./channel-session-manager";
 import { ScheduledTaskDeliveryCoordinator } from "./scheduled-task-delivery-coordinator";
 
-export { COMMUNICATION_AGENT_ID };
-
 export interface AgentCoordinatorDependencies {
-  readonly topology: AgentTopology;
   readonly channelApi: DiscordChannelApi;
   readonly accessPolicy?: DiscordAccessPolicy;
   readonly ownerUserId?: string;
@@ -32,11 +26,6 @@ export interface AgentCoordinatorDependencies {
     sessionKey: string,
     handoffContext?: string,
     ownerFeaturesAllowed?: boolean,
-  ) => Promise<ChannelAgent>;
-  readonly createDomainAgent: (
-    agentId: string,
-    sessionKey: string,
-    handoffContext?: string,
   ) => Promise<ChannelAgent>;
   readonly channelSessionStateStore?: ChannelSessionStateStore;
   readonly channelRuleStore?: DiscordChannelRuleStore;
@@ -49,7 +38,7 @@ export interface AgentCoordinatorDependencies {
   readonly taskCoordinator: TaskCoordinator;
 }
 
-export class AgentCoordinator implements AgentEventRouter {
+export class AgentCoordinator {
   private readonly logger: Logger;
   private readonly sessionManager: ChannelSessionManager;
   private readonly scheduledTaskDeliveryCoordinator: ScheduledTaskDeliveryCoordinator;
@@ -60,23 +49,14 @@ export class AgentCoordinator implements AgentEventRouter {
     this.sessionManager = new ChannelSessionManager({
       accessPolicy: dependencies.accessPolicy,
       channelSessionStateStore: dependencies.channelSessionStateStore,
-      createAgent: (conversationKey, sessionKey, handoffContext, ownerFeaturesAllowed) => {
-        if (conversationKey.kind === "agent") {
-          return dependencies.createDomainAgent(
-            conversationKey.agentId,
-            sessionKey,
-            handoffContext,
-          );
-        }
-        return dependencies.createDiscordAgent(
+      createAgent: (conversationKey, sessionKey, handoffContext, ownerFeaturesAllowed) =>
+        dependencies.createDiscordAgent(
           conversationKey.channelId,
           sessionKey,
           handoffContext,
           ownerFeaturesAllowed,
-        );
-      },
+        ),
       channelApi: dependencies.channelApi,
-      isKnownAgent: (agentId) => dependencies.topology.agents.has(agentId),
       logger: this.logger,
       ownerUserId: dependencies.ownerUserId,
     });
@@ -89,34 +69,15 @@ export class AgentCoordinator implements AgentEventRouter {
       ownerUserId: dependencies.ownerUserId,
       scheduledTaskStore: dependencies.scheduledTaskStore,
       watchCheckRunner: dependencies.watchCheckRunner,
-      resolveConversationKey: (channelId) => this.resolveDiscordMessageConversationKey(channelId),
       sessionManager: this.sessionManager,
       taskCoordinator: dependencies.taskCoordinator,
     });
   }
 
-  listTargets(): readonly string[] {
-    return [COMMUNICATION_AGENT_ID, ...this.dependencies.topology.agents.keys()];
-  }
-
-  async dispatch(targetAgentId: string, event: AgentEvent): Promise<void> {
-    if (!this.dependencies.operatingState.isActive()) return;
-    if (
-      targetAgentId !== COMMUNICATION_AGENT_ID &&
-      !this.dependencies.topology.agents.has(targetAgentId)
-    ) {
-      throw new Error(
-        `Unknown target agent "${targetAgentId}". Available targets: ${this.listTargets().join(", ")}`,
-      );
-    }
-
-    void this.dependencies.taskCoordinator.run(() => this.deliverAgentEvent(targetAgentId, event));
-  }
-
   handleDiscordMessage(message: DiscordMessage): Promise<void> {
     if (!this.dependencies.operatingState.isActive()) return Promise.resolve();
 
-    const conversationKey = this.resolveDiscordMessageConversationKey(message.channelId);
+    const conversationKey = { kind: "discord", channelId: message.channelId } as const;
     this.sessionManager.recordInbound(conversationKey);
     return this.dependencies.taskCoordinator.run(() =>
       this.sessionManager.runForConversation(conversationKey, () => this.processMessage(message)),
@@ -139,88 +100,9 @@ export class AgentCoordinator implements AgentEventRouter {
     await this.sessionManager.dispose();
   }
 
-  private resolveDiscordMessageConversationKey(channelId: string): ConversationKey {
-    return (
-      this.dependencies.topology.agentsByChannelId.get(channelId)?.conversationKey ?? {
-        kind: "discord",
-        channelId,
-      }
-    );
-  }
-
-  private async deliverAgentEvent(targetAgentId: string, event: AgentEvent): Promise<void> {
-    if (!this.dependencies.operatingState.isActive() || !this.dependencies.ownerUserId) return;
-
-    const conversationKey = await this.resolveTargetConversationKey(targetAgentId);
-    if (!conversationKey) {
-      this.logger.warn(
-        {
-          event: "agent_event_target_channel_missing",
-          eventId: event.id,
-          eventType: event.type,
-          targetAgentId,
-        },
-        "Cannot deliver agent event because target channel is not configured or active",
-      );
-      return;
-    }
-
-    await this.sessionManager.runForConversation(conversationKey, async () => {
-      if (!this.dependencies.operatingState.isActive()) return;
-      const accessScope = `owner:${this.dependencies.ownerUserId}`;
-
-      try {
-        await this.sessionManager.runTurn(conversationKey, accessScope, async (agent) => {
-          const ownerMemory = await this.dependencies.ownerMemoryStore?.getContext(
-            buildEventMemoryQuery(event),
-          );
-          await agent.promptEvent(event, { ownerMemory });
-          this.logger.info(
-            {
-              conversationKey,
-              event: "agent_event_delivered",
-              eventId: event.id,
-              eventType: event.type,
-              source: event.source,
-              targetAgentId,
-            },
-            "Delivered inter-agent event",
-          );
-        });
-      } catch (error) {
-        this.logger.error(
-          {
-            conversationKey,
-            err: error,
-            event: "agent_event_delivery_failed",
-            eventId: event.id,
-            eventType: event.type,
-            targetAgentId,
-          },
-          "Failed to deliver inter-agent event",
-        );
-      }
-    });
-  }
-
-  private async resolveTargetConversationKey(
-    targetAgentId: string,
-  ): Promise<ConversationKey | undefined> {
-    if (targetAgentId === COMMUNICATION_AGENT_ID) {
-      const channelId =
-        this.dependencies.topology.communicationChannelId ??
-        (await this.sessionManager.findLatestOwnerChannelId());
-      return channelId ? { kind: "discord", channelId } : undefined;
-    }
-    return this.dependencies.topology.agents.get(targetAgentId)?.conversationKey;
-  }
-
   private async processMessage(message: DiscordMessage): Promise<void> {
     if (!this.dependencies.operatingState.isActive()) return;
-    const domainAgent = this.dependencies.topology.agentsByChannelId.get(message.channelId);
-    const isDomainChannel = domainAgent !== undefined;
-    const conversationKey =
-      domainAgent?.conversationKey ?? ({ kind: "discord", channelId: message.channelId } as const);
+    const conversationKey = { kind: "discord", channelId: message.channelId } as const;
     const target = {
       guildId: message.guildId,
       channelId: message.parentChannelId ?? message.channelId,
@@ -228,23 +110,12 @@ export class AgentCoordinator implements AgentEventRouter {
       userId: message.author.id,
       userIsBot: message.author.bot,
     };
-    if (isDomainChannel) {
-      if (
-        !this.dependencies.ownerUserId ||
-        message.author.bot ||
-        message.author.id !== this.dependencies.ownerUserId
-      ) {
-        return;
-      }
-    } else if (
-      this.dependencies.accessPolicy &&
-      !this.dependencies.accessPolicy.canReceive(target)
-    ) {
+    if (this.dependencies.accessPolicy && !this.dependencies.accessPolicy.canReceive(target)) {
       return;
     }
 
     const ownerFeaturesAllowed =
-      isDomainChannel || (this.dependencies.accessPolicy?.canUseOwnerFeatures(target) ?? false);
+      this.dependencies.accessPolicy?.canUseOwnerFeatures(target) ?? false;
     const accessScope = ownerFeaturesAllowed ? `owner:${this.dependencies.ownerUserId}` : "public";
 
     const logger = this.logger.child({
@@ -269,7 +140,7 @@ export class AgentCoordinator implements AgentEventRouter {
           message,
           { ownerMemory, guildMemory, channelRule },
           {
-            botMessageGuidance: isDomainChannel ? undefined : BOT_MESSAGE_GUIDANCE,
+            botMessageGuidance: BOT_MESSAGE_GUIDANCE,
             ownerValidation:
               ownerFeaturesAllowed && this.dependencies.ownerUserId
                 ? { userId: this.dependencies.ownerUserId, channelId: message.channelId }
@@ -306,11 +177,4 @@ export class AgentCoordinator implements AgentEventRouter {
 
 function buildMemoryQuery(message: DiscordMessage): string {
   return [message.content, message.replyTo?.content].filter(Boolean).join("\n");
-}
-
-function buildEventMemoryQuery(event: AgentEvent): string {
-  return event.content
-    .filter((block) => block.type === "text")
-    .map((block) => block.text)
-    .join("\n");
 }
