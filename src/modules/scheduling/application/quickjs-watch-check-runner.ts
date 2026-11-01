@@ -4,11 +4,11 @@ import {
   type CodemodeTool,
 } from "@earendil-works/pi-codemode";
 
-import type { ScriptWatchTask } from "../domain/scheduled-task";
+import type { WatchTask } from "../domain/scheduled-task";
 import {
   WatchCheckError,
   type WatchCheckResult,
-  type WatchScriptRunner,
+  type WatchCheckRunner,
 } from "./watch-check-runner";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -20,7 +20,7 @@ export interface QuickJsWatchCheckRunnerOptions {
   readonly maxOutputBytes?: number;
 }
 
-export class QuickJsWatchCheckRunner implements WatchScriptRunner {
+export class QuickJsWatchCheckRunner implements WatchCheckRunner {
   private readonly timeoutMs: number;
   private readonly maxOutputBytes: number;
   private readonly fetchGlobal: CodemodeTool = createFetchGlobal();
@@ -30,7 +30,7 @@ export class QuickJsWatchCheckRunner implements WatchScriptRunner {
     this.maxOutputBytes = options.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES;
   }
 
-  async run(watch: Pick<ScriptWatchTask, "script" | "args">): Promise<WatchCheckResult> {
+  async run(watch: Pick<WatchTask, "script" | "args">): Promise<WatchCheckResult> {
     const startedAt = Date.now();
     const sandbox = new CodemodeSandbox({
       timeoutMs: this.timeoutMs,

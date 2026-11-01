@@ -107,13 +107,13 @@ being delivered.
   silent. `condition: "output"` can be used instead to notify whenever the check produces
   output. Watch tools are exposed only in owner sessions and always use owner scope.
 
-A watch uses one of two runtimes. `runtime: "command"` (the default) starts `command` with
-`args` directly, without a shell; invoke a shell explicitly if you need one.
-`runtime: "javascript"` runs `script` in a QuickJS sandbox instead: the script reads the
-`args` array, calls `fetch(url, init)` for HTTP requests, and prints with `text()` or
-`console.*`. Its text output plus the returned value become the watch output. The sandbox
-has no timers, filesystem, or process APIs. Checks have a 30-second timeout and a 64 KiB
-output limit. Check failures are recorded in `watch_list` and do not wake the agent.
+A watch runs `script` in a QuickJS sandbox: the script reads the `args` array, calls
+`fetch(url, init)` for HTTP requests, and prints with `text()` or `console.*`. Its text
+output plus the returned value become the watch output. The sandbox has no timers,
+filesystem, or process APIs. Checks have a 30-second timeout and a 64 KiB output limit.
+Check failures are recorded in `watch_list` and do not wake the agent. Watch files from
+older versions that stored a `command` are rejected; delete them and register the check as
+a script.
 
 Schedule files use the new unified format. The application does not read the old
 `<runtime.agentDir>/reminders` directory. To migrate it manually, run the dry run first,

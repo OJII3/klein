@@ -24,8 +24,7 @@ const watch: WatchTask = {
   channelId: "channel-a",
   accessScope: "owner:123",
   name: "在庫監視",
-  runtime: "command",
-  command: "check-stock",
+  script: "return args[0];",
   args: ["--json"],
   condition: "change",
   message: "在庫の変化を確認してください。",
@@ -93,13 +92,15 @@ test("rejects the old reminder file shape", async () => {
   }
 });
 
-test("reads watches stored before the runtime field existed", async () => {
+test("rejects command-format watches", async () => {
   const directory = await mkdtemp(join(tmpdir(), "klein-schedules-"));
   const store = new FileScheduledTaskStore(directory);
   try {
-    const { runtime: _runtime, ...legacyWatch } = watch;
-    await writeFile(join(directory, "legacy-watch.json"), JSON.stringify(legacyWatch));
-    assert.deepEqual(await store.listForScope("watch", "channel-a", "owner:123"), [watch]);
+    await writeFile(
+      join(directory, "command-watch.json"),
+      JSON.stringify({ ...watch, script: undefined, command: "check-stock" }),
+    );
+    await assert.rejects(store.listDue(Date.now()), /廃止/u);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
