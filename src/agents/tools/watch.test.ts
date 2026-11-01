@@ -35,7 +35,7 @@ test("provides owner-only watch add, list, and delete tools", async () => {
     {
       name: "在庫監視",
       schedule: { type: "every", minutes: 15 },
-      command: "check-stock",
+      script: "return { stock: args[0] };",
       args: ["--json"],
       message: "在庫の変化を確認してください。",
       cooldownMinutes: 60,
@@ -48,6 +48,7 @@ test("provides owner-only watch add, list, and delete tools", async () => {
   assert.equal(created?.condition, "change");
   assert.equal(created?.cooldownMinutes, 60);
   assert.deepEqual(created?.args, ["--json"]);
+  assert.equal(created?.script, "return { stock: args[0] };");
   assert.match(
     addResult.output?.[0]?.type === "text" ? addResult.output[0].text : "",
     /登録しました/u,

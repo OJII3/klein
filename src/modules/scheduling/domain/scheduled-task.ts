@@ -22,7 +22,7 @@ export interface ReminderTask extends ScheduledTaskBase {
 export interface WatchTask extends ScheduledTaskBase {
   readonly kind: "watch";
   readonly name: string;
-  readonly command: string;
+  readonly script: string;
   readonly args: readonly string[];
   readonly condition: WatchCondition;
   readonly message: string;
@@ -89,8 +89,8 @@ export function parseScheduledTask(value: unknown): ScheduledTask {
       !record.accessScope.startsWith("owner:") ||
       typeof record.name !== "string" ||
       record.name.length === 0 ||
-      typeof record.command !== "string" ||
-      record.command.length === 0 ||
+      typeof record.script !== "string" ||
+      record.script.length === 0 ||
       !Array.isArray(record.args) ||
       !record.args.every((arg) => typeof arg === "string") ||
       (record.condition !== "change" && record.condition !== "output") ||
@@ -124,7 +124,7 @@ export function parseScheduledTask(value: unknown): ScheduledTask {
       schedule,
       nextRunAt: record.nextRunAt,
       name: record.name,
-      command: record.command,
+      script: record.script,
       args: record.args as string[],
       condition: record.condition,
       message: record.message,

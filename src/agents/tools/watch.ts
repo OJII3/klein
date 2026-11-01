@@ -41,14 +41,15 @@ export function createWatchTools(
     defineTool({
       name: "watch_add",
       description:
-        "Run an executable on a recurring schedule and send an event only when its output changes (condition='change') or is non-empty (condition='output'). " +
+        "Run a JavaScript check on a recurring schedule and send an event only when its output changes (condition='change') or is non-empty (condition='output'). " +
         "With condition='change', the first successful check only stores a baseline. " +
-        "command is the executable path, not a shell command line. No shell is used; pass an explicit interpreter and script through command/args when needed. " +
+        "script runs in a QuickJS sandbox: it reads the array `args`, calls `fetch(url, init)` for HTTP requests, and prints with `text()` or `console.*`. " +
+        "The text output plus the returned value become the watch output; there are no timers, files, or process APIs. " +
         "Times use Japan Standard Time (JST). Weekly schedules require one or more weekdays: sun, mon, tue, wed, thu, fri, sat.",
       parameters: Type.Object({
         name: Type.String({ minLength: 1, maxLength: 100 }),
         schedule: recurringScheduleSchema,
-        command: Type.String({ minLength: 1, maxLength: 1_000 }),
+        script: Type.String({ minLength: 1, maxLength: 20_000 }),
         args: Type.Optional(Type.Array(Type.String({ maxLength: 1_000 }), { maxItems: 100 })),
         condition: Type.Optional(conditionSchema),
         message: Type.String({ minLength: 1, maxLength: 2_000 }),
@@ -65,7 +66,7 @@ export function createWatchTools(
           accessScope,
           createdAt: new Date(now).toISOString(),
           name: params.name.trim(),
-          command: params.command.trim(),
+          script: params.script.trim(),
           args: params.args ?? [],
           condition: (params.condition ?? "change") as WatchTask["condition"],
           message: params.message.trim(),
@@ -74,8 +75,8 @@ export function createWatchTools(
           schedule: resolved.schedule,
           nextRunAt: resolved.nextRunAt,
         };
-        if (!watch.name || !watch.command || !watch.message) {
-          throw new Error("監視名・コマンド・通知内容を入力してください。");
+        if (!watch.name || !watch.script || !watch.message) {
+          throw new Error("監視名・スクリプト・通知内容を入力してください。");
         }
         await store.create(watch);
         return {

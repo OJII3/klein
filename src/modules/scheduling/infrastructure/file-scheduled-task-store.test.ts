@@ -24,7 +24,7 @@ const watch: WatchTask = {
   channelId: "channel-a",
   accessScope: "owner:123",
   name: "在庫監視",
-  command: "check-stock",
+  script: "return args[0];",
   args: ["--json"],
   condition: "change",
   message: "在庫の変化を確認してください。",
