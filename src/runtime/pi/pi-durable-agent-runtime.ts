@@ -217,8 +217,8 @@ export function createPiDurableAgentFactory({
       harness.resume();
     },
     channelSessionStateStore: {
-      async getOrCreate(channelId, rotationDate) {
-        return (await getResources()).store.channelStates.getOrCreate(channelId, rotationDate);
+      async getOrCreate(channelId, rotationBucket) {
+        return (await getResources()).store.channelStates.getOrCreate(channelId, rotationBucket);
       },
       async list() {
         return (await getResources()).store.channelStates.list();

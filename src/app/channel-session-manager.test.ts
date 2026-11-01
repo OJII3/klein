@@ -5,7 +5,7 @@ import pino from "pino";
 import type { ChannelAgent } from "@agents/core/channel-agent";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
 import {
-  getChannelRotationDate,
+  getChannelRotationBucket,
   type ChannelSessionState,
   type ChannelSessionStateStore,
   type ConversationKey,
@@ -90,7 +90,7 @@ function createState(overrides: Partial<ChannelSessionState> = {}): ChannelSessi
     accessScope: "public",
     sessionKey: "discord-channel:channel-a",
     lastActivityAt: null,
-    lastRotationDate: getChannelRotationDate(Date.now()),
+    lastRotationDate: getChannelRotationBucket(Date.now()),
     hasActivitySinceRotation: false,
     ...overrides,
   };
@@ -105,7 +105,7 @@ test("runTurn rotates, clears handoff, and saves state around the turn in order"
       hasActivitySinceRotation: true,
     }),
   );
-  const expectedSessionKey = `discord-channel:channel-a:rotation:${getChannelRotationDate(Date.now())}`;
+  const expectedSessionKey = `discord-channel:channel-a:rotation:${getChannelRotationBucket(Date.now())}`;
 
   try {
     await harness.manager.runTurn(conversationKey, "public", async (_agent, state) => {

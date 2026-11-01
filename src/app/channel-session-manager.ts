@@ -7,7 +7,7 @@ import { isOwnerAccessScope, ownerAccessScope, PUBLIC_ACCESS_SCOPE } from "@shar
 import {
   CHANNEL_ROTATION_IDLE_MS,
   createConversationSessionKey,
-  getChannelRotationDate,
+  getChannelRotationBucket,
   isChannelRotationDue,
   serializeConversationKey,
   type ChannelSessionState,
@@ -166,9 +166,12 @@ export class ChannelSessionManager {
     accessScope?: string,
   ): Promise<ChannelSessionState> {
     const key = serializeConversationKey(conversationKey);
-    const rotationDate = getChannelRotationDate(now);
+    const rotationBucket = getChannelRotationBucket(now);
     const existing = this.dependencies.channelSessionStateStore
-      ? await this.dependencies.channelSessionStateStore.getOrCreate(conversationKey, rotationDate)
+      ? await this.dependencies.channelSessionStateStore.getOrCreate(
+          conversationKey,
+          rotationBucket,
+        )
       : this.inMemoryChannelStates.get(key);
     const scopeMatches =
       accessScope === undefined ||
@@ -191,7 +194,7 @@ export class ChannelSessionManager {
         useAccessScope: !!this.dependencies.accessPolicy,
       }),
       lastActivityAt: null,
-      lastRotationDate: rotationDate,
+      lastRotationDate: rotationBucket,
       hasActivitySinceRotation: true,
     };
     this.inMemoryChannelStates.set(key, created);
@@ -261,16 +264,16 @@ export class ChannelSessionManager {
       return state;
     }
 
-    const rotationDate = getChannelRotationDate(now);
+    const rotationBucket = getChannelRotationBucket(now);
     const nextState: ChannelSessionState = {
       ...state,
       handoffContext,
       hasActivitySinceRotation: false,
-      lastRotationDate: rotationDate,
+      lastRotationDate: rotationBucket,
       sessionKey: createConversationSessionKey(conversationKey, {
         accessScope: state.accessScope,
         useAccessScope: !!this.dependencies.accessPolicy,
-        rotationDate,
+        rotationBucket,
       }),
     };
     await this.saveConversationState(nextState);
@@ -279,7 +282,7 @@ export class ChannelSessionManager {
     this.agents.delete(key);
     this.agentSessionKeys.delete(key);
     this.dependencies.logger.info(
-      { conversationKey, event: "channel_context_rotated", rotationDate },
+      { conversationKey, event: "channel_context_rotated", rotationBucket },
       "Rotated the conversation context",
     );
     return nextState;
