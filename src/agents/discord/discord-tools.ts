@@ -5,12 +5,12 @@ import type { OwnerMemoryStore } from "@modules/memory/application/owner-memory-
 import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
 import type { TextToSpeech } from "@modules/tts/infrastructure/sbv2-tts";
 import { createOwnerMemoryTools } from "../tools/owner-memory";
+import { createReminderTools } from "../tools/reminder";
 import { createWatchTools } from "../tools/watch";
 import { createDiscordReadTool, type DiscordImageAnalysis } from "./tools/discord-read";
 import { createDiscordSendTool } from "./tools/discord-send";
 import { createDiscordSpeakTool } from "./tools/discord-speak";
 import { createDiscordVoiceTool } from "./tools/discord-voice";
-import { createReminderTools } from "./tools/reminder";
 
 export interface DiscordAgentToolsOptions {
   readonly channelApi: Pick<
