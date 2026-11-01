@@ -3,10 +3,11 @@ import type { ToolRegistration } from "@earendil-works/pi-durable";
 import type { AgentEventRouter } from "../core/agent-event-router";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
 import type { OwnerMemoryStore } from "@modules/memory/application/owner-memory-store";
-import type { ReminderStore } from "@modules/reminders/ports/reminder-store";
+import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
 import type { TextToSpeech } from "@modules/tts/infrastructure/sbv2-tts";
 import { createAgentSendEventTool } from "../tools/agent-send-event";
 import { createOwnerMemoryTools } from "../tools/owner-memory";
+import { createWatchTools } from "../tools/watch";
 import { createDiscordReadTool, type DiscordImageAnalysis } from "./tools/discord-read";
 import { createDiscordSendTool } from "./tools/discord-send";
 import { createDiscordSpeakTool } from "./tools/discord-speak";
@@ -23,7 +24,7 @@ export interface DiscordAgentToolsOptions {
   readonly ownerUserId?: string;
   readonly speak?: (text: string, toolCallId?: string) => Promise<void>;
   readonly tts?: TextToSpeech;
-  readonly reminderStore?: ReminderStore;
+  readonly scheduledTaskStore?: ScheduledTaskStore;
   readonly ownerMemoryStore?: OwnerMemoryStore;
   readonly eventRouter?: AgentEventRouter;
 }
@@ -50,12 +51,15 @@ export function createDiscordAgentTools(
     ...(!options.speak && options.tts
       ? [createDiscordVoiceTool(options.channelApi, options.channelId, options.tts)]
       : []),
-    ...(options.reminderStore
+    ...(options.scheduledTaskStore
       ? createReminderTools(
-          options.reminderStore,
+          options.scheduledTaskStore,
           options.channelId,
           ownerFeaturesAllowed ? `owner:${options.ownerUserId!}` : "public",
         )
+      : []),
+    ...(options.scheduledTaskStore && ownerFeaturesAllowed
+      ? createWatchTools(options.scheduledTaskStore, options.channelId, options.ownerUserId!)
       : []),
     ...(ownerFeaturesAllowed && options.ownerMemoryStore
       ? createOwnerMemoryTools(options.ownerMemoryStore, `communication:${options.channelId}`)

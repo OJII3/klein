@@ -12,12 +12,13 @@ import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-a
 import type { MemoryCoordinator } from "@modules/memory/application/memory-coordinator";
 import type { OwnerMemoryStore } from "@modules/memory/application/owner-memory-store";
 import type { DiscordChannelRuleStore } from "@modules/discord/ports/discord-channel-rule-store";
-import type { ReminderStore } from "@modules/reminders/ports/reminder-store";
+import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
+import type { WatchCheckRunner } from "@modules/scheduling/application/watch-check-runner";
 import type { TaskCoordinator } from "./task-coordinator";
 import type { ChannelSessionStateStore, ConversationKey } from "./channel-session-state-store";
 import { COMMUNICATION_AGENT_ID, type AgentTopology } from "./agent-topology";
 import { ChannelSessionManager } from "./channel-session-manager";
-import { ReminderDeliveryCoordinator } from "./reminder-delivery-coordinator";
+import { ScheduledTaskDeliveryCoordinator } from "./scheduled-task-delivery-coordinator";
 
 export { COMMUNICATION_AGENT_ID };
 
@@ -43,14 +44,15 @@ export interface AgentCoordinatorDependencies {
   readonly memoryCoordinator?: MemoryCoordinator;
   readonly ownerMemoryStore?: OwnerMemoryStore;
   readonly operatingState: DiscordOperatingState;
-  readonly reminderStore?: ReminderStore;
+  readonly scheduledTaskStore?: ScheduledTaskStore;
+  readonly watchCheckRunner: WatchCheckRunner;
   readonly taskCoordinator: TaskCoordinator;
 }
 
 export class AgentCoordinator implements AgentEventRouter {
   private readonly logger: Logger;
   private readonly sessionManager: ChannelSessionManager;
-  private readonly reminderDeliveryCoordinator: ReminderDeliveryCoordinator;
+  private readonly scheduledTaskDeliveryCoordinator: ScheduledTaskDeliveryCoordinator;
 
   constructor(private readonly dependencies: AgentCoordinatorDependencies) {
     this.logger = dependencies.logger.child({ component: "agent-coordinator" });
@@ -78,14 +80,15 @@ export class AgentCoordinator implements AgentEventRouter {
       logger: this.logger,
       ownerUserId: dependencies.ownerUserId,
     });
-    this.reminderDeliveryCoordinator = new ReminderDeliveryCoordinator({
+    this.scheduledTaskDeliveryCoordinator = new ScheduledTaskDeliveryCoordinator({
       accessPolicy: dependencies.accessPolicy,
       channelApi: dependencies.channelApi,
       logger: this.logger,
       operatingState: dependencies.operatingState,
       ownerMemoryStore: dependencies.ownerMemoryStore,
       ownerUserId: dependencies.ownerUserId,
-      reminderStore: dependencies.reminderStore,
+      scheduledTaskStore: dependencies.scheduledTaskStore,
+      watchCheckRunner: dependencies.watchCheckRunner,
       resolveConversationKey: (channelId) => this.resolveDiscordMessageConversationKey(channelId),
       sessionManager: this.sessionManager,
       taskCoordinator: dependencies.taskCoordinator,
@@ -128,8 +131,8 @@ export class AgentCoordinator implements AgentEventRouter {
     await this.sessionManager.initialize();
   }
 
-  async deliverDueReminders(now = Date.now()): Promise<void> {
-    await this.reminderDeliveryCoordinator.deliverDueReminders(now);
+  async deliverDueTasks(now = Date.now()): Promise<void> {
+    await this.scheduledTaskDeliveryCoordinator.deliverDueTasks(now);
   }
 
   async dispose(): Promise<void> {

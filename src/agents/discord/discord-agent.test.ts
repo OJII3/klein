@@ -11,8 +11,8 @@ import { createDiscordAgentTools } from "./discord-tools";
 import type { AgentEvent } from "../core/agent-event";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
-import type { Reminder } from "@modules/reminders/domain/reminder";
-import type { ReminderStore } from "@modules/reminders/ports/reminder-store";
+import type { ReminderTask, ScheduledTask } from "@modules/scheduling/domain/scheduled-task";
+import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
 import type { DiscordImageAnalysis } from "./tools/discord-read";
 
 const message: DiscordMessage = {
@@ -42,7 +42,7 @@ function createToolsFor(
   options: {
     readonly ownerFeaturesAllowed?: boolean;
     readonly ownerUserId?: string;
-    readonly reminderStore?: ReminderStore;
+    readonly scheduledTaskStore?: ScheduledTaskStore;
     readonly speak?: (text: string, toolCallId?: string) => Promise<void>;
   } = {},
 ) {
@@ -53,7 +53,7 @@ function createToolsFor(
         channelId,
         ownerFeaturesAllowed: options.ownerFeaturesAllowed ?? false,
         ownerUserId: options.ownerUserId,
-        reminderStore: options.reminderStore,
+        scheduledTaskStore: options.scheduledTaskStore,
         speak: options.speak,
       },
       analyzeImage,
@@ -297,26 +297,29 @@ function eventText(event: AgentEvent | undefined): string {
 }
 
 test("keeps reminders across session rotation and isolates channel and access scopes", async () => {
-  const reminders = new Map<string, Reminder>();
-  const store: ReminderStore = {
-    async create(reminder) {
-      reminders.set(reminder.id, reminder);
+  const reminders = new Map<string, ScheduledTask>();
+  const store = {
+    async create(task: ScheduledTask) {
+      reminders.set(task.id, task);
     },
-    async listForScope(channelId, accessScope) {
+    async listForScope(kind: ScheduledTask["kind"], channelId: string, accessScope: string) {
       return [...reminders.values()].filter(
-        (reminder) => reminder.channelId === channelId && reminder.accessScope === accessScope,
+        (task) =>
+          task.kind === kind && task.channelId === channelId && task.accessScope === accessScope,
       );
     },
     async listDue() {
       return [];
     },
-    async delete(channelId, accessScope, id) {
-      const reminder = reminders.get(id);
-      if (reminder?.channelId !== channelId || reminder.accessScope !== accessScope) return false;
+    async delete(_kind: ScheduledTask["kind"], channelId: string, accessScope: string, id: string) {
+      const task = reminders.get(id);
+      if (task?.channelId !== channelId || task.accessScope !== accessScope) return false;
       return reminders.delete(id);
     },
-    async updateDueAt() {},
-  };
+    async update(task: ScheduledTask) {
+      reminders.set(task.id, task);
+    },
+  } as unknown as ScheduledTaskStore;
   async function createTools(
     sessionKey: string,
     channelId: string,
@@ -340,7 +343,7 @@ test("keeps reminders across session rotation and isolates channel and access sc
         tools: createToolsFor({} as DiscordChannelApi, channelId, {
           ownerFeaturesAllowed,
           ownerUserId,
-          reminderStore: store,
+          scheduledTaskStore: store,
         }),
       },
     );
@@ -359,8 +362,11 @@ test("keeps reminders across session rotation and isolates channel and access sc
   const id = (added.details as { id: string }).id;
   const rotated = await createTools("session-new", "channel-a", false, "123");
   assert.equal(
-    ((await execute(rotated, "reminder_list", {})).details as unknown as { reminders: Reminder[] })
-      .reminders.length,
+    (
+      (await execute(rotated, "reminder_list", {})).details as unknown as {
+        reminders: ReminderTask[];
+      }
+    ).reminders.length,
     1,
   );
   for (const tools of [
@@ -369,8 +375,11 @@ test("keeps reminders across session rotation and isolates channel and access sc
     await createTools("session-new", "channel-a", true, "456"),
   ]) {
     assert.deepEqual(
-      ((await execute(tools, "reminder_list", {})).details as unknown as { reminders: Reminder[] })
-        .reminders,
+      (
+        (await execute(tools, "reminder_list", {})).details as unknown as {
+          reminders: ReminderTask[];
+        }
+      ).reminders,
       [],
     );
     assert.equal(
@@ -394,4 +403,33 @@ test("keeps reminders across session rotation and isolates channel and access sc
     });
     assert.equal(reminders.get((result.details as { id: string }).id)?.accessScope, expectedScope);
   }
+});
+
+test("exposes watch tools only in owner-enabled sessions", () => {
+  const store = {
+    async create() {},
+    async listForScope() {
+      return [];
+    },
+    async listDue() {
+      return [];
+    },
+    async delete() {
+      return false;
+    },
+    async update() {},
+  } as unknown as ScheduledTaskStore;
+  const ownerTools = createToolsFor({} as DiscordChannelApi, "channel-a", {
+    ownerFeaturesAllowed: true,
+    ownerUserId: "123",
+    scheduledTaskStore: store,
+  })({} as never);
+  const publicTools = createToolsFor({} as DiscordChannelApi, "channel-a", {
+    ownerFeaturesAllowed: false,
+    ownerUserId: "123",
+    scheduledTaskStore: store,
+  })({} as never);
+
+  assert.ok(ownerTools.some((tool) => tool.name === "watch_add"));
+  assert.ok(publicTools.every((tool) => !tool.name.startsWith("watch_")));
 });

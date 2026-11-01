@@ -101,6 +101,11 @@ function createHarness(store: ChannelSessionStateStore, channelRule: { access: D
     logger: pino({ level: "silent" }),
     operatingState: new DiscordOperatingState(),
     taskCoordinator: new TaskCoordinator(),
+    watchCheckRunner: {
+      async run() {
+        throw new Error("Unexpected watch check");
+      },
+    },
   });
   return {
     coordinator,

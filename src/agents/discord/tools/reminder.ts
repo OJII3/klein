@@ -2,17 +2,19 @@ import { randomUUID } from "node:crypto";
 import { defineTool } from "@earendil-works/pi-durable";
 import { Type } from "typebox";
 
+import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
 import {
-  formatReminderDateTime,
-  getReminderDueAt,
-  REMINDER_WEEKDAYS,
-  type Reminder,
-  type ReminderSchedule,
-  type ReminderAccessScope,
-} from "@modules/reminders/domain/reminder";
-import type { ReminderStore } from "@modules/reminders/ports/reminder-store";
+  formatSchedule,
+  resolveSchedule,
+  SCHEDULE_WEEKDAYS,
+  type ScheduleInput,
+} from "@modules/scheduling/domain/schedule";
+import type {
+  ReminderTask,
+  ScheduledTaskAccessScope,
+} from "@modules/scheduling/domain/scheduled-task";
 
-const weekdaySchema = Type.Union(REMINDER_WEEKDAYS.map((weekday) => Type.Literal(weekday)));
+const weekdaySchema = Type.Union(SCHEDULE_WEEKDAYS.map((weekday) => Type.Literal(weekday)));
 const scheduleSchema = Type.Union([
   Type.Object({
     type: Type.Literal("after"),
@@ -32,18 +34,22 @@ const scheduleSchema = Type.Union([
     time: Type.String({ pattern: "^\\d{2}:\\d{2}$" }),
     weekdays: Type.Array(weekdaySchema, { minItems: 1, uniqueItems: true }),
   }),
+  Type.Object({
+    type: Type.Literal("every"),
+    minutes: Type.Integer({ minimum: 1 }),
+  }),
 ]);
 
 export function createReminderTools(
-  store: ReminderStore,
+  store: ScheduledTaskStore,
   channelId: string,
-  accessScope: ReminderAccessScope,
+  accessScope: ScheduledTaskAccessScope,
 ) {
   return [
     defineTool({
       name: "reminder_add",
       description:
-        "Add a one-time reminder after a duration or at a date and time, or a daily/weekly reminder. " +
+        "Add a one-time reminder after a duration or at a date and time, or a repeating reminder every N minutes, daily, or weekly. " +
         "Times use Japan Standard Time (JST). Weekly reminders require one or more weekdays: sun, mon, tue, wed, thu, fri, sat.",
       parameters: Type.Object({
         message: Type.String({ minLength: 1, maxLength: 2_000 }),
@@ -51,24 +57,18 @@ export function createReminderTools(
       }),
       deferred: true,
       async execute(params) {
-        const schedule = params.schedule as ReminderSchedule;
+        const scheduleInput = params.schedule as ScheduleInput;
         const now = Date.now();
-        const reminder: Reminder = {
+        const resolved = resolveSchedule(scheduleInput, now);
+        const reminder: ReminderTask = {
+          kind: "reminder",
           id: randomUUID(),
           channelId,
           accessScope,
           message: params.message.trim(),
           createdAt: new Date(now).toISOString(),
-          dueAt: getReminderDueAt(schedule, now),
-          ...(schedule.type === "daily"
-            ? { repeat: "daily" as const, time: schedule.time }
-            : schedule.type === "weekly"
-              ? {
-                  repeat: "weekly" as const,
-                  time: schedule.time,
-                  weekdays: schedule.weekdays,
-                }
-              : {}),
+          schedule: resolved.schedule,
+          nextRunAt: resolved.nextRunAt,
         };
         if (!reminder.message) throw new Error("リマインダーの内容を入力してください。");
         await store.create(reminder);
@@ -76,22 +76,22 @@ export function createReminderTools(
           output: [
             {
               type: "text",
-              text: `リマインダーを登録しました。ID: ${reminder.id} / ${formatReminderDateTime(reminder.dueAt)} JST`,
+              text: `リマインダーを登録しました。ID: ${reminder.id} / ${formatSchedule(reminder.schedule)}`,
             },
           ],
-          details: { id: reminder.id, dueAt: reminder.dueAt },
+          details: { id: reminder.id, nextRunAt: reminder.nextRunAt },
         };
       },
     }),
     defineTool({
       name: "reminder_list",
       description:
-        "List reminders attached to the current conversation, including recurring reminders.",
+        "List reminders attached to the current conversation, including repeating reminders.",
       parameters: Type.Object({}),
       deferred: true,
       replay: "safe",
       async execute() {
-        const reminders = await store.listForScope(channelId, accessScope);
+        const reminders = await store.listForScope("reminder", channelId, accessScope);
         return {
           output: [
             {
@@ -103,13 +103,11 @@ export function createReminderTools(
             },
           ],
           details: {
-            reminders: reminders.map(({ id, dueAt, message, repeat, time, weekdays }) => ({
+            reminders: reminders.map(({ id, nextRunAt, message, schedule }) => ({
               id,
-              dueAt,
+              nextRunAt,
               message,
-              ...(repeat ? { repeat } : {}),
-              ...(time ? { time } : {}),
-              ...(weekdays ? { weekdays: [...weekdays] } : {}),
+              schedule: formatSchedule(schedule),
             })),
           },
         };
@@ -122,7 +120,7 @@ export function createReminderTools(
       parameters: Type.Object({ id: Type.String({ minLength: 1 }) }),
       deferred: true,
       async execute(params) {
-        const deleted = await store.delete(channelId, accessScope, params.id);
+        const deleted = await store.delete("reminder", channelId, accessScope, params.id);
         return {
           output: [
             {
@@ -139,12 +137,6 @@ export function createReminderTools(
   ];
 }
 
-function formatReminder(reminder: Reminder): string {
-  const repeat =
-    reminder.repeat === "daily"
-      ? `毎日 ${reminder.time}`
-      : reminder.repeat === "weekly"
-        ? `毎週 ${(reminder.weekdays ?? []).join(",")} ${reminder.time}`
-        : formatReminderDateTime(reminder.dueAt);
-  return `- ${reminder.id}: ${repeat} JST — ${reminder.message}`;
+function formatReminder(reminder: ReminderTask): string {
+  return `- ${reminder.id}: ${formatSchedule(reminder.schedule)} — ${reminder.message}`;
 }
