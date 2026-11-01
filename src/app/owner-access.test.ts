@@ -18,7 +18,7 @@ import {
 } from "@modules/discord/domain/discord-access-policy";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import { DiscordOperatingState } from "@modules/discord/domain/discord-operating-state";
-import type { DiscordService } from "@modules/discord/ports/discord-service";
+import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
 import type { MemoryCoordinator } from "@modules/memory/application/memory-coordinator";
 import { AgentCoordinator } from "./agent-coordinator";
 import {
@@ -65,7 +65,7 @@ function createHarness(store: ChannelSessionStateStore, channelRule: { access: D
     async readMessage() {
       return message;
     },
-  } as unknown as DiscordService;
+  } as unknown as DiscordChannelApi;
   const coordinator = new AgentCoordinator({
     topology: buildAgentTopology(undefined),
     accessPolicy: createDiscordAccessPolicy(
@@ -79,16 +79,17 @@ function createHarness(store: ChannelSessionStateStore, channelRule: { access: D
     ownerUserId: ownerId,
     channelSessionStateStore: store,
     createDiscordAgent: (channelId, sessionKey, handoffContext, ownerFeaturesAllowed) =>
-      DiscordAgent.create(factory, service, channelId, "system prompt", {
+      DiscordAgent.create(factory, channelId, "system prompt", {
         sessionKey,
         handoffContext,
         ownerFeaturesAllowed,
         ownerUserId: ownerId,
+        tools: () => [],
       }),
     createDomainAgent: async (agentId) => {
       throw new Error(`Unexpected domain agent: ${agentId}`);
     },
-    discordService: service,
+    channelApi: service,
     memoryCoordinator: {
       async getContext() {
         return "shared memory";

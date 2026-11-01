@@ -1,17 +1,16 @@
 import type { DiscordAccessTarget } from "../domain/discord-access-policy";
 import type { DiscordMessage, DiscordMessageLocator } from "../domain/discord-message";
 
-export type DiscordMessageHandler = (message: DiscordMessage) => Promise<void>;
-
 export interface DiscordMessageRequester {
   readonly userId: string;
   readonly userIsBot?: boolean;
 }
 
-export interface DiscordService {
-  start(onMessage: DiscordMessageHandler): Promise<void>;
-  stopAccepting(): void;
-  setActivity(name: string): void;
+/**
+ * Discord への読み書きだけを持つ境界。
+ * Gateway 接続や operating state には依存しない。
+ */
+export interface DiscordChannelApi {
   getChannelLocation(
     channelId: string,
   ): Promise<Pick<DiscordAccessTarget, "guildId" | "channelId" | "threadId">>;
@@ -22,5 +21,4 @@ export interface DiscordService {
     locator: DiscordMessageLocator,
     requester?: DiscordMessageRequester,
   ): Promise<DiscordMessage>;
-  stop(): Promise<void>;
 }

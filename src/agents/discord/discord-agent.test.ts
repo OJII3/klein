@@ -7,11 +7,13 @@ import type { AgentFactory } from "../core/agent-factory";
 import type { AgentRuntime } from "../core/agent-runtime";
 import { DiscordAgent } from "./discord-agent";
 import { createDiscordMessageAgentTurn } from "./discord-message-agent-turn";
+import { createDiscordAgentTools } from "./discord-tools";
 import type { AgentEvent } from "../core/agent-event";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
+import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
 import type { Reminder } from "@modules/reminders/domain/reminder";
 import type { ReminderStore } from "@modules/reminders/ports/reminder-store";
-import type { DiscordService } from "@modules/discord/ports/discord-service";
+import type { DiscordImageAnalysis } from "./tools/discord-read";
 
 const message: DiscordMessage = {
   author: {
@@ -33,6 +35,30 @@ const message: DiscordMessage = {
     },
   ],
 };
+
+function createToolsFor(
+  channelApi: DiscordChannelApi,
+  channelId: string,
+  options: {
+    readonly ownerFeaturesAllowed?: boolean;
+    readonly ownerUserId?: string;
+    readonly reminderStore?: ReminderStore;
+    readonly speak?: (text: string, toolCallId?: string) => Promise<void>;
+  } = {},
+) {
+  return (analyzeImage: DiscordImageAnalysis) =>
+    createDiscordAgentTools(
+      {
+        channelApi,
+        channelId,
+        ownerFeaturesAllowed: options.ownerFeaturesAllowed ?? false,
+        ownerUserId: options.ownerUserId,
+        reminderStore: options.reminderStore,
+        speak: options.speak,
+      },
+      analyzeImage,
+    );
+}
 
 test("routes voice replies through discord_speak using the existing runtime prompt", async () => {
   let tools: readonly ToolRegistration[] = [];
@@ -60,18 +86,14 @@ test("routes voice replies through discord_speak using the existing runtime prom
       return runtime;
     },
   };
-  const agent = await DiscordAgent.create(
-    agentFactory,
-    {} as DiscordService,
-    "channel-123",
-    "voice system prompt",
-    {
+  const agent = await DiscordAgent.create(agentFactory, "channel-123", "voice system prompt", {
+    tools: createToolsFor({} as DiscordChannelApi, "channel-123", {
       speak: async (text, toolCallId) => {
         assert.equal(toolCallId, "tool-call");
         spoken.push(text);
       },
-    },
-  );
+    }),
+  });
 
   assert.ok(tools.some((tool) => tool.name === "discord_speak"));
   assert.ok(!tools.some((tool) => tool.name === "discord_send" || tool.name === "discord_voice"));
@@ -97,10 +119,7 @@ test("wires the runtime image analyzer into discord_read", async () => {
       return runtime;
     },
   };
-  const discordService: DiscordService = {
-    async start() {},
-    stopAccepting() {},
-    setActivity() {},
+  const channelApi: DiscordChannelApi = {
     async getChannelLocation(channelId) {
       return { channelId };
     },
@@ -110,15 +129,11 @@ test("wires the runtime image analyzer into discord_read", async () => {
     async readMessage() {
       return message;
     },
-    async stop() {},
   };
 
-  const agent = await DiscordAgent.create(
-    agentFactory,
-    discordService,
-    "channel-123",
-    "system prompt",
-  );
+  const agent = await DiscordAgent.create(agentFactory, "channel-123", "system prompt", {
+    tools: createToolsFor(channelApi, "channel-123"),
+  });
   const readTool = tools.find((tool) => tool.name === "discord_read");
   assert.ok(readTool);
 
@@ -157,27 +172,7 @@ test("adds bot-specific conversation guidance only for bot messages", async () =
       return runtime;
     },
   };
-  const discordService: DiscordService = {
-    async start() {},
-    stopAccepting() {},
-    setActivity() {},
-    async getChannelLocation(channelId) {
-      return { channelId };
-    },
-    async sendTyping() {},
-    async sendMessage() {},
-    async sendAudio() {},
-    async readMessage() {
-      return message;
-    },
-    async stop() {},
-  };
-  const agent = await DiscordAgent.create(
-    agentFactory,
-    discordService,
-    "channel-123",
-    "system prompt",
-  );
+  const agent = await DiscordAgent.create(agentFactory, "channel-123", "system prompt");
 
   await agent.promptMessage(message);
   await agent.promptMessage({
@@ -207,27 +202,7 @@ test("injects the current guild memory into the agent prompt", async () => {
       return runtime;
     },
   };
-  const discordService: DiscordService = {
-    async start() {},
-    stopAccepting() {},
-    setActivity() {},
-    async getChannelLocation(channelId) {
-      return { channelId };
-    },
-    async sendTyping() {},
-    async sendMessage() {},
-    async sendAudio() {},
-    async readMessage() {
-      return message;
-    },
-    async stop() {},
-  };
-  const agent = await DiscordAgent.create(
-    agentFactory,
-    discordService,
-    "channel-123",
-    "system prompt",
-  );
+  const agent = await DiscordAgent.create(agentFactory, "channel-123", "system prompt");
 
   await agent.promptMessage(message, { guildMemory: "### 定例会の曜日\n\n毎週土曜日" });
 
@@ -250,12 +225,7 @@ test("does not inject owner memory into a public agent turn", async () => {
       return runtime;
     },
   };
-  const agent = await DiscordAgent.create(
-    agentFactory,
-    {} as DiscordService,
-    message.channelId,
-    "system prompt",
-  );
+  const agent = await DiscordAgent.create(agentFactory, message.channelId, "system prompt");
 
   await agent.prompt(
     createDiscordMessageAgentTurn(message, { ownerMemory: "private owner memory" }),
@@ -268,7 +238,7 @@ test("does not inject owner memory into a public agent turn", async () => {
 test("binds private reads to the owner and refuses other authors or channels", async () => {
   const prompts: AgentEvent[] = [];
   let tools: readonly ToolRegistration[] = [];
-  let requester: Parameters<DiscordService["readMessage"]>[1];
+  let requester: Parameters<DiscordChannelApi["readMessage"]>[1];
   const factory: AgentFactory = {
     async create(_definition, registeredTools, options) {
       assert.equal(options.ownerFeaturesAllowed, true);
@@ -289,10 +259,14 @@ test("binds private reads to the owner and refuses other authors or channels", a
       requester = trustedRequester;
       return { ...message, images: [] };
     },
-  } as Pick<DiscordService, "readMessage"> as DiscordService;
-  const agent = await DiscordAgent.create(factory, service, message.channelId, "system", {
+  } as Pick<DiscordChannelApi, "readMessage"> as DiscordChannelApi;
+  const agent = await DiscordAgent.create(factory, message.channelId, "system", {
     ownerUserId: message.author.id,
     ownerFeaturesAllowed: true,
+    tools: createToolsFor(service, message.channelId, {
+      ownerFeaturesAllowed: true,
+      ownerUserId: message.author.id,
+    }),
   });
   await agent.promptMessage(message);
   await agent.steerMessage(message);
@@ -357,10 +331,18 @@ test("keeps reminders across session rotation and isolates channel and access sc
           return { async prompt() {}, dispose() {} };
         },
       },
-      {} as DiscordService,
       channelId,
       "system",
-      { sessionKey, ownerFeaturesAllowed, ownerUserId, reminderStore: store },
+      {
+        sessionKey,
+        ownerFeaturesAllowed,
+        ownerUserId,
+        tools: createToolsFor({} as DiscordChannelApi, channelId, {
+          ownerFeaturesAllowed,
+          ownerUserId,
+          reminderStore: store,
+        }),
+      },
     );
     return tools;
   }

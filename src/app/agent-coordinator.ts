@@ -8,7 +8,7 @@ import { BOT_MESSAGE_GUIDANCE } from "@agents/discord/prompt-policy";
 import type { DiscordAccessPolicy } from "@modules/discord/domain/discord-access-policy";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import type { DiscordOperatingState } from "@modules/discord/domain/discord-operating-state";
-import type { DiscordService } from "@modules/discord/ports/discord-service";
+import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
 import type { MemoryCoordinator } from "@modules/memory/application/memory-coordinator";
 import type { OwnerMemoryStore } from "@modules/memory/application/owner-memory-store";
 import type { DiscordChannelRuleStore } from "@modules/discord/ports/discord-channel-rule-store";
@@ -23,7 +23,7 @@ export { COMMUNICATION_AGENT_ID };
 
 export interface AgentCoordinatorDependencies {
   readonly topology: AgentTopology;
-  readonly discordService: DiscordService;
+  readonly channelApi: DiscordChannelApi;
   readonly accessPolicy?: DiscordAccessPolicy;
   readonly ownerUserId?: string;
   readonly createDiscordAgent: (
@@ -73,14 +73,14 @@ export class AgentCoordinator implements AgentEventRouter {
           ownerFeaturesAllowed,
         );
       },
-      discordService: dependencies.discordService,
+      channelApi: dependencies.channelApi,
       isKnownAgent: (agentId) => dependencies.topology.agents.has(agentId),
       logger: this.logger,
       ownerUserId: dependencies.ownerUserId,
     });
     this.reminderDeliveryCoordinator = new ReminderDeliveryCoordinator({
       accessPolicy: dependencies.accessPolicy,
-      discordService: dependencies.discordService,
+      channelApi: dependencies.channelApi,
       logger: this.logger,
       operatingState: dependencies.operatingState,
       ownerMemoryStore: dependencies.ownerMemoryStore,
@@ -291,7 +291,7 @@ export class AgentCoordinator implements AgentEventRouter {
         },
         "Failed to handle Discord message",
       );
-      await this.dependencies.discordService.sendMessage(
+      await this.dependencies.channelApi.sendMessage(
         message.channelId,
         "ごめん、今はうまく返答できないみたい。",
       );

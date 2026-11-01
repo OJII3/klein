@@ -15,11 +15,8 @@ import {
   type DiscordOperatingMode,
 } from "../domain/discord-operating-state";
 import { type DiscordMessage, type DiscordMessageLocator } from "../domain/discord-message";
-import type {
-  DiscordMessageHandler,
-  DiscordMessageRequester,
-  DiscordService,
-} from "../ports/discord-service";
+import type { DiscordChannelApi, DiscordMessageRequester } from "../ports/discord-channel-api";
+import type { DiscordGateway, DiscordMessageHandler } from "../ports/discord-gateway";
 import type { DiscordChannelRuleStore } from "../ports/discord-channel-rule-store";
 import {
   DiscordVoiceChatController,
@@ -53,7 +50,7 @@ function splitMessage(content: string): string[] {
   return chunks;
 }
 
-export class DiscordJsService implements DiscordService {
+export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
   private readonly client: Client;
   private readonly channels = new Map<string, SendableChannel>();
   private readonly voiceChatController?: DiscordVoiceChatController;

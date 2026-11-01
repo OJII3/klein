@@ -1,11 +1,11 @@
 import { defineTool } from "@earendil-works/pi-durable";
 import { Type } from "typebox";
 
-import type { DiscordService } from "@modules/discord/ports/discord-service";
+import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
 
 export function createDiscordSendTool(
-  discordService: Pick<DiscordService, "sendMessage" | "sendTyping">,
-  channelId: Parameters<DiscordService["sendMessage"]>[0],
+  channelApi: Pick<DiscordChannelApi, "sendMessage" | "sendTyping">,
+  channelId: Parameters<DiscordChannelApi["sendMessage"]>[0],
 ) {
   return defineTool({
     name: "discord_send",
@@ -15,9 +15,9 @@ export function createDiscordSendTool(
       content: Type.String({ minLength: 1 }),
     }),
     async execute(params) {
-      await discordService.sendTyping(channelId);
+      await channelApi.sendTyping(channelId);
       await new Promise((resolve) => setTimeout(resolve, 1_000));
-      await discordService.sendMessage(channelId, params.content);
+      await channelApi.sendMessage(channelId, params.content);
 
       return {
         output: [

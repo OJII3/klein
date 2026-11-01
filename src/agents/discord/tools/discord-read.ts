@@ -2,15 +2,15 @@ import { defineTool } from "@earendil-works/pi-durable";
 import { Type } from "typebox";
 
 import { formatDiscordMessage, type DiscordMessage } from "@modules/discord/domain/discord-message";
-import type { DiscordService } from "@modules/discord/ports/discord-service";
+import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
 
 export type DiscordImageAnalysis = (message: DiscordMessage) => Promise<string | undefined>;
 
 export function createDiscordReadTool(
-  discordService: Pick<DiscordService, "readMessage">,
+  channelApi: Pick<DiscordChannelApi, "readMessage">,
   currentChannelId: string,
   analyzeImages?: DiscordImageAnalysis,
-  requester?: Parameters<DiscordService["readMessage"]>[1],
+  requester?: Parameters<DiscordChannelApi["readMessage"]>[1],
 ) {
   return defineTool({
     name: "discord_read",
@@ -22,7 +22,7 @@ export function createDiscordReadTool(
     }),
     replay: "safe",
     async execute(params) {
-      const message = await discordService.readMessage(
+      const message = await channelApi.readMessage(
         {
           channelId: params.channelId ?? currentChannelId,
           messageId: params.messageId,

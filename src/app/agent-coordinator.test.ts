@@ -19,7 +19,7 @@ import {
   type DiscordAccess,
 } from "@modules/discord/domain/discord-access-policy";
 import { DiscordOperatingState } from "@modules/discord/domain/discord-operating-state";
-import type { DiscordService } from "@modules/discord/ports/discord-service";
+import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
 import type { Reminder } from "@modules/reminders/domain/reminder";
 import type { ReminderStore } from "@modules/reminders/ports/reminder-store";
 import { TaskCoordinator } from "./task-coordinator";
@@ -67,10 +67,7 @@ function createHarness(
     },
   };
   const message = createMessage("test-channel", "test-message", "テスト");
-  const discordService: DiscordService = {
-    async start() {},
-    stopAccepting() {},
-    setActivity() {},
+  const channelApi: DiscordChannelApi = {
     async sendTyping() {},
     async sendMessage() {},
     async sendAudio() {},
@@ -80,7 +77,6 @@ function createHarness(
     async getChannelLocation(channelId) {
       return { guildId: "guild-123", channelId };
     },
-    async stop() {},
   };
 
   return {
@@ -88,16 +84,17 @@ function createHarness(
       ...options,
       topology: buildAgentTopology(undefined),
       createDiscordAgent: (channelId, sessionKey, handoffContext, ownerFeaturesAllowed) =>
-        DiscordAgent.create(agentFactory, discordService, channelId, "system prompt", {
+        DiscordAgent.create(agentFactory, channelId, "system prompt", {
           sessionKey,
           handoffContext,
           ownerFeaturesAllowed,
           ownerUserId: options.ownerUserId,
+          tools: () => [],
         }),
       createDomainAgent: async (agentId) => {
         throw new Error(`Unexpected domain agent: ${agentId}`);
       },
-      discordService,
+      channelApi,
       logger: pino({ level: "silent" }),
       operatingState: new DiscordOperatingState(),
       reminderStore,

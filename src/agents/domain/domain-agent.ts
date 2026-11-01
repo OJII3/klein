@@ -1,31 +1,22 @@
+import type { ToolRegistration } from "@earendil-works/pi-durable";
+
 import type { AgentEvent } from "../core/agent-event";
-import type { AgentEventRouter } from "../core/agent-event-router";
 import { formatAgentTurn, type AgentTurn, type AgentTurnContext } from "../core/agent-turn";
 import type { ChannelAgent } from "../core/channel-agent";
 import type { AgentFactory } from "../core/agent-factory";
 import type { AgentOutputSink, AgentPrompt, AgentRuntime } from "../core/agent-runtime";
-import type { ToolRegistration } from "@earendil-works/pi-durable";
-import type { OwnerMemoryStore } from "@modules/memory/application/owner-memory-store";
-import type { ReminderStore } from "@modules/reminders/ports/reminder-store";
-import { createReminderTools } from "../discord/tools/reminder";
-import { createOwnerMemoryTools } from "../tools/owner-memory";
-import { createAgentSendEventTool } from "../tools/agent-send-event";
 import { createDomainAgentSystemPrompt } from "./prompt-policy";
 
 export type DomainAgentImageAnalyzer = (prompt: AgentPrompt) => Promise<string | undefined>;
 
 export interface DomainAgentCreateOptions {
   readonly agentId: string;
-  readonly ownerUserId: string;
   readonly systemPrompt: string;
-  readonly channelId?: string;
-  readonly channelTools?: (analyzeImage: DomainAgentImageAnalyzer) => readonly ToolRegistration[];
+  readonly tools?: (analyzeImage: DomainAgentImageAnalyzer) => readonly ToolRegistration[];
   readonly outputSink?: AgentOutputSink;
   readonly sessionKey?: string;
   readonly handoffContext?: string;
-  readonly reminderStore?: ReminderStore;
-  readonly ownerMemoryStore?: OwnerMemoryStore;
-  readonly eventRouter?: AgentEventRouter;
+  readonly availableTargets?: readonly string[];
 }
 
 export class DomainAgent implements ChannelAgent {
@@ -44,32 +35,15 @@ export class DomainAgent implements ChannelAgent {
       return runtime.analyzeImage(prompt);
     };
 
-    const channelTools = options.channelTools?.(analyzeImage) ?? [];
-    const reminderTools =
-      options.reminderStore && options.channelId
-        ? createReminderTools(
-            options.reminderStore,
-            options.channelId,
-            `owner:${options.ownerUserId}`,
-          )
-        : [];
-    const ownerMemoryTools = options.ownerMemoryStore
-      ? createOwnerMemoryTools(options.ownerMemoryStore, `agent:${options.agentId}`)
-      : [];
-    const eventRouterTools = options.eventRouter
-      ? [createAgentSendEventTool(options.eventRouter, options.agentId)]
-      : [];
-
-    const tools = [...channelTools, ...reminderTools, ...ownerMemoryTools, ...eventRouterTools];
     const composedPrompt = createDomainAgentSystemPrompt(options.agentId, options.systemPrompt, {
-      availableTargets: options.eventRouter?.listTargets(),
+      availableTargets: options.availableTargets,
     });
 
     runtime = await agentFactory.create(
       {
         systemPrompt: composedPrompt,
       },
-      tools,
+      options.tools?.(analyzeImage) ?? [],
       {
         initialContext: options.handoffContext
           ? `<previous-conversation-context>\n` +

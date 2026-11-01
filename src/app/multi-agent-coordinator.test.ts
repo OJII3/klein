@@ -9,12 +9,14 @@ import type { ToolRegistration } from "@earendil-works/pi-durable";
 import type { AgentEvent } from "@agents/core/agent-event";
 import type { AgentFactory } from "@agents/core/agent-factory";
 import { DiscordAgent } from "@agents/discord/discord-agent";
+import { createDiscordAgentTools } from "@agents/discord/discord-tools";
 import { createDomainAgentDiscordAdapter } from "@agents/discord/domain-agent-discord-adapter";
 import { DomainAgent } from "@agents/domain/domain-agent";
+import { createDomainAgentTools } from "@agents/domain/domain-tools";
 import { createDiscordAccessPolicy } from "@modules/discord/domain/discord-access-policy";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import { DiscordOperatingState } from "@modules/discord/domain/discord-operating-state";
-import type { DiscordService } from "@modules/discord/ports/discord-service";
+import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
 import { OwnerMemoryStore } from "@modules/memory/application/owner-memory-store";
 import { JsonMemoryStore } from "@modules/memory/infrastructure/json-memory-store";
 import { AgentCoordinator } from "./agent-coordinator";
@@ -51,10 +53,7 @@ test("coordinates domain agent direct channel reply, owner memory update, and ev
   const communicationEvents: AgentEvent[] = [];
   const calendarEvents: AgentEvent[] = [];
 
-  const discordService: DiscordService = {
-    async start() {},
-    stopAccepting() {},
-    setActivity() {},
+  const channelApi: DiscordChannelApi = {
     async sendTyping() {},
     async sendMessage(channelId, text) {
       sentMessages.push({ channelId, text });
@@ -66,7 +65,6 @@ test("coordinates domain agent direct channel reply, owner memory update, and ev
     async getChannelLocation(channelId) {
       return { guildId: "owner-guild", channelId };
     },
-    async stop() {},
   };
 
   let calendarTools: readonly ToolRegistration[] = [];
@@ -136,39 +134,53 @@ test("coordinates domain agent direct channel reply, owner memory update, and ev
     topology,
     ownerUserId: OWNER_ID,
     ownerMemoryStore,
-    discordService,
+    channelApi,
     logger: pino({ level: "silent" }),
     operatingState: new DiscordOperatingState(),
     taskCoordinator,
-    createDiscordAgent: (channelId, sessionKey, handoffContext, ownerFeaturesAllowed) =>
-      DiscordAgent.create(agentFactory, discordService, channelId, "Communication SOUL", {
-        eventRouter: coordinator,
+    createDiscordAgent: (channelId, sessionKey, handoffContext, ownerFeaturesAllowed = false) =>
+      DiscordAgent.create(agentFactory, channelId, "Communication SOUL", {
         handoffContext,
         ownerFeaturesAllowed,
-        ownerMemoryStore,
         ownerUserId: OWNER_ID,
         sessionKey,
+        tools: (analyzeImage) =>
+          createDiscordAgentTools(
+            {
+              channelApi,
+              channelId,
+              eventRouter: coordinator,
+              ownerFeaturesAllowed,
+              ownerMemoryStore,
+              ownerUserId: OWNER_ID,
+            },
+            analyzeImage,
+          ),
       }),
     createDomainAgent: (agentId, sessionKey, handoffContext) => {
       const agent = topology.agents.get(agentId);
       assert.ok(agent);
       assert.ok(agent.channelId);
-      const discordAdapter = createDomainAgentDiscordAdapter(
-        discordService,
-        agent.channelId,
-        OWNER_ID,
-      );
+      const discordAdapter = createDomainAgentDiscordAdapter(channelApi, agent.channelId, OWNER_ID);
       return DomainAgent.create(agentFactory, {
         agentId,
-        channelId: agent.channelId,
-        channelTools: discordAdapter.channelTools,
-        eventRouter: coordinator,
+        availableTargets: coordinator.listTargets(),
         handoffContext,
-        ownerMemoryStore,
         outputSink: discordAdapter.outputSink,
-        ownerUserId: OWNER_ID,
         sessionKey,
         systemPrompt: "Calendar Agent Prompt",
+        tools: (analyzeImage) =>
+          createDomainAgentTools(
+            {
+              agentId,
+              channelId: agent.channelId,
+              channelTools: discordAdapter.channelTools,
+              eventRouter: coordinator,
+              ownerMemoryStore,
+              ownerUserId: OWNER_ID,
+            },
+            analyzeImage,
+          ),
       });
     },
   });

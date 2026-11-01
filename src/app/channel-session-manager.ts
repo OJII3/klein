@@ -1,7 +1,7 @@
 import type { Logger } from "pino";
 
 import type { ChannelAgent } from "@agents/core/channel-agent";
-import type { DiscordService } from "@modules/discord/ports/discord-service";
+import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
 import type { DiscordAccessPolicy } from "@modules/discord/domain/discord-access-policy";
 import {
   CHANNEL_ROTATION_IDLE_MS,
@@ -24,7 +24,7 @@ export interface ChannelSessionManagerDependencies {
     ownerFeaturesAllowed?: boolean,
   ) => Promise<ChannelAgent>;
   readonly isKnownAgent?: (agentId: string) => boolean;
-  readonly discordService: DiscordService;
+  readonly channelApi: DiscordChannelApi;
   readonly logger: Logger;
   readonly ownerUserId?: string;
 }
@@ -55,9 +55,9 @@ export class ChannelSessionManager {
         continue;
       }
       if (conversationKey.kind === "discord" && this.dependencies.accessPolicy) {
-        let location: Awaited<ReturnType<DiscordService["getChannelLocation"]>>;
+        let location: Awaited<ReturnType<DiscordChannelApi["getChannelLocation"]>>;
         try {
-          location = await this.dependencies.discordService.getChannelLocation(
+          location = await this.dependencies.channelApi.getChannelLocation(
             conversationKey.channelId,
           );
         } catch (error) {

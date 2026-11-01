@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { DiscordService } from "@modules/discord/ports/discord-service";
+import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
 import {
   createDomainAgentDiscordAdapter,
   splitDiscordMessage,
@@ -13,7 +13,7 @@ test("Discord output sink trims, suppresses NO_ACTION, and sends chunks", async 
     async sendMessage(channelId: string, text: string) {
       sentMessages.push({ channelId, text });
     },
-  } as unknown as DiscordService;
+  } as unknown as DiscordChannelApi;
   const adapter = createDomainAgentDiscordAdapter(discordService, "calendar-channel", "owner");
 
   await adapter.outputSink.writeAssistantText("  NO_ACTION  ");

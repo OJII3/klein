@@ -5,7 +5,7 @@ import type { Interaction, Message } from "discord.js";
 import { createDiscordAccessPolicy } from "../domain/discord-access-policy";
 import type { DiscordMessage } from "../domain/discord-message";
 import { DiscordOperatingState } from "../domain/discord-operating-state";
-import type { DiscordMessageHandler } from "../ports/discord-service";
+import type { DiscordMessageHandler } from "../ports/discord-gateway";
 import { DiscordJsService } from "./discord-js-service";
 
 type TestableDiscordJsService = {
