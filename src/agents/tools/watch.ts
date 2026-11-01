@@ -41,7 +41,7 @@ export function createWatchTools(
     defineTool({
       name: "watch_add",
       description:
-        "Owner-only. Run an executable on a recurring schedule and send an event only when its output changes (condition='change') or is non-empty (condition='output'). " +
+        "Run an executable on a recurring schedule and send an event only when its output changes (condition='change') or is non-empty (condition='output'). " +
         "With condition='change', the first successful check only stores a baseline. " +
         "command is the executable path, not a shell command line. No shell is used; pass an explicit interpreter and script through command/args when needed. " +
         "Times use Japan Standard Time (JST). Weekly schedules require one or more weekdays: sun, mon, tue, wed, thu, fri, sat.",
@@ -92,7 +92,7 @@ export function createWatchTools(
     defineTool({
       name: "watch_list",
       description:
-        "List owner-created watches attached to the current conversation, including their next run and last status.",
+        "List watches attached to the current conversation, including their next run and last status.",
       parameters: Type.Object({}),
       deferred: true,
       replay: "safe",
