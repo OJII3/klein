@@ -1,3 +1,4 @@
+import { ownerAccessScope, PUBLIC_ACCESS_SCOPE } from "@shared/access";
 import type { ReminderTask } from "../domain/scheduled-task";
 import { SCHEDULE_WEEKDAYS, type ScheduleWeekday, type StoredSchedule } from "../domain/schedule";
 
@@ -63,9 +64,9 @@ function resolveAccessScope(
         "owner 用リマインダーを移行するには config の owner.discord.userId が必要です。",
       );
     }
-    return `owner:${ownerUserId}`;
+    return ownerAccessScope(ownerUserId);
   }
-  return "public";
+  return PUBLIC_ACCESS_SCOPE;
 }
 
 function resolveSchedule(record: Record<string, unknown>): StoredSchedule {

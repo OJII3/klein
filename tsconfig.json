@@ -9,7 +9,8 @@
       "@app/*": ["./src/app/*"],
       "@agents/*": ["./src/agents/*"],
       "@modules/*": ["./src/modules/*"],
-      "@runtime/*": ["./src/runtime/*"]
+      "@runtime/*": ["./src/runtime/*"],
+      "@shared/*": ["./src/shared/*"]
     },
     "rootDir": "src",
     "skipLibCheck": true,

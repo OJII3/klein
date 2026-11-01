@@ -1,6 +1,7 @@
+import type { AccessScope } from "@shared/access";
 import { isRecurringSchedule, parseStoredSchedule, type StoredSchedule } from "./schedule";
 
-export type ScheduledTaskAccessScope = "public" | `owner:${string}`;
+export type ScheduledTaskAccessScope = AccessScope;
 export type WatchCondition = "change" | "output";
 export type WatchStatus = "ok" | "error";
 
@@ -118,7 +119,7 @@ export function parseScheduledTask(value: unknown): ScheduledTask {
       kind: "watch",
       id: record.id,
       channelId: record.channelId,
-      accessScope: record.accessScope as `owner:${string}`,
+      accessScope: record.accessScope as ScheduledTaskAccessScope,
       createdAt: record.createdAt,
       schedule,
       nextRunAt: record.nextRunAt,

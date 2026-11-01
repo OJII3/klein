@@ -3,6 +3,7 @@ import type { Logger } from "pino";
 import type { ChannelAgent } from "@agents/core/channel-agent";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
 import type { DiscordAccessPolicy } from "@modules/discord/domain/discord-access-policy";
+import { isOwnerAccessScope, ownerAccessScope, PUBLIC_ACCESS_SCOPE } from "@shared/access";
 import {
   CHANNEL_ROTATION_IDLE_MS,
   createConversationSessionKey,
@@ -69,9 +70,11 @@ export class ChannelSessionManager {
           userIsBot: false,
         };
         if (!this.dependencies.accessPolicy.canReceive(target)) continue;
-        const currentScope = this.dependencies.accessPolicy.canUseOwnerFeatures(target)
-          ? `owner:${this.dependencies.ownerUserId}`
-          : "public";
+        const currentScope =
+          this.dependencies.accessPolicy.canUseOwnerFeatures(target) &&
+          this.dependencies.ownerUserId
+            ? ownerAccessScope(this.dependencies.ownerUserId)
+            : PUBLIC_ACCESS_SCOPE;
         if (state.accessScope !== currentScope) continue;
       }
       await this.getAgent(conversationKey, state);
@@ -170,7 +173,9 @@ export class ChannelSessionManager {
     const scopeMatches =
       accessScope === undefined ||
       existing?.accessScope === accessScope ||
-      (!this.dependencies.accessPolicy && !existing?.accessScope && accessScope === "public");
+      (!this.dependencies.accessPolicy &&
+        !existing?.accessScope &&
+        accessScope === PUBLIC_ACCESS_SCOPE);
     if (existing && scopeMatches) return existing;
 
     const previousAgent = this.agents.get(key);
@@ -212,8 +217,7 @@ export class ChannelSessionManager {
       conversationKey,
       state.sessionKey,
       state.handoffContext,
-      state.accessScope === `owner:${this.dependencies.ownerUserId}` &&
-        !!this.dependencies.ownerUserId,
+      isOwnerAccessScope(state.accessScope, this.dependencies.ownerUserId),
     );
     this.agents.set(key, created);
     this.agentSessionKeys.set(key, state.sessionKey);
