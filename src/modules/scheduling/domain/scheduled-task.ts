@@ -85,11 +85,6 @@ export function parseScheduledTask(value: unknown): ScheduledTask {
   }
 
   if (record.kind === "watch") {
-    if (record.command !== undefined) {
-      throw new Error(
-        "command 形式の監視は廃止されました。スケジュールファイルを削除して JS スクリプトで登録し直してください。",
-      );
-    }
     if (
       !record.accessScope.startsWith("owner:") ||
       typeof record.name !== "string" ||

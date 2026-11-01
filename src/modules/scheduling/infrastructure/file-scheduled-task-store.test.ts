@@ -92,20 +92,6 @@ test("rejects the old reminder file shape", async () => {
   }
 });
 
-test("rejects command-format watches", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "klein-schedules-"));
-  const store = new FileScheduledTaskStore(directory);
-  try {
-    await writeFile(
-      join(directory, "command-watch.json"),
-      JSON.stringify({ ...watch, script: undefined, command: "check-stock" }),
-    );
-    await assert.rejects(store.listDue(Date.now()), /廃止/u);
-  } finally {
-    await rm(directory, { recursive: true, force: true });
-  }
-});
-
 test("rejects public watch records", async () => {
   const directory = await mkdtemp(join(tmpdir(), "klein-schedules-"));
   const store = new FileScheduledTaskStore(directory);
