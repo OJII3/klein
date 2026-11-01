@@ -24,6 +24,7 @@ const watch: WatchTask = {
   channelId: "channel-a",
   accessScope: "owner:123",
   name: "在庫監視",
+  runtime: "command",
   command: "check-stock",
   args: ["--json"],
   condition: "change",
@@ -87,6 +88,18 @@ test("rejects the old reminder file shape", async () => {
     );
     await assert.rejects(store.listForScope("reminder", "123", "public"), /旧形式/u);
     await assert.rejects(store.listDue(Date.now()), /旧形式/u);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("reads watches stored before the runtime field existed", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "klein-schedules-"));
+  const store = new FileScheduledTaskStore(directory);
+  try {
+    const { runtime: _runtime, ...legacyWatch } = watch;
+    await writeFile(join(directory, "legacy-watch.json"), JSON.stringify(legacyWatch));
+    assert.deepEqual(await store.listForScope("watch", "channel-a", "owner:123"), [watch]);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

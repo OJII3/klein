@@ -3,6 +3,7 @@ import { isRecurringSchedule, parseStoredSchedule, type StoredSchedule } from ".
 
 export type ScheduledTaskAccessScope = AccessScope;
 export type WatchCondition = "change" | "output";
+export type WatchRuntime = "command" | "javascript";
 export type WatchStatus = "ok" | "error";
 
 interface ScheduledTaskBase {
@@ -19,10 +20,9 @@ export interface ReminderTask extends ScheduledTaskBase {
   readonly message: string;
 }
 
-export interface WatchTask extends ScheduledTaskBase {
+interface WatchTaskBase extends ScheduledTaskBase {
   readonly kind: "watch";
   readonly name: string;
-  readonly command: string;
   readonly args: readonly string[];
   readonly condition: WatchCondition;
   readonly message: string;
@@ -34,6 +34,18 @@ export interface WatchTask extends ScheduledTaskBase {
   readonly lastError?: string;
   readonly consecutiveFailures: number;
 }
+
+export interface CommandWatchTask extends WatchTaskBase {
+  readonly runtime: "command";
+  readonly command: string;
+}
+
+export interface ScriptWatchTask extends WatchTaskBase {
+  readonly runtime: "javascript";
+  readonly script: string;
+}
+
+export type WatchTask = CommandWatchTask | ScriptWatchTask;
 
 export type ScheduledTask = ReminderTask | WatchTask;
 
@@ -85,12 +97,14 @@ export function parseScheduledTask(value: unknown): ScheduledTask {
   }
 
   if (record.kind === "watch") {
+    const runtime = record.runtime ?? "command";
     if (
       !record.accessScope.startsWith("owner:") ||
       typeof record.name !== "string" ||
       record.name.length === 0 ||
-      typeof record.command !== "string" ||
-      record.command.length === 0 ||
+      (runtime !== "command" && runtime !== "javascript") ||
+      (record.command !== undefined && typeof record.command !== "string") ||
+      (record.script !== undefined && typeof record.script !== "string") ||
       !Array.isArray(record.args) ||
       !record.args.every((arg) => typeof arg === "string") ||
       (record.condition !== "change" && record.condition !== "output") ||
@@ -115,16 +129,14 @@ export function parseScheduledTask(value: unknown): ScheduledTask {
     ) {
       throw new Error("監視設定の保存内容が不正です。");
     }
-    return {
+    return buildWatchTask(record, runtime, schedule, {
       kind: "watch",
       id: record.id,
       channelId: record.channelId,
       accessScope: record.accessScope as ScheduledTaskAccessScope,
       createdAt: record.createdAt,
-      schedule,
       nextRunAt: record.nextRunAt,
       name: record.name,
-      command: record.command,
       args: record.args as string[],
       condition: record.condition,
       message: record.message,
@@ -141,8 +153,35 @@ export function parseScheduledTask(value: unknown): ScheduledTask {
       ...(record.lastStatus !== undefined ? { lastStatus: record.lastStatus as WatchStatus } : {}),
       ...(record.lastError !== undefined ? { lastError: record.lastError as string } : {}),
       consecutiveFailures: record.consecutiveFailures as number,
-    };
+    });
   }
 
   throw new Error("スケジュールの種類が不正です。");
+}
+
+function buildWatchTask(
+  record: Record<string, unknown>,
+  runtime: WatchRuntime,
+  schedule: StoredSchedule,
+  base: Omit<CommandWatchTask, "runtime" | "command" | "schedule"> &
+    Omit<ScriptWatchTask, "runtime" | "script" | "schedule">,
+): WatchTask {
+  if (runtime === "command") {
+    if (
+      typeof record.command !== "string" ||
+      record.command.length === 0 ||
+      record.script !== undefined
+    ) {
+      throw new Error("監視設定の保存内容が不正です。");
+    }
+    return { ...base, schedule, runtime: "command", command: record.command };
+  }
+  if (
+    typeof record.script !== "string" ||
+    record.script.length === 0 ||
+    record.command !== undefined
+  ) {
+    throw new Error("監視設定の保存内容が不正です。");
+  }
+  return { ...base, schedule, runtime: "javascript", script: record.script };
 }

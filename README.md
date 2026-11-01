@@ -102,14 +102,18 @@ being delivered.
 
 - **Reminders** deliver a fixed message once or repeatedly (`every` minutes, daily, or
   weekly). They belong to `public` or `owner:<userId>` scope.
-- **Watches** run an executable on a recurring schedule and wake the agent only when the
-  output changes. The first successful check establishes the baseline; unchanged output
-  stays silent. `condition: "output"` can be used instead to notify whenever stdout is
-  non-empty. Watch tools are exposed only in owner sessions and always use owner scope.
+- **Watches** run a check on a recurring schedule and wake the agent only when the output
+  changes. The first successful check establishes the baseline; unchanged output stays
+  silent. `condition: "output"` can be used instead to notify whenever the check produces
+  output. Watch tools are exposed only in owner sessions and always use owner scope.
 
-The watch executable is started directly with `command` and `args` (no shell). If a shell
-is needed, invoke it explicitly. Checks have a 30-second timeout and a 64 KiB output limit.
-Check failures are recorded in `watch_list` and do not wake the agent.
+A watch uses one of two runtimes. `runtime: "command"` (the default) starts `command` with
+`args` directly, without a shell; invoke a shell explicitly if you need one.
+`runtime: "javascript"` runs `script` in a QuickJS sandbox instead: the script reads the
+`args` array, calls `fetch(url, init)` for HTTP requests, and prints with `text()` or
+`console.*`. Its text output plus the returned value become the watch output. The sandbox
+has no timers, filesystem, or process APIs. Checks have a 30-second timeout and a 64 KiB
+output limit. Check failures are recorded in `watch_list` and do not wake the agent.
 
 Schedule files use the new unified format. The application does not read the old
 `<runtime.agentDir>/reminders` directory. To migrate it manually, run the dry run first,

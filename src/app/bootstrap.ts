@@ -46,7 +46,9 @@ import { PinoJsonlReader } from "@modules/webui/infrastructure/pino-jsonl-reader
 import { Sbv2Tts } from "@modules/tts/infrastructure/sbv2-tts";
 import { WebSocketAsrClient } from "@modules/asr/infrastructure/websocket-asr-client";
 import { FileScheduledTaskStore } from "@modules/scheduling/infrastructure/file-scheduled-task-store";
+import { QuickJsWatchCheckRunner } from "@modules/scheduling/application/quickjs-watch-check-runner";
 import { ProcessWatchCheckRunner } from "@modules/scheduling/application/watch-check-runner";
+import { WatchCheckRunnerRouter } from "@modules/scheduling/application/watch-check-runner-router";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 
 const DISCORD_USAGE_STATUS_REFRESH_INTERVAL_MS = 60 * 60 * 1_000;
@@ -88,7 +90,10 @@ export async function bootstrap(): Promise<void> {
   const tts = config.features.tts?.enabled ? new Sbv2Tts(config.features.tts.serverUrl) : undefined;
   const agentDir = resolve(config.runtime.agentDir);
   const scheduledTaskStore = new FileScheduledTaskStore(resolve(agentDir, "schedules"));
-  const watchCheckRunner = new ProcessWatchCheckRunner();
+  const watchCheckRunner = new WatchCheckRunnerRouter(
+    new ProcessWatchCheckRunner(),
+    new QuickJsWatchCheckRunner(),
+  );
   const channelRuleStore = new FileDiscordChannelRuleStore(resolve(agentDir, "channel-rules"));
   const ownerMemoryStore = ownerUserId
     ? new OwnerMemoryStore(

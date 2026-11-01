@@ -399,6 +399,7 @@ const dueWatch: WatchTask = {
   channelId: "test-channel",
   accessScope: "owner:123",
   name: "在庫監視",
+  runtime: "command",
   command: "check-stock",
   args: [],
   condition: "change",

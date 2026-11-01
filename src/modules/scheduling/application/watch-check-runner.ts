@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 
-import type { WatchTask } from "../domain/scheduled-task";
+import type { CommandWatchTask, ScriptWatchTask, WatchTask } from "../domain/scheduled-task";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_OUTPUT_BYTES = 64 * 1_024;
@@ -12,7 +12,15 @@ export interface WatchCheckResult {
 }
 
 export interface WatchCheckRunner {
-  run(watch: Pick<WatchTask, "command" | "args">): Promise<WatchCheckResult>;
+  run(watch: WatchTask): Promise<WatchCheckResult>;
+}
+
+export interface WatchCommandRunner {
+  run(watch: Pick<CommandWatchTask, "command" | "args">): Promise<WatchCheckResult>;
+}
+
+export interface WatchScriptRunner {
+  run(watch: Pick<ScriptWatchTask, "script" | "args">): Promise<WatchCheckResult>;
 }
 
 export class WatchCheckError extends Error {
@@ -32,7 +40,7 @@ export interface ProcessWatchCheckRunnerOptions {
   readonly cwd?: string;
 }
 
-export class ProcessWatchCheckRunner implements WatchCheckRunner {
+export class ProcessWatchCheckRunner implements WatchCommandRunner {
   private readonly timeoutMs: number;
   private readonly maxOutputBytes: number;
   private readonly cwd: string;
@@ -43,7 +51,7 @@ export class ProcessWatchCheckRunner implements WatchCheckRunner {
     this.cwd = options.cwd ?? process.cwd();
   }
 
-  run(watch: Pick<WatchTask, "command" | "args">): Promise<WatchCheckResult> {
+  run(watch: Pick<CommandWatchTask, "command" | "args">): Promise<WatchCheckResult> {
     return new Promise((resolve, reject) => {
       const startedAt = Date.now();
       const child = spawn(watch.command, [...watch.args], {
