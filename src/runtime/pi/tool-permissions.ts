@@ -1,4 +1,6 @@
-export type ToolAccess = "allow" | "deny" | "owner";
+import { isAccessAllowed, type AccessLevel } from "@shared/access";
+
+export type ToolAccess = AccessLevel;
 export interface ToolPermissions {
   readonly tools?: {
     readonly default?: ToolAccess;
@@ -42,6 +44,6 @@ export class ToolAuthorization {
     );
   }
   private allows(access: ToolAccess): boolean {
-    return access === "allow" || (access === "owner" && this.ownerSession);
+    return isAccessAllowed(access, this.ownerSession);
   }
 }

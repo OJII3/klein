@@ -12,6 +12,7 @@ import type { OwnerMemoryStore } from "@modules/memory/application/owner-memory-
 import type { DiscordChannelRuleStore } from "@modules/discord/ports/discord-channel-rule-store";
 import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
 import type { WatchCheckRunner } from "@modules/scheduling/application/watch-check-runner";
+import { ownerAccessScope, PUBLIC_ACCESS_SCOPE } from "@shared/access";
 import type { TaskCoordinator } from "./task-coordinator";
 import type { ChannelSessionStateStore } from "./channel-session-state-store";
 import { ChannelSessionManager } from "./channel-session-manager";
@@ -116,7 +117,10 @@ export class AgentCoordinator {
 
     const ownerFeaturesAllowed =
       this.dependencies.accessPolicy?.canUseOwnerFeatures(target) ?? false;
-    const accessScope = ownerFeaturesAllowed ? `owner:${this.dependencies.ownerUserId}` : "public";
+    const accessScope =
+      ownerFeaturesAllowed && this.dependencies.ownerUserId
+        ? ownerAccessScope(this.dependencies.ownerUserId)
+        : PUBLIC_ACCESS_SCOPE;
 
     const logger = this.logger.child({
       channelId: message.channelId,

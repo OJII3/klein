@@ -17,6 +17,7 @@ import {
   truncateWatchOutput,
 } from "@modules/scheduling/domain/watch-output";
 import type { WatchCheckRunner } from "@modules/scheduling/application/watch-check-runner";
+import { isOwnerAccessScope, PUBLIC_ACCESS_SCOPE } from "@shared/access";
 import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
 import type { TaskCoordinator } from "./task-coordinator";
 import type { ChannelSessionManager } from "./channel-session-manager";
@@ -98,18 +99,23 @@ export class ScheduledTaskDeliveryCoordinator {
 
   private async isAllowed(task: ScheduledTask): Promise<boolean> {
     const accessPolicy = this.dependencies.accessPolicy;
-    if (!accessPolicy) return task.kind === "reminder" && task.accessScope === "public";
+    if (!accessPolicy) {
+      return task.kind === "reminder" && task.accessScope === PUBLIC_ACCESS_SCOPE;
+    }
 
     const location = await this.dependencies.channelApi.getChannelLocation(task.channelId);
-    if (task.accessScope === "public") {
+    if (task.accessScope === PUBLIC_ACCESS_SCOPE) {
       return accessPolicy.resolveAccess(location) === "allow";
     }
 
     const ownerUserId = this.dependencies.ownerUserId;
     return (
-      !!ownerUserId &&
-      task.accessScope === `owner:${ownerUserId}` &&
-      accessPolicy.canUseOwnerFeatures({ ...location, userId: ownerUserId, userIsBot: false })
+      isOwnerAccessScope(task.accessScope, ownerUserId) &&
+      accessPolicy.canUseOwnerFeatures({
+        ...location,
+        userId: ownerUserId,
+        userIsBot: false,
+      })
     );
   }
 
@@ -239,11 +245,9 @@ export class ScheduledTaskDeliveryCoordinator {
         conversationKey,
         task.accessScope,
         async (agent) => {
-          const ownerMemory =
-            this.dependencies.ownerUserId &&
-            task.accessScope === `owner:${this.dependencies.ownerUserId}`
-              ? await this.dependencies.ownerMemoryStore?.getContext(buildEventMemoryQuery(event))
-              : undefined;
+          const ownerMemory = isOwnerAccessScope(task.accessScope, this.dependencies.ownerUserId)
+            ? await this.dependencies.ownerMemoryStore?.getContext(buildEventMemoryQuery(event))
+            : undefined;
           try {
             await agent.promptEvent(event, { ownerMemory });
             if (task.kind === "reminder") {

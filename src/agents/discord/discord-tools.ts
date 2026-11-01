@@ -4,6 +4,7 @@ import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-a
 import type { OwnerMemoryStore } from "@modules/memory/application/owner-memory-store";
 import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
 import type { TextToSpeech } from "@modules/tts/infrastructure/sbv2-tts";
+import { ownerAccessScope, PUBLIC_ACCESS_SCOPE } from "@shared/access";
 import { createOwnerMemoryTools } from "../tools/owner-memory";
 import { createReminderTools } from "../tools/reminder";
 import { createWatchTools } from "../tools/watch";
@@ -52,7 +53,7 @@ export function createDiscordAgentTools(
       ? createReminderTools(
           options.scheduledTaskStore,
           options.channelId,
-          ownerFeaturesAllowed ? `owner:${options.ownerUserId!}` : "public",
+          ownerFeaturesAllowed ? ownerAccessScope(options.ownerUserId!) : PUBLIC_ACCESS_SCOPE,
         )
       : []),
     ...(options.scheduledTaskStore && ownerFeaturesAllowed

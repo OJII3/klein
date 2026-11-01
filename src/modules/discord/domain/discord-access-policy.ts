@@ -1,4 +1,6 @@
-export type DiscordAccess = "allow" | "deny" | "owner";
+import { isAccessAllowed, type AccessLevel } from "@shared/access";
+
+export type DiscordAccess = AccessLevel;
 
 export interface DiscordThreadAccessRule {
   readonly access?: DiscordAccess;
@@ -60,7 +62,7 @@ export function createDiscordAccessPolicy(
 
   return {
     canReceive(target) {
-      return resolveAccess(configuration, target) === "allow" || canUseOwnerFeatures(target);
+      return isAccessAllowed(resolveAccess(configuration, target), canUseOwnerFeatures(target));
     },
     resolveAccess: (target) => resolveAccess(configuration, target),
     canUseOwnerFeatures,

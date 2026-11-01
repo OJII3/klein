@@ -11,6 +11,7 @@ import {
 } from "@modules/scheduling/domain/schedule";
 import type { WatchTask } from "@modules/scheduling/domain/scheduled-task";
 import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
+import { ownerAccessScope } from "@shared/access";
 
 const weekdaySchema = Type.Union(SCHEDULE_WEEKDAYS.map((weekday) => Type.Literal(weekday)));
 const recurringScheduleSchema = Type.Union([
@@ -35,7 +36,7 @@ export function createWatchTools(
   channelId: string,
   ownerUserId: string,
 ) {
-  const accessScope = `owner:${ownerUserId}` as const;
+  const accessScope = ownerAccessScope(ownerUserId);
   return [
     defineTool({
       name: "watch_add",

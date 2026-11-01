@@ -45,7 +45,7 @@ import {
   HANDOFF_SUMMARY_MAX_TOKENS,
   HANDOFF_SUMMARY_SYSTEM_PROMPT,
 } from "./handoff-summary";
-import type { ToolPermissions } from "./tool-permissions";
+import { ToolAuthorization, type ToolPermissions } from "./tool-permissions";
 import type { SessionMode } from "@app/cli-options";
 import type { ChannelSessionStateStore } from "@app/channel-session-state-store";
 import { PiDurableSessionStore } from "./pi-durable-session-store";
@@ -266,9 +266,11 @@ export function createPiDurableAgentFactory({
     ): Promise<AgentRuntime> {
       const sessionId = encodeURIComponent(options.sessionKey);
       resolveConfiguredModel(llm.provider, llm.model, modelRuntime);
-      const durableTools = tools.filter((tool) =>
-        isToolAllowed(tool.name, options.ownerFeaturesAllowed === true, permissions),
+      const authorization = new ToolAuthorization(
+        options.ownerFeaturesAllowed === true,
+        permissions,
       );
+      const durableTools = tools.filter((tool) => authorization.allowsTool(tool.name));
       const mcpTools = await loadMcpTools({
         agentDir: configDir,
         ownerFeaturesAllowed: options.ownerFeaturesAllowed === true,
@@ -292,7 +294,7 @@ export function createPiDurableAgentFactory({
       const skills = skillsDirectory ? await loadMarkdownFiles(skillsDirectory) : [];
       const webTools = adaptPiWebAccessTools(
         webAccess.tools,
-        (name) => isToolAllowed(name, options.ownerFeaturesAllowed === true, permissions),
+        (name) => authorization.allowsTool(name),
         webAccess.executionContext,
         webAccess.flushEntries,
       );
@@ -677,15 +679,6 @@ export class PiDurableAgentRuntime implements AgentRuntime {
       })),
     ];
   }
-}
-
-function isToolAllowed(
-  name: string,
-  ownerFeaturesAllowed: boolean,
-  permissions?: ToolPermissions,
-): boolean {
-  const access = permissions?.tools?.overrides?.[name] ?? permissions?.tools?.default ?? "allow";
-  return access === "allow" || (access === "owner" && ownerFeaturesAllowed);
 }
 
 function durableOpenCodeSessionId(agentDir: string, id: ConversationId): string {
