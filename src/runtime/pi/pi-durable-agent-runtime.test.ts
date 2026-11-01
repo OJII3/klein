@@ -333,7 +333,7 @@ test("isolates channel histories and tool bindings when sessions resume or start
   }
 });
 
-test("writes assistant text to its output sink and preserves assistant messages", async () => {
+test("preserves assistant messages across prompts", async () => {
   const agentDir = await mkdtemp(join(tmpdir(), "klein-durable-assistant-text-"));
   const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
   const provider = fauxProvider({ tokensPerSecond: 100_000 });
@@ -353,30 +353,24 @@ test("writes assistant text to its output sink and preserves assistant messages"
   });
 
   try {
-    const deliveredText: string[] = [];
     const runtime = await factory.create(
       {
-        systemPrompt: "Domain agent prompt",
+        systemPrompt: "Test prompt",
       },
       [],
       {
-        sessionKey: "agent:calendar",
-        outputSink: {
-          writeAssistantText(text) {
-            deliveredText.push(text);
-          },
-        },
+        sessionKey: "discord-channel:calendar",
       },
     );
     const requests: TranscriptContext[] = [];
     provider.setResponses([
       (context) => {
         requests.push(context);
-        return fauxAssistantMessage("First domain reply");
+        return fauxAssistantMessage("First reply");
       },
       (context) => {
         requests.push(context);
-        return fauxAssistantMessage("Second domain reply");
+        return fauxAssistantMessage("Second reply");
       },
     ]);
 
@@ -387,7 +381,6 @@ test("writes assistant text to its output sink and preserves assistant messages"
       occurredAt: "2026-10-25T01:00:00.000Z",
       content: [{ type: "text", text: "What is on my schedule?" }],
     });
-    assert.deepEqual(deliveredText, ["First domain reply"]);
 
     await runtime.prompt({
       id: "event-2",
@@ -396,10 +389,9 @@ test("writes assistant text to its output sink and preserves assistant messages"
       occurredAt: "2026-10-25T01:01:00.000Z",
       content: [{ type: "text", text: "And tomorrow?" }],
     });
-    assert.deepEqual(deliveredText, ["First domain reply", "Second domain reply"]);
 
     const secondRequestText = JSON.stringify(requests[1]!.messages);
-    assert.match(secondRequestText, /First domain reply/);
+    assert.match(secondRequestText, /First reply/);
     assert.doesNotMatch(secondRequestText, /Remained silent\./);
     runtime.dispose();
   } finally {

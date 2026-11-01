@@ -1,11 +1,7 @@
-export type ConversationKey =
-  | { readonly kind: "discord"; readonly channelId: string }
-  | { readonly kind: "agent"; readonly agentId: string };
+export type ConversationKey = { readonly kind: "discord"; readonly channelId: string };
 
 export function serializeConversationKey(key: ConversationKey): string {
-  return key.kind === "discord"
-    ? `discord:${encodeURIComponent(key.channelId)}`
-    : `agent:${encodeURIComponent(key.agentId)}`;
+  return `discord:${encodeURIComponent(key.channelId)}`;
 }
 
 export function createConversationSessionKey(
@@ -16,10 +12,7 @@ export function createConversationSessionKey(
     readonly rotationDate?: string;
   } = {},
 ): string {
-  const sessionKey =
-    key.kind === "agent"
-      ? `agent:${key.agentId}`
-      : `discord-channel:${key.channelId}${options.useAccessScope ? `:${options.accessScope ?? "public"}` : ""}`;
+  const sessionKey = `discord-channel:${key.channelId}${options.useAccessScope ? `:${options.accessScope ?? "public"}` : ""}`;
   return options.rotationDate ? `${sessionKey}:rotation:${options.rotationDate}` : sessionKey;
 }
 

@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 
 import { AgentCoordinator } from "./agent-coordinator";
-import { buildAgentTopology } from "./agent-topology";
 import { parseCliOptions } from "./cli-options";
 import { loadConfig } from "./config";
 import { createLogFilePath, createLogger, flushLogger } from "./logger";
@@ -13,9 +12,6 @@ import { TaskCoordinator } from "./task-coordinator";
 import { VoiceChatCoordinator } from "./voice-chat-coordinator";
 import { DiscordAgent } from "@agents/discord/discord-agent";
 import { createDiscordAgentTools } from "@agents/discord/discord-tools";
-import { DomainAgent } from "@agents/domain/domain-agent";
-import { createDomainAgentTools } from "@agents/domain/domain-tools";
-import { createDomainAgentDiscordAdapter } from "@agents/discord/domain-agent-discord-adapter";
 import {
   createPiModelRuntime,
   resolveConfiguredModel,
@@ -84,12 +80,7 @@ export async function bootstrap(): Promise<void> {
   }
   const discordOperatingState = new DiscordOperatingState();
   const ownerUserId = config.owner?.discord.userId;
-  const topology = buildAgentTopology(config.owner);
-  const discordAccessPolicy = createDiscordAccessPolicy(
-    config.discord.access,
-    ownerUserId,
-    topology.ownerChannelIds,
-  );
+  const discordAccessPolicy = createDiscordAccessPolicy(config.discord.access, ownerUserId);
   const voiceSystemPrompt = voiceChatConfiguration?.enabled
     ? await loadPromptFile(profile.voiceSystemPromptFile)
     : undefined;
@@ -155,12 +146,6 @@ export async function bootstrap(): Promise<void> {
     : piAgentFactory;
   let discordService!: DiscordJsService;
   let agentCoordinator!: AgentCoordinator;
-  const domainAgentPrompts = new Map<string, string>();
-  if (ownerUserId) {
-    for (const [agentId, agent] of topology.agents) {
-      domainAgentPrompts.set(agentId, await loadPromptFile(agent.promptFile));
-    }
-  }
   const createDiscordAgent = (
     channelId: string,
     sessionKey: string,
@@ -177,7 +162,6 @@ export async function bootstrap(): Promise<void> {
           {
             channelApi: discordService,
             channelId,
-            eventRouter: agentCoordinator,
             ownerFeaturesAllowed,
             ownerMemoryStore,
             ownerUserId,
@@ -251,40 +235,8 @@ export async function bootstrap(): Promise<void> {
     : undefined;
   agentCoordinator = new AgentCoordinator({
     accessPolicy: discordAccessPolicy,
-    topology,
     ownerUserId,
     createDiscordAgent,
-    createDomainAgent: (agentId, sessionKey, handoffContext) => {
-      const agent = topology.agents.get(agentId);
-      const systemPrompt = domainAgentPrompts.get(agentId);
-      if (!ownerUserId || !agent || systemPrompt === undefined) {
-        throw new Error(`Domain agent "${agentId}" is not configured`);
-      }
-      const discordAdapter = agent.channelId
-        ? createDomainAgentDiscordAdapter(discordService, agent.channelId, ownerUserId)
-        : undefined;
-      return DomainAgent.create(piAgentFactory, {
-        agentId,
-        availableTargets: agentCoordinator.listTargets(),
-        handoffContext,
-        outputSink: discordAdapter?.outputSink,
-        sessionKey,
-        systemPrompt,
-        tools: (analyzeImage) =>
-          createDomainAgentTools(
-            {
-              agentId,
-              channelId: agent.channelId,
-              channelTools: discordAdapter?.channelTools,
-              eventRouter: agentCoordinator,
-              ownerMemoryStore,
-              ownerUserId,
-              scheduledTaskStore,
-            },
-            analyzeImage,
-          ),
-      });
-    },
     channelSessionStateStore: piAgentFactory.channelSessionStateStore,
     channelRuleStore,
     channelApi: discordService,

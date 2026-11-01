@@ -31,7 +31,6 @@ export interface ScheduledTaskDeliveryCoordinatorDependencies {
   readonly ownerUserId?: string;
   readonly scheduledTaskStore?: ScheduledTaskStore;
   readonly watchCheckRunner: WatchCheckRunner;
-  readonly resolveConversationKey: (channelId: string) => ConversationKey;
   readonly sessionManager: ChannelSessionManager;
   readonly taskCoordinator: TaskCoordinator;
 }
@@ -117,7 +116,7 @@ export class ScheduledTaskDeliveryCoordinator {
   private async deliverReminder(task: ReminderTask): Promise<void> {
     const store = this.dependencies.scheduledTaskStore;
     if (!store) return;
-    const conversationKey = this.dependencies.resolveConversationKey(task.channelId);
+    const conversationKey = { kind: "discord", channelId: task.channelId } as const;
     const event: AgentEvent = {
       id: `reminder:${task.id}:${task.nextRunAt}`,
       occurredAt: new Date().toISOString(),
@@ -217,7 +216,7 @@ export class ScheduledTaskDeliveryCoordinator {
   }
 
   private async deliverWatch(triggered: TriggeredWatch): Promise<void> {
-    const conversationKey = this.dependencies.resolveConversationKey(triggered.watch.channelId);
+    const conversationKey = { kind: "discord", channelId: triggered.watch.channelId } as const;
     await this.deliverEvent(
       conversationKey,
       triggered.watch,

@@ -23,7 +23,6 @@ export interface ChannelSessionManagerDependencies {
     handoffContext?: string,
     ownerFeaturesAllowed?: boolean,
   ) => Promise<ChannelAgent>;
-  readonly isKnownAgent?: (agentId: string) => boolean;
   readonly channelApi: DiscordChannelApi;
   readonly logger: Logger;
   readonly ownerUserId?: string;
@@ -47,14 +46,7 @@ export class ChannelSessionManager {
     const states = await this.dependencies.channelSessionStateStore?.list();
     for (const state of states ?? []) {
       const { conversationKey } = state;
-      if (
-        conversationKey.kind === "agent" &&
-        this.dependencies.isKnownAgent &&
-        !this.dependencies.isKnownAgent(conversationKey.agentId)
-      ) {
-        continue;
-      }
-      if (conversationKey.kind === "discord" && this.dependencies.accessPolicy) {
+      if (this.dependencies.accessPolicy) {
         let location: Awaited<ReturnType<DiscordChannelApi["getChannelLocation"]>>;
         try {
           location = await this.dependencies.channelApi.getChannelLocation(
@@ -176,7 +168,6 @@ export class ChannelSessionManager {
       ? await this.dependencies.channelSessionStateStore.getOrCreate(conversationKey, rotationDate)
       : this.inMemoryChannelStates.get(key);
     const scopeMatches =
-      conversationKey.kind === "agent" ||
       accessScope === undefined ||
       existing?.accessScope === accessScope ||
       (!this.dependencies.accessPolicy && !existing?.accessScope && accessScope === "public");
@@ -192,7 +183,7 @@ export class ChannelSessionManager {
       accessScope,
       sessionKey: createConversationSessionKey(conversationKey, {
         accessScope,
-        useAccessScope: conversationKey.kind === "discord" && !!this.dependencies.accessPolicy,
+        useAccessScope: !!this.dependencies.accessPolicy,
       }),
       lastActivityAt: null,
       lastRotationDate: rotationDate,
@@ -236,21 +227,6 @@ export class ChannelSessionManager {
     return created;
   }
 
-  async findLatestOwnerChannelId(): Promise<string | undefined> {
-    if (!this.dependencies.ownerUserId) return undefined;
-    const ownerScope = `owner:${this.dependencies.ownerUserId}`;
-    const states = this.dependencies.channelSessionStateStore
-      ? await this.dependencies.channelSessionStateStore.list()
-      : [...this.inMemoryChannelStates.values()];
-    const candidates = states
-      .filter(
-        (state) => state.conversationKey.kind === "discord" && state.accessScope === ownerScope,
-      )
-      .sort((left, right) => (right.lastActivityAt ?? 0) - (left.lastActivityAt ?? 0));
-    const latest = candidates[0]?.conversationKey;
-    return latest?.kind === "discord" ? latest.channelId : undefined;
-  }
-
   async rotateConversationIfDue(
     conversationKey: ConversationKey,
     state: ChannelSessionState,
@@ -289,7 +265,7 @@ export class ChannelSessionManager {
       lastRotationDate: rotationDate,
       sessionKey: createConversationSessionKey(conversationKey, {
         accessScope: state.accessScope,
-        useAccessScope: conversationKey.kind === "discord" && !!this.dependencies.accessPolicy,
+        useAccessScope: !!this.dependencies.accessPolicy,
         rotationDate,
       }),
     };
@@ -322,13 +298,6 @@ export class ChannelSessionManager {
     }
 
     for (const conversationKey of conversations) {
-      if (
-        conversationKey.kind === "agent" &&
-        this.dependencies.isKnownAgent &&
-        !this.dependencies.isKnownAgent(conversationKey.agentId)
-      ) {
-        continue;
-      }
       await this.runForConversation(conversationKey, async () => {
         try {
           const now = Date.now();

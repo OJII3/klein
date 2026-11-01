@@ -28,13 +28,13 @@ test("OwnerMemoryStore supports CRUD, context selection, and WebUI access", asyn
     kind: "rule",
     title: "通知ポリシー",
     content: "重要度の高い予定変更はコミュニケーションエージェントへ伝える",
-    sourceId: "agent:calendar",
+    sourceId: "communication:calendar",
   });
   const tempEntry = await store.addEntry({
     kind: "temporary",
     title: "本日の予定変更",
     content: "15:00の定例MTGが16:00に変更された",
-    sourceId: "agent:calendar",
+    sourceId: "communication:calendar",
   });
 
   const greetingContext = await store.getContext("おはよう！");
@@ -95,7 +95,7 @@ test("owner memory selection bounds pinned entries, total entries, and rendered 
 
 test("createOwnerMemoryTools executes list, add, update, and delete", async () => {
   const store = new OwnerMemoryStore(new FakeMemoryStore());
-  const tools = createOwnerMemoryTools(store, "agent:mail");
+  const tools = createOwnerMemoryTools(store, "communication:mail");
   const findTool = (name: string): ToolRegistration => {
     const tool = tools.find((item) => item.name === name);
     assert.ok(tool, `Expected tool ${name}`);

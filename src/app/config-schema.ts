@@ -144,19 +144,6 @@ const ProfileNameSchema = Type.String({
   pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$",
 });
 
-export const AgentIdSchema = Type.String({
-  minLength: 1,
-  pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$",
-});
-
-const DomainAgentConfigurationSchema = Type.Object(
-  {
-    channelId: Type.Optional(DiscordIdSchema),
-    promptFile: Type.String({ minLength: 1 }),
-  },
-  { additionalProperties: false },
-);
-
 export const ConfigSchema = Type.Object(
   {
     $schema: Type.Optional(Type.String({ minLength: 1 })),
@@ -173,7 +160,6 @@ export const ConfigSchema = Type.Object(
             { additionalProperties: false },
           ),
           memoryFilePath: Type.Optional(Type.String({ minLength: 1 })),
-          agents: Type.Optional(Type.Record(AgentIdSchema, DomainAgentConfigurationSchema)),
         },
         { additionalProperties: false },
       ),
@@ -232,4 +218,3 @@ export const ConfigSchema = Type.Object(
 );
 
 export type AppConfig = Static<typeof ConfigSchema>;
-export type DomainAgentConfig = Static<typeof DomainAgentConfigurationSchema>;

@@ -7,7 +7,7 @@ Shared memory across channels in this guild.
 
 const OWNER_MEMORY_CONTEXT_HEADER = `# Owner Memory
 
-Shared memory across the owner's communication channel and domain agents.
+Shared memory across the owner's communication channels.
 `;
 
 export function renderMemoryContext(

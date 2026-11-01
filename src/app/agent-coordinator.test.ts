@@ -29,7 +29,6 @@ import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-tas
 import type { WatchCheckRunner } from "@modules/scheduling/application/watch-check-runner";
 import { TaskCoordinator } from "./task-coordinator";
 import { AgentCoordinator, type AgentCoordinatorDependencies } from "./agent-coordinator";
-import { buildAgentTopology } from "./agent-topology";
 import { getChannelRotationDate } from "./channel-session-state-store";
 
 interface TestHarness {
@@ -92,7 +91,6 @@ function createHarness(
   return {
     agentCoordinator: new AgentCoordinator({
       ...options,
-      topology: buildAgentTopology(undefined),
       createDiscordAgent: (channelId, sessionKey, handoffContext, ownerFeaturesAllowed) =>
         DiscordAgent.create(agentFactory, channelId, "system prompt", {
           sessionKey,
@@ -101,9 +99,6 @@ function createHarness(
           ownerUserId: options.ownerUserId,
           tools: () => [],
         }),
-      createDomainAgent: async (agentId) => {
-        throw new Error(`Unexpected domain agent: ${agentId}`);
-      },
       channelApi,
       logger: pino({ level: "silent" }),
       operatingState: new DiscordOperatingState(),

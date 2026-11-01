@@ -38,14 +38,7 @@ export interface DiscordAccessPolicy {
 function resolveAccess(
   configuration: DiscordAccessConfiguration,
   target: DiscordAccessTarget,
-  ownerChannels: ReadonlySet<string>,
 ): DiscordAccess {
-  if (
-    ownerChannels.has(target.channelId) ||
-    (target.threadId !== undefined && ownerChannels.has(target.threadId))
-  ) {
-    return "owner";
-  }
   if (!target.guildId) return configuration.directMessages;
 
   const guildRule = configuration.guilds?.[target.guildId];
@@ -58,23 +51,18 @@ function resolveAccess(
 export function createDiscordAccessPolicy(
   configuration: DiscordAccessConfiguration,
   ownerUserId?: string,
-  ownerChannelIds?: Iterable<string>,
 ): DiscordAccessPolicy {
-  const ownerChannels = new Set(ownerChannelIds ?? []);
   const canUseOwnerFeatures = (target: DiscordAccessTarget): boolean =>
-    resolveAccess(configuration, target, ownerChannels) === "owner" &&
+    resolveAccess(configuration, target) === "owner" &&
     !!ownerUserId &&
     target.userId === ownerUserId &&
     !target.userIsBot;
 
   return {
     canReceive(target) {
-      return (
-        resolveAccess(configuration, target, ownerChannels) === "allow" ||
-        canUseOwnerFeatures(target)
-      );
+      return resolveAccess(configuration, target) === "allow" || canUseOwnerFeatures(target);
     },
-    resolveAccess: (target) => resolveAccess(configuration, target, ownerChannels),
+    resolveAccess: (target) => resolveAccess(configuration, target),
     canUseOwnerFeatures,
   };
 }

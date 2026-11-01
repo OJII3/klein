@@ -11,10 +11,6 @@ export interface AgentPrompt {
   readonly images: readonly AgentImage[];
 }
 
-export interface AgentOutputSink {
-  writeAssistantText(text: string): Promise<void> | void;
-}
-
 export interface AgentRuntime {
   prompt(event: AgentEvent): Promise<void>;
   steer?(event: AgentEvent): Promise<void>;

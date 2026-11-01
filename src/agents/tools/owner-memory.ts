@@ -31,7 +31,7 @@ export function createOwnerMemoryTools(store: OwnerMemoryStore, sourceId = "agen
     defineTool({
       name: "owner_memory_list",
       description:
-        "List entries in the shared owner memory across the communication agent and domain agents. " +
+        "List entries in the shared owner memory across the owner's communication channels. " +
         "Optionally filter by kind (fact, rule, decision, procedure, temporary).",
       parameters: Type.Object({
         kind: Type.Optional(memoryKindSchema),
@@ -70,7 +70,7 @@ export function createOwnerMemoryTools(store: OwnerMemoryStore, sourceId = "agen
     defineTool({
       name: "owner_memory_add",
       description:
-        "Add an entry to the shared owner memory so that the communication agent and domain agents can reference it. " +
+        "Add an entry to the shared owner memory so that the owner's communication agents can reference it. " +
         "Use kind='temporary' for short-lived notifications or pending context, 'fact' for owner facts, 'decision' for decisions, 'procedure' for workflows, or 'rule' for persistent rules.",
       parameters: Type.Object({
         kind: memoryKindSchema,
