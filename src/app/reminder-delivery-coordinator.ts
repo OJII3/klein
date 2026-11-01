@@ -3,7 +3,7 @@ import type { Logger } from "pino";
 import type { AgentEvent } from "@agents/core/agent-event";
 import type { DiscordAccessPolicy } from "@modules/discord/domain/discord-access-policy";
 import type { DiscordOperatingState } from "@modules/discord/domain/discord-operating-state";
-import type { DiscordService } from "@modules/discord/ports/discord-service";
+import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
 import type { OwnerMemoryStore } from "@modules/memory/application/owner-memory-store";
 import { getNextReminderDueAt, type Reminder } from "@modules/reminders/domain/reminder";
 import type { ReminderStore } from "@modules/reminders/ports/reminder-store";
@@ -13,7 +13,7 @@ import type { ConversationKey } from "./channel-session-state-store";
 
 export interface ReminderDeliveryCoordinatorDependencies {
   readonly accessPolicy?: DiscordAccessPolicy;
-  readonly discordService: DiscordService;
+  readonly channelApi: DiscordChannelApi;
   readonly logger: Logger;
   readonly operatingState: DiscordOperatingState;
   readonly ownerMemoryStore?: OwnerMemoryStore;
@@ -81,9 +81,7 @@ export class ReminderDeliveryCoordinator {
 
     const accessPolicy = this.dependencies.accessPolicy;
     if (accessPolicy) {
-      const location = await this.dependencies.discordService.getChannelLocation(
-        reminder.channelId,
-      );
+      const location = await this.dependencies.channelApi.getChannelLocation(reminder.channelId);
       if (reminder.accessScope === "public") {
         if (accessPolicy.resolveAccess(location) !== "allow") return;
       } else {

@@ -3,7 +3,7 @@ import test from "node:test";
 import pino from "pino";
 
 import type { ChannelAgent } from "@agents/core/channel-agent";
-import type { DiscordService } from "@modules/discord/ports/discord-service";
+import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
 import {
   getChannelRotationDate,
   type ChannelSessionState,
@@ -38,10 +38,7 @@ function createHarness(initialState: ChannelSessionState) {
       );
     },
   };
-  const discordService: DiscordService = {
-    async start() {},
-    stopAccepting() {},
-    setActivity() {},
+  const channelApi: DiscordChannelApi = {
     async sendTyping() {},
     async sendMessage() {},
     async sendAudio() {},
@@ -51,7 +48,6 @@ function createHarness(initialState: ChannelSessionState) {
     async getChannelLocation(channelId) {
       return { guildId: "guild", channelId };
     },
-    async stop() {},
   };
   const manager = new ChannelSessionManager({
     channelSessionStateStore: stateStore,
@@ -74,7 +70,7 @@ function createHarness(initialState: ChannelSessionState) {
       assert.ok(sessionKey);
       return agent;
     },
-    discordService,
+    channelApi,
     logger: pino({ level: "silent" }),
   });
 

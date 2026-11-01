@@ -1,7 +1,7 @@
 import type { AgentOutputSink, AgentPrompt } from "../core/agent-runtime";
 import type { DomainAgentImageAnalyzer } from "../domain/domain-agent";
 import { formatDiscordMessage } from "@modules/discord/domain/discord-message";
-import type { DiscordService } from "@modules/discord/ports/discord-service";
+import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
 import { createDiscordReadTool } from "./tools/discord-read";
 
 const DISCORD_MAX_MESSAGE_LENGTH = 2_000;
@@ -15,7 +15,7 @@ export interface DomainAgentDiscordAdapter {
 }
 
 export function createDomainAgentDiscordAdapter(
-  discordService: DiscordService,
+  channelApi: DiscordChannelApi,
   channelId: string,
   ownerUserId: string,
 ): DomainAgentDiscordAdapter {
@@ -26,13 +26,13 @@ export function createDomainAgentDiscordAdapter(
         if (!response || response === NO_ACTION_TOKEN) return;
 
         for (const chunk of splitDiscordMessage(response)) {
-          await discordService.sendMessage(channelId, chunk);
+          await channelApi.sendMessage(channelId, chunk);
         }
       },
     },
     channelTools: (analyzeImage) => [
       createDiscordReadTool(
-        discordService,
+        channelApi,
         channelId,
         (message) =>
           analyzeImage({

@@ -12,7 +12,9 @@ import { resolveProfile } from "./profile";
 import { TaskCoordinator } from "./task-coordinator";
 import { VoiceChatCoordinator } from "./voice-chat-coordinator";
 import { DiscordAgent } from "@agents/discord/discord-agent";
+import { createDiscordAgentTools } from "@agents/discord/discord-tools";
 import { DomainAgent } from "@agents/domain/domain-agent";
+import { createDomainAgentTools } from "@agents/domain/domain-tools";
 import { createDomainAgentDiscordAdapter } from "@agents/discord/domain-agent-discord-adapter";
 import {
   createPiModelRuntime,
@@ -163,31 +165,44 @@ export async function bootstrap(): Promise<void> {
     handoffContext?: string,
     ownerFeaturesAllowed = false,
   ) =>
-    DiscordAgent.create(piAgentFactory, discordService, channelId, systemPrompt, {
-      eventRouter: agentCoordinator,
+    DiscordAgent.create(piAgentFactory, channelId, systemPrompt, {
       handoffContext,
       ownerFeaturesAllowed,
-      ownerMemoryStore,
       ownerUserId,
-      reminderStore,
       sessionKey,
-      tts,
+      tools: (analyzeImage) =>
+        createDiscordAgentTools(
+          {
+            channelApi: discordService,
+            channelId,
+            eventRouter: agentCoordinator,
+            ownerFeaturesAllowed,
+            ownerMemoryStore,
+            ownerUserId,
+            reminderStore,
+            tts,
+          },
+          analyzeImage,
+        ),
     });
   const voiceChatCoordinator =
     voiceSystemPrompt === undefined
       ? undefined
       : new VoiceChatCoordinator({
           createVoiceChatAgent: (channelId, sessionKey, speak) =>
-            DiscordAgent.create(
-              voiceChatAgentFactory,
-              discordService,
-              channelId,
-              voiceSystemPrompt,
-              {
-                sessionKey,
-                speak,
-              },
-            ),
+            DiscordAgent.create(voiceChatAgentFactory, channelId, voiceSystemPrompt, {
+              sessionKey,
+              tools: (analyzeImage) =>
+                createDiscordAgentTools(
+                  {
+                    channelApi: discordService,
+                    channelId,
+                    ownerFeaturesAllowed: false,
+                    speak,
+                  },
+                  analyzeImage,
+                ),
+            }),
           logger,
           reactionSelector,
           transcriptQueueSelector,
@@ -248,21 +263,29 @@ export async function bootstrap(): Promise<void> {
         : undefined;
       return DomainAgent.create(piAgentFactory, {
         agentId,
-        channelId: agent.channelId,
-        channelTools: discordAdapter?.channelTools,
-        eventRouter: agentCoordinator,
+        availableTargets: agentCoordinator.listTargets(),
         handoffContext,
-        ownerMemoryStore,
         outputSink: discordAdapter?.outputSink,
-        ownerUserId,
-        reminderStore,
         sessionKey,
         systemPrompt,
+        tools: (analyzeImage) =>
+          createDomainAgentTools(
+            {
+              agentId,
+              channelId: agent.channelId,
+              channelTools: discordAdapter?.channelTools,
+              eventRouter: agentCoordinator,
+              ownerMemoryStore,
+              ownerUserId,
+              reminderStore,
+            },
+            analyzeImage,
+          ),
       });
     },
     channelSessionStateStore: piAgentFactory.channelSessionStateStore,
     channelRuleStore,
-    discordService,
+    channelApi: discordService,
     logger,
     memoryCoordinator,
     ownerMemoryStore,

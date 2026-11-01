@@ -6,8 +6,9 @@ import type { AgentEvent } from "../core/agent-event";
 import type { AgentEventRouter } from "../core/agent-event-router";
 import type { AgentFactory } from "../core/agent-factory";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
-import type { DiscordService } from "@modules/discord/ports/discord-service";
+import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
 import { DomainAgent } from "./domain-agent";
+import { createDomainAgentTools } from "./domain-tools";
 import { createDomainAgentDiscordAdapter } from "../discord/domain-agent-discord-adapter";
 import { createDiscordMessageAgentTurn } from "../discord/discord-message-agent-turn";
 
@@ -38,7 +39,7 @@ test("DomainAgent passes runtime output through its configured channel adapter",
     async readMessage() {
       return ownerMessage;
     },
-  } as unknown as DiscordService;
+  } as unknown as DiscordChannelApi;
 
   const dispatchedEvents: Array<{ target: string; event: AgentEvent }> = [];
   const eventRouter: AgentEventRouter = {
@@ -73,12 +74,20 @@ test("DomainAgent passes runtime output through its configured channel adapter",
   );
   const agent = await DomainAgent.create(agentFactory, {
     agentId: "calendar",
-    channelId: "calendar-channel",
-    channelTools: discordAdapter.channelTools,
-    eventRouter,
+    availableTargets: eventRouter.listTargets(),
     outputSink: discordAdapter.outputSink,
-    ownerUserId: ownerMessage.author.id,
     systemPrompt: "カレンダー管理エージェントです。",
+    tools: (analyzeImage) =>
+      createDomainAgentTools(
+        {
+          agentId: "calendar",
+          channelId: "calendar-channel",
+          channelTools: discordAdapter.channelTools,
+          eventRouter,
+          ownerUserId: ownerMessage.author.id,
+        },
+        analyzeImage,
+      ),
   });
 
   const ownerValidation = {
