@@ -5,7 +5,7 @@ import type { ScheduledTask, WatchTask } from "@modules/scheduling/domain/schedu
 import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
 import { createWatchTools } from "./watch";
 
-test("provides owner-only watch add, list, and delete tools", async () => {
+test("provides watch add, list, and delete tools in the given scope", async () => {
   let created: WatchTask | undefined;
   let deletedId: string | undefined;
   const store = {
@@ -15,7 +15,7 @@ test("provides owner-only watch add, list, and delete tools", async () => {
     async listForScope(kind: ScheduledTask["kind"], channelId: string, accessScope: string) {
       assert.equal(kind, "watch");
       assert.equal(channelId, "channel-a");
-      assert.equal(accessScope, "owner:123");
+      assert.equal(accessScope, "public");
       return created ? [created] : [];
     },
     async listDue() {
@@ -27,7 +27,7 @@ test("provides owner-only watch add, list, and delete tools", async () => {
     },
     async update() {},
   } as unknown as ScheduledTaskStore;
-  const tools = createWatchTools(store, "channel-a", "123");
+  const tools = createWatchTools(store, "channel-a", "public");
   const [addTool, listTool, deleteTool] = tools;
   const call = { callId: "tool-call" } as never;
 
@@ -44,7 +44,7 @@ test("provides owner-only watch add, list, and delete tools", async () => {
     {} as never,
   );
   assert.equal(created?.kind, "watch");
-  assert.equal(created?.accessScope, "owner:123");
+  assert.equal(created?.accessScope, "public");
   assert.equal(created?.condition, "change");
   assert.equal(created?.cooldownMinutes, 60);
   assert.deepEqual(created?.args, ["--json"]);

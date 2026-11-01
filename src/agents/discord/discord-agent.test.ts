@@ -405,9 +405,12 @@ test("keeps reminders across session rotation and isolates channel and access sc
   }
 });
 
-test("exposes watch tools only in owner-enabled sessions", () => {
+test("exposes watch tools in every session with the session scope", async () => {
+  const created: ScheduledTask[] = [];
   const store = {
-    async create() {},
+    async create(task: ScheduledTask) {
+      created.push(task);
+    },
     async listForScope() {
       return [];
     },
@@ -431,5 +434,17 @@ test("exposes watch tools only in owner-enabled sessions", () => {
   })({} as never);
 
   assert.ok(ownerTools.some((tool) => tool.name === "watch_add"));
-  assert.ok(publicTools.every((tool) => !tool.name.startsWith("watch_")));
+  const publicWatchTool = publicTools.find((tool) => tool.name === "watch_add");
+  assert.ok(publicWatchTool);
+  await publicWatchTool.execute(
+    {
+      name: "在庫監視",
+      schedule: { type: "every", minutes: 15 },
+      script: "return 1;",
+      message: "確認してください。",
+    },
+    { callId: "call" } as never,
+    {} as never,
+  );
+  assert.equal(created.at(-1)?.accessScope, "public");
 });

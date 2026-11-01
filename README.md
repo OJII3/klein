@@ -105,7 +105,8 @@ being delivered.
 - **Watches** run a check on a recurring schedule and wake the agent only when the output
   changes. The first successful check establishes the baseline; unchanged output stays
   silent. `condition: "output"` can be used instead to notify whenever the check produces
-  output. Watch tools are exposed only in owner sessions and always use owner scope.
+  output. Like reminders, watches belong to `public` or `owner:<userId>` scope depending
+  on the session that created them.
 
 A watch runs `script` in a QuickJS sandbox: the script reads the `args` array, calls
 `fetch(url, init)` for HTTP requests, and prints with `text()` or `console.*`. Its text
@@ -212,7 +213,7 @@ notifications, and messages from other agents. Discord Pi sessions provide defer
 `reminder_add`, `reminder_list`, `reminder_delete`, `watch_add`, `watch_list`, and
 `watch_delete` tools. Reminders can run once after a duration (minimum one minute),
 once at the next occurrence of a time or at a specific date and time, or repeatedly
-every N minutes, every day, or on selected weekdays in JST. Watches run a command on a
+every N minutes, every day, or on selected weekdays in JST. Watches run a script on a
 recurring schedule and emit `watch.triggered` only when the output changes. Scheduled
 items are delivered to the session that created them; overdue repeating items fire once
 after a restart and then resume their schedule. MCP notification subscriptions are not
