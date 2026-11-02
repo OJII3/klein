@@ -19,7 +19,7 @@ export function createLogFilePath(logDirectory: string, now = new Date()): strin
 export function createLogger(options: LoggerOptions = {}): Logger {
   const loggerOptions = {
     name: "klein",
-    level: options.level ?? process.env.KLEIN_LOG_LEVEL ?? "info",
+    level: options.level || process.env.KLEIN_LOG_LEVEL || "info",
     redact: [
       "token",
       "apiKey",

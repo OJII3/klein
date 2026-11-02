@@ -50,3 +50,18 @@ test("persists JSONL records when a log file path is configured", async () => {
     await rm(rootDirectory, { force: true, recursive: true });
   }
 });
+
+test("falls back to info when KLEIN_LOG_LEVEL is empty", () => {
+  const originalLevel = process.env.KLEIN_LOG_LEVEL;
+  process.env.KLEIN_LOG_LEVEL = "";
+
+  try {
+    const logger = createLogger();
+
+    assert.equal(logger.level, "info");
+    flushLogger(logger);
+  } finally {
+    if (originalLevel === undefined) delete process.env.KLEIN_LOG_LEVEL;
+    else process.env.KLEIN_LOG_LEVEL = originalLevel;
+  }
+});
