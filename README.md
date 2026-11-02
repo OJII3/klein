@@ -41,7 +41,7 @@ bun run start -- --new     # Start fresh sessions
 bun run start -- --resume  # Explicitly resume sessions (default)
 ```
 
-Conversation history, session-key bindings, and Discord daily rotation state are stored
+Conversation history, session-key bindings, and Discord rotation state are stored
 through Pi Durable's document APIs in `<runtime.agentDir>/pi-durable/pi-durable.sqlite`.
 A separately configured voice model uses `pi-durable-voice/pi-durable.sqlite` for its
 conversations. Session keys are namespaced by the caller; each conversation receives

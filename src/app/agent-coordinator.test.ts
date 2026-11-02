@@ -29,7 +29,7 @@ import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-tas
 import type { WatchCheckRunner } from "@modules/scheduling/application/watch-check-runner";
 import { TaskCoordinator } from "./task-coordinator";
 import { AgentCoordinator, type AgentCoordinatorDependencies } from "./agent-coordinator";
-import { getChannelRotationDate } from "./channel-session-state-store";
+import { getChannelRotationBucket } from "./channel-session-state-store";
 
 interface TestHarness {
   readonly agentCoordinator: AgentCoordinator;
@@ -165,7 +165,7 @@ test("initializes every saved channel agent during startup", async () => {
     conversationKey: { kind: "discord" as const, channelId },
     sessionKey: `discord-channel:${channelId}`,
     lastActivityAt: null,
-    lastRotationDate: getChannelRotationDate(Date.now()),
+    lastRotationDate: getChannelRotationBucket(Date.now()),
     hasActivitySinceRotation: false,
   }));
   const channelSessionStateStore = {
@@ -197,7 +197,7 @@ test("does not resume saved channel sessions after their access scope changes", 
     accessScope: "public",
     sessionKey: `discord-channel:${channelId}:public`,
     lastActivityAt: null,
-    lastRotationDate: getChannelRotationDate(Date.now()),
+    lastRotationDate: getChannelRotationBucket(Date.now()),
     hasActivitySinceRotation: false,
   }));
   const channelSessionStateStore = {
@@ -459,7 +459,7 @@ test("rotates an idle session before delivering a reminder into the new conversa
   const session = createSession(storage);
   const channelSessionStateStore = new PiDurableSessionStore(session, storage).channelStates;
   const oldKey = "discord-channel:test-channel:public:rotation:2000-01-01";
-  const newKey = `discord-channel:test-channel:public:rotation:${getChannelRotationDate(Date.now())}`;
+  const newKey = `discord-channel:test-channel:public:rotation:${getChannelRotationBucket(Date.now())}`;
   await channelSessionStateStore.save({
     conversationKey: { kind: "discord", channelId: dueReminder.channelId },
     accessScope: "public",
@@ -484,7 +484,7 @@ test("rotates an idle session before delivering a reminder into the new conversa
     assert.equal(reminders.getStored(), undefined);
     const state = await channelSessionStateStore.getOrCreate(
       { kind: "discord", channelId: dueReminder.channelId },
-      getChannelRotationDate(Date.now()),
+      getChannelRotationBucket(Date.now()),
     );
     assert.equal(state.sessionKey, newKey);
     assert.equal(state.handoffContext, undefined);

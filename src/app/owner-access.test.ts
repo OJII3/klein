@@ -23,7 +23,7 @@ import type { MemoryCoordinator } from "@modules/memory/application/memory-coord
 import { AgentCoordinator } from "./agent-coordinator";
 import {
   type ChannelSessionStateStore,
-  getChannelRotationDate,
+  getChannelRotationBucket,
 } from "./channel-session-state-store";
 import { TaskCoordinator } from "./task-coordinator";
 
@@ -151,7 +151,7 @@ test("changing owner access to allow drops private history and handoff on restar
     await privateHarness.coordinator.dispose();
     const state = await store.getOrCreate(
       { kind: "discord", channelId: "channel" },
-      getChannelRotationDate(Date.now()),
+      getChannelRotationBucket(Date.now()),
     );
     await store.save({ ...state, handoffContext: "secret Obsidian note" });
     await publicHarness.coordinator.handleDiscordMessage({
@@ -181,7 +181,7 @@ test("owner access changes replace cached agents and preserve private session sc
     await harness.coordinator.handleDiscordMessage(message);
     const oldState = await store.getOrCreate(
       { kind: "discord", channelId: "channel" },
-      getChannelRotationDate(Date.now()),
+      getChannelRotationBucket(Date.now()),
     );
     await store.save({
       ...oldState,
@@ -195,7 +195,7 @@ test("owner access changes replace cached agents and preserve private session sc
       await resumed.coordinator.rotateIdleChannels();
       const rotated = await store.getOrCreate(
         { kind: "discord", channelId: "channel" },
-        getChannelRotationDate(Date.now()),
+        getChannelRotationBucket(Date.now()),
       );
       assert.match(rotated.sessionKey, /^discord-channel:channel:owner:123:rotation:/);
       assert.equal(resumed.creations[0].ownerFeaturesAllowed, true);

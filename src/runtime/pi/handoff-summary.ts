@@ -1,6 +1,6 @@
 export const HANDOFF_SUMMARY_SYSTEM_PROMPT = `あなたはクラインの次セッション向け引き継ぎメモを作ります。
 日本語で、ユーザーが次に話しかけられた時に必要な情報だけを短く残してください。
-ユーザーの好み・継続中の話題・未解決の依頼や質問だけを最大5項目でまとめてください。
+ユーザーの好み・継続中の話題・未解決の依頼や質問だけを最大10項目でまとめてください。
 会話本文、引用、assistantの返信・説明・検索結果・送信文は引き継がないでください。
 assistantが過去に述べた内容を、ユーザーが確認した事実や決定として扱わないでください。
 Goalの文は呼び出し側で固定するため、出力には箇条書きだけを含めてください。
@@ -8,12 +8,14 @@ Goalの文は呼び出し側で固定するため、出力には箇条書きだ�
 
 export const HANDOFF_SUMMARY_MAX_TOKENS = 10_000;
 
-const HANDOFF_SUMMARY_MAX_CHARS = 400;
+export const HANDOFF_SUMMARY_MAX_ITEMS = 10;
+
+const HANDOFF_SUMMARY_MAX_CHARS = 800;
 
 export function buildHandoffSummaryPrompt(source: string, previousSummary?: string): string {
   return [
     "ユーザー発言と前回の要約を参考に、継続に必要な項目だけを箇条書きでまとめてください。",
-    "各項目は短くし、全体を日本語で400字以内にしてください。引用や会話の再現は不要です。",
+    "各項目は短くし、全体を日本語で800字以内にしてください。引用や会話の再現は不要です。",
     previousSummary ? `<previous-summary>\n${previousSummary}\n</previous-summary>` : undefined,
     `<user-messages>\n${source || "（ユーザー発言なし）"}\n</user-messages>`,
   ]
@@ -76,7 +78,7 @@ export function formatHandoffSummary(summary: string): string {
     .split("\n")
     .map((line) => line.trim())
     .filter((line) => /^[-*•]\s*/.test(line))
-    .slice(0, 5)
+    .slice(0, HANDOFF_SUMMARY_MAX_ITEMS)
     .map((line) => {
       const text = line.replace(/^[-*•]\s*/, "");
       const separatorLength = summaryChars > 0 ? 1 : 2;

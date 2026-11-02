@@ -9,11 +9,11 @@ export function createConversationSessionKey(
   options: {
     readonly accessScope?: string;
     readonly useAccessScope?: boolean;
-    readonly rotationDate?: string;
+    readonly rotationBucket?: string;
   } = {},
 ): string {
   const sessionKey = `discord-channel:${key.channelId}${options.useAccessScope ? `:${options.accessScope ?? "public"}` : ""}`;
-  return options.rotationDate ? `${sessionKey}:rotation:${options.rotationDate}` : sessionKey;
+  return options.rotationBucket ? `${sessionKey}:rotation:${options.rotationBucket}` : sessionKey;
 }
 
 export interface ChannelSessionState {
@@ -21,6 +21,7 @@ export interface ChannelSessionState {
   readonly accessScope?: string;
   readonly sessionKey: string;
   readonly lastActivityAt: number | null;
+  /** Last rotation bucket the session was rotated into. Persisted under the legacy `lastRotationDate` key. */
   readonly lastRotationDate: string;
   readonly hasActivitySinceRotation: boolean;
   readonly handoffContext?: string;
@@ -29,7 +30,7 @@ export interface ChannelSessionState {
 export const CHANNEL_ROTATION_IDLE_MS = 60 * 60 * 1_000;
 
 const ROTATION_TIME_ZONE = "Asia/Tokyo";
-const ROTATION_HOUR = 5;
+const CHANNEL_ROTATION_INTERVAL_HOURS = 4;
 const rotationDateFormatter = new Intl.DateTimeFormat("en-CA", {
   day: "2-digit",
   hour: "2-digit",
@@ -39,18 +40,16 @@ const rotationDateFormatter = new Intl.DateTimeFormat("en-CA", {
   year: "numeric",
 });
 
-export function getChannelRotationDate(timestamp: number): string {
+/** Identifies the rotation window (a 4-hour block in JST) that contains `timestamp`. */
+export function getChannelRotationBucket(timestamp: number): string {
   const parts = Object.fromEntries(
     rotationDateFormatter
       .formatToParts(new Date(timestamp))
       .map(({ type, value }) => [type, value]),
   );
-  const year = Number(parts.year);
-  const month = Number(parts.month);
-  const day = Number(parts.day);
   const hour = Number(parts.hour);
-  const date = new Date(Date.UTC(year, month - 1, day - (hour < ROTATION_HOUR ? 1 : 0)));
-  return date.toISOString().slice(0, 10);
+  const bucketHour = hour - (hour % CHANNEL_ROTATION_INTERVAL_HOURS);
+  return `${parts.year}-${parts.month}-${parts.day}T${String(bucketHour).padStart(2, "0")}`;
 }
 
 export function isChannelRotationDue(state: ChannelSessionState, timestamp: number): boolean {
@@ -58,12 +57,15 @@ export function isChannelRotationDue(state: ChannelSessionState, timestamp: numb
     state.hasActivitySinceRotation &&
     state.lastActivityAt !== null &&
     timestamp - state.lastActivityAt >= CHANNEL_ROTATION_IDLE_MS &&
-    getChannelRotationDate(timestamp) > state.lastRotationDate
+    getChannelRotationBucket(timestamp) > state.lastRotationDate
   );
 }
 
 export interface ChannelSessionStateStore {
-  getOrCreate(conversationKey: ConversationKey, rotationDate: string): Promise<ChannelSessionState>;
+  getOrCreate(
+    conversationKey: ConversationKey,
+    rotationBucket: string,
+  ): Promise<ChannelSessionState>;
   list(): Promise<readonly ChannelSessionState[]>;
   save(state: ChannelSessionState): Promise<void>;
 }

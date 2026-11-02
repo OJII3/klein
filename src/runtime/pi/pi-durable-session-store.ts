@@ -52,7 +52,7 @@ export class PiDurableSessionStore {
     private readonly storage: Storage,
   ) {
     this.channelStates = {
-      getOrCreate: async (conversationKey, rotationDate) => {
+      getOrCreate: async (conversationKey, rotationBucket) => {
         const state = await session.snapshot(
           ConversationStates,
           serializeConversationKey(conversationKey),
@@ -64,7 +64,7 @@ export class PiDurableSessionStore {
               conversationKey,
               sessionKey: createConversationSessionKey(conversationKey),
               lastActivityAt: null,
-              lastRotationDate: rotationDate,
+              lastRotationDate: rotationBucket,
               hasActivitySinceRotation: true,
             };
       },

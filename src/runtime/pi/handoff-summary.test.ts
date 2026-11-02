@@ -29,16 +29,16 @@ test("extracts user messages and carries forward the previous compaction summary
   });
 });
 
-test("formats at most five bullets within 400 characters", () => {
+test("formats at most ten bullets within 800 characters", () => {
   const summary = formatHandoffSummary(
-    ["one", "two", "three", "four", "five", "six"]
+    ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven"]
       .map((item) => `- ${item.repeat(100)}`)
       .join("\n"),
   );
   const handoffBullets = summary.split("## 引き継ぎ\n")[1]!;
 
-  assert.ok(handoffBullets.split("\n").length <= 5);
-  assert.ok(handoffBullets.length <= 400);
+  assert.ok(handoffBullets.split("\n").length <= 10);
+  assert.ok(handoffBullets.length <= 800);
   assert.match(handoffBullets, /^- /);
-  assert.doesNotMatch(handoffBullets, /six/);
+  assert.doesNotMatch(handoffBullets, /eleven/);
 });
