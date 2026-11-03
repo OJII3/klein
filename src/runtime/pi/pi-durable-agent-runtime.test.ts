@@ -403,7 +403,7 @@ test("normalizes completed assistant text in later requests", async () => {
 
     const secondRequestText = JSON.stringify(requests[1]!.messages);
     assert.doesNotMatch(secondRequestText, /First reply/);
-    assert.match(secondRequestText, /Remained silent\./);
+    assert.match(secondRequestText, /Remained silent; discord_send not called\./);
     runtime.dispose();
   } finally {
     await factory.close();
@@ -414,9 +414,17 @@ test("normalizes completed assistant text in later requests", async () => {
 });
 
 for (const { toolNames, errors, expected } of [
-  { toolNames: [], errors: [], expected: "Remained silent." },
-  { toolNames: ["discord_read"], errors: [false], expected: "Remained silent." },
-  { toolNames: ["discord_send"], errors: [true], expected: "Remained silent." },
+  { toolNames: [], errors: [], expected: "Remained silent; discord_send not called." },
+  {
+    toolNames: ["discord_read"],
+    errors: [false],
+    expected: "Remained silent; discord_send not called.",
+  },
+  {
+    toolNames: ["discord_send"],
+    errors: [true],
+    expected: "Remained silent; discord_send not called.",
+  },
   { toolNames: ["discord_send"], errors: [false], expected: "Sent a message to Discord." },
   {
     toolNames: ["discord_send", "discord_send"],
@@ -481,7 +489,7 @@ test("keeps the active turn while normalizing completed turns", () => {
 
   assert.deepEqual(normalized[1], {
     ...messages[1]!,
-    content: [{ type: "text", text: "Remained silent." }],
+    content: [{ type: "text", text: "Remained silent; discord_send not called." }],
   });
   assert.equal(normalized[3], call);
 });

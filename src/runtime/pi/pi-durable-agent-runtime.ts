@@ -731,7 +731,9 @@ export function normalizeCompletedAssistantText(messages: readonly Message[]): M
       // Record the completed outcome so silence is not mistaken for a pending reply.
       content.push({
         type: "text",
-        text: sentMessage ? "Sent a message to Discord." : "Remained silent.",
+        text: sentMessage
+          ? "Sent a message to Discord."
+          : "Remained silent; discord_send not called.",
       });
       sentMessage = false;
     }
