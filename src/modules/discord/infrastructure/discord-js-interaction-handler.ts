@@ -35,6 +35,18 @@ const CHANNEL_RULE_COMMAND = new SlashCommandBuilder()
 const CHANNEL_RULE_MODAL_ID = "channel-rule-edit";
 const CHANNEL_RULE_INPUT_ID = "channel-rule";
 
+/**
+ * Discord clients cache modal input values per custom id, even across channels and bots, until the
+ * modal is submitted. Reusing a fixed id would show a rule from another channel after the modal was
+ * dismissed, so every open gets its own id.
+ */
+function createChannelRuleComponentIds(nonce: string): { modalId: string; inputId: string } {
+  return {
+    modalId: `${CHANNEL_RULE_MODAL_ID}:${nonce}`,
+    inputId: `${CHANNEL_RULE_INPUT_ID}:${nonce}`,
+  };
+}
+
 export class DiscordJsInteractionHandler {
   readonly commands: readonly ApplicationCommandDataResolvable[];
 
@@ -53,7 +65,7 @@ export class DiscordJsInteractionHandler {
 
   async handle(interaction: Interaction): Promise<void> {
     if (interaction.isModalSubmit()) {
-      if (interaction.customId !== CHANNEL_RULE_MODAL_ID) return;
+      if (!interaction.customId.startsWith(`${CHANNEL_RULE_MODAL_ID}:`)) return;
       if (!(await this.canUseCommandsInChannel(interaction))) {
         await interaction.reply({
           content: "このチャンネルではコマンドを利用できません。",
@@ -171,8 +183,9 @@ export class DiscordJsInteractionHandler {
       interaction.guildId,
       interaction.channelId,
     );
+    const { modalId, inputId } = createChannelRuleComponentIds(interaction.id);
     const input = new TextInputBuilder()
-      .setCustomId(CHANNEL_RULE_INPUT_ID)
+      .setCustomId(inputId)
       .setLabel("この場所のルール")
       .setPlaceholder("このチャンネル／スレッドで守るルール")
       .setStyle(TextInputStyle.Paragraph)
@@ -181,7 +194,7 @@ export class DiscordJsInteractionHandler {
     if (existingRule) input.setValue(existingRule);
 
     const modal = new ModalBuilder()
-      .setCustomId(CHANNEL_RULE_MODAL_ID)
+      .setCustomId(modalId)
       .setTitle("ルールを編集（空欄で削除）")
       .addComponents(new ActionRowBuilder<TextInputBuilder>().addComponents(input));
     await interaction.showModal(modal);
@@ -201,7 +214,9 @@ export class DiscordJsInteractionHandler {
       return;
     }
 
-    const rule = interaction.fields.getTextInputValue(CHANNEL_RULE_INPUT_ID);
+    const rule = interaction.fields.getTextInputValue(
+      interaction.customId.replace(`${CHANNEL_RULE_MODAL_ID}:`, `${CHANNEL_RULE_INPUT_ID}:`),
+    );
     const guildId = interaction.guildId;
     const channelId = interaction.channelId;
     if (!guildId || !channelId) {

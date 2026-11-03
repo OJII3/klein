@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { Interaction, Message } from "discord.js";
+import type { Interaction, Message, ModalBuilder } from "discord.js";
 
 import { createDiscordAccessPolicy } from "../domain/discord-access-policy";
 import type { DiscordMessage } from "../domain/discord-message";
@@ -409,6 +409,133 @@ test("resolves current channel locations, including thread parents and direct me
     await assert.rejects(service.getChannelLocation("missing"), /cannot contain messages/);
     await assert.rejects(service.getChannelLocation("voice"), /cannot contain messages/);
     assert.deepEqual(fetched, ["channel", "thread", "dm", "missing", "voice"]);
+  } finally {
+    await service.stop();
+  }
+});
+
+interface RuleModalJson {
+  readonly custom_id: string;
+  readonly components: ReadonlyArray<{
+    readonly components: ReadonlyArray<{ readonly custom_id: string; readonly value?: string }>;
+  }>;
+}
+
+function createRuleCommandInteraction(channelId: string, interactionId: string): Interaction {
+  return {
+    id: interactionId,
+    commandName: "rule",
+    inGuild: () => true,
+    guildId: "guild-123",
+    channelId,
+    channel: { isThread: () => false },
+    user: { id: "user-123", bot: false },
+    isChatInputCommand: () => true,
+    isModalSubmit: () => false,
+    memberPermissions: { has: () => true },
+    reply: async () => undefined,
+    showModal: async () => undefined,
+  } as unknown as Interaction;
+}
+
+test("opens the rule modal with the channel's own rule and a fresh custom id", async () => {
+  const rules = new Map([
+    ["channel-a", "チャンネルAのルール"],
+    ["channel-b", "チャンネルBのルール"],
+  ]);
+  const service = new DiscordJsService(
+    "token",
+    createDiscordAccessPolicy({ default: "allow", directMessages: "allow" }),
+    undefined,
+    undefined,
+    undefined,
+    {
+      async get(_guildId, channelId) {
+        return rules.get(channelId);
+      },
+      async set() {},
+    },
+  );
+  const testableService = service as unknown as TestableDiscordJsService;
+  const modals: RuleModalJson[] = [];
+  const interactionFor = (channelId: string, interactionId: string) => {
+    const interaction = createRuleCommandInteraction(channelId, interactionId) as unknown as {
+      showModal: (modal: ModalBuilder) => Promise<void>;
+    };
+    interaction.showModal = async (modal) => {
+      modals.push(modal.toJSON() as unknown as RuleModalJson);
+    };
+    return interaction as unknown as Interaction;
+  };
+
+  try {
+    await testableService.handleInteraction(interactionFor("channel-a", "interaction-a"));
+    await testableService.handleInteraction(interactionFor("channel-b", "interaction-b"));
+
+    assert.deepEqual(
+      modals.map((modal) => modal.components[0]?.components[0]?.value),
+      ["チャンネルAのルール", "チャンネルBのルール"],
+    );
+    assert.notEqual(modals[0]?.custom_id, modals[1]?.custom_id);
+    assert.notEqual(
+      modals[0]?.components[0]?.components[0]?.custom_id,
+      modals[1]?.components[0]?.components[0]?.custom_id,
+    );
+  } finally {
+    await service.stop();
+  }
+});
+
+test("saves a submitted rule under the interaction's channel", async () => {
+  const saved: Array<{ guildId: string; channelId: string; rule: string }> = [];
+  const service = new DiscordJsService(
+    "token",
+    createDiscordAccessPolicy({ default: "allow", directMessages: "allow" }),
+    undefined,
+    undefined,
+    undefined,
+    {
+      async get() {
+        return undefined;
+      },
+      async set(guildId, channelId, rule) {
+        saved.push({ guildId, channelId, rule });
+      },
+    },
+  );
+  const testableService = service as unknown as TestableDiscordJsService;
+  const replies: Array<string | undefined> = [];
+  const interaction = {
+    id: "interaction-c",
+    customId: "channel-rule-edit:1234567890",
+    guildId: "guild-123",
+    inGuild: () => true,
+    channelId: "channel-b",
+    channel: { isThread: () => false },
+    user: { id: "user-123", bot: false },
+    isChatInputCommand: () => false,
+    isModalSubmit: () => true,
+    memberPermissions: { has: () => true },
+    fields: {
+      getTextInputValue: (customId: string) => {
+        assert.equal(customId, "channel-rule:1234567890");
+        return "  新しいルール  ";
+      },
+    },
+    reply: async (response: {
+      components: Array<{ toJSON: () => { components: Array<{ content?: string }> } }>;
+    }) => {
+      replies.push(response.components[0]?.toJSON().components[0]?.content);
+    },
+  } as unknown as Interaction;
+
+  try {
+    await testableService.handleInteraction(interaction);
+
+    assert.deepEqual(saved, [
+      { guildId: "guild-123", channelId: "channel-b", rule: "  新しいルール  " },
+    ]);
+    assert.deepEqual(replies, ["このチャンネル／スレッドのルールを保存しました。"]);
   } finally {
     await service.stop();
   }
