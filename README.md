@@ -125,5 +125,3 @@ bun fmt
 bun lint:fix
 bun test
 ```
-
-`AgentRuntime.prompt` and `steer` accept `AgentEvent` inputs defined in `src/agents/core/agent-event.ts`: an internal `id`, an ISO 8601 `occurredAt`, a `type`, a `source`, and text or image content blocks.
