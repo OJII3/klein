@@ -18,6 +18,7 @@ import {
   withOpenCodeSessionHeader,
 } from "@runtime/pi/pi-model-runtime";
 import { createPiDurableAgentFactory } from "@runtime/pi/pi-durable-agent-runtime";
+import { createWatchFetchTool } from "@runtime/pi/watch-fetch-tool";
 import { PiMemoryProcessor } from "@runtime/pi/pi-memory-processor";
 import { PiVoiceReactionSelector } from "@runtime/pi/pi-voice-reaction-selector";
 import { PiVoiceTranscriptQueueSelector } from "@runtime/pi/pi-voice-transcript-queue-selector";
@@ -88,7 +89,8 @@ export async function bootstrap(): Promise<void> {
   const tts = config.features.tts?.enabled ? new Sbv2Tts(config.features.tts.serverUrl) : undefined;
   const agentDir = resolve(config.runtime.agentDir);
   const scheduledTaskStore = new FileScheduledTaskStore(resolve(agentDir, "schedules"));
-  const watchCheckRunner = new QuickJsWatchCheckRunner();
+  const watchToolCatalog = { tools: [createWatchFetchTool({ agentDir })] };
+  const watchCheckRunner = new QuickJsWatchCheckRunner({ tools: watchToolCatalog.tools });
   const channelRuleStore = new FileDiscordChannelRuleStore(resolve(agentDir, "channel-rules"));
   const ownerMemoryStore = ownerUserId
     ? new OwnerMemoryStore(
@@ -131,6 +133,7 @@ export async function bootstrap(): Promise<void> {
     modelRuntime,
     sessionMode,
     permissions: config.permissions,
+    watchToolCatalog,
   });
   const voiceChatAgentFactory = voiceChatLlmConfiguration
     ? createPiDurableAgentFactory({

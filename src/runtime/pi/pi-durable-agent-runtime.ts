@@ -49,6 +49,10 @@ import {
 import { ToolAuthorization, type ToolPermissions } from "./tool-permissions";
 import type { SessionMode } from "@app/cli-options";
 import type { ChannelSessionStateStore } from "@app/channel-session-state-store";
+import {
+  renderWatchToolSection,
+  type WatchToolCatalog,
+} from "@modules/scheduling/application/watch-tool";
 import { PiDurableSessionStore } from "./pi-durable-session-store";
 import type {
   PiViewerEvent,
@@ -86,6 +90,7 @@ export interface PiDurableAgentFactoryOptions {
     };
   };
   readonly logger: Logger;
+  readonly watchToolCatalog?: WatchToolCatalog;
 }
 
 const TOOL_EXTENSION_PREFIX = "klein-tools-";
@@ -99,6 +104,7 @@ export function createPiDurableAgentFactory({
   skillsDirectory,
   sessionMode,
   permissions,
+  watchToolCatalog,
 }: PiDurableAgentFactoryOptions): AgentFactory & {
   close(): Promise<void>;
   resume(): Promise<void>;
@@ -301,6 +307,13 @@ export function createPiDurableAgentFactory({
         webAccess.flushEntries,
       );
       const registeredTools = [...durableTools, ...mcpTools, ...webTools];
+      const watchSection = watchToolCatalog
+        ? section("watch", (input) =>
+            input.agent.tools.some((tool) => tool.name === "watch_add")
+              ? renderWatchToolSection(watchToolCatalog)
+              : undefined,
+          )
+        : undefined;
       const toolsExtension = defineExtension({
         name: `${TOOL_EXTENSION_PREFIX}${sessionId}`,
         tools: registeredTools,
@@ -308,6 +321,7 @@ export function createPiDurableAgentFactory({
           section("klein-system", () =>
             [definition.systemPrompt, ...skills].filter(Boolean).join("\n\n"),
           ),
+          ...(watchSection ? [watchSection] : []),
         ],
         hooks: [
           hook(GenerationTask, {
