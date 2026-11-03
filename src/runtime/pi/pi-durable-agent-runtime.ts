@@ -116,8 +116,7 @@ export function createPiDurableAgentFactory({
   const registry = createRegistry();
   const modelRegistry = new ModelRegistry(modelRuntime);
   let resourcesPromise:
-    | Promise<{ harness: DurableHarness; store: PiDurableSessionStore }>
-    | undefined;
+    Promise<{ harness: DurableHarness; store: PiDurableSessionStore }> | undefined;
   function getResources() {
     return (resourcesPromise ??= openHarness());
   }
