@@ -733,7 +733,7 @@ export function normalizeCompletedAssistantText(messages: readonly Message[]): M
         type: "text",
         text: sentMessage
           ? "Sent a message to Discord."
-          : "Remained silent; discord_send not called.",
+          : "I didn't use discord_send, so I stayed silent.",
       });
       sentMessage = false;
     }
