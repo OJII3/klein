@@ -126,4 +126,4 @@ bun lint:fix
 bun test
 ```
 
-See [`docs/agent-events.md`](docs/agent-events.md) for the `AgentEvent` input interface used by `AgentRuntime.prompt` and `steer`.
+`AgentRuntime.prompt` and `steer` accept `AgentEvent` inputs defined in `src/agents/core/agent-event.ts`: an internal `id`, an ISO 8601 `occurredAt`, a `type`, a `source`, and text or image content blocks.
