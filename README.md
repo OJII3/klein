@@ -117,13 +117,3 @@ An optional dashboard for Pino logs, Pi sessions, and guild memories. Enable it 
 Open `http://127.0.0.1:4310` after starting Klein.
 
 To expose it through Cloudflare Tunnel, add `TUNNEL_TOKEN` to `.env` and protect the route with Cloudflare Access. `cloudflared` starts and stops with Klein.
-
-## Development
-
-Run the checks before committing:
-
-```sh
-bun fmt
-bun lint:fix
-bun test
-```

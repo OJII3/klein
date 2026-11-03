@@ -1,4 +1,4 @@
-コミット前に以下のコマンドを実行・確認してください。
+Run the following commands and confirm they pass before committing.
 
 - `bun fmt`
 - `bun lint:fix`
