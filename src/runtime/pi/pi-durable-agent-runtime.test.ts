@@ -11,13 +11,17 @@ import {
   fauxToolCall,
   getCurrentTools,
   InMemoryCredentialStore,
+  type Message,
   type TranscriptContext,
 } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-durable";
 import { Type } from "typebox";
 import { ModelRuntime, SessionManager } from "@earendil-works/pi-coding-agent";
 
-import { createPiDurableAgentFactory } from "./pi-durable-agent-runtime";
+import {
+  createPiDurableAgentFactory,
+  normalizeCompletedAssistantText,
+} from "./pi-durable-agent-runtime";
 import type { AgentRuntime } from "@agents/core/agent-runtime";
 
 test("provides web tools and summarizes a durable conversation for handoff", async () => {
@@ -333,7 +337,7 @@ test("isolates channel histories and tool bindings when sessions resume or start
   }
 });
 
-test("preserves assistant messages across prompts", async () => {
+test("normalizes completed assistant text in later requests", async () => {
   const agentDir = await mkdtemp(join(tmpdir(), "klein-durable-assistant-text-"));
   const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
   const provider = fauxProvider({ tokensPerSecond: 100_000 });
@@ -357,7 +361,14 @@ test("preserves assistant messages across prompts", async () => {
       {
         systemPrompt: "Test prompt",
       },
-      [],
+      [
+        defineTool({
+          name: "discord_send",
+          description: "Send a visible Discord message",
+          parameters: Type.Object({ content: Type.String() }),
+          execute: async () => ({ output: [{ type: "text" as const, text: "sent" }] }),
+        }),
+      ],
       {
         sessionKey: "discord-channel:calendar",
       },
@@ -391,8 +402,8 @@ test("preserves assistant messages across prompts", async () => {
     });
 
     const secondRequestText = JSON.stringify(requests[1]!.messages);
-    assert.match(secondRequestText, /First reply/);
-    assert.doesNotMatch(secondRequestText, /Remained silent\./);
+    assert.doesNotMatch(secondRequestText, /First reply/);
+    assert.match(secondRequestText, /I didn't use discord_send, so I stayed silent\./);
     runtime.dispose();
   } finally {
     await factory.close();
@@ -400,4 +411,85 @@ test("preserves assistant messages across prompts", async () => {
     else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
     await rm(agentDir, { force: true, recursive: true });
   }
+});
+
+for (const { toolNames, errors, expected } of [
+  { toolNames: [], errors: [], expected: "I didn't use discord_send, so I stayed silent." },
+  {
+    toolNames: ["discord_read"],
+    errors: [false],
+    expected: "I didn't use discord_send, so I stayed silent.",
+  },
+  {
+    toolNames: ["discord_send"],
+    errors: [true],
+    expected: "I didn't use discord_send, so I stayed silent.",
+  },
+  { toolNames: ["discord_send"], errors: [false], expected: "Sent a message to Discord." },
+  {
+    toolNames: ["discord_send", "discord_send"],
+    errors: [false, true],
+    expected: "Sent a message to Discord.",
+  },
+]) {
+  test(`normalizes a completed turn (${JSON.stringify({ toolNames, errors })})`, () => {
+    const messages: Message[] = [{ role: "user", content: "Previous request", timestamp: 1 }];
+    for (const [index, toolName] of toolNames.entries()) {
+      const call = fauxAssistantMessage([
+        { type: "text", text: "Private reasoning" },
+        fauxToolCall(toolName, {}),
+      ]);
+      messages.push(
+        call,
+        { role: "user", content: "Steering input", timestamp: 2 },
+        {
+          role: "toolResult",
+          toolCallId: call.content.find((block) => block.type === "toolCall")!.id,
+          toolName,
+          content: [{ type: "text", text: "Tool result" }],
+          isError: errors[index]!,
+          timestamp: 3,
+        },
+      );
+    }
+    const end = fauxAssistantMessage([
+      { type: "thinking", thinking: "Private thinking" },
+      { type: "text", text: "Internal conclusion" },
+      { type: "text", text: "More internal text" },
+    ]);
+    messages.push(end, { role: "user", content: "Next request", timestamp: 4 });
+    const original = structuredClone(messages);
+
+    const normalized = normalizeCompletedAssistantText(messages);
+
+    assert.deepEqual(normalized.at(-2), {
+      ...end,
+      content: [
+        { type: "thinking", thinking: "Private thinking" },
+        { type: "text", text: expected },
+      ],
+    });
+    assert.deepEqual(messages, original);
+  });
+}
+
+test("keeps the active turn while normalizing completed turns", () => {
+  const call = fauxAssistantMessage([
+    { type: "text", text: "Active reasoning" },
+    fauxToolCall("discord_read", {}),
+  ]);
+  const messages: Message[] = [
+    { role: "user", content: "Completed request", timestamp: 1 },
+    fauxAssistantMessage("Completed text"),
+    { role: "user", content: "Active request", timestamp: 2 },
+    call,
+  ];
+
+  const normalized = normalizeCompletedAssistantText(messages);
+
+  assert.deepEqual(normalized[1], {
+    ...messages[1]!,
+    content: [{ type: "text", text: "I didn't use discord_send, so I stayed silent." }],
+  });
+  assert.equal(normalized[3], call);
 });

@@ -27,6 +27,7 @@ import { createCodemodeExtension } from "@earendil-works/pi-durable/codemode";
 import { createToolSearchExtension } from "@earendil-works/pi-durable/tool-search";
 import { ModelRegistry } from "@earendil-works/pi-coding-agent";
 import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
+import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
 
 import type { AgentDefinition } from "@agents/core/agent-definition";
 import type { AgentFactory, AgentCreationOptions } from "@agents/core/agent-factory";
@@ -271,6 +272,7 @@ export function createPiDurableAgentFactory({
         permissions,
       );
       const durableTools = tools.filter((tool) => authorization.allowsTool(tool.name));
+      const hasDiscordSend = durableTools.some((tool) => tool.name === "discord_send");
       const mcpTools = await loadMcpTools({
         agentDir: configDir,
         ownerFeaturesAllowed: options.ownerFeaturesAllowed === true,
@@ -309,6 +311,11 @@ export function createPiDurableAgentFactory({
         ],
         hooks: [
           hook(GenerationTask, {
+            beforeRequest: (request) => ({
+              messages: hasDiscordSend
+                ? normalizeCompletedAssistantText(request.messages)
+                : request.messages,
+            }),
             afterResponse: (message) => {
               logger.info(
                 {
@@ -683,6 +690,56 @@ export class PiDurableAgentRuntime implements AgentRuntime {
 
 function durableOpenCodeSessionId(agentDir: string, id: ConversationId): string {
   return `${createHash("sha256").update(resolve(agentDir)).digest("hex").slice(0, 16)}-${id}`;
+}
+
+/**
+ * Replaces the visible text of completed assistant turns with the outcome the model actually produced, so a turn that
+ * wrote text without calling a channel tool is not mistaken for a reply on the next request. The active turn is kept
+ * intact because a tool call continues it, including when a user steers it.
+ */
+export function normalizeCompletedAssistantText(messages: readonly Message[]): Message[] {
+  let completedTurnIndex = -1;
+  let seenUser = false;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]!;
+    if (message.role === "user") seenUser = true;
+    if (
+      seenUser &&
+      message.role === "assistant" &&
+      !message.content.some((block) => block.type === "toolCall")
+    ) {
+      completedTurnIndex = index;
+      break;
+    }
+  }
+
+  const normalized: Message[] = [];
+  let sentMessage = false;
+  for (const [index, message] of messages.entries()) {
+    if (message.role === "toolResult" && message.toolName === "discord_send" && !message.isError) {
+      sentMessage = true;
+    }
+    if (message.role !== "assistant" || index > completedTurnIndex) {
+      normalized.push(message);
+      continue;
+    }
+
+    const content: AssistantMessage["content"] = message.content.filter(
+      (block) => block.type !== "text",
+    );
+    if (!content.some((block) => block.type === "toolCall")) {
+      // Record the completed outcome so silence is not mistaken for a pending reply.
+      content.push({
+        type: "text",
+        text: sentMessage
+          ? "Sent a message to Discord."
+          : "I didn't use discord_send, so I stayed silent.",
+      });
+      sentMessage = false;
+    }
+    if (content.length > 0) normalized.push({ ...message, content });
+  }
+  return normalized;
 }
 
 function withContextWindowRatio(
