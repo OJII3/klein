@@ -2,163 +2,103 @@
 
 Pi-based communication agent for Discord.
 
-## Quick Start
+## Quick start
 
-### 1. Requirements & Installation
-
-Enter the Nix development shell (or ensure Bun is installed) and install dependencies:
+Requires [Nix](https://nixos.org/) with flakes enabled, or Bun 1.4.2+.
 
 ```sh
-nix develop
+nix develop          # optional: provides Bun, cloudflared, and gcloud
 bun install
-```
 
-### 2. Configuration
-
-Copy the example configuration and environment files:
-
-```sh
 cp config/config.example.json config/config.jsonc
 cp .env.example .env
-${EDITOR:-vi} .env
-${EDITOR:-vi} config/config.jsonc
 ```
 
-Fill in your Discord bot token and access rules in `config/config.jsonc` and `.env`. Set provider API keys as needed (e.g. `GOOGLE_CLOUD_API_KEY` for Vertex AI, `OPENCODE_API_KEY` for OpenCode Go).
-
-### 3. Run
-
-`bun run start` builds both the web frontend and server, then starts the bot:
+Set `DISCORD_BOT_TOKEN`, `DISCORD_APPLICATION_ID`, and provider API keys in `.env`, then configure access rules and models in `config/config.jsonc`.
 
 ```sh
 bun run start
 ```
 
-By default, Klein resumes the latest session for each Discord channel. Use flags to control session resumption:
+`bun run start` builds the web UI and server, then runs the bot. It resumes the latest session for each Discord channel by default; pass `-- --new` to start fresh or `-- --resume` to be explicit.
 
-```sh
-bun run start -- --new     # Start fresh sessions
-bun run start -- --resume  # Explicitly resume sessions (default)
-```
-
-Conversation history, session-key bindings, and Discord rotation state are stored
-through Pi Durable's document APIs in `<runtime.agentDir>/pi-durable/pi-durable.sqlite`.
-A separately configured voice model uses `pi-durable-voice/pi-durable.sqlite` for its
-conversations. Session keys are namespaced by the caller; each conversation receives
-the caller's tools, filtered by the current permissions, when its runtime is created
-or reattached.
-
-Back up the SQLite databases to preserve session history and rotation state.
-
-Separate build commands are also available:
-
-- `bun run build` (builds both server and web UI)
-- `bun run build:web` / `bun run build:server`
+Session history, session-key bindings, and rotation state are stored in `<runtime.agentDir>/pi-durable/pi-durable.sqlite`; voice conversations use a separate `pi-durable-voice/pi-durable.sqlite`. Back up both to preserve them. `bun run build`, `bun run build:web`, and `bun run build:server` are also available.
 
 ## Profiles
 
-Profiles define agent personality and skills in `config/<profile>/`:
+Profiles live in `config/<profile>/` and define the agent's personality and skills:
 
-- `SOUL.md`: Discord text chat prompt.
-- `SOUL.voice.md`: Voice chat prompt (used when voice chat is active).
-- `skills/`: Profile-specific skills.
+- `SOUL.md` — text chat prompt
+- `SOUL.voice.md` — voice chat prompt
+- `skills/` — profile-specific skills
 
-Set `"profile"` in `config/config.jsonc` to switch profiles (defaults to `"klein"`). An included `"yachiyo"` profile is available based on [YacchoGPT](https://github.com/tsukumijima/YacchoGPT) (CC0-1.0).
+Select one with `"profile"` in `config/config.jsonc` (default: `klein`). The bundled `yachiyo` profile is based on [YacchoGPT](https://github.com/tsukumijima/YacchoGPT) (CC0-1.0).
 
 ## Features
 
-### Discord Bot & Commands
+### Discord
 
-- **Access control**: Configured via `discord.access` (evaluated in order: thread → channel → guild → default). Requires the Discord **Message Content Intent**.
-- **Commands**: Members with _Manage Server_ permissions can use `/status idle` to pause message processing and `/status online` to resume.
-- **Activity status**: Displays remaining monthly usage and estimated cost, refreshed hourly.
+- **Access control** — `discord.access` is evaluated thread → channel → guild → default. The Discord **Message Content Intent** is required.
+- **Commands** — `/status idle` pauses message processing and `/status online` resumes it (Manage Server only).
+- **Activity status** — shows remaining monthly usage and estimated cost, refreshed hourly.
 
-### LLM & Providers
+### LLM providers
 
 - Supports OpenCode Go (`opencode-go`) and Google Cloud Vertex AI Express Mode (`google-vertex`).
-- **Context window**: Adjust `llm.contextWindowRatio` (`0.01`–`1.0`) to cap context window usage for automatic compaction. Optionally set `llm.compaction.backgroundTokens` to control how many tokens before the blocking threshold background compaction starts (Pi Durable default `32768`; `0` disables background compaction).
-- **Image analysis**: Configure `llm.image` to use a separate one-shot vision model; its analysis is passed to the main conversation context.
+- **Context window** — `llm.contextWindowRatio` (`0.01`–`1.0`) caps context usage for automatic compaction. `llm.compaction.backgroundTokens` sets the token count before the blocking threshold at which background compaction starts (Pi Durable default `32768`; `0` disables it).
+- **Image analysis** — `llm.image` configures a separate one-shot vision model whose analysis is added to the main conversation.
 
-### Voice Chat & TTS
+### Voice chat and TTS
 
-- **Voice chat**: Powered by a bundled local Silero VAD (ONNX Runtime Web WASM) and WebSocket ASR. See [`docs/voice-chat-asr-protocol.md`](docs/voice-chat-asr-protocol.md).
-- **TTS**: Connects to an external Style-Bert-VITS2 (SBV2) server via `features.tts.serverUrl`. Provides the `discord_voice` tool and voice chat output. See [`docs/sbv2-tts-protocol.md`](docs/sbv2-tts-protocol.md).
-- **Voice reactions**: Set `features.voiceChat.reactions` to trigger short audio acknowledgments while generating full answers. Generate audio files from a manifest with:
-  ```sh
-  bun scripts/generate-voice-presets.ts [manifest-path]
-  ```
+- **Voice chat** — local Silero VAD (ONNX Runtime Web WASM) plus WebSocket ASR. See [`docs/voice-chat-asr-protocol.md`](docs/voice-chat-asr-protocol.md).
+- **TTS** — external Style-Bert-VITS2 server via `features.tts.serverUrl`; provides the `discord_voice` tool and voice chat output. See [`docs/sbv2-tts-protocol.md`](docs/sbv2-tts-protocol.md).
+- **Voice reactions** — `features.voiceChat.reactions` plays short acknowledgments while the full answer is generated. Generate presets with `bun scripts/generate-voice-presets.ts [manifest-path]`.
 
 ### Memory
 
-When `features.memory.enabled` is true, Klein periodically extracts durable guild facts and notes from recent conversations into `.runtime/memory/{guildId}/MEMORY.json` using an optional background model.
+With `features.memory.enabled`, Klein periodically extracts durable guild facts and notes from recent conversations into `.runtime/memory/{guildId}/MEMORY.json` using an optional background model.
 
 ### Scheduling
 
-Reminders and watches share one schedule store under `<runtime.agentDir>/schedules`.
-Each scheduled item belongs to a Discord channel (or thread) and remains available to
-list and delete after conversation sessions rotate. Delivery rechecks the current channel
-access rules and owner ID; items whose scope is no longer allowed stay stored without
-being delivered.
+Reminders and watches share `<runtime.agentDir>/schedules`. Each item belongs to a Discord channel or thread and survives session rotation; delivery rechecks current access rules and owner ID, and items that are no longer allowed stay stored but are not delivered.
 
-- **Reminders** deliver a fixed message once or repeatedly (`every` minutes, daily, or
-  weekly). They belong to `public` or `owner:<userId>` scope.
-- **Watches** run a check on a recurring schedule and wake the agent only when the output
-  changes. The first successful check establishes the baseline; unchanged output stays
-  silent. `condition: "output"` can be used instead to notify whenever the check produces
-  output. Like reminders, watches belong to `public` or `owner:<userId>` scope depending
-  on the session that created them.
+- **Reminders** send a fixed message once or on a recurring schedule (`every` minutes, daily, or weekly), scoped to `public` or `owner:<userId>`.
+- **Watches** run a QuickJS script on a recurring schedule and wake the agent only when the output changes. The first successful check sets the baseline; `condition: "output"` notifies on any output. Checks time out after 30 seconds and are limited to 64 KiB of output; failures are recorded in `watch_list` and do not wake the agent.
 
-A watch runs `script` in a QuickJS sandbox: the script reads the `args` array, calls
-`fetch(url, init)` for HTTP requests, and prints with `text()` or `console.*`. Its text
-output plus the returned value become the watch output. The sandbox has no timers,
-filesystem, or process APIs. Checks have a 30-second timeout and a 64 KiB output limit.
-Check failures are recorded in `watch_list` and do not wake the agent.
+Watch scripts read the `args` array, call `fetch(url, init)`, and print with `text()` or `console.*`. The sandbox has no timers, filesystem, or process APIs. The printed text and returned value form the output.
 
-Schedule files use the new unified format. The application does not read the old
-`<runtime.agentDir>/reminders` directory. To migrate it manually, run the dry run first,
-then apply:
+Schedules use a unified format; the old `<runtime.agentDir>/reminders` directory is ignored. Migrate with:
 
 ```sh
-bun run migrate:schedules
+bun run migrate:schedules            # dry run
 bun run migrate:schedules -- --apply
 ```
 
-The migration script leaves the old directory in place and skips IDs that already exist
-in the new store. Use `--overwrite` to replace existing IDs, or `--agent-dir <path>` to
-target a different runtime directory.
+The script keeps the old directory and skips existing IDs. Use `--overwrite` to replace them or `--agent-dir <path>` to target another runtime directory.
 
-### Remote MCP Tools
+### Remote MCP tools
 
-Register MCP tools directly into Pi's agent directory (`.runtime/pi`):
+Register MCP tools in Pi's agent directory (`.runtime/pi`):
 
 ```sh
 PI_CODING_AGENT_DIR=.runtime/pi bunx pi mcp add docs --url https://mcp.example.com/mcp --exposure deferred
 ```
 
-When a server answers 401, sign in from the command line (after `bun run build:server`):
+For a server that returns 401, authenticate after `bun run build:server`:
 
 ```sh
 bun dist/klein mcp login docs
 ```
 
-The command serves the OAuth callback on `127.0.0.1` and prints the authorization URL. If the
-browser runs on another machine, paste the URL it was redirected to instead. Credentials are
-stored in `<runtime.agentDir>/mcp-auth.json`; set `oauth.callbackPort` or `oauth.callbackUrl`
-in `mcp.json` when the OAuth client is registered with a fixed redirect URI.
+The callback is served on `127.0.0.1` and the authorization URL is printed. If the browser runs on another machine, paste the redirected URL instead. Credentials are stored in `<runtime.agentDir>/mcp-auth.json`; set `oauth.callbackPort` or `oauth.callbackUrl` in `mcp.json` when the OAuth client has a fixed redirect URI. Restart Klein after changing MCP configuration.
 
-Restart Klein after modifying MCP configurations.
+### Owner access
 
-### Owner Access
+Locations and tools can be restricted with `owner` in addition to `allow` and `deny`. Owner locations accept only the bot owner, use isolated session history, and do not write to shared guild memory. Tools and MCP servers marked `owner` run only in owner conversations.
 
-Locations and tools can be restricted using `owner` alongside `allow` and `deny`.
-An `owner` location accepts interactions only from the bot owner, uses an isolated session history, and does not record conversations into shared guild memory.
-Tools and MCP servers requiring `owner` access only run within those owner conversations.
+### Web UI
 
-### Web UI Viewer
-
-An optional dashboard to inspect Pino logs, Pi sessions, and guild memories.
-
-Enable it in `config/config.jsonc`:
+An optional dashboard for Pino logs, Pi sessions, and guild memories. Enable it in `config/config.jsonc`:
 
 ```jsonc
 {
@@ -174,51 +114,14 @@ Enable it in `config/config.jsonc`:
 
 Open `http://127.0.0.1:4310` after starting Klein.
 
-#### Cloudflare Tunnel (Optional)
+To expose it through Cloudflare Tunnel, add `TUNNEL_TOKEN` to `.env` and protect the route with Cloudflare Access. `cloudflared` starts and stops with Klein.
 
-To securely expose the Web UI:
+## Development
 
-1. Create a Cloudflare Tunnel and add `TUNNEL_TOKEN=...` to `.env`.
-2. Protect the route with Cloudflare Access.
-3. Start Klein (`cloudflared` is started and stopped automatically with Klein).
+Run the checks before committing:
 
-## Agent Input Events
-
-`AgentRuntime.prompt` and `steer` accept `AgentEvent` inputs defined in
-`src/agents/core/agent-event.ts`. Each producer provides an internal tracing `id`,
-an ISO 8601 `occurredAt` with a timezone, an event `type` (such as `discord.message`),
-a `source`, and `content` containing text and image blocks:
-
-```ts
-await runtime.prompt({
-  id: "reminder-123",
-  occurredAt: "2026-10-14T18:30:42+09:00",
-  type: "reminder.due",
-  source: "reminder",
-  content: [{ type: "text", text: "定例会の時間です。" }],
-});
+```sh
+bun fmt
+bun lint:fix
+bun test
 ```
-
-Text blocks use `{ type: "text", text }`; image blocks use
-`{ type: "image", data, mimeType }`, where `data` is Base64. Source-specific data
-stays in its producer; information relevant to the agent belongs in text blocks.
-Pi receives the event type, source, and occurrence time in Japan Standard Time
-at minute precision (for example, `2026-10-14 18:30 JST`), followed by the text
-and images. The event ID and full timestamp stay internal. Discord preserves its
-original posting time, author and reply text, conversation guidance, memory,
-and channel rules. Voice transcripts use their receipt time.
-
-New producers can use the same runtime interface for reminders, watches, MCP
-notifications, and messages from other agents. Discord Pi sessions provide deferred
-`reminder_add`, `reminder_list`, `reminder_delete`, `watch_add`, `watch_list`, and
-`watch_delete` tools. Reminders can run once after a duration (minimum one minute),
-once at the next occurrence of a time or at a specific date and time, or repeatedly
-every N minutes, every day, or on selected weekdays in JST. Watches run a script on a
-recurring schedule and emit `watch.triggered` only when the output changes. Scheduled
-items are delivered to the session that created them; overdue repeating items fire once
-after a restart and then resume their schedule. MCP notification subscriptions are not
-implemented yet. Tool permissions are fixed when the agent is created and apply to every
-event it processes, including reminders, watches, and MCP notifications.
-`prompt(event)` and `steer(event)` need no per-input permission options.
-Owner-only tools require an owner-enabled session established by trusted
-application access checks; event content cannot grant owner access.
