@@ -29,6 +29,7 @@ test("batches recent guild messages and keeps guild memory files separate", asyn
         {
           content: `処理済み: ${messages.map((message) => message.id).join(", ")}`,
           kind: "fact",
+          scope: { channelId: messages[0]?.channelId ?? "unknown", type: "channel" },
           title: "処理結果",
           type: "add",
         },
@@ -54,9 +55,31 @@ test("batches recent guild messages and keeps guild memory files separate", asyn
     await taskCoordinator.waitForCompletion();
 
     assert.deepEqual(processed.sort(), [["message-a1", "message-a2"], ["message-b1"]].sort());
-    assert.match((await coordinator.getContext("guild-a", "処理済み")) ?? "", /message-a1/u);
-    assert.match((await coordinator.getContext("guild-b", "処理済み")) ?? "", /message-b1/u);
-    assert.equal(await coordinator.getContext("guild-c", "何もない"), undefined);
+    assert.match(
+      (await coordinator.getContext(
+        { channelId: "guild-a-channel", guildId: "guild-a" },
+        "処理済み",
+      )) ?? "",
+      /message-a1/u,
+    );
+    assert.equal(
+      await coordinator.getContext({ channelId: "other-channel", guildId: "guild-a" }, "処理済み"),
+      undefined,
+    );
+    assert.match(
+      (await coordinator.getContext(
+        { channelId: "guild-b-channel", guildId: "guild-b" },
+        "処理済み",
+      )) ?? "",
+      /message-b1/u,
+    );
+    assert.equal(
+      await coordinator.getContext(
+        { channelId: "guild-c-channel", guildId: "guild-c" },
+        "何もない",
+      ),
+      undefined,
+    );
     assert.deepEqual(
       (await coordinator.listGuilds()).map(({ entryCount, guildId }) => ({ entryCount, guildId })),
       [
@@ -94,6 +117,7 @@ test("deletes a persisted memory entry for a guild", async () => {
         {
           content: "削除対象の本文",
           kind: "fact",
+          scope: { type: "guild" },
           title: "削除対象",
           type: "add",
         },

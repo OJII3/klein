@@ -1,4 +1,9 @@
-import type { MemoryDocument, MemoryEntry } from "../domain/memory";
+import type {
+  MemoryDocument,
+  MemoryEntry,
+  MemoryEntryScope,
+  MemoryLocation,
+} from "../domain/memory";
 
 const DEFAULT_MAX_RELATED_ENTRIES = 8;
 const DEFAULT_MIN_RELATED_SCORE = 3;
@@ -6,6 +11,7 @@ const SEARCH_TOKEN_PATTERN =
   /[a-z0-9]+|[\p{Script=Han}]+|[\p{Script=Hiragana}]+|[\p{Script=Katakana}ー]+/giu;
 
 export interface MemoryContextSelectionOptions {
+  readonly location?: MemoryLocation;
   readonly maxRelatedEntries?: number;
   readonly minRelatedScore?: number;
 }
@@ -15,7 +21,11 @@ export function selectMemoryEntries(
   query: string,
   options: MemoryContextSelectionOptions = {},
 ): MemoryDocument {
-  const rules = document.entries.filter((entry) => entry.kind === "rule");
+  const location = options.location;
+  const entries = location
+    ? document.entries.filter((entry) => isVisibleAt(entry.scope, location))
+    : document.entries;
+  const rules = entries.filter((entry) => entry.kind === "rule");
   const queryText = normalizeForSearch(query);
   const queryTerms = extractSearchTerms(queryText);
   const maxRelatedEntries = options.maxRelatedEntries ?? DEFAULT_MAX_RELATED_ENTRIES;
@@ -23,7 +33,7 @@ export function selectMemoryEntries(
 
   const relatedEntries =
     queryTerms.length > 0
-      ? document.entries
+      ? entries
           .filter((entry) => entry.kind !== "rule")
           .map((entry, index) => ({
             entry,
@@ -35,6 +45,10 @@ export function selectMemoryEntries(
             const scoreDifference = right.score - left.score;
             if (scoreDifference !== 0) return scoreDifference;
 
+            const specificityDifference =
+              scopeSpecificity(right.entry.scope) - scopeSpecificity(left.entry.scope);
+            if (specificityDifference !== 0) return specificityDifference;
+
             const updatedAtDifference = right.entry.updatedAt.localeCompare(left.entry.updatedAt);
             if (updatedAtDifference !== 0) return updatedAtDifference;
 
@@ -45,6 +59,30 @@ export function selectMemoryEntries(
       : [];
 
   return { entries: [...rules, ...relatedEntries] };
+}
+
+export function isVisibleAt(scope: MemoryEntryScope, location: MemoryLocation): boolean {
+  switch (scope.type) {
+    case "guild":
+      return true;
+    case "owner":
+      return false;
+    case "channel":
+      return scope.channelId === location.channelId;
+    case "thread":
+      return scope.threadId === location.threadId;
+  }
+}
+
+function scopeSpecificity(scope: MemoryEntryScope): number {
+  switch (scope.type) {
+    case "channel":
+      return 1;
+    case "thread":
+      return 2;
+    default:
+      return 0;
+  }
 }
 
 function scoreMemoryEntry(

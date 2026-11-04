@@ -7,6 +7,7 @@ import {
   type MemoryApplyResult,
   type MemoryDocument,
   type MemoryEntry,
+  type MemoryEntryScope,
   type MemoryKind,
   type MemoryOperation,
   type MemoryStore,
@@ -57,6 +58,7 @@ export class JsonMemoryStore implements MemoryStore {
           createdAt: now,
           id: `mem_${randomUUID()}`,
           kind: operation.kind,
+          scope: operation.scope,
           sourceMessageIds: sourceIds,
           title: operation.title,
           updatedAt: now,
@@ -84,6 +86,7 @@ export class JsonMemoryStore implements MemoryStore {
         createdAt: previous.createdAt,
         id: previous.id,
         kind: operation.kind,
+        scope: operation.scope,
         sourceMessageIds: unique([...previous.sourceMessageIds, ...sourceIds]),
         title: operation.title,
         updatedAt: now,
@@ -194,6 +197,7 @@ function parseMemoryEntry(value: unknown): MemoryEntry {
     !isRecord(value) ||
     typeof value.id !== "string" ||
     !isMemoryKind(value.kind) ||
+    !isMemoryEntryScope(value.scope) ||
     typeof value.title !== "string" ||
     typeof value.content !== "string" ||
     typeof value.createdAt !== "string" ||
@@ -209,10 +213,36 @@ function parseMemoryEntry(value: unknown): MemoryEntry {
     createdAt: value.createdAt,
     id: value.id,
     kind: value.kind,
+    scope: parseMemoryEntryScope(value.scope),
     sourceMessageIds: value.sourceMessageIds,
     title: value.title,
     updatedAt: value.updatedAt,
   };
+}
+
+function isMemoryEntryScope(value: unknown): value is MemoryEntryScope {
+  if (!isRecord(value)) return false;
+  if (value.type === "owner" || value.type === "guild") return true;
+  if (value.type === "channel") {
+    return typeof value.channelId === "string" && value.channelId.length > 0;
+  }
+  if (value.type === "thread") {
+    return (
+      typeof value.channelId === "string" &&
+      value.channelId.length > 0 &&
+      typeof value.threadId === "string" &&
+      value.threadId.length > 0
+    );
+  }
+  return false;
+}
+
+function parseMemoryEntryScope(value: MemoryEntryScope): MemoryEntryScope {
+  if (value.type === "channel") return { channelId: value.channelId, type: "channel" };
+  if (value.type === "thread") {
+    return { channelId: value.channelId, threadId: value.threadId, type: "thread" };
+  }
+  return { type: value.type };
 }
 
 function isMemoryKind(value: unknown): value is MemoryKind {

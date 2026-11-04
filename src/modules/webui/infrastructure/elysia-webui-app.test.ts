@@ -94,6 +94,7 @@ test("serves health, logs, Pi sessions, and scoped memory through Elysia", async
               createdAt: "2026-09-11T00:00:00.000Z",
               id: "mem-1",
               kind: "fact" as const,
+              scope: { type: "guild" as const },
               sourceMessageIds: [],
               title: scope.type === "owner" ? "オーナーの事実" : `${scope.guildId} の事実`,
               updatedAt: "2026-09-11T00:00:00.000Z",

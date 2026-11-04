@@ -132,7 +132,14 @@ export class AgentCoordinator {
       await this.sessionManager.runTurn(conversationKey, accessScope, async (agent) => {
         const query = buildMemoryQuery(message);
         const guildMemory = message.guildId
-          ? await this.dependencies.memoryCoordinator?.getContext(message.guildId, query)
+          ? await this.dependencies.memoryCoordinator?.getContext(
+              {
+                channelId: message.parentChannelId ?? message.channelId,
+                guildId: message.guildId,
+                ...(message.threadId ? { threadId: message.threadId } : {}),
+              },
+              query,
+            )
           : undefined;
         const channelRule = message.guildId
           ? await this.dependencies.channelRuleStore?.get(message.guildId, message.channelId)

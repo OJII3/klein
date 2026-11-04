@@ -21,6 +21,7 @@ import {
 import {
   memoryScopeKey,
   type MemoryEntry,
+  type MemoryEntryScope,
   type MemoryScope,
   type MemoryScopeSummary,
 } from "../../api";
@@ -273,18 +274,23 @@ function MemoryEntries({
               <Paper key={entry.id} withBorder radius="md" p="md">
                 <Group justify="space-between" align="start" mb="sm">
                   <Stack gap="xs" align="start">
-                    <Badge
-                      variant="light"
-                      color={
-                        entry.kind === "rule" || entry.kind === "procedure"
-                          ? "yellow"
-                          : entry.kind === "decision"
-                            ? "blue"
-                            : "gray"
-                      }
-                    >
-                      {entry.kind}
-                    </Badge>
+                    <Group gap="xs">
+                      <Badge
+                        variant="light"
+                        color={
+                          entry.kind === "rule" || entry.kind === "procedure"
+                            ? "yellow"
+                            : entry.kind === "decision"
+                              ? "blue"
+                              : "gray"
+                        }
+                      >
+                        {entry.kind}
+                      </Badge>
+                      <Badge variant="outline" color="gray" title={entryScopeDetail(entry.scope)}>
+                        {entry.scope.type}
+                      </Badge>
+                    </Group>
                     <Title order={3} size="h5">
                       {entry.title}
                     </Title>
@@ -335,4 +341,11 @@ function MemoryEntries({
 
 function scopeName(scope: MemoryScope): string {
   return scope.type === "owner" ? "オーナー" : scope.guildId;
+}
+
+function entryScopeDetail(scope: MemoryEntryScope): string {
+  if (scope.type === "channel") return `チャンネル: ${scope.channelId}`;
+  if (scope.type === "thread")
+    return `スレッド: ${scope.threadId} (チャンネル: ${scope.channelId})`;
+  return scope.type === "owner" ? "オーナー" : "ギルド全体";
 }

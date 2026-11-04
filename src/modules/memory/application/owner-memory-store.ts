@@ -61,7 +61,7 @@ export class OwnerMemoryStore {
 
     return this.runOperation(async () => {
       const result = await this.store.apply(
-        [{ type: "add", kind: input.kind, title, content }],
+        [{ type: "add", kind: input.kind, scope: { type: "owner" }, title, content }],
         input.sourceId ? [input.sourceId] : [],
       );
       const created = result.created[0];
@@ -85,7 +85,7 @@ export class OwnerMemoryStore {
       if (!content) throw new Error("Owner memory content must not be empty");
 
       const result = await this.store.apply(
-        [{ type: "update", id: input.id, kind, title, content }],
+        [{ type: "update", id: input.id, kind, scope: existing.scope, title, content }],
         input.sourceId ? [input.sourceId] : [],
       );
       const updated = result.updated[0];

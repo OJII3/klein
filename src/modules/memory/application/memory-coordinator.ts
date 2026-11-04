@@ -11,6 +11,7 @@ import type {
   GuildMemoryReader,
   MemoryDocument,
   MemoryGuildSummary,
+  MemoryLocation,
   MemoryMessage,
   MemoryProcessor,
 } from "../domain/memory";
@@ -70,18 +71,18 @@ export class MemoryCoordinator implements GuildMemoryReader, GuildMemoryEditor {
     }
   }
 
-  async getContext(guildId: string, query: string): Promise<string | undefined> {
+  async getContext(location: MemoryLocation, query: string): Promise<string | undefined> {
     if (this.disposed) return undefined;
 
     try {
-      const document = await this.read(guildId);
-      const selectedDocument = selectMemoryEntries(document, query);
+      const document = await this.read(location.guildId);
+      const selectedDocument = selectMemoryEntries(document, query, { location });
       return selectedDocument.entries.length > 0
         ? renderMemoryContext(selectedDocument)
         : undefined;
     } catch (error) {
       this.logger.warn(
-        { err: error, event: "guild_memory_context_read_failed", guildId },
+        { err: error, event: "guild_memory_context_read_failed", guildId: location.guildId },
         "Failed to read guild memory context",
       );
       return undefined;
@@ -127,7 +128,10 @@ export class MemoryCoordinator implements GuildMemoryReader, GuildMemoryEditor {
     if (this.disposed) return Promise.reject(new Error("Memory coordinator is disposed"));
     return this.runGuildOperation(guildId, async () => {
       const store = new JsonMemoryStore(resolveMemoryFilePath(this.options.filePath, guildId));
-      await store.apply([{ type: "add", kind: "rule", title, content }], []);
+      await store.apply(
+        [{ type: "add", kind: "rule", scope: { type: "guild" }, title, content }],
+        [],
+      );
     });
   }
 
@@ -247,6 +251,8 @@ function toMemoryMessage(message: DiscordMessage): MemoryMessage {
     channelId: message.channelId,
     content: formatDiscordMessage(message),
     id: message.id,
+    ...(message.parentChannelId ? { parentChannelId: message.parentChannelId } : {}),
+    ...(message.threadId ? { threadId: message.threadId } : {}),
   };
 }
 
