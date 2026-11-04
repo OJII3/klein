@@ -2,9 +2,16 @@ export const MEMORY_KINDS = ["fact", "rule", "decision", "procedure", "temporary
 
 export type MemoryKind = (typeof MEMORY_KINDS)[number];
 
+export type MemoryEntryScope =
+  | { readonly type: "owner" }
+  | { readonly type: "guild" }
+  | { readonly type: "channel"; readonly channelId: string }
+  | { readonly type: "thread"; readonly channelId: string; readonly threadId: string };
+
 export interface MemoryEntry {
   readonly id: string;
   readonly kind: MemoryKind;
+  readonly scope: MemoryEntryScope;
   readonly title: string;
   readonly content: string;
   readonly createdAt: string;
@@ -14,6 +21,12 @@ export interface MemoryEntry {
 
 export interface MemoryDocument {
   readonly entries: readonly MemoryEntry[];
+}
+
+export interface MemoryLocation {
+  readonly guildId: string;
+  readonly channelId: string;
+  readonly threadId?: string;
 }
 
 export type MemoryScope =
@@ -62,12 +75,14 @@ export class MemoryEntryNotFoundError extends Error {
 export type MemoryOperation =
   | {
       readonly type: "add";
+      readonly scope: MemoryEntryScope;
       readonly kind: MemoryKind;
       readonly title: string;
       readonly content: string;
     }
   | {
       readonly type: "update";
+      readonly scope: MemoryEntryScope;
       readonly id: string;
       readonly kind: MemoryKind;
       readonly title: string;
@@ -98,6 +113,8 @@ export interface MemoryStore {
 export interface MemoryMessage {
   readonly id: string;
   readonly channelId: string;
+  readonly parentChannelId?: string;
+  readonly threadId?: string;
   readonly content: string;
 }
 

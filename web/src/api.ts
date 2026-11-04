@@ -65,9 +65,16 @@ export interface SessionQuery {
 
 export type MemoryKind = "fact" | "rule" | "decision" | "procedure" | "temporary";
 
+export type MemoryEntryScope =
+  | { type: "owner" }
+  | { type: "guild" }
+  | { type: "channel"; channelId: string }
+  | { type: "thread"; channelId: string; threadId: string };
+
 export interface MemoryEntry {
   id: string;
   kind: MemoryKind;
+  scope: MemoryEntryScope;
   title: string;
   content: string;
   createdAt: string;

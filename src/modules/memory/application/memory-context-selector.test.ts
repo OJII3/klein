@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { MemoryDocument, MemoryEntry } from "../domain/memory";
+import type { MemoryDocument, MemoryEntry, MemoryEntryScope } from "../domain/memory";
 import { selectMemoryEntries } from "./memory-context-selector";
 
 test("keeps every rule and selects related non-rule entries", () => {
@@ -57,6 +57,41 @@ test("limits related entries after ranking them", () => {
   );
 });
 
+test("filters entries by location and prefers the most specific scope", () => {
+  const document = createDocument([
+    createEntry("guild", "fact", "ギルド", "定例会は土曜日に開催する", { type: "guild" }),
+    createEntry("channel-1", "fact", "チャンネル1", "定例会は土曜日に開催する", {
+      channelId: "channel-1",
+      type: "channel",
+    }),
+    createEntry("channel-2", "fact", "チャンネル2", "定例会は土曜日に開催する", {
+      channelId: "channel-2",
+      type: "channel",
+    }),
+    createEntry("thread-1", "fact", "スレッド1", "定例会は土曜日に開催する", {
+      channelId: "channel-1",
+      threadId: "thread-1",
+      type: "thread",
+    }),
+  ]);
+
+  const atChannel = selectMemoryEntries(document, "定例会", {
+    location: { channelId: "channel-1", guildId: "guild-1" },
+  });
+  assert.deepEqual(
+    atChannel.entries.map((entry) => entry.id),
+    ["channel-1", "guild"],
+  );
+
+  const atThread = selectMemoryEntries(document, "定例会", {
+    location: { channelId: "channel-1", guildId: "guild-1", threadId: "thread-1" },
+  });
+  assert.deepEqual(
+    atThread.entries.map((entry) => entry.id),
+    ["thread-1", "channel-1", "guild"],
+  );
+});
+
 function createDocument(entries: readonly MemoryEntry[]): MemoryDocument {
   return { entries };
 }
@@ -66,12 +101,14 @@ function createEntry(
   kind: MemoryEntry["kind"],
   title: string,
   content: string,
+  scope: MemoryEntryScope = { type: "guild" },
 ): MemoryEntry {
   return {
     content,
     createdAt: "2026-01-01T00:00:00.000Z",
     id,
     kind,
+    scope,
     sourceMessageIds: [],
     title,
     updatedAt: "2026-01-01T00:00:00.000Z",

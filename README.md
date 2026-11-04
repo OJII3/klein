@@ -58,6 +58,8 @@ Select one with `"profile"` in `config/config.jsonc` (default: `klein`). The bun
 
 With `features.memory.enabled`, Klein periodically extracts durable guild facts and notes from recent conversations into `.runtime/memory/{guildId}/MEMORY.json` using an optional background model.
 
+Memory entries are stored together per guild and carry a scope: `guild`, `channel`, or `thread`. Extraction defaults to the conversation's channel and only promotes an entry to the guild when the fact applies server-wide. Retrieval always includes guild entries and adds channel or thread entries only at the matching location.
+
 ### Scheduling
 
 Reminders and watches share `<runtime.agentDir>/schedules`. Each item belongs to a Discord channel or thread and survives session rotation; delivery rechecks current access rules and owner ID, and items that are no longer allowed stay stored but are not delivered.

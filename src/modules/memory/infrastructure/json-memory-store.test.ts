@@ -18,6 +18,7 @@ test("applies memory operations to a JSON file", async () => {
         {
           content: "このギルドでは毎週金曜日に定例会を行う。",
           kind: "rule",
+          scope: { type: "guild" },
           title: "定例会の曜日",
           type: "add",
         },
@@ -31,6 +32,7 @@ test("applies memory operations to a JSON file", async () => {
     assert.deepEqual(addResult.updated, []);
     assert.deepEqual(addResult.deleted, []);
     assert.equal(added.kind, "rule");
+    assert.deepEqual(added.scope, { type: "guild" });
     assert.deepEqual(added.sourceMessageIds, ["message-1"]);
 
     const updateResult = await store.apply(
@@ -39,6 +41,7 @@ test("applies memory operations to a JSON file", async () => {
           content: "このギルドでは毎週土曜日に定例会を行う。",
           id: added.id,
           kind: "decision",
+          scope: { channelId: "channel-1", type: "channel" },
           title: "定例会の曜日",
           type: "update",
         },
@@ -53,6 +56,7 @@ test("applies memory operations to a JSON file", async () => {
     assert.deepEqual(updateResult.deleted, []);
     assert.equal(updated.content, "このギルドでは毎週土曜日に定例会を行う。");
     assert.equal(updated.kind, "decision");
+    assert.deepEqual(updated.scope, { channelId: "channel-1", type: "channel" });
     assert.deepEqual(updated.sourceMessageIds, ["message-1", "message-2"]);
 
     const deleteResult = await store.apply([{ id: updated.id, type: "delete" }], ["message-3"]);
@@ -108,6 +112,7 @@ test("lists guilds with persisted memory files", async () => {
       createdAt: "2026-09-11T00:00:00.000Z",
       id: "mem-1",
       kind: "fact" as const,
+      scope: { type: "guild" as const },
       sourceMessageIds: [],
       title: "事実",
       updatedAt: "2026-09-11T00:00:00.000Z",
@@ -133,6 +138,7 @@ test("renders compact guild memory context without storage metadata", () => {
         createdAt: "2026-09-10T12:30:00.000Z",
         id: "mem-1",
         kind: "rule" as const,
+        scope: { channelId: "channel-1", type: "channel" as const },
         sourceMessageIds: ["message-1"],
         title: "発言について",
         updatedAt: "2026-10-05T03:26:33.905Z",
@@ -142,12 +148,13 @@ test("renders compact guild memory context without storage metadata", () => {
 
   const context = renderMemoryContext(document);
   assert.match(context, /Shared memory across channels in this guild\./u);
-  assert.match(context, /Kind: rule · Updated: 2026-10-05/u);
+  assert.match(context, /Kind: rule · Scope: channel · Updated: 2026-10-05/u);
   assert.match(context, /### 発言について\n\n/u);
   assert.match(context, /本文/u);
-  assert.doesNotMatch(context, /mem-1|message-1|createdAt|T03:26:33/u);
+  assert.doesNotMatch(context, /mem-1|message-1|channel-1|createdAt|T03:26:33/u);
 
   const processingContext = renderMemoryContext(document, { includeIds: true });
+  assert.match(processingContext, /Scope: channel:channel-1/u);
   assert.match(processingContext, /Memory ID: mem-1/u);
   assert.doesNotMatch(processingContext, /message-1|T03:26:33/u);
 });
