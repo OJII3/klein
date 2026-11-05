@@ -59,6 +59,7 @@ export class OpenCodeGoUsageProvider implements UsageLimitProvider {
     }
 
     return {
+      kind: "percentage",
       resetsAt,
       status: monthly.status,
       usedPercentage: monthly.percent,

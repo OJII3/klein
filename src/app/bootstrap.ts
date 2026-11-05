@@ -35,6 +35,7 @@ import {
 } from "@modules/memory/application/owner-memory-store";
 import { createGetMonthlyUsageLimit } from "@modules/usage/application/get-monthly-usage-limit";
 import { formatMonthlyUsageStatus } from "@modules/usage/application/format-monthly-usage-status";
+import { MistralEstimatedUsageProvider } from "@modules/usage/infrastructure/mistral-estimated-usage-provider";
 import { OpenCodeGoUsageProvider } from "@modules/usage/infrastructure/opencode-go-usage-provider";
 import { VertexAiEstimatedUsageProvider } from "@modules/usage/infrastructure/vertex-ai-estimated-usage-provider";
 import {
@@ -256,18 +257,23 @@ export async function bootstrap(): Promise<void> {
     watchCheckRunner,
     taskCoordinator,
   });
+  const getDurableProviderCost = async (provider: string, monthStart: number): Promise<number> =>
+    (await piAgentFactory.getMonthlyProviderCost(provider, monthStart)) +
+    (voiceChatAgentFactory === piAgentFactory
+      ? 0
+      : await voiceChatAgentFactory.getMonthlyProviderCost(provider, monthStart));
   const usageProvider =
     config.llm.provider === "google-vertex"
-      ? new VertexAiEstimatedUsageProvider(
-          async (monthStart) =>
-            (await piAgentFactory.getMonthlyProviderCost("google-vertex", monthStart)) +
-            (voiceChatAgentFactory === piAgentFactory
-              ? 0
-              : await voiceChatAgentFactory.getMonthlyProviderCost("google-vertex", monthStart)),
+      ? new VertexAiEstimatedUsageProvider((monthStart) =>
+          getDurableProviderCost("google-vertex", monthStart),
         )
-      : openCodeGoApiKey
-        ? new OpenCodeGoUsageProvider(openCodeGoApiKey)
-        : undefined;
+      : config.llm.provider === "mistral"
+        ? new MistralEstimatedUsageProvider((monthStart) =>
+            getDurableProviderCost("mistral", monthStart),
+          )
+        : openCodeGoApiKey
+          ? new OpenCodeGoUsageProvider(openCodeGoApiKey)
+          : undefined;
   const getMonthlyUsageLimit = usageProvider
     ? createGetMonthlyUsageLimit(usageProvider)
     : undefined;

@@ -40,6 +40,7 @@ test("fetches and maps the monthly OpenCode Go usage", async () => {
     assert.equal(requestedUrl, "https://opencode.ai/zen/go/v1/usage");
     assert.equal(requestedAuthorization, "Bearer secret-key");
     assert.deepEqual(usage, {
+      kind: "percentage",
       resetsAt: new Date("2026-10-01T14:00:00.000Z"),
       status: "ok",
       usedPercentage: 34.5,
