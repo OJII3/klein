@@ -68,6 +68,7 @@ export async function bootstrap(): Promise<void> {
     throw new Error("DISCORD_BOT_TOKEN is required");
   }
   const openCodeGoApiKey = process.env.OPENCODE_API_KEY;
+  const mistralApiKey = process.env.MISTRAL_API_KEY;
   const voiceChatConfiguration = config.features.voiceChat;
   const voiceChatLlmConfiguration = voiceChatConfiguration?.enabled
     ? voiceChatConfiguration.llm
@@ -78,6 +79,10 @@ export async function bootstrap(): Promise<void> {
   const usesOpenCodeGo = modelsInUse.some((model) => model?.provider === "opencode-go");
   if (usesOpenCodeGo && !openCodeGoApiKey) {
     throw new Error("OPENCODE_API_KEY is required");
+  }
+  const usesMistral = modelsInUse.some((model) => model?.provider === "mistral");
+  if (usesMistral && !mistralApiKey) {
+    throw new Error("MISTRAL_API_KEY is required");
   }
   const discordOperatingState = new DiscordOperatingState();
   const ownerUserId = config.owner?.discord.userId;

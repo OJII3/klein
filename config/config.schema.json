@@ -148,6 +148,10 @@
             {
               "type": "string",
               "const": "google-vertex"
+            },
+            {
+              "type": "string",
+              "const": "mistral"
             }
           ]
         },
@@ -215,6 +219,10 @@
                 {
                   "type": "string",
                   "const": "google-vertex"
+                },
+                {
+                  "type": "string",
+                  "const": "mistral"
                 }
               ]
             },
@@ -430,6 +438,10 @@
                     {
                       "type": "string",
                       "const": "google-vertex"
+                    },
+                    {
+                      "type": "string",
+                      "const": "mistral"
                     }
                   ]
                 },
@@ -563,6 +575,10 @@
                     {
                       "type": "string",
                       "const": "google-vertex"
+                    },
+                    {
+                      "type": "string",
+                      "const": "mistral"
                     }
                   ]
                 },

@@ -38,6 +38,43 @@ const DEEPSEEK_V41_FLASH_FALLBACK: Model<"openai-completions"> = {
   },
 };
 
+const MISTRAL_DEEPSEEK_V41_FLASH_1017_FALLBACK: Model<"mistral-conversations"> = {
+  id: "deepseek-v4-1-flash-1017",
+  name: "DeepSeek V4.1 Flash 1017",
+  api: "mistral-conversations",
+  provider: "mistral",
+  baseUrl: "https://api.mistral.ai",
+  reasoning: true,
+  thinkingLevelMap: {
+    off: null,
+    minimal: null,
+    low: "low",
+    medium: null,
+    high: "high",
+    xhigh: null,
+    max: "max",
+  },
+  input: ["text", "image"],
+  inputLimits: {
+    images: {
+      resize: {
+        maxWidth: 2000,
+        maxHeight: 2000,
+        maxBytes: 4_718_592,
+        jpegQuality: 80,
+      },
+    },
+  },
+  cost: {
+    input: 0.3,
+    output: 1.2,
+    cacheRead: 0.007,
+    cacheWrite: 0,
+  },
+  contextWindow: 1_000_000,
+  maxTokens: 128_000,
+};
+
 const BUILTIN_MODEL_CATALOG = builtinModels();
 
 export async function createPiModelRuntime(agentDir: string): Promise<ModelRuntime> {
@@ -59,6 +96,9 @@ export function resolveConfiguredModel(
   if (!model) {
     if (provider === "opencode-go" && modelId === DEEPSEEK_V41_FLASH_FALLBACK.id) {
       return DEEPSEEK_V41_FLASH_FALLBACK;
+    }
+    if (provider === "mistral" && modelId === MISTRAL_DEEPSEEK_V41_FLASH_1017_FALLBACK.id) {
+      return MISTRAL_DEEPSEEK_V41_FLASH_1017_FALLBACK;
     }
 
     throw new Error(`Configured Pi model was not found: ${provider}/${modelId}`);

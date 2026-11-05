@@ -57,7 +57,11 @@ const DiscordGuildAccessSchema = Type.Object(
 );
 
 const LlmModelConfigurationProperties = {
-  provider: Type.Union([Type.Literal("opencode-go"), Type.Literal("google-vertex")]),
+  provider: Type.Union([
+    Type.Literal("opencode-go"),
+    Type.Literal("google-vertex"),
+    Type.Literal("mistral"),
+  ]),
   model: Type.String({ minLength: 1 }),
   thinkingLevel: Type.Optional(ThinkingLevelSchema),
 };
@@ -83,7 +87,11 @@ const LlmConfigurationSchema = Type.Object(
 
 const MemoryModelConfigurationSchema = Type.Object(
   {
-    provider: Type.Union([Type.Literal("opencode-go"), Type.Literal("google-vertex")]),
+    provider: Type.Union([
+      Type.Literal("opencode-go"),
+      Type.Literal("google-vertex"),
+      Type.Literal("mistral"),
+    ]),
     model: Type.String({ minLength: 1 }),
     thinkingLevel: Type.Optional(ThinkingLevelSchema),
   },
