@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 import {
   CHANNEL_ROTATION_IDLE_MS,
+  ChannelSessionStateStore,
   createConversationSessionKey,
   getChannelRotationBucket,
   isChannelRotationDue,
@@ -48,4 +52,59 @@ test("rotation is due only after an idle hour in a later bucket", () => {
   );
   assert.equal(isChannelRotationDue(createState({ hasActivitySinceRotation: false }), now), false);
   assert.equal(isChannelRotationDue(createState({ lastActivityAt: null }), now), false);
+});
+
+test("persists and reloads channel session state from disk", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "klein-channel-session-state-"));
+  try {
+    const store = new ChannelSessionStateStore(directory);
+    const key = { kind: "discord" as const, channelId: "42" };
+    const initial = await store.getOrCreate(key, "2026-10-25T12");
+    assert.deepEqual(initial, {
+      conversationKey: key,
+      sessionKey: "discord-channel:42",
+      lastActivityAt: null,
+      lastRotationDate: "2026-10-25T12",
+      hasActivitySinceRotation: true,
+    });
+    assert.deepEqual(await store.list(), []);
+
+    const saved: ChannelSessionState = {
+      ...initial,
+      accessScope: "owner:123",
+      handoffContext: "A conversation to continue",
+      lastActivityAt: 123,
+      hasActivitySinceRotation: false,
+    };
+    await store.save(saved);
+
+    const reopened = new ChannelSessionStateStore(directory);
+    assert.deepEqual(await reopened.getOrCreate(key, "2099-01-01T00"), saved);
+    assert.deepEqual(await reopened.list(), [saved]);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("ignores legacy and malformed state files when listing", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "klein-channel-session-state-"));
+  try {
+    await writeFile(
+      join(directory, "legacy.json"),
+      JSON.stringify({
+        channelId: "42",
+        sessionKey: "discord-channel:42",
+        lastActivityAt: 1,
+        lastRotationDate: "2026-10-11",
+        hasActivitySinceRotation: false,
+      }),
+      "utf8",
+    );
+    await writeFile(join(directory, "broken.json"), "{not json", "utf8");
+
+    const store = new ChannelSessionStateStore(directory);
+    assert.deepEqual(await store.list(), []);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });

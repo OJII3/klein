@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 
 import { AgentCoordinator } from "./agent-coordinator";
+import { ChannelSessionStateStore } from "./channel-session-state-store";
 import { parseCliOptions } from "./cli-options";
 import { loadConfig } from "./config";
 import { createLogFilePath, createLogger, flushLogger } from "./logger";
@@ -13,11 +14,12 @@ import { VoiceChatCoordinator } from "./voice-chat-coordinator";
 import { DiscordAgent } from "@agents/discord/discord-agent";
 import { createDiscordAgentTools } from "@agents/discord/discord-tools";
 import {
+  createPiAgentFactory,
   createPiModelRuntime,
   resolveConfiguredModel,
   withOpenCodeSessionHeader,
-} from "@runtime/pi/pi-model-runtime";
-import { createPiDurableAgentFactory } from "@runtime/pi/pi-durable-agent-runtime";
+} from "@runtime/pi/pi-agent-runtime";
+import { migratePiDurableStorage } from "@runtime/pi/pi-durable-migration";
 import { createWatchFetchTool } from "@runtime/pi/watch-fetch-tool";
 import { PiMemoryProcessor } from "@runtime/pi/pi-memory-processor";
 import { PiVoiceReactionSelector } from "@runtime/pi/pi-voice-reaction-selector";
@@ -44,6 +46,7 @@ import {
 } from "@modules/webui/domain/webui-config";
 import { startWebUi } from "@modules/webui/infrastructure/elysia-webui-app";
 import { PinoJsonlReader } from "@modules/webui/infrastructure/pino-jsonl-reader";
+import { PiSessionReader } from "@modules/webui/infrastructure/pi-session-reader";
 import { Sbv2Tts } from "@modules/tts/infrastructure/sbv2-tts";
 import { WebSocketAsrClient } from "@modules/asr/infrastructure/websocket-asr-client";
 import { FileScheduledTaskStore } from "@modules/scheduling/infrastructure/file-scheduled-task-store";
@@ -88,6 +91,10 @@ export async function bootstrap(): Promise<void> {
   const taskCoordinator = new TaskCoordinator();
   const tts = config.features.tts?.enabled ? new Sbv2Tts(config.features.tts.serverUrl) : undefined;
   const agentDir = resolve(config.runtime.agentDir);
+  await migratePiDurableStorage({ agentDir, logger });
+  const channelSessionStateStore = new ChannelSessionStateStore(
+    resolve(agentDir, "channel-sessions"),
+  );
   const scheduledTaskStore = new FileScheduledTaskStore(resolve(agentDir, "schedules"));
   const watchToolCatalog = { tools: [createWatchFetchTool({ agentDir })] };
   const watchCheckRunner = new QuickJsWatchCheckRunner({ tools: watchToolCatalog.tools });
@@ -124,9 +131,8 @@ export async function bootstrap(): Promise<void> {
   const transcriptQueueSelector = reactionClassifierModel
     ? new PiVoiceTranscriptQueueSelector(modelRuntime, reactionClassifierModel)
     : undefined;
-  const piAgentFactory = createPiDurableAgentFactory({
-    agentDir: resolve(agentDir, "pi-durable"),
-    configDir: agentDir,
+  const piAgentFactory = createPiAgentFactory({
+    agentDir,
     llm: config.llm,
     skillsDirectory: profile.skillsDirectory,
     logger,
@@ -136,9 +142,8 @@ export async function bootstrap(): Promise<void> {
     watchToolCatalog,
   });
   const voiceChatAgentFactory = voiceChatLlmConfiguration
-    ? createPiDurableAgentFactory({
-        agentDir: resolve(agentDir, "pi-durable-voice"),
-        configDir: agentDir,
+    ? createPiAgentFactory({
+        agentDir,
         llm: voiceChatLlmConfiguration,
         skillsDirectory: profile.skillsDirectory,
         logger,
@@ -240,7 +245,7 @@ export async function bootstrap(): Promise<void> {
     accessPolicy: discordAccessPolicy,
     ownerUserId,
     createDiscordAgent,
-    channelSessionStateStore: piAgentFactory.channelSessionStateStore,
+    channelSessionStateStore,
     channelRuleStore,
     channelApi: discordService,
     logger,
@@ -253,13 +258,7 @@ export async function bootstrap(): Promise<void> {
   });
   const usageProvider =
     config.llm.provider === "google-vertex"
-      ? new VertexAiEstimatedUsageProvider(
-          async (monthStart) =>
-            (await piAgentFactory.getMonthlyProviderCost("google-vertex", monthStart)) +
-            (voiceChatAgentFactory === piAgentFactory
-              ? 0
-              : await voiceChatAgentFactory.getMonthlyProviderCost("google-vertex", monthStart)),
-        )
+      ? new VertexAiEstimatedUsageProvider(agentDir)
       : openCodeGoApiKey
         ? new OpenCodeGoUsageProvider(openCodeGoApiKey)
         : undefined;
@@ -286,7 +285,7 @@ export async function bootstrap(): Promise<void> {
         logger,
         memory: webUiMemory,
         memoryEditor: webUiMemory,
-        piSessions: piAgentFactory.sessions,
+        piSessions: new PiSessionReader(agentDir),
         pinoLogs: new PinoJsonlReader(logDirectory),
         port: webUiConfig.port,
         staticDirectory: resolveWebUiStaticDirectory(),
@@ -321,8 +320,6 @@ export async function bootstrap(): Promise<void> {
     await taskCoordinator.waitForCompletion();
     await discordService.stop();
     await agentCoordinator.dispose();
-    await piAgentFactory.close();
-    if (voiceChatAgentFactory !== piAgentFactory) await voiceChatAgentFactory.close();
     logger.info({ event: "shutdown_completed" }, "Shutdown complete");
     flushLogger(logger);
   };
@@ -345,7 +342,6 @@ export async function bootstrap(): Promise<void> {
       return agentCoordinator.handleDiscordMessage(message);
     });
     await agentCoordinator.initialize();
-    await piAgentFactory.resume();
     restoring = false;
     await Promise.all(
       pendingMessages.map((message) => agentCoordinator.handleDiscordMessage(message)),

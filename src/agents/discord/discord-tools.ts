@@ -1,4 +1,4 @@
-import type { ToolRegistration } from "@earendil-works/pi-durable";
+import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
 import type { OwnerMemoryStore } from "@modules/memory/application/owner-memory-store";
@@ -34,7 +34,7 @@ export interface DiscordAgentToolsOptions {
 export function createDiscordAgentTools(
   options: DiscordAgentToolsOptions,
   analyzeImage: DiscordImageAnalysis,
-): readonly ToolRegistration[] {
+): readonly ToolDefinition[] {
   const ownerFeaturesAllowed = options.ownerFeaturesAllowed && !!options.ownerUserId;
   const accessScope = ownerFeaturesAllowed
     ? ownerAccessScope(options.ownerUserId!)

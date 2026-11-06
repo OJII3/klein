@@ -1,5 +1,5 @@
 /**
- * MCP integration for the pi-durable runtime: configuration, OAuth credentials, server connections,
+ * MCP integration for the Pi runtime: configuration, OAuth credentials, server connections,
  * and the tools that expose them.
  *
  * Adapted from `@earendil-works/pi-coding-agent` 1.4.0 (MIT, Earendil Works):
@@ -19,7 +19,6 @@ import type { Logger } from "pino";
 
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import { oauthErrorHtml, oauthSuccessHtml } from "@earendil-works/pi-ai/utils/oauth-page";
-import { defineTool, type ToolRegistration } from "@earendil-works/pi-durable";
 import {
   JSON_RPC_ERROR_CODES,
   McpAuthRequiredError,
@@ -56,9 +55,34 @@ import {
   type OAuthChallenge,
   type OAuthClientInformationMixed,
 } from "@earendil-works/pi-mcp/oauth";
-import { Type } from "typebox";
+import { Type, type TSchema } from "typebox";
 
 import { ToolAuthorization, type ToolPermissions } from "./tool-permissions";
+
+export interface LoadedMcpTool {
+  readonly name: string;
+  readonly description: string;
+  readonly parameters: TSchema;
+  readonly structuredOutputSchema?: TSchema;
+  readonly deferred?: true;
+  readonly callers?: readonly ["tools"];
+  readonly replay: "safe" | "unsafe";
+  execute(
+    args: unknown,
+    ...rest: unknown[]
+  ): Promise<{
+    output: (TextContent | ImageContent)[];
+    structuredOutput: unknown;
+    isError?: boolean;
+    details: Record<string, unknown>;
+  }>;
+}
+
+type ToolRegistration = LoadedMcpTool;
+
+function defineTool<T extends ToolRegistration>(tool: T): T {
+  return tool;
+}
 
 const CONFIG_DIR_NAME = ".pi";
 const CLIENT_NAME = "pi";

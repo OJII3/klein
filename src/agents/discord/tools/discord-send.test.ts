@@ -16,8 +16,10 @@ test("returns the sent content in the tool result", async () => {
   );
 
   const result = await tool.execute(
+    "tool-call",
     { content: "送信する本文" },
-    { callId: "tool-call" } as never,
+    undefined,
+    undefined,
     {} as never,
   );
 
@@ -25,7 +27,7 @@ test("returns the sent content in the tool result", async () => {
     channelId: "current-channel",
     content: "送信する本文",
   });
-  assert.deepEqual(result.output, [
+  assert.deepEqual(result.content, [
     {
       type: "text",
       text: "The message was sent to Discord.\nSent content:\n送信する本文",

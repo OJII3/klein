@@ -29,9 +29,9 @@ test("provides watch add, list, and delete tools in the given scope", async () =
   } as unknown as ScheduledTaskStore;
   const tools = createWatchTools(store, "channel-a", "public");
   const [addTool, listTool, deleteTool] = tools;
-  const call = { callId: "tool-call" } as never;
 
   const addResult = await addTool.execute(
+    "tool-call",
     {
       name: "在庫監視",
       schedule: { type: "every", minutes: 15 },
@@ -40,7 +40,8 @@ test("provides watch add, list, and delete tools in the given scope", async () =
       message: "在庫の変化を確認してください。",
       cooldownMinutes: 60,
     } as never,
-    call,
+    undefined,
+    undefined,
     {} as never,
   );
   assert.equal(created?.kind, "watch");
@@ -50,16 +51,28 @@ test("provides watch add, list, and delete tools in the given scope", async () =
   assert.deepEqual(created?.args, ["--json"]);
   assert.equal(created?.script, "return { stock: args[0] };");
   assert.match(
-    addResult.output?.[0]?.type === "text" ? addResult.output[0].text : "",
+    addResult.content[0]?.type === "text" ? addResult.content[0].text : "",
     /登録しました/u,
   );
 
-  const listResult = await listTool.execute({} as never, call, {} as never);
+  const listResult = await listTool.execute(
+    "tool-call",
+    {} as never,
+    undefined,
+    undefined,
+    {} as never,
+  );
   assert.equal(
     (listResult.details as unknown as { watches: unknown[] }).watches instanceof Array,
     true,
   );
 
-  await deleteTool.execute({ id: created!.id } as never, call, {} as never);
+  await deleteTool.execute(
+    "tool-call",
+    { id: created!.id } as never,
+    undefined,
+    undefined,
+    {} as never,
+  );
   assert.equal(deletedId, created?.id);
 });

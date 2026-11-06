@@ -1,3 +1,7 @@
+import { randomUUID } from "node:crypto";
+import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
+import { resolve } from "node:path";
+
 export type ConversationKey = { readonly kind: "discord"; readonly channelId: string };
 
 export function serializeConversationKey(key: ConversationKey): string {
@@ -61,11 +65,101 @@ export function isChannelRotationDue(state: ChannelSessionState, timestamp: numb
   );
 }
 
-export interface ChannelSessionStateStore {
-  getOrCreate(
+export class ChannelSessionStateStore {
+  readonly getOrCreate: (
     conversationKey: ConversationKey,
     rotationBucket: string,
-  ): Promise<ChannelSessionState>;
-  list(): Promise<readonly ChannelSessionState[]>;
-  save(state: ChannelSessionState): Promise<void>;
+  ) => Promise<ChannelSessionState>;
+  readonly list: () => Promise<readonly ChannelSessionState[]>;
+  readonly save: (state: ChannelSessionState) => Promise<void>;
+
+  constructor(directory: string) {
+    const getFilePath = (conversationKey: ConversationKey): string =>
+      resolve(directory, `${encodeURIComponent(serializeConversationKey(conversationKey))}.json`);
+
+    this.getOrCreate = async (
+      conversationKey: ConversationKey,
+      rotationBucket: string,
+    ): Promise<ChannelSessionState> => {
+      try {
+        const content = await readFile(getFilePath(conversationKey), "utf8");
+        const state = JSON.parse(content) as ChannelSessionState;
+        if (
+          state.conversationKey?.kind !== conversationKey.kind ||
+          state.conversationKey?.channelId !== conversationKey.channelId ||
+          !state.sessionKey
+        ) {
+          throw new Error(
+            `Invalid channel session state: ${serializeConversationKey(conversationKey)}`,
+          );
+        }
+        return state;
+      } catch (error) {
+        if (!isFileNotFound(error)) throw error;
+      }
+
+      return {
+        conversationKey,
+        sessionKey: createConversationSessionKey(conversationKey),
+        lastActivityAt: null,
+        lastRotationDate: rotationBucket,
+        hasActivitySinceRotation: true,
+      };
+    };
+
+    this.list = async (): Promise<readonly ChannelSessionState[]> => {
+      let entries;
+      try {
+        entries = await readdir(directory, { withFileTypes: true });
+      } catch (error) {
+        if (isFileNotFound(error)) return [];
+        throw error;
+      }
+
+      const paths = entries
+        .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+        .map((entry) => resolve(directory, entry.name));
+
+      const states = await Promise.all(
+        paths.map(async (path) => {
+          const content = await readFile(path, "utf8");
+          try {
+            return JSON.parse(content) as unknown;
+          } catch {
+            return undefined;
+          }
+        }),
+      );
+      return states.filter(isChannelSessionState);
+    };
+
+    this.save = async (state: ChannelSessionState): Promise<void> => {
+      await mkdir(directory, { recursive: true });
+      const filePath = getFilePath(state.conversationKey);
+      const temporaryPath = `${filePath}.${process.pid}.${randomUUID()}.tmp`;
+      await writeFile(temporaryPath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+      await rename(temporaryPath, filePath);
+    };
+  }
+}
+
+export { ChannelSessionStateStore as FileChannelSessionStateStore };
+
+function isChannelSessionState(value: unknown): value is ChannelSessionState {
+  if (typeof value !== "object" || value === null) return false;
+  const state = value as Partial<ChannelSessionState>;
+  return (
+    state.conversationKey?.kind === "discord" &&
+    typeof state.conversationKey.channelId === "string" &&
+    state.conversationKey.channelId.length > 0 &&
+    typeof state.sessionKey === "string" &&
+    state.sessionKey.length > 0 &&
+    (state.lastActivityAt === null || typeof state.lastActivityAt === "number") &&
+    typeof state.lastRotationDate === "string" &&
+    typeof state.hasActivitySinceRotation === "boolean"
+  );
+}
+
+function isFileNotFound(error: unknown): boolean {
+  return error instanceof Error && "code" in error && error.code === "ENOENT";
 }

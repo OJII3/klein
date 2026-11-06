@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { ToolRegistration } from "@earendil-works/pi-durable";
+import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 
 import { createOwnerMemoryTools } from "@agents/tools/owner-memory";
 import type {
@@ -96,41 +96,49 @@ test("owner memory selection bounds pinned entries, total entries, and rendered 
 test("createOwnerMemoryTools executes list, add, update, and delete", async () => {
   const store = new OwnerMemoryStore(new FakeMemoryStore());
   const tools = createOwnerMemoryTools(store, "communication:mail");
-  const findTool = (name: string): ToolRegistration => {
+  const findTool = (name: string): ToolDefinition => {
     const tool = tools.find((item) => item.name === name);
     assert.ok(tool, `Expected tool ${name}`);
-    return tool as unknown as ToolRegistration;
+    return tool as unknown as ToolDefinition;
   };
 
   const addResult = await findTool("owner_memory_add").execute(
+    "call-1",
     {
       kind: "temporary",
       title: "A社からの返信待ち",
       content: "見積書の確認メールが到着している",
-    },
-    { callId: "call-1" } as never,
+    } as never,
+    undefined,
+    undefined,
     {} as never,
   );
   const createdId = (addResult.details as { id: string }).id;
   assert.ok(createdId.startsWith("mem_"));
 
   const listResult = await findTool("owner_memory_list").execute(
-    { kind: "temporary" },
-    { callId: "call-2" } as never,
+    "call-2",
+    { kind: "temporary" } as never,
+    undefined,
+    undefined,
     {} as never,
   );
   assert.equal((listResult.details as { count: number }).count, 1);
 
   const updateResult = await findTool("owner_memory_update").execute(
-    { id: createdId, content: "見積書の確認メールに返信済み", kind: "fact" },
-    { callId: "call-3" } as never,
+    "call-3",
+    { id: createdId, content: "見積書の確認メールに返信済み", kind: "fact" } as never,
+    undefined,
+    undefined,
     {} as never,
   );
   assert.equal((updateResult.details as { updated: boolean }).updated, true);
 
   const deleteResult = await findTool("owner_memory_delete").execute(
-    { id: createdId },
-    { callId: "call-4" } as never,
+    "call-4",
+    { id: createdId } as never,
+    undefined,
+    undefined,
     {} as never,
   );
   assert.equal((deleteResult.details as { deleted: boolean }).deleted, true);
