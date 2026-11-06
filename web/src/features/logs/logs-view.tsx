@@ -90,11 +90,20 @@ export function LogsView({
         </StatStrip>
       </ViewHeader>
 
-      <form aria-label="ログの絞り込み" className="panel p-3" onSubmit={submit} role="search">
+      <form
+        aria-label="ログの絞り込み"
+        className="card border border-base-300 bg-base-100 p-3"
+        onSubmit={submit}
+        role="search"
+      >
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[9rem_minmax(0,1fr)_10rem_10rem_auto] xl:items-end">
           <label className="flex flex-col gap-1">
             <span className="text-[0.7rem] font-medium text-ink-soft">レベル</span>
-            <select className="field" onChange={update("level")} value={draft.level}>
+            <select
+              className="select select-sm w-full"
+              onChange={update("level")}
+              value={draft.level}
+            >
               <option value="">すべて</option>
               {LEVEL_OPTIONS.map((level) => (
                 <option key={level} value={level}>
@@ -106,7 +115,7 @@ export function LogsView({
           <label className="flex flex-col gap-1">
             <span className="text-[0.7rem] font-medium text-ink-soft">検索</span>
             <input
-              className="field"
+              className="input input-sm w-full"
               onChange={update("q")}
               placeholder="概要・イベント名で検索"
               type="search"
@@ -116,7 +125,7 @@ export function LogsView({
           <label className="flex flex-col gap-1">
             <span className="text-[0.7rem] font-medium text-ink-soft">チャンネル</span>
             <input
-              className="field"
+              className="input input-sm w-full"
               onChange={update("channelId")}
               placeholder="チャンネルID"
               value={draft.channelId}
@@ -125,17 +134,17 @@ export function LogsView({
           <label className="flex flex-col gap-1">
             <span className="text-[0.7rem] font-medium text-ink-soft">イベント</span>
             <input
-              className="field"
+              className="input input-sm w-full"
               onChange={update("event")}
               placeholder="イベント名"
               value={draft.event}
             />
           </label>
           <div className="flex gap-2 sm:col-span-2 xl:col-span-1 xl:justify-end">
-            <button className="btn btn-primary" type="submit">
+            <button className="btn btn-primary btn-sm" type="submit">
               絞り込む
             </button>
-            <button className="btn btn-ghost" onClick={clear} type="button">
+            <button className="btn btn-ghost btn-sm" onClick={clear} type="button">
               クリア
             </button>
           </div>
@@ -144,15 +153,15 @@ export function LogsView({
 
       {error && <ErrorNotice message={error} onRetry={onRetry} />}
       {loading && logs.length === 0 ? (
-        <div className="panel">
+        <div className="card border border-base-300 bg-base-100">
           <LoadingState />
         </div>
       ) : logs.length === 0 ? (
-        <div className="panel">
+        <div className="card border border-base-300 bg-base-100">
           <EmptyState>条件に一致するログはありません</EmptyState>
         </div>
       ) : (
-        <div className="panel overflow-hidden">
+        <div className="card overflow-hidden border border-base-300 bg-base-100">
           <LogTable
             expandedId={expandedId}
             logs={logs}

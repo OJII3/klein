@@ -1,5 +1,46 @@
 @import "tailwindcss";
 
+@plugin "daisyui" {
+  themes: false;
+}
+
+@plugin "daisyui/theme" {
+  name: "klein";
+  default: true;
+  prefersdark: false;
+  color-scheme: light;
+
+  --color-base-100: #ffffff;
+  --color-base-200: #f5f8f6;
+  --color-base-300: #dbe4de;
+  --color-base-content: #17221c;
+  --color-primary: #16794f;
+  --color-primary-content: #ffffff;
+  --color-secondary: #2563a8;
+  --color-secondary-content: #ffffff;
+  --color-accent: #2563a8;
+  --color-accent-content: #ffffff;
+  --color-neutral: #4d5f55;
+  --color-neutral-content: #ffffff;
+  --color-info: #2563a8;
+  --color-info-content: #ffffff;
+  --color-success: #16794f;
+  --color-success-content: #ffffff;
+  --color-warning: #946000;
+  --color-warning-content: #ffffff;
+  --color-error: #b23a31;
+  --color-error-content: #ffffff;
+
+  --radius-selector: 4px;
+  --radius-field: 4px;
+  --radius-box: 6px;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
+}
+
 @theme {
   --font-sans:
     "IBM Plex Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", "Noto Sans JP", system-ui,
@@ -65,159 +106,6 @@
   button {
     font: inherit;
     color: inherit;
-  }
-}
-
-@layer components {
-  .panel {
-    border: 1px solid var(--color-line);
-    border-radius: 6px;
-    background: var(--color-surface);
-  }
-
-  .nav-link {
-    display: inline-flex;
-    align-items: center;
-    border-radius: 4px;
-    padding: 0.4rem 0.7rem;
-    color: var(--color-ink-soft);
-    font-size: 0.82rem;
-    white-space: nowrap;
-    transition:
-      background-color 120ms ease,
-      color 120ms ease;
-  }
-
-  .nav-link:hover {
-    background: var(--color-surface-muted);
-    color: var(--color-ink);
-  }
-
-  .nav-link[aria-current="page"] {
-    background: var(--color-green-soft);
-    color: var(--color-green-strong);
-    font-weight: 500;
-  }
-
-  .field {
-    min-height: 2.125rem;
-    width: 100%;
-    border: 1px solid var(--color-line);
-    border-radius: 4px;
-    background: var(--color-surface);
-    padding: 0.35rem 0.6rem;
-    color: var(--color-ink);
-    font-size: 0.8125rem;
-    line-height: 1.4;
-    transition:
-      border-color 120ms ease,
-      box-shadow 120ms ease;
-  }
-
-  .field::placeholder {
-    color: var(--color-ink-faint);
-  }
-
-  .field:hover {
-    border-color: var(--color-line-strong);
-  }
-
-  .field:focus {
-    border-color: var(--color-green);
-    outline: none;
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-green) 14%, transparent);
-  }
-
-  select.field {
-    appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%2365786e' stroke-width='1.2'/%3E%3C/svg%3E");
-    background-position: right 0.6rem center;
-    background-repeat: no-repeat;
-    background-size: 0.6rem;
-    padding-right: 1.8rem;
-  }
-
-  .btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.35rem;
-    border: 1px solid var(--color-line-strong);
-    border-radius: 4px;
-    background: var(--color-surface);
-    padding: 0.4rem 0.75rem;
-    color: var(--color-ink);
-    font-size: 0.8125rem;
-    line-height: 1.2;
-    cursor: pointer;
-    white-space: nowrap;
-    transition:
-      background-color 120ms ease,
-      border-color 120ms ease,
-      color 120ms ease;
-  }
-
-  .btn:hover {
-    background: var(--color-surface-muted);
-  }
-
-  .btn:disabled {
-    opacity: 0.45;
-    cursor: not-allowed;
-  }
-
-  .btn-primary {
-    border-color: var(--color-green);
-    background: var(--color-green);
-    color: #ffffff;
-    font-weight: 500;
-  }
-
-  .btn-primary:hover {
-    border-color: var(--color-green-strong);
-    background: var(--color-green-strong);
-  }
-
-  .btn-ghost {
-    border-color: transparent;
-    background: transparent;
-    color: var(--color-ink-soft);
-  }
-
-  .btn-ghost:hover {
-    background: var(--color-surface-muted);
-    color: var(--color-ink);
-  }
-
-  .btn-danger {
-    border-color: transparent;
-    background: transparent;
-    color: var(--color-red);
-  }
-
-  .btn-danger:hover {
-    background: var(--color-red-soft);
-  }
-
-  .btn-xs {
-    padding: 0.25rem 0.5rem;
-    font-size: 0.75rem;
-  }
-
-  .spinner {
-    display: inline-block;
-    width: 1rem;
-    height: 1rem;
-    border: 2px solid var(--color-line-strong);
-    border-top-color: var(--color-green);
-    border-radius: 9999px;
-    animation: spin 700ms linear infinite;
-  }
-
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
   }
 }
 

@@ -2,9 +2,7 @@ import type { ComponentChildren } from "preact";
 
 export function StatStrip({ children }: { children: ComponentChildren }) {
   return (
-    <div className="flex divide-x divide-line overflow-hidden rounded-md border border-line bg-surface">
-      {children}
-    </div>
+    <div className="stats stats-horizontal border border-base-300 bg-base-100">{children}</div>
   );
 }
 
@@ -16,9 +14,9 @@ interface StatProps {
 
 export function Stat({ label, value, tone = "text-ink" }: StatProps) {
   return (
-    <div className="min-w-[5.25rem] px-3 py-2">
-      <p className="text-[0.63rem] leading-none text-ink-faint">{label}</p>
-      <p className={`mt-1 font-mono text-[0.88rem] leading-none font-medium ${tone}`}>{value}</p>
+    <div className="stat min-w-[5.25rem] px-3 py-2">
+      <div className="stat-title text-[0.63rem] text-ink-faint">{label}</div>
+      <div className={`stat-value mt-1 font-mono text-[0.88rem] font-medium ${tone}`}>{value}</div>
     </div>
   );
 }

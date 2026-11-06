@@ -33,14 +33,14 @@ function groupByDay(logs: PinoLog[]): LogDay[] {
 function levelTone(level: number | string): string {
   switch (levelLabel(level).toLowerCase()) {
     case "warn":
-      return "bg-amber-soft text-amber";
+      return "badge-warning badge-soft";
     case "error":
     case "fatal":
-      return "bg-red-soft text-red";
+      return "badge-error badge-soft";
     case "info":
-      return "bg-blue-soft text-blue";
+      return "badge-info badge-soft";
     default:
-      return "bg-surface-muted text-ink-faint";
+      return "badge-ghost";
   }
 }
 
@@ -49,7 +49,7 @@ export function LogTable({ logs, expandedId, onToggle }: LogTableProps) {
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full border-collapse text-left">
+      <table className="table table-sm">
         <thead>
           <tr className="border-b border-line bg-surface-muted">
             <th className="w-[5.5rem] px-3 py-2 text-[0.68rem] font-medium text-ink-faint">時刻</th>
@@ -105,7 +105,7 @@ export function LogTable({ logs, expandedId, onToggle }: LogTableProps) {
                     </td>
                     <td className="px-3 py-2">
                       <span
-                        className={`inline-flex min-w-[3.2rem] justify-center rounded px-1.5 py-0.5 font-mono text-[0.62rem] font-medium ${levelTone(
+                        className={`badge badge-sm min-w-[3.2rem] justify-center font-mono font-medium ${levelTone(
                           log.level,
                         )}`}
                       >

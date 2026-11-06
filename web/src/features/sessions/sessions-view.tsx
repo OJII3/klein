@@ -61,21 +61,21 @@ export function SessionsView({
 
       {error && <ErrorNotice message={error} onRetry={onRetry} />}
       {loading && sessions.length === 0 ? (
-        <div className="panel">
+        <div className="card border border-base-300 bg-base-100">
           <LoadingState />
         </div>
       ) : sessions.length === 0 ? (
-        <div className="panel">
+        <div className="card border border-base-300 bg-base-100">
           <EmptyState>セッションがまだありません</EmptyState>
         </div>
       ) : (
         <div className="grid gap-4 lg:grid-cols-[20rem_minmax(0,1fr)] lg:items-start">
-          <div className="panel overflow-hidden lg:sticky lg:top-[4.25rem]">
+          <div className="card overflow-hidden border border-base-300 bg-base-100 lg:sticky lg:top-[4.25rem]">
             <div className="border-b border-line p-3 lg:hidden">
               <label className="flex flex-col gap-1">
                 <span className="text-[0.7rem] font-medium text-ink-soft">セッション</span>
                 <select
-                  className="field"
+                  className="select select-sm w-full"
                   onChange={(event) => onSelect((event.target as HTMLSelectElement).value)}
                   value={selectedSession?.id ?? ""}
                 >
@@ -97,37 +97,38 @@ export function SessionsView({
               <span className="font-mono text-[0.62rem] text-ink-faint">{sessions.length} 件</span>
             </div>
 
-            <div className="hidden max-h-[calc(100vh-12rem)] divide-y divide-line overflow-y-auto lg:block">
-              {sessions.map((session) => {
-                const selected = selectedSession?.id === session.id;
-                return (
-                  <button
-                    key={session.id}
-                    aria-current={selected ? "true" : undefined}
-                    className={`block w-full border-l-2 px-3 py-2.5 text-left transition-colors ${
-                      selected
-                        ? "border-l-green bg-green-soft/60"
-                        : "border-l-transparent hover:bg-surface-muted"
-                    }`}
-                    onClick={() => onSelect(session.id)}
-                    type="button"
-                  >
-                    <span className="block truncate text-[0.8rem] font-medium text-ink">
-                      {session.firstMessage || "無題のセッション"}
-                    </span>
-                    <span
-                      className="mt-0.5 block truncate font-mono text-[0.62rem] text-ink-faint"
-                      title={session.channelKey}
-                    >
-                      {truncateMiddle(session.channelKey, 40)}
-                    </span>
-                    <span className="mt-1 flex items-baseline justify-between gap-2 font-mono text-[0.62rem] text-ink-faint">
-                      <span>{session.messageCount} メッセージ</span>
-                      <span>{formatCompactTimestamp(session.modified)}</span>
-                    </span>
-                  </button>
-                );
-              })}
+            <div className="hidden max-h-[calc(100vh-12rem)] overflow-y-auto lg:block">
+              <ul className="menu menu-sm w-full flex-nowrap p-0 [--menu-active-bg:var(--color-green-soft)] [--menu-active-fg:var(--color-green-strong)]">
+                {sessions.map((session) => {
+                  const selected = selectedSession?.id === session.id;
+                  return (
+                    <li key={session.id}>
+                      <button
+                        aria-current={selected ? "true" : undefined}
+                        className="w-full"
+                        onClick={() => onSelect(session.id)}
+                        type="button"
+                      >
+                        <span className="flex w-full min-w-0 flex-col items-stretch gap-0.5">
+                          <span className="truncate text-[0.8rem] font-medium text-ink">
+                            {session.firstMessage || "無題のセッション"}
+                          </span>
+                          <span
+                            className="truncate font-mono text-[0.62rem] text-ink-faint"
+                            title={session.channelKey}
+                          >
+                            {truncateMiddle(session.channelKey, 40)}
+                          </span>
+                          <span className="flex items-baseline justify-between gap-2 font-mono text-[0.62rem] text-ink-faint">
+                            <span>{session.messageCount} メッセージ</span>
+                            <span>{formatCompactTimestamp(session.modified)}</span>
+                          </span>
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
             </div>
 
             <div className="flex justify-center border-t border-line px-3 py-2">
@@ -148,7 +149,7 @@ export function SessionsView({
 
           <div className="flex min-w-0 flex-col gap-3">
             {detailError && <ErrorNotice message={detailError} onRetry={onRetryDetail} />}
-            <div className="panel overflow-hidden">
+            <div className="card overflow-hidden border border-base-300 bg-base-100">
               {loadingDetail ? (
                 <LoadingState label="セッションを読み込み中…" />
               ) : selectedSession ? (
