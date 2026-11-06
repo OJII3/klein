@@ -71,14 +71,7 @@ Watch scripts read the `args` array, call the tools listed in the `watch` prompt
 
 The sandbox has no timers, filesystem, process APIs, or persistent storage (`store` and `load` are rejected), and normal session tools are not available inside watch scripts. The printed text and returned value form the output.
 
-Schedules use a unified format; the old `<runtime.agentDir>/reminders` directory is ignored. Migrate with:
-
-```sh
-bun run migrate:schedules            # dry run
-bun run migrate:schedules -- --apply
-```
-
-The script keeps the old directory and skips existing IDs. Use `--overwrite` to replace them or `--agent-dir <path>` to target another runtime directory.
+Schedules use a unified format; the old `<runtime.agentDir>/reminders` directory is ignored.
 
 ### Remote MCP tools
 

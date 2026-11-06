@@ -16,7 +16,6 @@
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
     "generate:config-schema": "bun scripts/generate-config-schema.ts && bun fmt config/config.schema.json",
-    "migrate:schedules": "bun scripts/migrate-scheduled-tasks.ts",
     "start": "bun run build && bun dist/klein",
     "test": "bun test",
     "typecheck": "bun check && bun check -p web/tsconfig.json"

@@ -46,9 +46,7 @@ export function parseScheduledTask(value: unknown): ScheduledTask {
     "sessionKey" in value ||
     "ownerFeaturesAllowed" in value
   ) {
-    throw new Error(
-      "スケジュールの保存形式が不正です。旧形式には対応していないため、migration script で移行してください。",
-    );
+    throw new Error("スケジュールの保存形式が不正です。旧形式には対応していません。");
   }
 
   const record = value as Record<string, unknown>;
