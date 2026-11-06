@@ -23,7 +23,7 @@ import {
 } from "./handoff-summary";
 
 /** Start preparing a summary this many tokens before Pi's compaction threshold. */
-export const BACKGROUND_COMPACTION_LEAD_TOKENS = 16_384;
+export const BACKGROUND_COMPACTION_LEAD_TOKENS = 32_768;
 
 export interface BackgroundCompactionOptions {
   readonly handoffInstructions?: string;

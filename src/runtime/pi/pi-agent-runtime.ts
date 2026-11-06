@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { readFile, readdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { Logger } from "pino";
 
@@ -462,6 +463,13 @@ export function createPiAgentFactory({
   const imageModel = llm.image
     ? resolveConfiguredImageModel(llm.image.provider, llm.image.model, modelRuntime)
     : undefined;
+  // Pi advertises skills through its read/bash tools, which Klein excludes, so the skill files
+  // are inlined into the system prompt as the previous runtime did.
+  let skillContentsPromise: Promise<readonly string[]> | undefined;
+  const loadSkillContents = (): Promise<readonly string[]> =>
+    (skillContentsPromise ??= skillsDirectory
+      ? readSkillMarkdownFiles(skillsDirectory)
+      : Promise.resolve([]));
 
   return {
     async create<TTool>(
@@ -478,6 +486,7 @@ export function createPiAgentFactory({
       const hasWatchAdd = customTools.some((tool) => tool.name === "watch_add");
       const systemPrompt = [
         definition.systemPrompt,
+        ...(await loadSkillContents()),
         ...(hasWatchAdd && watchToolCatalog ? [renderWatchToolSection(watchToolCatalog)] : []),
       ]
         .filter(Boolean)
@@ -572,4 +581,19 @@ export function createPiAgentFactory({
 
 function isCompactionTooSmall(error: unknown): boolean {
   return error instanceof Error && error.message === "Nothing to compact (session too small)";
+}
+
+export async function readSkillMarkdownFiles(directory: string): Promise<readonly string[]> {
+  let entries;
+  try {
+    entries = await readdir(directory, { withFileTypes: true, recursive: true });
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return [];
+    throw error;
+  }
+
+  const paths = entries
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
+    .map((entry) => resolve(entry.parentPath, entry.name));
+  return Promise.all(paths.map((path) => readFile(path, "utf8")));
 }

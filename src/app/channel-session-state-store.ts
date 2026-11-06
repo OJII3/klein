@@ -120,9 +120,17 @@ export class ChannelSessionStateStore {
         .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
         .map((entry) => resolve(directory, entry.name));
 
-      return Promise.all(
-        paths.map(async (path) => JSON.parse(await readFile(path, "utf8")) as ChannelSessionState),
+      const states = await Promise.all(
+        paths.map(async (path) => {
+          const content = await readFile(path, "utf8");
+          try {
+            return JSON.parse(content) as unknown;
+          } catch {
+            return undefined;
+          }
+        }),
       );
+      return states.filter(isChannelSessionState);
     };
 
     this.save = async (state: ChannelSessionState): Promise<void> => {
@@ -136,6 +144,21 @@ export class ChannelSessionStateStore {
 }
 
 export { ChannelSessionStateStore as FileChannelSessionStateStore };
+
+function isChannelSessionState(value: unknown): value is ChannelSessionState {
+  if (typeof value !== "object" || value === null) return false;
+  const state = value as Partial<ChannelSessionState>;
+  return (
+    state.conversationKey?.kind === "discord" &&
+    typeof state.conversationKey.channelId === "string" &&
+    state.conversationKey.channelId.length > 0 &&
+    typeof state.sessionKey === "string" &&
+    state.sessionKey.length > 0 &&
+    (state.lastActivityAt === null || typeof state.lastActivityAt === "number") &&
+    typeof state.lastRotationDate === "string" &&
+    typeof state.hasActivitySinceRotation === "boolean"
+  );
+}
 
 function isFileNotFound(error: unknown): boolean {
   return error instanceof Error && "code" in error && error.code === "ENOENT";

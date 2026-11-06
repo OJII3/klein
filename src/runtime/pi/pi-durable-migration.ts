@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { copyFile, mkdir, readdir, utimes } from "node:fs/promises";
+import { mkdir, readFile, readdir, utimes } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { Logger } from "pino";
@@ -66,9 +66,17 @@ export async function migratePiDurableStorage(
   const agentDir = resolve(options.agentDir);
   const cwd = resolve(options.cwd ?? process.cwd());
   const channelSessionsDir = resolve(agentDir, "channel-sessions");
-  await migrateLegacyChannelSessionStateFiles(
+  const channelStore = new ChannelSessionStateStore(channelSessionsDir);
+  const existingChannelStates = new Map<string, ChannelSessionState>(
+    (await channelStore.list()).map((state) => [
+      serializeConversationKey(state.conversationKey),
+      state,
+    ]),
+  );
+  let migratedChannelStates = await migrateLegacyChannelSessionStateFiles(
     resolve(agentDir, "channel-session-state"),
-    channelSessionsDir,
+    channelStore,
+    existingChannelStates,
   );
 
   const candidateSqlitePaths = options.sqlitePaths ?? [
@@ -79,18 +87,9 @@ export async function migratePiDurableStorage(
     .map((path) => resolve(path))
     .filter((path, index, all) => all.indexOf(path) === index && existsSync(path));
   if (existingSqlitePaths.length === 0) {
-    return { migratedChannelStates: 0, migratedConversations: 0 };
+    return { migratedChannelStates, migratedConversations: 0 };
   }
 
-  const channelStore = new ChannelSessionStateStore(channelSessionsDir);
-  const existingChannelStates = new Map<string, ChannelSessionState>(
-    (await channelStore.list()).map((state) => [
-      serializeConversationKey(state.conversationKey),
-      state,
-    ]),
-  );
-
-  let migratedChannelStates = 0;
   let migratedConversations = 0;
 
   for (const sqlitePath of existingSqlitePaths) {
@@ -118,19 +117,34 @@ export async function migratePiDurableStorage(
 
 async function migrateLegacyChannelSessionStateFiles(
   legacyDir: string,
-  targetDir: string,
-): Promise<void> {
-  if (!existsSync(legacyDir)) return;
+  channelStore: ChannelSessionStateStore,
+  existingChannelStates: Map<string, ChannelSessionState>,
+): Promise<number> {
+  if (!existsSync(legacyDir)) return 0;
   const entries = await readdir(legacyDir, { withFileTypes: true });
-  const jsonFiles = entries.filter((entry) => entry.isFile() && entry.name.endsWith(".json"));
-  if (jsonFiles.length === 0) return;
+  let migrated = 0;
 
-  await mkdir(targetDir, { recursive: true });
-  for (const file of jsonFiles) {
-    const targetPath = join(targetDir, file.name);
-    if (existsSync(targetPath)) continue;
-    await copyFile(join(legacyDir, file.name), targetPath);
+  for (const file of entries) {
+    if (!file.isFile() || !file.name.endsWith(".json")) continue;
+    let state: ChannelSessionState | undefined;
+    try {
+      state = parseChannelSessionState(
+        JSON.parse(await readFile(join(legacyDir, file.name), "utf8")),
+      );
+    } catch {
+      continue;
+    }
+    if (!state) continue;
+
+    const key = serializeConversationKey(state.conversationKey);
+    // The SQLite state is newer than these files; never let a stale file win.
+    if (existingChannelStates.has(key)) continue;
+    await channelStore.save(state);
+    existingChannelStates.set(key, state);
+    migrated += 1;
   }
+
+  return migrated;
 }
 
 async function migrateSingleDatabase(options: {

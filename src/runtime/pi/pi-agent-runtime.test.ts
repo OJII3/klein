@@ -17,6 +17,7 @@ import { createPiEventPrompt } from "./pi-event-prompt";
 import type { AgentEvent } from "@agents/core/agent-event";
 
 import {
+  BACKGROUND_COMPACTION_LEAD_TOKENS,
   type BackgroundCompactionPreparation,
   createBackgroundCompactionExtension,
   shouldStartBackgroundCompaction,
@@ -26,6 +27,7 @@ import {
   createPiSessionManager,
   createResourceLoader,
   PiAgentRuntime,
+  readSkillMarkdownFiles,
   resolveConfiguredModel,
   withOpenCodeSessionHeader,
 } from "./pi-agent-runtime";
@@ -439,6 +441,21 @@ test("loads skills from a selected profile directory", async () => {
   }
 });
 
+test("reads skill markdown files for the system prompt", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "klein-profile-skills-"));
+  await mkdir(join(directory, "demo", "references"), { recursive: true });
+  await writeFile(join(directory, "demo", "SKILL.md"), "SKILL BODY", "utf8");
+  await writeFile(join(directory, "demo", "references", "notes.md"), "REFERENCE BODY", "utf8");
+
+  try {
+    const contents = await readSkillMarkdownFiles(directory);
+    assert.deepEqual([...contents].sort(), ["REFERENCE BODY", "SKILL BODY"]);
+    assert.deepEqual(await readSkillMarkdownFiles(join(directory, "missing")), []);
+  } finally {
+    await rm(directory, { force: true, recursive: true });
+  }
+});
+
 test("loads Pi web access tools", async () => {
   const loader = createResourceLoader(
     resolve(".runtime/pi"),
@@ -602,6 +619,16 @@ test("falls back to built-in compaction while background summary is pending", as
 test("starts before Pi's compaction threshold", () => {
   assert.equal(shouldStartBackgroundCompaction(700, 1000, 100, 100), false);
   assert.equal(shouldStartBackgroundCompaction(800, 1000, 100, 100), true);
+});
+
+test("starts background compaction at the documented default lead", () => {
+  const contextWindow = 100_000;
+  const reserveTokens = 10_000;
+  const threshold = contextWindow - reserveTokens - BACKGROUND_COMPACTION_LEAD_TOKENS;
+
+  assert.equal(BACKGROUND_COMPACTION_LEAD_TOKENS, 32_768);
+  assert.equal(shouldStartBackgroundCompaction(threshold - 1, contextWindow, reserveTokens), false);
+  assert.equal(shouldStartBackgroundCompaction(threshold, contextWindow, reserveTokens), true);
 });
 
 function registerExtension(extension: ReturnType<typeof createBackgroundCompactionExtension>) {

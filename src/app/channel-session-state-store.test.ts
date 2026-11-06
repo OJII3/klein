@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -81,6 +81,29 @@ test("persists and reloads channel session state from disk", async () => {
     const reopened = new ChannelSessionStateStore(directory);
     assert.deepEqual(await reopened.getOrCreate(key, "2099-01-01T00"), saved);
     assert.deepEqual(await reopened.list(), [saved]);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("ignores legacy and malformed state files when listing", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "klein-channel-session-state-"));
+  try {
+    await writeFile(
+      join(directory, "legacy.json"),
+      JSON.stringify({
+        channelId: "42",
+        sessionKey: "discord-channel:42",
+        lastActivityAt: 1,
+        lastRotationDate: "2026-10-11",
+        hasActivitySinceRotation: false,
+      }),
+      "utf8",
+    );
+    await writeFile(join(directory, "broken.json"), "{not json", "utf8");
+
+    const store = new ChannelSessionStateStore(directory);
+    assert.deepEqual(await store.list(), []);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -327,6 +327,56 @@ test("migrates pi-durable SQLite channel states and conversations idempotently",
     assert.equal(secondRun.migratedConversations, 0);
     const filesAfter = (await readdir(sessionDir)).sort();
     assert.deepEqual(filesAfter, filesBefore);
+  } finally {
+    await rm(agentDir, { force: true, recursive: true });
+  }
+});
+
+test("converts legacy channel session state files instead of copying them", async () => {
+  const agentDir = await mkdtemp(join(tmpdir(), "klein-pi-durable-migration-"));
+  const legacyDir = join(agentDir, "channel-session-state");
+  await mkdir(legacyDir, { recursive: true });
+  await writeFile(
+    join(legacyDir, "42.json"),
+    JSON.stringify({
+      channelId: "42",
+      accessScope: "public",
+      sessionKey: "discord-channel:42:public:rotation:2026-10-11",
+      lastActivityAt: 1_700_000_000_000,
+      lastRotationDate: "2026-10-11",
+      hasActivitySinceRotation: false,
+      handoffContext: "legacy handoff",
+    }),
+    "utf8",
+  );
+
+  try {
+    const result = await migratePiDurableStorage({
+      agentDir,
+      cwd: process.cwd(),
+      sqlitePaths: [],
+    });
+    assert.equal(result.migratedChannelStates, 1);
+
+    const store = new ChannelSessionStateStore(join(agentDir, "channel-sessions"));
+    assert.deepEqual(await store.list(), [
+      {
+        conversationKey: { kind: "discord", channelId: "42" },
+        accessScope: "public",
+        sessionKey: "discord-channel:42:public:rotation:2026-10-11",
+        lastActivityAt: 1_700_000_000_000,
+        lastRotationDate: "2026-10-11",
+        hasActivitySinceRotation: false,
+        handoffContext: "legacy handoff",
+      },
+    ]);
+
+    const secondRun = await migratePiDurableStorage({
+      agentDir,
+      cwd: process.cwd(),
+      sqlitePaths: [],
+    });
+    assert.equal(secondRun.migratedChannelStates, 0);
   } finally {
     await rm(agentDir, { force: true, recursive: true });
   }
