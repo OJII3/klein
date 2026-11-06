@@ -1,4 +1,4 @@
-import type { ToolRegistration } from "@earendil-works/pi-durable";
+import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 
 import type { AgentEvent } from "../core/agent-event";
 import { formatAgentTurn, type AgentTurn, type AgentTurnContext } from "../core/agent-turn";
@@ -15,7 +15,7 @@ export interface DiscordAgentCreateOptions {
   readonly handoffContext?: string;
   readonly ownerFeaturesAllowed?: boolean;
   readonly ownerUserId?: string;
-  readonly tools?: (analyzeImage: DiscordImageAnalysis) => readonly ToolRegistration[];
+  readonly tools?: (analyzeImage: DiscordImageAnalysis) => readonly ToolDefinition[];
 }
 
 export class DiscordAgent implements ChannelAgent {
@@ -109,7 +109,7 @@ export class DiscordAgent implements ChannelAgent {
     return this.runtime.compactForHandoff?.();
   }
 
-  abort(): Promise<void> {
+  abort(): Promise<void> | undefined {
     return this.runtime.abort?.() ?? Promise.resolve();
   }
 

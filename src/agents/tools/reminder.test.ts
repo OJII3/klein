@@ -29,15 +29,16 @@ test("provides deferred add, list, and delete tools scoped to the conversation",
   } as unknown as ScheduledTaskStore;
   const tools = createReminderTools(store, "channel-a", "public");
   const [addTool, listTool, deleteTool] = tools;
-  const call = { callId: "tool-call" } as never;
 
   assert.deepEqual(
-    tools.map((tool) => tool.deferred),
-    [true, true, true],
+    tools.map((tool) => tool.exposure),
+    ["deferred", "deferred", "deferred"],
   );
   const addResult = await addTool.execute(
+    "tool-call",
     { message: "定例会", schedule: { type: "every", minutes: 30 } } as never,
-    call,
+    undefined,
+    undefined,
     {} as never,
   );
   assert.equal(created?.kind, "reminder");
@@ -46,16 +47,28 @@ test("provides deferred add, list, and delete tools scoped to the conversation",
   assert.equal(created?.message, "定例会");
   assert.deepEqual(created?.schedule, { type: "every", minutes: 30 });
   assert.match(
-    addResult.output?.[0]?.type === "text" ? addResult.output[0].text : "",
+    addResult.content[0]?.type === "text" ? addResult.content[0].text : "",
     /登録しました/u,
   );
 
-  const listResult = await listTool.execute({} as never, call, {} as never);
+  const listResult = await listTool.execute(
+    "tool-call",
+    {} as never,
+    undefined,
+    undefined,
+    {} as never,
+  );
   assert.equal(
     (listResult.details as unknown as { reminders: unknown[] }).reminders instanceof Array,
     true,
   );
 
-  await deleteTool.execute({ id: created!.id } as never, call, {} as never);
+  await deleteTool.execute(
+    "tool-call",
+    { id: created!.id } as never,
+    undefined,
+    undefined,
+    {} as never,
+  );
   assert.equal(deletedId, created?.id);
 });

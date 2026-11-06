@@ -1,4 +1,4 @@
-import { defineTool } from "@earendil-works/pi-durable";
+import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
 import {
@@ -30,22 +30,22 @@ export function createOwnerMemoryTools(store: OwnerMemoryStore, sourceId = "agen
   return [
     defineTool({
       name: "owner_memory_list",
+      label: "List Owner Memory",
       description:
         "List entries in the shared owner memory across the owner's communication channels. " +
         "Optionally filter by kind (fact, rule, decision, procedure, temporary).",
       parameters: Type.Object({
         kind: Type.Optional(memoryKindSchema),
       }),
-      deferred: true,
-      replay: "safe",
-      async execute(params) {
+      exposure: "deferred",
+      async execute(_toolCallId, params) {
         const document = await store.read();
         const kindFilter = params.kind as MemoryKind | undefined;
         const entries = kindFilter
           ? document.entries.filter((entry) => entry.kind === kindFilter)
           : document.entries;
         return {
-          output: [
+          content: [
             {
               type: "text",
               text:
@@ -69,6 +69,7 @@ export function createOwnerMemoryTools(store: OwnerMemoryStore, sourceId = "agen
     }),
     defineTool({
       name: "owner_memory_add",
+      label: "Add Owner Memory",
       description:
         "Add an entry to the shared owner memory so that the owner's communication agents can reference it. " +
         "Use kind='temporary' for short-lived notifications or pending context, 'fact' for owner facts, 'decision' for decisions, 'procedure' for workflows, or 'rule' for persistent rules.",
@@ -77,8 +78,8 @@ export function createOwnerMemoryTools(store: OwnerMemoryStore, sourceId = "agen
         title: Type.String({ minLength: 1, maxLength: 200 }),
         content: Type.String({ minLength: 1, maxLength: 10_000 }),
       }),
-      deferred: true,
-      async execute(params) {
+      exposure: "deferred",
+      async execute(_toolCallId, params) {
         const entry = await store.addEntry({
           kind: params.kind as MemoryKind,
           title: params.title,
@@ -86,7 +87,7 @@ export function createOwnerMemoryTools(store: OwnerMemoryStore, sourceId = "agen
           sourceId,
         });
         return {
-          output: [
+          content: [
             {
               type: "text",
               text: `オーナー用メモリに追加しました。ID: ${entry.id} (${entry.kind}) — ${entry.title}`,
@@ -98,11 +99,12 @@ export function createOwnerMemoryTools(store: OwnerMemoryStore, sourceId = "agen
     }),
     defineTool<typeof ownerMemoryUpdateParameters, OwnerMemoryUpdateDetails>({
       name: "owner_memory_update",
+      label: "Update Owner Memory",
       description:
         "Update an existing entry in the shared owner memory by its ID (e.g., mem_...). Use owner_memory_list to find IDs if needed.",
       parameters: ownerMemoryUpdateParameters,
-      deferred: true,
-      async execute(params) {
+      exposure: "deferred",
+      async execute(_toolCallId, params) {
         try {
           const updated = await store.updateEntry({
             id: params.id,
@@ -112,7 +114,7 @@ export function createOwnerMemoryTools(store: OwnerMemoryStore, sourceId = "agen
             sourceId,
           });
           return {
-            output: [
+            content: [
               {
                 type: "text",
                 text: `オーナー用メモリを更新しました。ID: ${updated.id} (${updated.kind}) — ${updated.title}`,
@@ -123,7 +125,7 @@ export function createOwnerMemoryTools(store: OwnerMemoryStore, sourceId = "agen
         } catch (error) {
           if (error instanceof MemoryEntryNotFoundError) {
             return {
-              output: [
+              content: [
                 {
                   type: "text",
                   text: `指定されたID (${params.id}) のオーナー用メモリは見つかりませんでした。`,
@@ -138,16 +140,17 @@ export function createOwnerMemoryTools(store: OwnerMemoryStore, sourceId = "agen
     }),
     defineTool({
       name: "owner_memory_delete",
+      label: "Delete Owner Memory",
       description:
         "Delete an entry from the shared owner memory by its ID (e.g., when a temporary notification or task has been handled).",
       parameters: Type.Object({
         id: Type.String({ minLength: 1 }),
       }),
-      deferred: true,
-      async execute(params) {
+      exposure: "deferred",
+      async execute(_toolCallId, params) {
         const deleted = await store.deleteEntry(params.id);
         return {
-          output: [
+          content: [
             {
               type: "text",
               text: deleted

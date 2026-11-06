@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { ToolRegistration } from "@earendil-works/pi-durable";
+import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 
 import type { AgentFactory } from "../core/agent-factory";
 import type { AgentRuntime } from "../core/agent-runtime";
@@ -61,7 +61,7 @@ function createToolsFor(
 }
 
 test("routes voice replies through discord_speak using the existing runtime prompt", async () => {
-  let tools: readonly ToolRegistration[] = [];
+  let tools: readonly ToolDefinition[] = [];
   const spoken: string[] = [];
   const runtime: AgentRuntime = {
     async prompt(prompt) {
@@ -75,14 +75,20 @@ test("routes voice replies through discord_speak using the existing runtime prom
       ]);
       const tool = tools.find((tool) => tool.name === "discord_speak");
       assert.ok(tool);
-      await tool.execute({ text: "LLMの返答" }, { callId: "tool-call" } as never, {} as never);
+      await tool.execute(
+        "tool-call",
+        { text: "LLMの返答" } as never,
+        undefined,
+        undefined,
+        {} as never,
+      );
     },
     dispose() {},
   };
   const agentFactory: AgentFactory = {
     async create(definition, registeredTools) {
       assert.equal(definition.systemPrompt, "voice system prompt");
-      tools = registeredTools;
+      tools = registeredTools as readonly ToolDefinition[];
       return runtime;
     },
   };
@@ -103,7 +109,7 @@ test("routes voice replies through discord_speak using the existing runtime prom
 });
 
 test("wires the runtime image analyzer into discord_read", async () => {
-  let tools: readonly ToolRegistration[] = [];
+  let tools: readonly ToolDefinition[] = [];
   let analyzedPrompt: unknown;
   const runtime: AgentRuntime = {
     async analyzeImage(prompt) {
@@ -115,7 +121,7 @@ test("wires the runtime image analyzer into discord_read", async () => {
   };
   const agentFactory: AgentFactory = {
     async create(_definition, registeredTools) {
-      tools = registeredTools;
+      tools = registeredTools as readonly ToolDefinition[];
       return runtime;
     },
   };
@@ -138,8 +144,10 @@ test("wires the runtime image analyzer into discord_read", async () => {
   assert.ok(readTool);
 
   const result = await readTool.execute(
-    { messageId: "message-456" },
-    { callId: "tool-call" } as never,
+    "tool-call",
+    { messageId: "message-456" } as never,
+    undefined,
+    undefined,
     {} as never,
   );
 
@@ -147,7 +155,7 @@ test("wires the runtime image analyzer into discord_read", async () => {
     text: "さつき (@satsuki):\n読み取った本文\n[添付画像: sample.png]",
     images: [{ data: "c2VjcmV0", mimeType: "image/png" }],
   });
-  assert.deepEqual(result.output, [
+  assert.deepEqual(result.content, [
     {
       type: "text",
       text:
@@ -237,12 +245,12 @@ test("does not inject owner memory into a public agent turn", async () => {
 
 test("binds private reads to the owner and refuses other authors or channels", async () => {
   const prompts: AgentEvent[] = [];
-  let tools: readonly ToolRegistration[] = [];
+  let tools: readonly ToolDefinition[] = [];
   let requester: Parameters<DiscordChannelApi["readMessage"]>[1];
   const factory: AgentFactory = {
     async create(_definition, registeredTools, options) {
       assert.equal(options.ownerFeaturesAllowed, true);
-      tools = registeredTools;
+      tools = registeredTools as readonly ToolDefinition[];
       return {
         async prompt(prompt) {
           prompts.push(prompt);
@@ -273,7 +281,7 @@ test("binds private reads to the owner and refuses other authors or channels", a
   assert.ok(prompts.every((event) => !("ownerFeaturesAllowed" in event)));
   const read = tools.find((tool) => tool.name === "discord_read");
   assert.ok(read);
-  await read.execute({ messageId: message.id }, { callId: "read" } as never, {} as never);
+  await read.execute("read", { messageId: message.id } as never, undefined, undefined, {} as never);
   assert.deepEqual(requester, { userId: message.author.id });
   for (const invalid of [
     { ...message, author: { ...message.author, id: "other" } },
@@ -326,11 +334,11 @@ test("keeps reminders across session rotation and isolates channel and access sc
     ownerFeaturesAllowed: boolean,
     ownerUserId?: string,
   ) {
-    let tools: readonly ToolRegistration[] = [];
+    let tools: readonly ToolDefinition[] = [];
     await DiscordAgent.create(
       {
         async create(_definition, registeredTools) {
-          tools = registeredTools;
+          tools = registeredTools as readonly ToolDefinition[];
           return { async prompt() {}, dispose() {} };
         },
       },
@@ -349,10 +357,10 @@ test("keeps reminders across session rotation and isolates channel and access sc
     );
     return tools;
   }
-  async function execute(tools: readonly ToolRegistration[], name: string, params: unknown) {
+  async function execute(tools: readonly ToolDefinition[], name: string, params: unknown) {
     const tool = tools.find((tool) => tool.name === name);
     assert.ok(tool);
-    return tool.execute(params, { callId: "call" } as never, {} as never);
+    return tool.execute("call", params as never, undefined, undefined, {} as never);
   }
   const original = await createTools("session-old", "channel-a", false, "123");
   const added = await execute(original, "reminder_add", {
@@ -437,13 +445,15 @@ test("exposes watch tools in every session with the session scope", async () => 
   const publicWatchTool = publicTools.find((tool) => tool.name === "watch_add");
   assert.ok(publicWatchTool);
   await publicWatchTool.execute(
+    "call",
     {
       name: "在庫監視",
       schedule: { type: "every", minutes: 15 },
       script: "return 1;",
       message: "確認してください。",
-    },
-    { callId: "call" } as never,
+    } as never,
+    undefined,
+    undefined,
     {} as never,
   );
   assert.equal(created.at(-1)?.accessScope, "public");

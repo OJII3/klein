@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { defineTool } from "@earendil-works/pi-durable";
+import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
 import {
@@ -41,6 +41,7 @@ export function createWatchTools(
   return [
     defineTool({
       name: "watch_add",
+      label: "Add Watch",
       description:
         "Run a JavaScript check on a recurring schedule and send an event only when its output changes (condition='change') or is non-empty (condition='output'). " +
         "With condition='change', the first successful check only stores a baseline. " +
@@ -57,8 +58,8 @@ export function createWatchTools(
         message: Type.String({ minLength: 1, maxLength: 2_000 }),
         cooldownMinutes: Type.Optional(Type.Integer({ minimum: 0, maximum: 10_080 })),
       }),
-      deferred: true,
-      async execute(params) {
+      exposure: "deferred",
+      async execute(_toolCallId, params) {
         const now = Date.now();
         const resolved = resolveSchedule(params.schedule as ScheduleInput, now);
         const watch: WatchTask = {
@@ -82,7 +83,7 @@ export function createWatchTools(
         }
         await store.create(watch);
         return {
-          output: [
+          content: [
             {
               type: "text",
               text: `監視を登録しました。ID: ${watch.id} / ${formatSchedule(watch.schedule)} / ${watch.condition === "change" ? "出力変化時" : "出力あり"}に通知`,
@@ -94,15 +95,15 @@ export function createWatchTools(
     }),
     defineTool({
       name: "watch_list",
+      label: "List Watches",
       description:
         "List watches attached to the current conversation, including their next run and last status.",
       parameters: Type.Object({}),
-      deferred: true,
-      replay: "safe",
+      exposure: "deferred",
       async execute() {
         const watches = await store.listForScope("watch", channelId, accessScope);
         return {
-          output: [
+          content: [
             {
               type: "text",
               text:
@@ -139,14 +140,15 @@ export function createWatchTools(
     }),
     defineTool({
       name: "watch_delete",
+      label: "Delete Watch",
       description:
         "Delete one watch in the current conversation by its ID. Use watch_list to find the ID.",
       parameters: Type.Object({ id: Type.String({ minLength: 1 }) }),
-      deferred: true,
-      async execute(params) {
+      exposure: "deferred",
+      async execute(_toolCallId, params) {
         const deleted = await store.delete("watch", channelId, accessScope, params.id);
         return {
-          output: [
+          content: [
             {
               type: "text",
               text: deleted

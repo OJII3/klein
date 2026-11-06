@@ -9,7 +9,7 @@ import {
   McpServerConnection,
   McpSignInCancelledError,
   signInMcpServer,
-} from "@runtime/pi/pi-durable-mcp";
+} from "@runtime/pi/pi-mcp";
 
 import { loadConfig } from "./config";
 

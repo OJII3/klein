@@ -4,9 +4,10 @@ import test from "node:test";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-import type { ViewerSessionReader } from "../ports/viewer-readers";
+import { createPiSessionManager } from "@runtime/pi/pi-agent-runtime";
 import { createWebUiApp } from "./elysia-webui-app";
 import { PinoJsonlReader } from "./pino-jsonl-reader";
+import { PiSessionReader } from "./pi-session-reader";
 
 test("serves health, logs, Pi sessions, and scoped memory through Elysia", async () => {
   const rootDirectory = await mkdtemp(join(tmpdir(), "klein-webui-"));
@@ -19,59 +20,32 @@ test("serves health, logs, Pi sessions, and scoped memory through Elysia", async
       `${JSON.stringify({ event: "test_event", level: 30, msg: "hello", time: 1000 })}\n`,
     );
 
-    const sessionId = "session-1";
-    const session = {
-      id: sessionId,
-      channelKey: "discord-channel:123",
-      created: "2026-09-11T00:00:00.000Z",
-      modified: "2026-09-11T00:00:01.000Z",
-      messageCount: 2,
-      firstMessage: "hello",
-    };
-    const events = [
-      {
-        source: "pi" as const,
-        id: "1",
-        timestamp: session.created,
-        sessionId,
-        kind: "message" as const,
-        role: "user",
-        parentId: null,
-        summary: "hello",
-        content: "hello",
+    const agentDirectory = join(rootDirectory, "pi");
+    const sessionManager = createPiSessionManager(
+      agentDirectory,
+      "discord-channel:123",
+      "new",
+      process.cwd(),
+    );
+    sessionManager.appendMessage({ role: "user", content: "hello", timestamp: Date.now() });
+    sessionManager.appendMessage({
+      role: "assistant",
+      content: [{ type: "text", text: "hello back" }],
+      api: "openai-completions",
+      provider: "opencode-go",
+      model: "kimi-k3",
+      usage: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 0,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
       },
-      {
-        source: "pi" as const,
-        id: "2",
-        timestamp: session.modified,
-        sessionId,
-        kind: "message" as const,
-        role: "assistant",
-        parentId: null,
-        summary: "hello back",
-        content: "hello back",
-      },
-    ];
-    const piSessions: ViewerSessionReader = {
-      list: async (query) => {
-        if (query?.cursor) throw new Error("Invalid session list cursor");
-        return { items: [session], nextCursor: null };
-      },
-      get: async (id, query) => {
-        if (id !== sessionId) return undefined;
-        if (query?.cursor && query.cursor !== "older") throw new Error("Invalid session cursor");
-        return {
-          session,
-          items:
-            query?.cursor === "older"
-              ? events.slice(0, 1)
-              : query?.limit === 1
-                ? events.slice(1)
-                : events,
-          nextCursor: query?.cursor || query?.limit !== 1 ? null : "older",
-        };
-      },
-    };
+      stopReason: "stop",
+      timestamp: Date.now(),
+    } as never);
+    const sessionId = sessionManager.getSessionId();
 
     const app = createWebUiApp({
       memory: {
@@ -111,7 +85,7 @@ test("serves health, logs, Pi sessions, and scoped memory through Elysia", async
           assert.equal(entryId, "mem-1");
         },
       },
-      piSessions,
+      piSessions: new PiSessionReader(agentDirectory),
       pinoLogs: new PinoJsonlReader(logDirectory),
     });
 

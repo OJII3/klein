@@ -1,4 +1,4 @@
-import { defineTool } from "@earendil-works/pi-durable";
+import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
@@ -11,15 +11,16 @@ export function createDiscordVoiceTool(
 ) {
   return defineTool({
     name: "discord_voice",
-    callers: ["model"],
+    label: "Send Discord Voice Message",
+    exposure: "model-only",
     description: "Convert text to speech and send it as an audio attachment to Discord.",
     parameters: Type.Object({ text: Type.String({ minLength: 1 }) }),
-    async execute(params) {
+    async execute(_toolCallId, params) {
       await channelApi.sendTyping(channelId);
       const audio = await tts.synthesize(params.text);
       await channelApi.sendAudio(channelId, audio, "voice.wav");
       return {
-        output: [{ type: "text", text: `Sent a voice message containing: ${params.text}` }],
+        content: [{ type: "text", text: `Sent a voice message containing: ${params.text}` }],
         details: {},
       };
     },
