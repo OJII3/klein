@@ -1,0 +1,7 @@
+@import "tailwindcss";
+@plugin "daisyui";
+
+[data-theme="dark"] {
+  --color-primary: oklch(0.72 0.12 180);
+  --color-primary-content: oklch(0.2 0.02 180);
+}

@@ -1,22 +1,4 @@
-import { useState } from "react";
-import {
-  Accordion,
-  Badge,
-  Button,
-  Card,
-  Code,
-  Divider,
-  Grid,
-  Group,
-  Paper,
-  ScrollArea,
-  Select,
-  Stack,
-  Text,
-  Textarea,
-  TextInput,
-  Title,
-} from "@mantine/core";
+import { useState } from "preact/hooks";
 
 import {
   memoryScopeKey,
@@ -72,20 +54,16 @@ export function MemoryView(props: MemoryViewProps) {
   } = props;
 
   return (
-    <Stack component="section" gap="md" aria-labelledby="memory-heading">
-      <Group justify="space-between" align="end">
-        <Stack gap={0}>
-          <Text size="xs" c="teal">
-            PERSISTED MEMORY CONTEXT
-          </Text>
-          <Title order={2} id="memory-heading">
+    <section className="flex flex-col gap-4" aria-labelledby="memory-heading">
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <p className="text-xs uppercase tracking-wider text-primary">PERSISTED MEMORY CONTEXT</p>
+          <h2 className="text-2xl font-bold" id="memory-heading">
             メモリ
-          </Title>
-        </Stack>
-        <Text size="sm" c="dimmed">
-          {scopes.length.toLocaleString("ja-JP")} スコープ
-        </Text>
-      </Group>
+          </h2>
+        </div>
+        <p className="text-sm opacity-70">{scopes.length.toLocaleString("ja-JP")} スコープ</p>
+      </div>
       {error && <ErrorNotice message={error} onRetry={onRetry} />}
       {!error && !enabled ? (
         <EmptyState>メモリ機能が無効です</EmptyState>
@@ -94,63 +72,69 @@ export function MemoryView(props: MemoryViewProps) {
       ) : scopes.length === 0 ? (
         <EmptyState>保存されたメモリがまだありません</EmptyState>
       ) : (
-        <Grid>
-          <Grid.Col span={{ base: 12, md: 4 }}>
-            <Select
-              hiddenFrom="md"
-              label="スコープ"
-              placeholder="スコープを選択"
-              searchable
-              maxDropdownHeight={300}
-              data={scopes.map((summary) => ({
-                value: memoryScopeKey(summary.scope),
-                label: `${scopeName(summary.scope)} · ${summary.entryCount} 件`,
-              }))}
-              value={selectedScope ? memoryScopeKey(selectedScope) : null}
-              onChange={(key) => {
-                const summary = scopes.find((item) => memoryScopeKey(item.scope) === key);
-                if (summary) onSelect(summary.scope);
-              }}
-            />
-            <Paper visibleFrom="md" withBorder radius="md" p="xs">
-              <ScrollArea.Autosize mah={360} type="auto">
-                <Stack gap="xs" role="list" aria-label="メモリスコープ一覧">
-                  {scopes.map((summary) => {
-                    const selected =
-                      selectedScope !== null &&
-                      memoryScopeKey(selectedScope) === memoryScopeKey(summary.scope);
-                    return (
-                      <Card
-                        key={memoryScopeKey(summary.scope)}
-                        component="button"
-                        withBorder
-                        p="sm"
-                        bg={selected ? "teal.9" : undefined}
-                        onClick={() => onSelect(summary.scope)}
-                      >
-                        <Stack gap={4} w="100%" align="stretch">
-                          <Group justify="space-between">
-                            <Badge variant="light">
-                              {summary.scope.type === "owner" ? "OWNER" : "GUILD"}
-                            </Badge>
-                            <Text size="xs" c="dimmed">
-                              {summary.entryCount} 件
-                            </Text>
-                          </Group>
-                          <Code>{scopeName(summary.scope)}</Code>
-                          <Text size="xs" c="dimmed" ta="left">
-                            更新 {formatTimestamp(summary.updatedAt ?? undefined)}
-                          </Text>
-                        </Stack>
-                      </Card>
-                    );
-                  })}
-                </Stack>
-              </ScrollArea.Autosize>
-            </Paper>
-          </Grid.Col>
-          <Grid.Col span={{ base: 12, md: 8 }}>
-            <Stack>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div className="md:col-span-1">
+            <label className="flex flex-col gap-1 md:hidden">
+              <span className="text-xs opacity-70">スコープ</span>
+              <select
+                className="select w-full"
+                onChange={(event) => {
+                  const key = (event.target as HTMLSelectElement).value;
+                  const summary = scopes.find((item) => memoryScopeKey(item.scope) === key);
+                  if (summary) onSelect(summary.scope);
+                }}
+                value={selectedScope ? memoryScopeKey(selectedScope) : ""}
+              >
+                <option disabled value="">
+                  スコープを選択
+                </option>
+                {scopes.map((summary) => (
+                  <option key={memoryScopeKey(summary.scope)} value={memoryScopeKey(summary.scope)}>
+                    {scopeName(summary.scope)} · {summary.entryCount} 件
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="hidden rounded-box border border-base-300 bg-base-200 p-2 md:block">
+              <div
+                aria-label="メモリスコープ一覧"
+                className="flex max-h-[360px] flex-col gap-2 overflow-auto"
+              >
+                {scopes.map((summary) => {
+                  const selected =
+                    selectedScope !== null &&
+                    memoryScopeKey(selectedScope) === memoryScopeKey(summary.scope);
+                  return (
+                    <button
+                      key={memoryScopeKey(summary.scope)}
+                      className={`w-full rounded-box border p-3 text-left transition ${
+                        selected
+                          ? "border-primary bg-primary/15"
+                          : "border-base-300 bg-base-100 hover:bg-base-300/50"
+                      }`}
+                      onClick={() => onSelect(summary.scope)}
+                      type="button"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="badge badge-sm badge-soft">
+                          {summary.scope.type === "owner" ? "OWNER" : "GUILD"}
+                        </span>
+                        <span className="text-xs opacity-60">{summary.entryCount} 件</span>
+                      </div>
+                      <code className="mt-2 block truncate rounded bg-base-300 px-1.5 py-0.5 font-mono text-xs">
+                        {scopeName(summary.scope)}
+                      </code>
+                      <p className="mt-1 text-left text-xs opacity-60">
+                        更新 {formatTimestamp(summary.updatedAt ?? undefined)}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+          <div className="md:col-span-2">
+            <div className="flex flex-col gap-4">
               {deleteError && (
                 <ErrorNotice
                   message={deleteError}
@@ -163,22 +147,22 @@ export function MemoryView(props: MemoryViewProps) {
                 <LoadingState label="メモリを読み込み中…" />
               ) : selectedScope ? (
                 <MemoryEntries
-                  deletingEntryId={deletingEntryId}
-                  entries={entries}
-                  scope={selectedScope}
-                  onDelete={onDelete}
                   addingRule={addingRule}
                   addRuleError={addRuleError}
+                  deletingEntryId={deletingEntryId}
+                  entries={entries}
                   onAddRule={onAddRule}
+                  onDelete={onDelete}
+                  scope={selectedScope}
                 />
               ) : (
                 <EmptyState>スコープを選択してください</EmptyState>
               )}
-            </Stack>
-          </Grid.Col>
-        </Grid>
+            </div>
+          </div>
+        </div>
       )}
-    </Stack>
+    </section>
   );
 }
 
@@ -202,107 +186,108 @@ function MemoryEntries({
   const [ruleTitle, setRuleTitle] = useState("");
   const [ruleContent, setRuleContent] = useState("");
   return (
-    <Stack>
-      <Paper withBorder radius="md" p="md">
-        <Group justify="space-between" mb="md">
-          <Stack gap={0}>
-            <Text size="xs" c="teal">
+    <div className="flex flex-col gap-4">
+      <div className="rounded-box border border-base-300 bg-base-200 p-4">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p className="text-xs uppercase tracking-wider text-primary">
               {scope.type === "owner" ? "OWNER MEMORY" : "GUILD ID"}
-            </Text>
-            <Code>{scopeName(scope)}</Code>
-          </Stack>
-          <Text size="sm" c="dimmed">
-            {entries.length.toLocaleString("ja-JP")} 件
-          </Text>
-        </Group>
-        <Accordion defaultValue={null} variant="contained" radius="md" order={3}>
-          <Accordion.Item value="add-rule">
-            <Accordion.Control>ルールを追加</Accordion.Control>
-            <Accordion.Panel>
-              <Stack
-                component="form"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  const title = ruleTitle.trim();
-                  const content = ruleContent.trim();
-                  if (!title || !content) return;
-                  onAddRule(title, content);
-                  setRuleTitle("");
-                  setRuleContent("");
-                }}
-              >
-                <TextInput
-                  label="タイトル"
+            </p>
+            <code className="rounded bg-base-300 px-1.5 py-0.5 font-mono text-xs">
+              {scopeName(scope)}
+            </code>
+          </div>
+          <p className="text-sm opacity-70">{entries.length.toLocaleString("ja-JP")} 件</p>
+        </div>
+        <details className="collapse collapse-arrow border border-base-300 bg-base-100">
+          <summary className="collapse-title text-sm font-medium">ルールを追加</summary>
+          <div className="collapse-content">
+            <form
+              className="flex flex-col gap-3"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const title = ruleTitle.trim();
+                const content = ruleContent.trim();
+                if (!title || !content) return;
+                onAddRule(title, content);
+                setRuleTitle("");
+                setRuleContent("");
+              }}
+            >
+              <label className="flex flex-col gap-1">
+                <span className="text-xs opacity-70">タイトル</span>
+                <input
+                  className="input w-full"
                   maxLength={200}
+                  onChange={(event) => setRuleTitle((event.target as HTMLInputElement).value)}
+                  required
                   value={ruleTitle}
-                  onChange={(event) => setRuleTitle(event.target.value)}
-                  required
                 />
-                <Textarea
-                  label="内容"
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs opacity-70">内容</span>
+                <textarea
+                  className="textarea w-full"
                   maxLength={10000}
-                  minRows={3}
-                  value={ruleContent}
-                  onChange={(event) => setRuleContent(event.target.value)}
+                  onChange={(event) => setRuleContent((event.target as HTMLTextAreaElement).value)}
                   required
+                  rows={3}
+                  value={ruleContent}
                 />
-                {addRuleError && (
-                  <ErrorNotice
-                    message={addRuleError}
-                    onRetry={() => onAddRule(ruleTitle.trim(), ruleContent.trim())}
-                  />
-                )}
-                <Button
-                  w="fit-content"
-                  color="teal"
-                  disabled={addingRule || !ruleTitle.trim() || !ruleContent.trim()}
-                  type="submit"
-                >
-                  {addingRule ? "追加中…" : "ルールを追加"}
-                </Button>
-              </Stack>
-            </Accordion.Panel>
-          </Accordion.Item>
-        </Accordion>
-      </Paper>
+              </label>
+              {addRuleError && (
+                <ErrorNotice
+                  message={addRuleError}
+                  onRetry={() => onAddRule(ruleTitle.trim(), ruleContent.trim())}
+                />
+              )}
+              <button
+                className="btn btn-primary btn-sm w-fit"
+                disabled={addingRule || !ruleTitle.trim() || !ruleContent.trim()}
+                type="submit"
+              >
+                {addingRule ? "追加中…" : "ルールを追加"}
+              </button>
+            </form>
+          </div>
+        </details>
+      </div>
       {entries.length === 0 ? (
         <EmptyState>このスコープのメモリは空です</EmptyState>
       ) : (
-        <ScrollArea.Autosize mah="70vh" type="auto">
-          <Stack>
+        <div className="max-h-[70vh] overflow-auto">
+          <div className="flex flex-col gap-4">
             {entries.map((entry) => (
-              <Paper key={entry.id} withBorder radius="md" p="md">
-                <Group justify="space-between" align="start" mb="sm">
-                  <Stack gap="xs" align="start">
-                    <Group gap="xs">
-                      <Badge
-                        variant="light"
-                        color={
+              <div key={entry.id} className="rounded-box border border-base-300 bg-base-200 p-4">
+                <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+                  <div className="flex flex-col items-start gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span
+                        className={`badge badge-sm badge-soft ${
                           entry.kind === "rule" || entry.kind === "procedure"
-                            ? "yellow"
+                            ? "badge-warning"
                             : entry.kind === "decision"
-                              ? "blue"
-                              : "gray"
-                        }
+                              ? "badge-info"
+                              : "badge-ghost"
+                        }`}
                       >
                         {entry.kind}
-                      </Badge>
-                      <Badge variant="outline" color="gray" title={entryScopeDetail(entry.scope)}>
+                      </span>
+                      <span
+                        className="badge badge-sm badge-outline"
+                        title={entryScopeDetail(entry.scope)}
+                      >
                         {entry.scope.type}
-                      </Badge>
-                    </Group>
-                    <Title order={3} size="h5">
-                      {entry.title}
-                    </Title>
-                  </Stack>
-                  <Group>
-                    <Text size="xs" c="dimmed">
+                      </span>
+                    </div>
+                    <h3 className="text-lg font-semibold">{entry.title}</h3>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs opacity-60">
                       更新 {formatTimestamp(entry.updatedAt)}
-                    </Text>
-                    <Button
-                      size="xs"
-                      color="red"
-                      variant="light"
+                    </span>
+                    <button
+                      className="btn btn-error btn-soft btn-xs"
                       disabled={deletingEntryId !== null}
                       onClick={() => {
                         if (
@@ -315,27 +300,23 @@ function MemoryEntries({
                       type="button"
                     >
                       {deletingEntryId === entry.id ? "削除中…" : "削除"}
-                    </Button>
-                  </Group>
-                </Group>
-                <Text size="sm" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-                  {entry.content}
-                </Text>
-                <Divider my="sm" />
-                <Group>
-                  <Text size="xs" c="dimmed">
-                    作成 {formatTimestamp(entry.createdAt)}
-                  </Text>
-                  <Text size="xs" c="dimmed">
+                    </button>
+                  </div>
+                </div>
+                <p className="whitespace-pre-wrap break-words text-sm">{entry.content}</p>
+                <hr className="my-3 border-base-300" />
+                <div className="flex flex-wrap gap-4 text-xs opacity-60">
+                  <span>作成 {formatTimestamp(entry.createdAt)}</span>
+                  <span>
                     参照メッセージ {entry.sourceMessageIds.length.toLocaleString("ja-JP")} 件
-                  </Text>
-                </Group>
-              </Paper>
+                  </span>
+                </div>
+              </div>
             ))}
-          </Stack>
-        </ScrollArea.Autosize>
+          </div>
+        </div>
       )}
-    </Stack>
+    </div>
   );
 }
 

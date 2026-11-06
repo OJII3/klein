@@ -2,6 +2,7 @@
   "extends": "../tsconfig.json",
   "compilerOptions": {
     "jsx": "react-jsx",
+    "jsxImportSource": "preact",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "noEmit": true,
     "rootDir": "..",
@@ -10,8 +11,9 @@
       "@agents/*": ["./../src/agents/*"],
       "@modules/*": ["./../src/modules/*"],
       "@runtime/*": ["./../src/runtime/*"],
+      "@shared/*": ["./../src/shared/*"],
       "@klein/webui/*": ["./../src/modules/webui/*"]
     }
   },
-  "include": ["**/*.ts", "**/*.tsx"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts"]
 }

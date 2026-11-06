@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "preact/hooks";
 
 import { listLogs, type LogsQuery, type PinoLog } from "../api";
 

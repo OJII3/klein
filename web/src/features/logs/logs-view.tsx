@@ -1,5 +1,4 @@
-import { useEffect, useState, type SubmitEvent } from "react";
-import { Button, Grid, Group, Paper, Select, Stack, Text, TextInput, Title } from "@mantine/core";
+import { useEffect, useState } from "preact/hooks";
 
 import type { LogsQuery, PinoLog } from "../../api";
 import { EmptyState, ErrorNotice, LoadingState } from "../../components/feedback";
@@ -24,6 +23,8 @@ interface LogFilterDraft {
   channelId: string;
   event: string;
 }
+
+const EMPTY_DRAFT: LogFilterDraft = { level: "", q: "", channelId: "", event: "" };
 
 function draftFromFilters(filters: LogsQuery): LogFilterDraft {
   return {
@@ -50,7 +51,7 @@ export function LogsView({
 
   useEffect(() => setDraft(draftFromFilters(filters)), [filters]);
 
-  const submit = (event: SubmitEvent<HTMLFormElement>) => {
+  const submit = (event: SubmitEvent) => {
     event.preventDefault();
     onFilter({
       limit: 100,
@@ -62,82 +63,85 @@ export function LogsView({
   };
 
   const clear = () => {
-    setDraft({ level: "", q: "", channelId: "", event: "" });
+    setDraft(EMPTY_DRAFT);
     onFilter({ limit: 100 });
   };
 
-  return (
-    <Stack component="section" gap="md" aria-labelledby="logs-heading">
-      <Group justify="space-between" align="end">
-        <Stack gap={0}>
-          <Text size="xs" c="teal">
-            PINO / JSONL
-          </Text>
-          <Title order={2} id="logs-heading">
-            アプリケーションログ
-          </Title>
-        </Stack>
-        <Text size="sm" c="dimmed">
-          {logs.length.toLocaleString("ja-JP")} 件
-        </Text>
-      </Group>
+  const update = (key: keyof LogFilterDraft) => (event: Event) => {
+    const value = (event.target as HTMLInputElement | HTMLSelectElement).value;
+    setDraft((current) => ({ ...current, [key]: value }));
+  };
 
-      <Paper component="form" onSubmit={submit} withBorder p="md" radius="md">
-        <Grid align="end">
-          <Grid.Col span={{ base: 12, sm: 3 }}>
-            <Select
-              label="レベル"
+  return (
+    <section className="flex flex-col gap-4" aria-labelledby="logs-heading">
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <p className="text-xs uppercase tracking-wider text-primary">PINO / JSONL</p>
+          <h2 className="text-2xl font-bold" id="logs-heading">
+            アプリケーションログ
+          </h2>
+        </div>
+        <p className="text-sm opacity-70">{logs.length.toLocaleString("ja-JP")} 件</p>
+      </div>
+
+      <form className="rounded-box border border-base-300 bg-base-200 p-4" onSubmit={submit}>
+        <div className="grid grid-cols-1 items-end gap-3 sm:grid-cols-12">
+          <label className="flex flex-col gap-1 sm:col-span-3">
+            <span className="text-xs opacity-70">レベル</span>
+            <select
               aria-label="ログレベル"
-              data={LEVEL_OPTIONS}
-              clearable
-              placeholder="すべて"
-              onChange={(level) => setDraft((current) => ({ ...current, level: level ?? "" }))}
-              value={draft.level || null}
-            />
-          </Grid.Col>
-          <Grid.Col span={{ base: 12, sm: 3 }}>
-            <TextInput
-              label="検索"
+              className="select select-sm w-full"
+              onChange={update("level")}
+              value={draft.level}
+            >
+              <option value="">すべて</option>
+              {LEVEL_OPTIONS.map((level) => (
+                <option key={level} value={level}>
+                  {level}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 sm:col-span-3">
+            <span className="text-xs opacity-70">検索</span>
+            <input
               aria-label="ログを検索"
-              onChange={(event) => setDraft((current) => ({ ...current, q: event.target.value }))}
+              className="input input-sm w-full"
+              onChange={update("q")}
               placeholder="概要、イベント名…"
               value={draft.q}
             />
-          </Grid.Col>
-          <Grid.Col span={{ base: 12, sm: 2 }}>
-            <TextInput
-              label="チャンネル"
+          </label>
+          <label className="flex flex-col gap-1 sm:col-span-2">
+            <span className="text-xs opacity-70">チャンネル</span>
+            <input
               aria-label="チャンネルID"
-              onChange={(event) =>
-                setDraft((current) => ({ ...current, channelId: event.target.value }))
-              }
+              className="input input-sm w-full"
+              onChange={update("channelId")}
               placeholder="channel ID"
               value={draft.channelId}
             />
-          </Grid.Col>
-          <Grid.Col span={{ base: 12, sm: 2 }}>
-            <TextInput
-              label="イベント"
+          </label>
+          <label className="flex flex-col gap-1 sm:col-span-2">
+            <span className="text-xs opacity-70">イベント</span>
+            <input
               aria-label="イベント名"
-              onChange={(event) =>
-                setDraft((current) => ({ ...current, event: event.target.value }))
-              }
+              className="input input-sm w-full"
+              onChange={update("event")}
               placeholder="event"
               value={draft.event}
             />
-          </Grid.Col>
-          <Grid.Col span={{ base: 12, sm: 2 }}>
-            <Group justify="flex-end">
-              <Button color="teal" type="submit">
-                絞り込む
-              </Button>
-              <Button variant="subtle" color="gray" onClick={clear} type="button">
-                クリア
-              </Button>
-            </Group>
-          </Grid.Col>
-        </Grid>
-      </Paper>
+          </label>
+          <div className="flex justify-end gap-2 sm:col-span-2">
+            <button className="btn btn-primary btn-sm" type="submit">
+              絞り込む
+            </button>
+            <button className="btn btn-ghost btn-sm" onClick={clear} type="button">
+              クリア
+            </button>
+          </div>
+        </div>
+      </form>
 
       {error && <ErrorNotice message={error} onRetry={onRetry} />}
       {loading && logs.length === 0 ? (
@@ -145,31 +149,28 @@ export function LogsView({
       ) : logs.length === 0 ? (
         <EmptyState>条件に一致するログはありません</EmptyState>
       ) : (
-        <Paper withBorder radius="md" p={0}>
+        <div className="rounded-box border border-base-300 bg-base-200">
           <LogTable
             expandedId={expandedId}
             logs={logs}
             onToggle={(id) => setExpandedId((current) => (current === id ? null : id))}
           />
-          <Group justify="center" p="md">
+          <div className="flex justify-center p-4">
             {nextCursor ? (
-              <Button
-                variant="light"
-                color="teal"
+              <button
+                className="btn btn-soft btn-primary btn-sm"
                 disabled={loadingMore}
                 onClick={onLoadMore}
                 type="button"
               >
                 {loadingMore ? "読み込み中…" : "次のログを読み込む"}
-              </Button>
+              </button>
             ) : (
-              <Text size="sm" c="dimmed">
-                これより古いログはありません
-              </Text>
+              <p className="text-sm opacity-70">これより古いログはありません</p>
             )}
-          </Group>
-        </Paper>
+          </div>
+        </div>
       )}
-    </Stack>
+    </section>
   );
 }

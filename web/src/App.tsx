@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "preact/hooks";
 
 import { AppShell, type View } from "./components/app-shell";
 import { useLogs } from "./hooks/use-logs";

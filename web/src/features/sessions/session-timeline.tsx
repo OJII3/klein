@@ -1,5 +1,4 @@
 import type { PiSessionEvent, SessionSummary } from "../../api";
-import { Badge, Button, Group, Paper, Stack, Text, Title } from "@mantine/core";
 import { EmptyState } from "../../components/feedback";
 import { JsonValue } from "../../components/json-value";
 import { formatShortTimestamp, formatTimestamp, truncateMiddle } from "../../lib/format";
@@ -20,84 +19,65 @@ export function SessionTimeline({
   session,
 }: SessionTimelineProps) {
   return (
-    <Paper withBorder radius="md" p="md">
-      <Stack>
-        <Group justify="space-between" align="start">
-          <Stack gap={4} style={{ minWidth: 0 }}>
-            <Title
-              order={3}
-              size="h4"
-              title={session.channelKey}
-              style={{
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-            >
+    <div className="rounded-box border border-base-300 bg-base-200 p-4">
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-wrap justify-between gap-3">
+          <div className="min-w-0">
+            <h3 className="truncate text-lg font-bold" title={session.channelKey}>
               {truncateMiddle(session.channelKey, 48)}
-            </Title>
-            <Text size="xs" c="dimmed">
-              更新 {formatShortTimestamp(session.modified)}
-            </Text>
-          </Stack>
-          <Stack gap={2} align="end">
-            <Text size="sm">{session.messageCount} メッセージ</Text>
-            <Text size="xs" c="dimmed">
-              開始 {formatTimestamp(session.created)}
-            </Text>
-          </Stack>
-        </Group>
+            </h3>
+            <p className="text-xs opacity-60">更新 {formatShortTimestamp(session.modified)}</p>
+          </div>
+          <div className="text-right">
+            <p className="text-sm">{session.messageCount} メッセージ</p>
+            <p className="text-xs opacity-60">開始 {formatTimestamp(session.created)}</p>
+          </div>
+        </div>
         {events.length === 0 ? (
           <EmptyState>イベントがありません</EmptyState>
         ) : (
-          <Stack gap="md">
+          <div className="flex flex-col gap-4">
             {events.map((event) => (
-              <Stack key={event.id} gap="xs">
-                <Group gap="xs">
-                  <Badge size="sm" variant="light">
-                    {event.kind}
-                  </Badge>
-                  {event.role && (
-                    <Badge size="sm" color="gray" variant="outline">
-                      {event.role}
-                    </Badge>
-                  )}
-                  <Text size="xs" c="dimmed">
-                    {formatTimestamp(event.timestamp)}
-                  </Text>
-                </Group>
+              <div key={event.id} className="flex flex-col gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="badge badge-sm badge-soft">{event.kind}</span>
+                  {event.role && <span className="badge badge-sm badge-outline">{event.role}</span>}
+                  <span className="text-xs opacity-60">{formatTimestamp(event.timestamp)}</span>
+                </div>
                 {event.errorMessage && (
-                  <Paper withBorder p="sm" c="red" role="alert">
+                  <div
+                    className="rounded-box border border-error/40 bg-error/10 p-3 text-sm text-error"
+                    role="alert"
+                  >
                     {event.errorMessage}
-                  </Paper>
+                  </div>
                 )}
                 {event.content !== undefined &&
                   (!Array.isArray(event.content) || event.content.length > 0) && (
                     <JsonValue value={event.content} />
                   )}
-                {event.parentId && (
-                  <Text size="xs" c="dimmed">
-                    parent: {event.parentId}
-                  </Text>
-                )}
-              </Stack>
+                {event.parentId && <p className="text-xs opacity-60">parent: {event.parentId}</p>}
+              </div>
             ))}
-          </Stack>
+          </div>
         )}
         {events.length > 0 && (
-          <Group justify="center">
+          <div className="flex justify-center">
             {nextCursor ? (
-              <Button variant="light" color="teal" disabled={loadingMore} onClick={onLoadMore}>
+              <button
+                className="btn btn-soft btn-primary btn-sm"
+                disabled={loadingMore}
+                onClick={onLoadMore}
+                type="button"
+              >
                 {loadingMore ? "読み込み中…" : "古いイベントを読み込む"}
-              </Button>
+              </button>
             ) : (
-              <Text size="sm" c="dimmed">
-                これより古いイベントはありません
-              </Text>
+              <p className="text-sm opacity-70">これより古いイベントはありません</p>
             )}
-          </Group>
+          </div>
         )}
-      </Stack>
-    </Paper>
+      </div>
+    </div>
   );
 }

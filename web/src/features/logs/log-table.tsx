@@ -1,5 +1,4 @@
-import { Fragment } from "react";
-import { Badge, Code, Table, Text } from "@mantine/core";
+import { Fragment } from "preact";
 
 import type { PinoLog } from "../../api";
 import { formatTimestamp, levelLabel } from "../../lib/format";
@@ -11,43 +10,44 @@ interface LogTableProps {
   onToggle: (id: string) => void;
 }
 
-function levelColor(level: number | string): string {
+function levelBadgeClass(level: number | string): string {
   switch (levelLabel(level).toLowerCase()) {
     case "trace":
     case "debug":
-      return "gray";
+      return "badge-ghost";
     case "info":
-      return "blue";
+      return "badge-info";
     case "warn":
-      return "yellow";
+      return "badge-warning";
     case "error":
     case "fatal":
-      return "red";
+      return "badge-error";
     default:
-      return "gray";
+      return "badge-ghost";
   }
 }
 
 export function LogTable({ logs, expandedId, onToggle }: LogTableProps) {
   return (
-    <Table.ScrollContainer minWidth={800}>
-      <Table highlightOnHover verticalSpacing="sm">
-        <Table.Thead>
-          <Table.Tr>
-            <Table.Th>時刻</Table.Th>
-            <Table.Th>レベル</Table.Th>
-            <Table.Th>イベント</Table.Th>
-            <Table.Th>概要</Table.Th>
-          </Table.Tr>
-        </Table.Thead>
-        <Table.Tbody>
+    <div className="overflow-x-auto">
+      <table className="table table-sm">
+        <thead>
+          <tr>
+            <th>時刻</th>
+            <th>レベル</th>
+            <th>イベント</th>
+            <th>概要</th>
+          </tr>
+        </thead>
+        <tbody>
           {logs.map((log) => {
             const isExpanded = expandedId === log.id;
             return (
               <Fragment key={log.id}>
-                <Table.Tr
+                <tr
                   aria-expanded={isExpanded}
                   aria-label={`${log.kind}: ${log.summary}`}
+                  className="cursor-pointer hover:bg-base-300/40"
                   onClick={() => onToggle(log.id)}
                   onKeyDown={(event) => {
                     if (event.key === "Enter" || event.key === " ") {
@@ -58,37 +58,37 @@ export function LogTable({ logs, expandedId, onToggle }: LogTableProps) {
                   role="button"
                   tabIndex={0}
                 >
-                  <Table.Td>
-                    <Text size="sm" component="time" dateTime={log.timestamp}>
+                  <td>
+                    <time className="text-sm" dateTime={log.timestamp}>
                       {formatTimestamp(log.timestamp)}
-                    </Text>
-                  </Table.Td>
-                  <Table.Td>
-                    <Badge color={levelColor(log.level)} variant="light">
+                    </time>
+                  </td>
+                  <td>
+                    <span className={`badge badge-sm ${levelBadgeClass(log.level)}`}>
                       {levelLabel(log.level)}
-                    </Badge>
-                  </Table.Td>
-                  <Table.Td>
-                    <Code>{log.kind}</Code>
-                  </Table.Td>
-                  <Table.Td>
-                    <Text size="sm" lineClamp={2}>
-                      {log.summary}
-                    </Text>
-                  </Table.Td>
-                </Table.Tr>
+                    </span>
+                  </td>
+                  <td>
+                    <code className="rounded bg-base-300 px-1.5 py-0.5 font-mono text-xs">
+                      {log.kind}
+                    </code>
+                  </td>
+                  <td>
+                    <p className="line-clamp-2 text-sm">{log.summary}</p>
+                  </td>
+                </tr>
                 {isExpanded && (
-                  <Table.Tr>
-                    <Table.Td colSpan={4}>
+                  <tr>
+                    <td colSpan={4}>
                       <LogDetails log={log} />
-                    </Table.Td>
-                  </Table.Tr>
+                    </td>
+                  </tr>
                 )}
               </Fragment>
             );
           })}
-        </Table.Tbody>
-      </Table>
-    </Table.ScrollContainer>
+        </tbody>
+      </table>
+    </div>
   );
 }
