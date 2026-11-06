@@ -6,30 +6,34 @@ interface ErrorNoticeProps {
 
 export function ErrorNotice({ message, onRetry, retryLabel = "再試行" }: ErrorNoticeProps) {
   return (
-    <div className="alert alert-error alert-soft items-start" role="alert">
-      <div className="flex flex-col items-start gap-2">
-        <span className="text-sm">{message}</span>
-        <button className="btn btn-xs btn-error" onClick={onRetry} type="button">
-          {retryLabel}
-        </button>
-      </div>
+    <div
+      className="flex flex-wrap items-center justify-between gap-3 border-l-2 border-ember bg-ember/10 py-2.5 pr-3 pl-4"
+      role="alert"
+    >
+      <p className="text-sm text-ember">{message}</p>
+      <button className="btn btn-quiet text-ember" onClick={onRetry} type="button">
+        {retryLabel}
+      </button>
     </div>
   );
 }
 
 export function EmptyState({ children }: { children: string }) {
   return (
-    <div className="flex min-h-24 items-center justify-center p-6">
-      <p className="text-sm opacity-70">{children}</p>
+    <div className="border-y border-rule py-12 text-center">
+      <p className="text-sm text-ink-faint">{children}</p>
     </div>
   );
 }
 
 export function LoadingState({ label = "読み込み中…" }: { label?: string }) {
   return (
-    <div className="flex min-h-24 flex-col items-center justify-center gap-2 p-6" role="status">
-      <span className="loading loading-spinner loading-sm" />
-      <span className="text-sm opacity-70">{label}</span>
+    <div
+      className="flex items-center justify-center gap-3 border-y border-rule py-12"
+      role="status"
+    >
+      <span aria-hidden="true" className="spinner" />
+      <span className="text-sm text-ink-faint">{label}</span>
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { useEffect, useState } from "preact/hooks";
 
 import type { LogsQuery, PinoLog } from "../../api";
 import { EmptyState, ErrorNotice, LoadingState } from "../../components/feedback";
+import { ViewHeader } from "../../components/view-header";
 import { LEVEL_OPTIONS } from "../../lib/format";
 import { LogTable } from "./log-table";
 
@@ -73,73 +74,62 @@ export function LogsView({
   };
 
   return (
-    <section className="flex flex-col gap-4" aria-labelledby="logs-heading">
-      <div className="flex flex-wrap items-end justify-between gap-2">
-        <div>
-          <p className="text-xs uppercase tracking-wider text-primary">PINO / JSONL</p>
-          <h2 className="text-2xl font-bold" id="logs-heading">
-            アプリケーションログ
-          </h2>
-        </div>
-        <p className="text-sm opacity-70">{logs.length.toLocaleString("ja-JP")} 件</p>
-      </div>
+    <section className="flex flex-col gap-5" aria-labelledby="logs-heading">
+      <ViewHeader
+        count={`${logs.length.toLocaleString("ja-JP")} 件`}
+        description="Klein が実行したことの連続記録。新しいものが上に並びます。"
+        headingId="logs-heading"
+        title="アプリケーションログ"
+      />
 
-      <form className="rounded-box border border-base-300 bg-base-200 p-4" onSubmit={submit}>
-        <div className="grid grid-cols-1 items-end gap-3 sm:grid-cols-12">
-          <label className="flex flex-col gap-1 sm:col-span-3">
-            <span className="text-xs opacity-70">レベル</span>
-            <select
-              aria-label="ログレベル"
-              className="select select-sm w-full"
-              onChange={update("level")}
-              value={draft.level}
-            >
-              <option value="">すべて</option>
-              {LEVEL_OPTIONS.map((level) => (
-                <option key={level} value={level}>
-                  {level}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1 sm:col-span-3">
-            <span className="text-xs opacity-70">検索</span>
-            <input
-              aria-label="ログを検索"
-              className="input input-sm w-full"
-              onChange={update("q")}
-              placeholder="概要、イベント名…"
-              value={draft.q}
-            />
-          </label>
-          <label className="flex flex-col gap-1 sm:col-span-2">
-            <span className="text-xs opacity-70">チャンネル</span>
-            <input
-              aria-label="チャンネルID"
-              className="input input-sm w-full"
-              onChange={update("channelId")}
-              placeholder="channel ID"
-              value={draft.channelId}
-            />
-          </label>
-          <label className="flex flex-col gap-1 sm:col-span-2">
-            <span className="text-xs opacity-70">イベント</span>
-            <input
-              aria-label="イベント名"
-              className="input input-sm w-full"
-              onChange={update("event")}
-              placeholder="event"
-              value={draft.event}
-            />
-          </label>
-          <div className="flex justify-end gap-2 sm:col-span-2">
-            <button className="btn btn-primary btn-sm" type="submit">
-              絞り込む
-            </button>
-            <button className="btn btn-ghost btn-sm" onClick={clear} type="button">
-              クリア
-            </button>
-          </div>
+      <form
+        aria-label="ログの絞り込み"
+        className="grid gap-2 border-b border-rule pb-4 sm:grid-cols-2 lg:grid-cols-[9rem_minmax(0,1fr)_10rem_10rem_auto]"
+        onSubmit={submit}
+        role="search"
+      >
+        <select
+          aria-label="ログレベル"
+          className="field"
+          onChange={update("level")}
+          value={draft.level}
+        >
+          <option value="">すべてのレベル</option>
+          {LEVEL_OPTIONS.map((level) => (
+            <option key={level} value={level}>
+              {level}
+            </option>
+          ))}
+        </select>
+        <input
+          aria-label="ログを検索"
+          className="field"
+          onChange={update("q")}
+          placeholder="概要やイベント名を検索"
+          type="search"
+          value={draft.q}
+        />
+        <input
+          aria-label="チャンネルID"
+          className="field"
+          onChange={update("channelId")}
+          placeholder="チャンネルID"
+          value={draft.channelId}
+        />
+        <input
+          aria-label="イベント名"
+          className="field"
+          onChange={update("event")}
+          placeholder="イベント名"
+          value={draft.event}
+        />
+        <div className="flex gap-2 sm:col-span-2 lg:col-span-1">
+          <button className="btn btn-primary" type="submit">
+            絞り込む
+          </button>
+          <button className="btn btn-quiet" onClick={clear} type="button">
+            クリア
+          </button>
         </div>
       </form>
 
@@ -149,24 +139,19 @@ export function LogsView({
       ) : logs.length === 0 ? (
         <EmptyState>条件に一致するログはありません</EmptyState>
       ) : (
-        <div className="rounded-box border border-base-300 bg-base-200">
+        <div className="flex flex-col gap-5">
           <LogTable
             expandedId={expandedId}
             logs={logs}
             onToggle={(id) => setExpandedId((current) => (current === id ? null : id))}
           />
-          <div className="flex justify-center p-4">
+          <div className="flex justify-center">
             {nextCursor ? (
-              <button
-                className="btn btn-soft btn-primary btn-sm"
-                disabled={loadingMore}
-                onClick={onLoadMore}
-                type="button"
-              >
+              <button className="btn" disabled={loadingMore} onClick={onLoadMore} type="button">
                 {loadingMore ? "読み込み中…" : "次のログを読み込む"}
               </button>
             ) : (
-              <p className="text-sm opacity-70">これより古いログはありません</p>
+              <p className="font-mono text-[0.7rem] text-ink-faint">これより古いログはありません</p>
             )}
           </div>
         </div>

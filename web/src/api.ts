@@ -102,7 +102,7 @@ export interface MemoryDetailResponse {
 
 const apiOrigin = typeof window === "undefined" ? "http://127.0.0.1:4310" : window.location.origin;
 
-const client = treaty<WebUiApp>(apiOrigin);
+const client = treaty<WebUiApp>(apiOrigin, { parseDate: false });
 
 function errorMessage(error: unknown): string {
   if (typeof error === "string") return error;
