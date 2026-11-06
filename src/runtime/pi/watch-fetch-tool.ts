@@ -5,7 +5,7 @@ import type { CodemodeJsonSchema } from "@earendil-works/pi-codemode";
 import type { WatchTool } from "@modules/scheduling/application/watch-tool";
 
 const MAX_URLS = 10;
-const MAX_CONTENT_CHARS = 64 * 1_024;
+const MAX_CONTENT_BYTES = 64 * 1_024;
 
 export interface WatchFetchCoreResult {
   readonly content?: readonly { readonly type: string; readonly text?: string }[];
@@ -73,6 +73,8 @@ const fetchContentOutputSchema: CodemodeJsonSchema = {
 
 export interface WatchFetchToolOptions {
   readonly agentDir: string;
+  /** Overrides the core loader; tests use this to exercise load failures. */
+  readonly loadCore?: (agentDir: string) => Promise<WatchFetchCore>;
 }
 
 /**
@@ -81,8 +83,16 @@ export interface WatchFetchToolOptions {
  * The core loads on the first watch check, so normal sessions do not pay for it.
  */
 export function createWatchFetchTool(options: WatchFetchToolOptions): WatchTool {
+  const loadCore = options.loadCore ?? loadWatchFetchCore;
   let core: Promise<WatchFetchCore> | undefined;
-  return createWatchFetchToolFromCore(() => (core ??= loadWatchFetchCore(options.agentDir)));
+  return createWatchFetchToolFromCore(() => {
+    core ??= loadCore(options.agentDir).catch((error) => {
+      // Do not cache a failed load: a transient failure should not disable watches until restart.
+      core = undefined;
+      throw error;
+    });
+    return core;
+  });
 }
 
 export function createWatchFetchToolFromCore(
@@ -105,7 +115,7 @@ export function createWatchFetchToolFromCore(
       const urls = entries.map((entry) => ({
         url: entry.url ?? params.url ?? params.urls?.[0] ?? "",
         title: entry.title ?? "",
-        content: (entry.content ?? "").slice(0, MAX_CONTENT_CHARS),
+        content: truncateUtf8(entry.content ?? "", MAX_CONTENT_BYTES),
         ...(entry.status === undefined ? {} : { status: entry.status }),
         error: entry.error ?? null,
       }));
@@ -159,6 +169,12 @@ function normalizeFetchArgs(value: unknown): {
     ...(urls && urls.length > 0 ? { urls } : url ? { url } : {}),
     mode,
   };
+}
+
+function truncateUtf8(text: string, maxBytes: number): string {
+  if (Buffer.byteLength(text, "utf8") <= maxBytes) return text;
+  const truncated = Buffer.from(text, "utf8").subarray(0, maxBytes).toString("utf8");
+  return truncated.replace(/\uFFFD$/u, "");
 }
 
 function textOf(result: WatchFetchCoreResult): string {

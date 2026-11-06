@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  createWatchFetchTool,
   createWatchFetchToolFromCore,
   type WatchFetchCore,
   type WatchFetchCoreResult,
@@ -108,4 +109,44 @@ test("rejects non-http URLs and unsupported modes", async () => {
     tool.execute({ url: "https://example.com", mode: "answer" }, { signal }),
     /mode/u,
   );
+});
+
+test("truncates fetched content by UTF-8 bytes", async () => {
+  const content = "あ".repeat(40_000);
+  const tool = createWatchFetchToolFromCore(
+    coreReturning({
+      structuredContent: {
+        urls: [{ url: "https://example.com", title: "", content, error: null }],
+      },
+    }),
+  );
+  const result = (await tool.execute({ url: "https://example.com" }, { signal })) as {
+    urls: { content: string }[];
+  };
+  const truncated = result.urls[0]?.content ?? "";
+  assert.ok(Buffer.byteLength(truncated, "utf8") <= 64 * 1024);
+  assert.ok(!truncated.endsWith("\uFFFD"));
+});
+
+test("retries loading the fetch core after a transient failure", async () => {
+  let attempts = 0;
+  const tool = createWatchFetchTool({
+    agentDir: "",
+    async loadCore() {
+      attempts += 1;
+      if (attempts === 1) throw new Error("load failed");
+      return coreReturning({
+        structuredContent: {
+          urls: [{ url: "https://example.com", title: "", content: "ok", error: null }],
+        },
+      });
+    },
+  });
+
+  await assert.rejects(tool.execute({ url: "https://example.com" }, { signal }), /load failed/u);
+  const result = await tool.execute({ url: "https://example.com" }, { signal });
+  assert.equal(attempts, 2);
+  assert.deepEqual(result, {
+    urls: [{ url: "https://example.com", title: "", content: "ok", error: null }],
+  });
 });

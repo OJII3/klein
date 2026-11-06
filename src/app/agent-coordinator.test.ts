@@ -29,6 +29,7 @@ import { ChannelSessionStateStore, getChannelRotationBucket } from "./channel-se
 
 interface TestHarness {
   readonly agentCoordinator: AgentCoordinator;
+  readonly channelLocationCalls: string[];
   readonly createdSessionKeys: string[];
   readonly prompts: Map<string, AgentEvent[]>;
   readonly ownerFeaturesAllowed: boolean[];
@@ -47,6 +48,7 @@ function createHarness(
     },
   },
 ): TestHarness {
+  const channelLocationCalls: string[] = [];
   const createdSessionKeys: string[] = [];
   const prompts = new Map<string, AgentEvent[]>();
   const ownerFeaturesAllowed: boolean[] = [];
@@ -80,6 +82,7 @@ function createHarness(
       return message;
     },
     async getChannelLocation(channelId) {
+      channelLocationCalls.push(channelId);
       return { guildId: "guild-123", channelId };
     },
   };
@@ -102,6 +105,7 @@ function createHarness(
       watchCheckRunner,
       taskCoordinator: new TaskCoordinator(),
     }),
+    channelLocationCalls,
     createdSessionKeys,
     prompts,
     ownerFeaturesAllowed,
@@ -660,6 +664,97 @@ test("suppresses watch events during cooldown and retries after it expires", asy
     const delivered = watches.getStored();
     assert.ok(delivered?.kind === "watch");
     assert.notEqual(delivered.lastOutputHash, "old-hash");
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+test("reschedules a disallowed watch instead of rechecking it every tick", async () => {
+  const watches = createScheduledTaskStore({ ...dueWatch, accessScope: "public" });
+  const harness = createHarness(undefined, watches.store, {
+    accessPolicy: createDiscordAccessPolicy({ default: "deny", directMessages: "deny" }),
+  });
+  try {
+    const dueAt = Date.parse("2026-10-14T00:05:00.000Z");
+    await harness.agentCoordinator.deliverDueTasks(dueAt);
+    const stored = watches.getStored();
+    assert.ok(stored?.kind === "watch");
+    assert.equal(stored.nextRunAt, "2026-10-14T00:10:00.000Z");
+    assert.equal(harness.channelLocationCalls.length, 1);
+    assert.equal(harness.prompts.size, 0);
+
+    await harness.agentCoordinator.deliverDueTasks(dueAt + 10_000);
+    assert.equal(harness.channelLocationCalls.length, 1);
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+test("skips a disallowed one-time reminder without rechecking it every tick", async () => {
+  const reminders = createScheduledTaskStore(dueReminder);
+  const harness = createHarness(undefined, reminders.store, {
+    accessPolicy: createDiscordAccessPolicy({ default: "deny", directMessages: "deny" }),
+  });
+  try {
+    const dueAt = Date.parse("2026-10-14T00:02:00.000Z");
+    await harness.agentCoordinator.deliverDueTasks(dueAt);
+    assert.equal(harness.channelLocationCalls.length, 1);
+    assert.ok(reminders.getStored());
+
+    await harness.agentCoordinator.deliverDueTasks(dueAt + 10_000);
+    assert.equal(harness.channelLocationCalls.length, 1);
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+test("does not deliver or recreate a watch deleted while its check runs", async () => {
+  const watches = createScheduledTaskStore({ ...dueWatch, lastOutputHash: "old-hash" });
+  const runner: WatchCheckRunner = {
+    async run() {
+      await watches.store.delete("watch", "test-channel", "owner:123", "watch-1");
+      return { output: "changed", exitCode: 0, durationMs: 1 };
+    },
+  };
+  const harness = createHarness(
+    undefined,
+    watches.store,
+    {
+      accessPolicy: createDiscordAccessPolicy({ default: "owner", directMessages: "deny" }, "123"),
+      ownerUserId: "123",
+    },
+    runner,
+  );
+  try {
+    await harness.agentCoordinator.deliverDueTasks(Date.parse("2026-10-14T00:05:00.000Z"));
+    assert.equal(watches.getStored(), undefined);
+    assert.equal(harness.prompts.size, 0);
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+test("uses the check time for the next interval run", async () => {
+  const runner: WatchCheckRunner = {
+    async run() {
+      return { output: "changed", exitCode: 0, durationMs: 1 };
+    },
+  };
+  const watches = createScheduledTaskStore({ ...dueWatch, lastOutputHash: "old-hash" });
+  const harness = createHarness(
+    undefined,
+    watches.store,
+    {
+      accessPolicy: createDiscordAccessPolicy({ default: "owner", directMessages: "deny" }, "123"),
+      ownerUserId: "123",
+    },
+    runner,
+  );
+  try {
+    await harness.agentCoordinator.deliverDueTasks(Date.parse("2026-10-14T00:05:00.000Z"));
+    const stored = watches.getStored();
+    assert.ok(stored?.kind === "watch");
+    assert.equal(stored.nextRunAt, "2026-10-14T00:10:00.000Z");
   } finally {
     await harness.agentCoordinator.dispose();
   }

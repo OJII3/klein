@@ -44,6 +44,7 @@ interface TriggeredWatch {
 
 export class ScheduledTaskDeliveryCoordinator {
   private checkRunning = false;
+  private readonly skippedTasks = new Set<string>();
 
   constructor(private readonly dependencies: ScheduledTaskDeliveryCoordinatorDependencies) {}
 
@@ -53,7 +54,9 @@ export class ScheduledTaskDeliveryCoordinator {
     this.checkRunning = true;
 
     try {
-      const tasks = await store.listDue(now);
+      const dueTasks = await store.listDue(now);
+      this.pruneSkippedTasks(dueTasks);
+      const tasks = dueTasks.filter((task) => !this.skippedTasks.has(taskKey(task)));
       for (const task of tasks) {
         try {
           await this.dependencies.taskCoordinator.run(() => this.processTask(task, now));
@@ -85,16 +88,68 @@ export class ScheduledTaskDeliveryCoordinator {
     const stillDue = (await store.listForScope(task.kind, task.channelId, task.accessScope)).some(
       (current) => current.id === task.id && current.nextRunAt === task.nextRunAt,
     );
-    if (!stillDue || !(await this.isAllowed(task))) return;
+    if (!stillDue) return;
+    if (!(await this.isTaskAllowed(task))) {
+      await this.skipTask(task, now);
+      return;
+    }
 
     if (task.kind === "watch") {
       const triggered = await this.checkWatch(task, now);
       if (!triggered) return;
+      // The watch may have been deleted while its check ran outside the conversation lock.
+      if (!(await this.taskStillExists(triggered.watch))) return;
       await this.deliverWatch(triggered);
       return;
     }
 
     await this.deliverReminder(task);
+  }
+
+  private async isTaskAllowed(task: ScheduledTask): Promise<boolean> {
+    try {
+      return await this.isAllowed(task);
+    } catch (error) {
+      this.dependencies.logger.warn(
+        {
+          err: error,
+          event: "scheduled_task_access_check_failed",
+          taskId: task.id,
+          taskKind: task.kind,
+        },
+        "Failed to check scheduled task access",
+      );
+      return false;
+    }
+  }
+
+  private async skipTask(task: ScheduledTask, now: number): Promise<void> {
+    const store = this.dependencies.scheduledTaskStore;
+    if (!store) return;
+    const nextRunAt = getNextRunAt(task.schedule, now);
+    if (nextRunAt) {
+      if (await this.taskStillExists(task)) {
+        await store.update({ ...task, nextRunAt });
+      }
+      return;
+    }
+    // A one-time task has no next occurrence, so remember it for this process instead of
+    // rechecking it every tick.
+    this.skippedTasks.add(taskKey(task));
+  }
+
+  private pruneSkippedTasks(tasks: readonly ScheduledTask[]): void {
+    const dueKeys = new Set(tasks.map(taskKey));
+    for (const key of this.skippedTasks) {
+      if (!dueKeys.has(key)) this.skippedTasks.delete(key);
+    }
+  }
+
+  private async taskStillExists(task: ScheduledTask): Promise<boolean> {
+    const store = this.dependencies.scheduledTaskStore;
+    if (!store) return false;
+    const tasks = await store.listForScope(task.kind, task.channelId, task.accessScope);
+    return tasks.some((current) => current.id === task.id);
   }
 
   private async isAllowed(task: ScheduledTask): Promise<boolean> {
@@ -298,6 +353,7 @@ export class ScheduledTaskDeliveryCoordinator {
   private async completeWatch(task: WatchTask, outputHash: string): Promise<void> {
     const store = this.dependencies.scheduledTaskStore;
     if (!store) return;
+    if (!(await this.taskStillExists(task))) return;
     await store.update(
       clearWatchError({
         ...task,
@@ -305,7 +361,6 @@ export class ScheduledTaskDeliveryCoordinator {
         lastTriggeredAt: new Date().toISOString(),
         lastStatus: "ok",
         consecutiveFailures: 0,
-        nextRunAt: requireNextRunAt(task.schedule, Date.now()),
       }),
     );
   }
@@ -313,12 +368,12 @@ export class ScheduledTaskDeliveryCoordinator {
   private async failWatchDelivery(task: WatchTask, error: unknown): Promise<void> {
     const store = this.dependencies.scheduledTaskStore;
     if (!store) return;
+    if (!(await this.taskStillExists(task))) return;
     await store.update({
       ...task,
       lastStatus: "error",
       lastError: error instanceof Error ? error.message : String(error),
       consecutiveFailures: task.consecutiveFailures + 1,
-      nextRunAt: requireNextRunAt(task.schedule, Date.now()),
     });
   }
 
@@ -332,6 +387,10 @@ function requireNextRunAt(schedule: StoredSchedule, now: number): string {
   const nextRunAt = getNextRunAt(schedule, now);
   if (!nextRunAt) throw new Error("繰り返しスケジュールの次回実行時刻を計算できませんでした。");
   return nextRunAt;
+}
+
+function taskKey(task: ScheduledTask): string {
+  return `${task.id}:${task.nextRunAt}`;
 }
 
 function clearWatchError(watch: WatchTask): WatchTask {

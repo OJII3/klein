@@ -5,6 +5,7 @@ import { Type } from "typebox";
 import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
 import {
   formatSchedule,
+  MAX_SCHEDULE_INTERVAL_MINUTES,
   resolveSchedule,
   SCHEDULE_WEEKDAYS,
   type ScheduleInput,
@@ -18,7 +19,7 @@ const weekdaySchema = Type.Union(SCHEDULE_WEEKDAYS.map((weekday) => Type.Literal
 const scheduleSchema = Type.Union([
   Type.Object({
     type: Type.Literal("after"),
-    minutes: Type.Integer({ minimum: 1 }),
+    minutes: Type.Integer({ minimum: 1, maximum: MAX_SCHEDULE_INTERVAL_MINUTES }),
   }),
   Type.Object({
     type: Type.Literal("at"),
@@ -36,7 +37,7 @@ const scheduleSchema = Type.Union([
   }),
   Type.Object({
     type: Type.Literal("every"),
-    minutes: Type.Integer({ minimum: 1 }),
+    minutes: Type.Integer({ minimum: 1, maximum: MAX_SCHEDULE_INTERVAL_MINUTES }),
   }),
 ]);
 

@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { getNextRunAt, parseStoredSchedule, resolveSchedule } from "./schedule";
+import {
+  getNextRunAt,
+  MAX_SCHEDULE_INTERVAL_MINUTES,
+  parseStoredSchedule,
+  resolveSchedule,
+} from "./schedule";
 
 test("resolves relative schedules to a single absolute run", () => {
   const now = Date.parse("2026-10-14T00:00:00.000Z");
@@ -67,6 +72,22 @@ test("skips missed daily occurrences and advances intervals from now", () => {
     "2026-10-15T01:10:00.000Z",
   );
   assert.equal(getNextRunAt({ type: "once", at: "2026-10-15T01:00:00.000Z" }, 0), undefined);
+});
+
+test("rejects intervals that would overflow a Date", () => {
+  const now = Date.parse("2026-10-14T00:00:00.000Z");
+  assert.throws(
+    () => resolveSchedule({ type: "every", minutes: MAX_SCHEDULE_INTERVAL_MINUTES + 1 }, now),
+    /1年以内/u,
+  );
+  assert.throws(
+    () => resolveSchedule({ type: "after", minutes: MAX_SCHEDULE_INTERVAL_MINUTES + 1 }, now),
+    /1年以内/u,
+  );
+  assert.throws(
+    () => parseStoredSchedule({ type: "every", minutes: MAX_SCHEDULE_INTERVAL_MINUTES + 1 }),
+    /1年以内/u,
+  );
 });
 
 test("parses only the new stored schedule shape", () => {

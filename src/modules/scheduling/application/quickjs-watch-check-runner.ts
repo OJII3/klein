@@ -14,21 +14,25 @@ import type { WatchTool } from "./watch-tool";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_OUTPUT_BYTES = 64 * 1_024;
+const DEFAULT_MEMORY_LIMIT_BYTES = 64 * 1_024 * 1_024;
 
 export interface QuickJsWatchCheckRunnerOptions {
   readonly tools: readonly WatchTool[];
   readonly timeoutMs?: number;
   readonly maxOutputBytes?: number;
+  readonly memoryLimitBytes?: number;
 }
 
 export class QuickJsWatchCheckRunner implements WatchCheckRunner {
   private readonly timeoutMs: number;
   private readonly maxOutputBytes: number;
+  private readonly memoryLimitBytes: number;
   private readonly sandboxTools: CodemodeTool[];
 
   constructor(options: QuickJsWatchCheckRunnerOptions) {
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.maxOutputBytes = options.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES;
+    this.memoryLimitBytes = options.memoryLimitBytes ?? DEFAULT_MEMORY_LIMIT_BYTES;
     this.sandboxTools = options.tools.map((tool) => ({
       name: tool.name,
       description: tool.description,
@@ -42,11 +46,21 @@ export class QuickJsWatchCheckRunner implements WatchCheckRunner {
     const startedAt = Date.now();
     const sandbox = new CodemodeSandbox({
       timeoutMs: this.timeoutMs,
+      memoryLimitBytes: this.memoryLimitBytes,
       tools: this.sandboxTools,
     });
     try {
+      // `store` and `load` are codemode globals, but watch checks do not persist a store. Shadow
+      // them so a script that tries to keep state fails loudly instead of silently losing it.
       const result = await sandbox.execute(
-        `const args = ${JSON.stringify(watch.args)};\n${watch.script}`,
+        [
+          `const args = ${JSON.stringify(watch.args)};`,
+          "{",
+          '  const store = () => { throw new Error("watch スクリプトでは store() を使えません。状態は実行ごとに保持されません。"); };',
+          '  const load = () => { throw new Error("watch スクリプトでは load() を使えません。状態は実行ごとに保持されません。"); };',
+          watch.script,
+          "}",
+        ].join("\n"),
       );
       if (!result.ok) {
         throw new WatchCheckError(
@@ -57,7 +71,9 @@ export class QuickJsWatchCheckRunner implements WatchCheckRunner {
       }
       const output = collectOutput(result.output, result.value);
       if (Buffer.byteLength(output, "utf8") > this.maxOutputBytes) {
-        throw new WatchCheckError("監視スクリプトの出力が上限を超えました。");
+        throw new WatchCheckError(
+          `監視スクリプトの出力が上限（${this.maxOutputBytes}バイト）を超えました。`,
+        );
       }
       return { output, exitCode: 0, durationMs: Date.now() - startedAt };
     } finally {

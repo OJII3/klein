@@ -62,14 +62,14 @@ Memory entries are stored together per guild and carry a scope: `guild`, `channe
 
 ### Scheduling
 
-Reminders and watches share `<runtime.agentDir>/schedules`. Each item belongs to a Discord channel or thread and survives session rotation; delivery rechecks current access rules and owner ID, and items that are no longer allowed stay stored but are not delivered.
+Reminders and watches share `<runtime.agentDir>/schedules`. Each item belongs to a Discord channel or thread and survives session rotation; delivery rechecks current access rules and owner ID, and items that are no longer allowed stay stored but are not delivered. Recurring items are rescheduled and one-time items are skipped for the rest of the process, so a denied item is not rechecked every check interval.
 
 - **Reminders** send a fixed message once or on a recurring schedule (`every` minutes, daily, or weekly), scoped to `public` or `owner:<userId>`.
-- **Watches** run a QuickJS script on a recurring schedule and wake the agent only when the output changes. The first successful check sets the baseline; `condition: "output"` notifies on any output. Checks time out after 30 seconds and are limited to 64 KiB of output; failures are recorded in `watch_list` and do not wake the agent.
+- **Watches** run a QuickJS script on a recurring schedule and wake the agent only when the output changes. The first successful check sets the baseline; `condition: "output"` notifies on any output. Checks time out after 30 seconds, use at most 64 MiB of sandbox memory, and are limited to 64 KiB of output; failures are recorded in `watch_list` and do not wake the agent.
 
 Watch scripts read the `args` array, call the tools listed in the `watch` prompt section with `tools.<name>({ ...args })`, and print with `text()` or `console.*`. The section is rendered from the watch tool catalog and appears only while `watch_add` is offered. It currently exposes `tools.fetch_content({ url, urls?, mode? })`, a read-only, GET-only subset of the session's fetch tool (`mode` is `raw` or `readable`; `auth`, `proxy`, `answer`, `extract`, and video are unavailable).
 
-The sandbox has no timers, filesystem, or process APIs, and normal session tools are not available inside watch scripts. The printed text and returned value form the output.
+The sandbox has no timers, filesystem, process APIs, or persistent storage (`store` and `load` are rejected), and normal session tools are not available inside watch scripts. The printed text and returned value form the output.
 
 Schedules use a unified format; the old `<runtime.agentDir>/reminders` directory is ignored. Migrate with:
 
