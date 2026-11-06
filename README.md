@@ -118,4 +118,12 @@ An optional dashboard for Pino logs, Pi sessions, and guild memories. Enable it 
 
 Open `http://127.0.0.1:4310` after starting Klein.
 
+For frontend development, run the bot as usual and start Vite separately:
+
+```sh
+bun run dev:web
+```
+
+Vite serves the UI on `http://127.0.0.1:5173` and proxies `/api` to port 4310. The production build is written to `dist/web` and served by the Elysia app.
+
 To expose it through Cloudflare Tunnel, add `TUNNEL_TOKEN` to `.env` and protect the route with Cloudflare Access. `cloudflared` starts and stops with Klein.

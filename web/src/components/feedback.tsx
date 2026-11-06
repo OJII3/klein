@@ -1,5 +1,3 @@
-import { Alert, Button, Center, Loader, Stack, Text } from "@mantine/core";
-
 interface ErrorNoticeProps {
   message: string;
   onRetry: () => void;
@@ -8,34 +6,30 @@ interface ErrorNoticeProps {
 
 export function ErrorNotice({ message, onRetry, retryLabel = "再試行" }: ErrorNoticeProps) {
   return (
-    <Alert color="red" role="alert" icon={null}>
-      <Stack gap="sm">
-        <Text size="sm">{message}</Text>
-        <Button size="xs" variant="light" color="red" onClick={onRetry} type="button">
+    <div className="alert alert-error alert-soft items-start" role="alert">
+      <div className="flex flex-col items-start gap-2">
+        <span className="text-sm">{message}</span>
+        <button className="btn btn-xs btn-error" onClick={onRetry} type="button">
           {retryLabel}
-        </Button>
-      </Stack>
-    </Alert>
+        </button>
+      </div>
+    </div>
   );
 }
 
 export function EmptyState({ children }: { children: string }) {
   return (
-    <Center mih={100} p="xl">
-      <Text c="dimmed">{children}</Text>
-    </Center>
+    <div className="flex min-h-24 items-center justify-center p-6">
+      <p className="text-sm opacity-70">{children}</p>
+    </div>
   );
 }
 
 export function LoadingState({ label = "読み込み中…" }: { label?: string }) {
   return (
-    <Center mih={100} p="xl" role="status">
-      <Stack align="center" gap="xs">
-        <Loader size="sm" />
-        <Text size="sm" c="dimmed">
-          {label}
-        </Text>
-      </Stack>
-    </Center>
+    <div className="flex min-h-24 flex-col items-center justify-center gap-2 p-6" role="status">
+      <span className="loading loading-spinner loading-sm" />
+      <span className="text-sm opacity-70">{label}</span>
+    </div>
   );
 }

@@ -1,16 +1,4 @@
 import type { PiSessionEvent, SessionSummary } from "../../api";
-import {
-  Button,
-  Card,
-  Grid,
-  Group,
-  Paper,
-  ScrollArea,
-  Select,
-  Stack,
-  Text,
-  Title,
-} from "@mantine/core";
 import { EmptyState, ErrorNotice, LoadingState } from "../../components/feedback";
 import { formatShortTimestamp, truncateMiddle } from "../../lib/format";
 import { SessionTimeline } from "./session-timeline";
@@ -58,139 +46,93 @@ export function SessionsView({
       : []),
     ...sessions,
   ];
-  const sessionsById = new Map(selectableSessions.map((session) => [session.id, session] as const));
 
   return (
-    <Stack component="section" gap="md" aria-labelledby="sessions-heading">
-      <Group justify="space-between" align="end">
-        <Stack gap={0}>
-          <Text size="xs" c="teal">
-            PI / SESSION JSONL
-          </Text>
-          <Title order={2} id="sessions-heading">
+    <section className="flex flex-col gap-4" aria-labelledby="sessions-heading">
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <p className="text-xs uppercase tracking-wider text-primary">PI / SESSION JSONL</p>
+          <h2 className="text-2xl font-bold" id="sessions-heading">
             Piセッション
-          </Title>
-        </Stack>
-        <Text size="sm" c="dimmed">
-          {sessions.length.toLocaleString("ja-JP")} 件
-        </Text>
-      </Group>
+          </h2>
+        </div>
+        <p className="text-sm opacity-70">{sessions.length.toLocaleString("ja-JP")} 件</p>
+      </div>
       {error && <ErrorNotice message={error} onRetry={onRetry} />}
       {loading && sessions.length === 0 ? (
         <LoadingState />
       ) : sessions.length === 0 ? (
         <EmptyState>セッションがまだありません</EmptyState>
       ) : (
-        <Grid>
-          <Grid.Col span={{ base: 12, md: 4 }}>
-            <Select
-              hiddenFrom="md"
-              label="セッション"
-              placeholder="セッションを選択"
-              searchable
-              maxDropdownHeight={300}
-              data={selectableSessions.map((session) => ({
-                value: session.id,
-                label: `${truncateMiddle(session.channelKey, 24)} · ${formatShortTimestamp(session.modified)}`,
-              }))}
-              filter={({ options, search, limit }) =>
-                options
-                  .filter((option) => {
-                    if ("group" in option) return false;
-                    const session = sessionsById.get(option.value);
-                    const searchableText = `${session?.channelKey ?? option.label} ${session?.id ?? ""}`;
-                    return searchableText.toLocaleLowerCase().includes(search.toLocaleLowerCase());
-                  })
-                  .slice(0, limit)
-              }
-              renderOption={({ option }) => {
-                const session = sessionsById.get(option.value);
-                if (!session) return option.label;
-
-                return (
-                  <Stack gap={2} w="100%" title={session.channelKey}>
-                    <Text size="sm" fw={600} lineClamp={1}>
-                      {truncateMiddle(session.channelKey, 36)}
-                    </Text>
-                    <Group justify="space-between" gap="xs">
-                      <Text size="xs" c="dimmed">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div className="md:col-span-1">
+            <label className="flex flex-col gap-1 md:hidden">
+              <span className="text-xs opacity-70">セッション</span>
+              <select
+                className="select w-full"
+                onChange={(event) => onSelect((event.target as HTMLSelectElement).value)}
+                value={selectedSession?.id ?? ""}
+              >
+                <option disabled value="">
+                  セッションを選択
+                </option>
+                {selectableSessions.map((session) => (
+                  <option key={session.id} value={session.id}>
+                    {truncateMiddle(session.channelKey, 24)} ·{" "}
+                    {formatShortTimestamp(session.modified)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="hidden rounded-box border border-base-300 bg-base-200 p-2 md:block">
+              <div
+                aria-label="セッション一覧"
+                className="flex max-h-[560px] flex-col gap-2 overflow-auto"
+              >
+                {sessions.map((session) => {
+                  const selected = selectedSession?.id === session.id;
+                  return (
+                    <button
+                      key={session.id}
+                      className={`w-full rounded-box border p-3 text-left transition ${
+                        selected
+                          ? "border-primary bg-primary/15"
+                          : "border-base-300 bg-base-100 hover:bg-base-300/50"
+                      }`}
+                      onClick={() => onSelect(session.id)}
+                      type="button"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="min-w-0 truncate font-semibold" title={session.channelKey}>
+                          {truncateMiddle(session.channelKey, 36)}
+                        </span>
+                        <span className="text-xs opacity-60">{session.messageCount}件</span>
+                      </div>
+                      <p className="mt-1 text-left text-xs opacity-60">
                         更新 {formatShortTimestamp(session.modified)}
-                      </Text>
-                      <Text size="xs" c="dimmed">
-                        {session.messageCount}件
-                      </Text>
-                    </Group>
-                  </Stack>
-                );
-              }}
-              value={selectedSession?.id ?? null}
-              title={selectedSession?.channelKey}
-              onChange={(id) => {
-                if (id) onSelect(id);
-              }}
-            />
-            <Paper visibleFrom="md" withBorder radius="md" p="xs">
-              <ScrollArea.Autosize mah={560} type="auto">
-                <Stack gap="xs" aria-label="セッション一覧">
-                  {sessions.map((session) => {
-                    const selected = selectedSession?.id === session.id;
-                    return (
-                      <Card
-                        key={session.id}
-                        component="button"
-                        withBorder
-                        p="sm"
-                        bg={selected ? "teal.9" : undefined}
-                        onClick={() => onSelect(session.id)}
-                      >
-                        <Stack gap={4} w="100%" align="stretch">
-                          <Group justify="space-between" wrap="nowrap">
-                            <Text
-                              size="sm"
-                              fw={600}
-                              title={session.channelKey}
-                              style={{
-                                minWidth: 0,
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                                whiteSpace: "nowrap",
-                              }}
-                            >
-                              {truncateMiddle(session.channelKey, 36)}
-                            </Text>
-                            <Text size="xs" c="dimmed">
-                              {session.messageCount}件
-                            </Text>
-                          </Group>
-                          <Text size="xs" c="dimmed" ta="left">
-                            更新 {formatShortTimestamp(session.modified)}
-                          </Text>
-                        </Stack>
-                      </Card>
-                    );
-                  })}
-                </Stack>
-              </ScrollArea.Autosize>
-              <Group justify="center" pt="sm">
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="flex justify-center pt-3">
                 {sessionsNextCursor ? (
-                  <Button
-                    variant="light"
-                    color="teal"
+                  <button
+                    className="btn btn-soft btn-primary btn-sm"
                     disabled={loadingMoreSessions}
                     onClick={onLoadMoreSessions}
+                    type="button"
                   >
                     {loadingMoreSessions ? "読み込み中…" : "古いセッションを読み込む"}
-                  </Button>
+                  </button>
                 ) : (
-                  <Text size="xs" c="dimmed">
-                    これより古いセッションはありません
-                  </Text>
+                  <p className="text-xs opacity-60">これより古いセッションはありません</p>
                 )}
-              </Group>
-            </Paper>
-          </Grid.Col>
-          <Grid.Col span={{ base: 12, md: 8 }}>
-            <Stack>
+              </div>
+            </div>
+          </div>
+          <div className="md:col-span-2">
+            <div className="flex flex-col gap-4">
               {detailError && <ErrorNotice message={detailError} onRetry={onRetryDetail} />}
               {loadingDetail ? (
                 <LoadingState label="セッションを読み込み中…" />
@@ -205,10 +147,10 @@ export function SessionsView({
               ) : (
                 <EmptyState>セッションを選択してください</EmptyState>
               )}
-            </Stack>
-          </Grid.Col>
-        </Grid>
+            </div>
+          </div>
+        </div>
       )}
-    </Stack>
+    </section>
   );
 }
