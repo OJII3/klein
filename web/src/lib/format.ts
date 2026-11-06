@@ -32,6 +32,74 @@ export function formatShortTimestamp(value: string | undefined): string {
   });
 }
 
+export function formatCompactTimestamp(value: string | undefined): string {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const includeYear = date.getFullYear() !== new Date().getFullYear();
+  return date.toLocaleString("ja-JP", {
+    ...(includeYear ? { year: "numeric" as const } : {}),
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+export function formatDate(value: string | undefined): string {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const includeYear = date.getFullYear() !== new Date().getFullYear();
+  return date.toLocaleDateString("ja-JP", {
+    ...(includeYear ? { year: "numeric" as const } : {}),
+    month: "2-digit",
+    day: "2-digit",
+  });
+}
+
+export function formatClock(value: string | undefined): string {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleTimeString("ja-JP", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+export function formatClockSeconds(value: string | undefined): string {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleTimeString("ja-JP", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+}
+
+export function formatDayLabel(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const includeYear = date.getFullYear() !== new Date().getFullYear();
+  return date.toLocaleDateString("ja-JP", {
+    ...(includeYear ? { year: "numeric" as const } : {}),
+    month: "long",
+    day: "numeric",
+    weekday: "short",
+  });
+}
+
+export function dayKey(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+}
+
 export function truncateMiddle(value: string, maxLength: number): string {
   if (value.length <= maxLength) return value;
 

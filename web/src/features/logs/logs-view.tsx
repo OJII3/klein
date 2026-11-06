@@ -2,7 +2,9 @@ import { useEffect, useState } from "preact/hooks";
 
 import type { LogsQuery, PinoLog } from "../../api";
 import { EmptyState, ErrorNotice, LoadingState } from "../../components/feedback";
-import { LEVEL_OPTIONS } from "../../lib/format";
+import { Stat, StatStrip } from "../../components/stats";
+import { ViewHeader } from "../../components/view-header";
+import { LEVEL_OPTIONS, levelLabel } from "../../lib/format";
 import { LogTable } from "./log-table";
 
 interface LogsViewProps {
@@ -51,6 +53,12 @@ export function LogsView({
 
   useEffect(() => setDraft(draftFromFilters(filters)), [filters]);
 
+  const errorCount = logs.filter((log) => {
+    const level = levelLabel(log.level);
+    return level === "error" || level === "fatal";
+  }).length;
+  const warnCount = logs.filter((log) => levelLabel(log.level) === "warn").length;
+
   const submit = (event: SubmitEvent) => {
     event.preventDefault();
     onFilter({
@@ -74,26 +82,19 @@ export function LogsView({
 
   return (
     <section className="flex flex-col gap-4" aria-labelledby="logs-heading">
-      <div className="flex flex-wrap items-end justify-between gap-2">
-        <div>
-          <p className="text-xs uppercase tracking-wider text-primary">PINO / JSONL</p>
-          <h2 className="text-2xl font-bold" id="logs-heading">
-            アプリケーションログ
-          </h2>
-        </div>
-        <p className="text-sm opacity-70">{logs.length.toLocaleString("ja-JP")} 件</p>
-      </div>
+      <ViewHeader headingId="logs-heading" title="アプリケーションログ">
+        <StatStrip>
+          <Stat label="表示中" value={logs.length.toLocaleString("ja-JP")} />
+          <Stat label="エラー" tone={errorCount > 0 ? "text-red" : "text-ink"} value={errorCount} />
+          <Stat label="警告" tone={warnCount > 0 ? "text-amber" : "text-ink"} value={warnCount} />
+        </StatStrip>
+      </ViewHeader>
 
-      <form className="rounded-box border border-base-300 bg-base-200 p-4" onSubmit={submit}>
-        <div className="grid grid-cols-1 items-end gap-3 sm:grid-cols-12">
-          <label className="flex flex-col gap-1 sm:col-span-3">
-            <span className="text-xs opacity-70">レベル</span>
-            <select
-              aria-label="ログレベル"
-              className="select select-sm w-full"
-              onChange={update("level")}
-              value={draft.level}
-            >
+      <form aria-label="ログの絞り込み" className="panel p-3" onSubmit={submit} role="search">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[9rem_minmax(0,1fr)_10rem_10rem_auto] xl:items-end">
+          <label className="flex flex-col gap-1">
+            <span className="text-[0.7rem] font-medium text-ink-soft">レベル</span>
+            <select className="field" onChange={update("level")} value={draft.level}>
               <option value="">すべて</option>
               {LEVEL_OPTIONS.map((level) => (
                 <option key={level} value={level}>
@@ -102,41 +103,39 @@ export function LogsView({
               ))}
             </select>
           </label>
-          <label className="flex flex-col gap-1 sm:col-span-3">
-            <span className="text-xs opacity-70">検索</span>
+          <label className="flex flex-col gap-1">
+            <span className="text-[0.7rem] font-medium text-ink-soft">検索</span>
             <input
-              aria-label="ログを検索"
-              className="input input-sm w-full"
+              className="field"
               onChange={update("q")}
-              placeholder="概要、イベント名…"
+              placeholder="概要・イベント名で検索"
+              type="search"
               value={draft.q}
             />
           </label>
-          <label className="flex flex-col gap-1 sm:col-span-2">
-            <span className="text-xs opacity-70">チャンネル</span>
+          <label className="flex flex-col gap-1">
+            <span className="text-[0.7rem] font-medium text-ink-soft">チャンネル</span>
             <input
-              aria-label="チャンネルID"
-              className="input input-sm w-full"
+              className="field"
               onChange={update("channelId")}
-              placeholder="channel ID"
+              placeholder="チャンネルID"
               value={draft.channelId}
             />
           </label>
-          <label className="flex flex-col gap-1 sm:col-span-2">
-            <span className="text-xs opacity-70">イベント</span>
+          <label className="flex flex-col gap-1">
+            <span className="text-[0.7rem] font-medium text-ink-soft">イベント</span>
             <input
-              aria-label="イベント名"
-              className="input input-sm w-full"
+              className="field"
               onChange={update("event")}
-              placeholder="event"
+              placeholder="イベント名"
               value={draft.event}
             />
           </label>
-          <div className="flex justify-end gap-2 sm:col-span-2">
-            <button className="btn btn-primary btn-sm" type="submit">
+          <div className="flex gap-2 sm:col-span-2 xl:col-span-1 xl:justify-end">
+            <button className="btn btn-primary" type="submit">
               絞り込む
             </button>
-            <button className="btn btn-ghost btn-sm" onClick={clear} type="button">
+            <button className="btn btn-ghost" onClick={clear} type="button">
               クリア
             </button>
           </div>
@@ -145,20 +144,24 @@ export function LogsView({
 
       {error && <ErrorNotice message={error} onRetry={onRetry} />}
       {loading && logs.length === 0 ? (
-        <LoadingState />
+        <div className="panel">
+          <LoadingState />
+        </div>
       ) : logs.length === 0 ? (
-        <EmptyState>条件に一致するログはありません</EmptyState>
+        <div className="panel">
+          <EmptyState>条件に一致するログはありません</EmptyState>
+        </div>
       ) : (
-        <div className="rounded-box border border-base-300 bg-base-200">
+        <div className="panel overflow-hidden">
           <LogTable
             expandedId={expandedId}
             logs={logs}
             onToggle={(id) => setExpandedId((current) => (current === id ? null : id))}
           />
-          <div className="flex justify-center p-4">
+          <div className="flex justify-center border-t border-line px-3 py-2.5">
             {nextCursor ? (
               <button
-                className="btn btn-soft btn-primary btn-sm"
+                className="btn btn-xs"
                 disabled={loadingMore}
                 onClick={onLoadMore}
                 type="button"
@@ -166,7 +169,7 @@ export function LogsView({
                 {loadingMore ? "読み込み中…" : "次のログを読み込む"}
               </button>
             ) : (
-              <p className="text-sm opacity-70">これより古いログはありません</p>
+              <p className="text-[0.7rem] text-ink-faint">これより古いログはありません</p>
             )}
           </div>
         </div>
