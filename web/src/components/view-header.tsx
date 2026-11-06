@@ -1,20 +1,21 @@
+import type { ComponentChildren } from "preact";
+
 interface ViewHeaderProps {
   headingId: string;
   title: string;
-  description: string;
-  count?: string;
+  children?: ComponentChildren;
 }
 
-export function ViewHeader({ headingId, title, description, count }: ViewHeaderProps) {
+export function ViewHeader({ headingId, title, children }: ViewHeaderProps) {
   return (
-    <header className="border-b border-rule pb-4">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <h1 className="text-[1.7rem] leading-tight text-ink sm:text-[1.95rem]" id={headingId}>
-          {title}
-        </h1>
-        {count && <p className="shrink-0 font-mono text-xs text-ink-faint">{count}</p>}
-      </div>
-      <p className="mt-1.5 text-[0.82rem] leading-relaxed text-ink-soft">{description}</p>
-    </header>
+    <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
+      <h1
+        className="text-[1.3rem] font-semibold tracking-tight text-ink sm:text-[1.45rem]"
+        id={headingId}
+      >
+        {title}
+      </h1>
+      {children}
+    </div>
   );
 }

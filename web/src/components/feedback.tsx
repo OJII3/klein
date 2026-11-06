@@ -7,11 +7,11 @@ interface ErrorNoticeProps {
 export function ErrorNotice({ message, onRetry, retryLabel = "再試行" }: ErrorNoticeProps) {
   return (
     <div
-      className="flex flex-wrap items-center justify-between gap-3 border-l-2 border-ember bg-ember/10 py-2.5 pr-3 pl-4"
+      className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-red/25 bg-red-soft px-4 py-3"
       role="alert"
     >
-      <p className="text-sm text-ember">{message}</p>
-      <button className="btn btn-quiet text-ember" onClick={onRetry} type="button">
+      <p className="text-sm text-red">{message}</p>
+      <button className="btn btn-xs btn-danger" onClick={onRetry} type="button">
         {retryLabel}
       </button>
     </div>
@@ -20,7 +20,7 @@ export function ErrorNotice({ message, onRetry, retryLabel = "再試行" }: Erro
 
 export function EmptyState({ children }: { children: string }) {
   return (
-    <div className="border-y border-rule py-12 text-center">
+    <div className="px-4 py-12 text-center">
       <p className="text-sm text-ink-faint">{children}</p>
     </div>
   );
@@ -28,10 +28,7 @@ export function EmptyState({ children }: { children: string }) {
 
 export function LoadingState({ label = "読み込み中…" }: { label?: string }) {
   return (
-    <div
-      className="flex items-center justify-center gap-3 border-y border-rule py-12"
-      role="status"
-    >
+    <div className="flex items-center justify-center gap-2.5 px-4 py-12" role="status">
       <span aria-hidden="true" className="spinner" />
       <span className="text-sm text-ink-faint">{label}</span>
     </div>

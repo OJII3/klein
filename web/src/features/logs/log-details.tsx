@@ -7,20 +7,21 @@ export function LogDetails({ log }: { log: PinoLog }) {
 
   return (
     <div className="flex flex-col gap-3">
-      <dl className="flex flex-wrap gap-x-8 gap-y-1 text-[0.72rem]">
-        <div className="flex gap-2">
+      <p className="text-[0.82rem] leading-6 text-ink">{log.summary}</p>
+      <dl className="flex flex-wrap gap-x-6 gap-y-1 text-[0.7rem]">
+        <div className="flex gap-1.5">
           <dt className="text-ink-faint">ID</dt>
           <dd className="font-mono text-ink-soft">{log.id}</dd>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-1.5">
           <dt className="text-ink-faint">レベル</dt>
           <dd className="font-mono text-ink-soft">{levelLabel(log.level)}</dd>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-1.5">
           <dt className="text-ink-faint">イベント</dt>
           <dd className="font-mono text-ink-soft">{log.kind}</dd>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-1.5">
           <dt className="text-ink-faint">時刻</dt>
           <dd className="font-mono text-ink-soft">{formatTimestamp(log.timestamp)}</dd>
         </div>

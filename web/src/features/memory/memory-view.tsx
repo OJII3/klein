@@ -9,6 +9,7 @@ import {
   type MemoryScopeSummary,
 } from "../../api";
 import { EmptyState, ErrorNotice, LoadingState } from "../../components/feedback";
+import { Stat, StatStrip } from "../../components/stats";
 import { ViewHeader } from "../../components/view-header";
 import { formatCompactTimestamp, formatDate } from "../../lib/format";
 
@@ -41,12 +42,12 @@ const KIND_LABELS: Record<MemoryKind, string> = {
   temporary: "一時",
 };
 
-const KIND_DOTS: Record<MemoryKind, string> = {
-  fact: "bg-ink-faint",
-  rule: "bg-brass",
-  decision: "bg-sky",
-  procedure: "bg-brass",
-  temporary: "bg-ink-faint",
+const KIND_TONES: Record<MemoryKind, string> = {
+  fact: "bg-surface-muted text-ink-soft",
+  rule: "bg-green-soft text-green-strong",
+  decision: "bg-blue-soft text-blue",
+  procedure: "bg-green-soft text-green-strong",
+  temporary: "bg-amber-soft text-amber",
 };
 
 export function MemoryView(props: MemoryViewProps) {
@@ -70,96 +71,105 @@ export function MemoryView(props: MemoryViewProps) {
     onRetry,
     onRetryDetail,
   } = props;
+  const totalEntries = scopes.reduce((sum, summary) => sum + summary.entryCount, 0);
 
   return (
-    <section className="flex flex-col gap-5" aria-labelledby="memory-heading">
-      <ViewHeader
-        count={`${scopes.length.toLocaleString("ja-JP")} スコープ`}
-        description="Klein が会話から覚えているルールと事実。"
-        headingId="memory-heading"
-        title="メモリ"
-      />
+    <section className="flex flex-col gap-4" aria-labelledby="memory-heading">
+      <ViewHeader headingId="memory-heading" title="メモリ">
+        <StatStrip>
+          <Stat label="スコープ" value={scopes.length.toLocaleString("ja-JP")} />
+          <Stat label="エントリ" value={totalEntries.toLocaleString("ja-JP")} />
+        </StatStrip>
+      </ViewHeader>
 
       {error && <ErrorNotice message={error} onRetry={onRetry} />}
       {!error && !enabled ? (
-        <EmptyState>メモリ機能が無効です</EmptyState>
+        <div className="panel">
+          <EmptyState>メモリ機能が無効です</EmptyState>
+        </div>
       ) : loading && scopes.length === 0 ? (
-        <LoadingState />
+        <div className="panel">
+          <LoadingState />
+        </div>
       ) : scopes.length === 0 ? (
-        <EmptyState>保存されたメモリがまだありません</EmptyState>
+        <div className="panel">
+          <EmptyState>保存されたメモリがまだありません</EmptyState>
+        </div>
       ) : (
-        <div className="grid gap-6 lg:grid-cols-[17rem_minmax(0,1fr)] lg:items-start">
-          <div className="lg:sticky lg:top-8">
-            <label className="flex flex-col gap-1.5 lg:hidden">
-              <span className="text-xs text-ink-faint">スコープ</span>
-              <select
-                className="field"
-                onChange={(event) => {
-                  const key = (event.target as HTMLSelectElement).value;
-                  const summary = scopes.find((item) => memoryScopeKey(item.scope) === key);
-                  if (summary) onSelect(summary.scope);
-                }}
-                value={selectedScope ? memoryScopeKey(selectedScope) : ""}
-              >
-                <option disabled value="">
-                  スコープを選択
-                </option>
-                {scopes.map((summary) => (
-                  <option key={memoryScopeKey(summary.scope)} value={memoryScopeKey(summary.scope)}>
-                    {scopeTypeLabel(summary.scope)} · {summary.entryCount} 件
+        <div className="grid gap-4 lg:grid-cols-[17rem_minmax(0,1fr)] lg:items-start">
+          <div className="panel overflow-hidden lg:sticky lg:top-[4.25rem]">
+            <div className="border-b border-line p-3 lg:hidden">
+              <label className="flex flex-col gap-1">
+                <span className="text-[0.7rem] font-medium text-ink-soft">スコープ</span>
+                <select
+                  className="field"
+                  onChange={(event) => {
+                    const key = (event.target as HTMLSelectElement).value;
+                    const summary = scopes.find((item) => memoryScopeKey(item.scope) === key);
+                    if (summary) onSelect(summary.scope);
+                  }}
+                  value={selectedScope ? memoryScopeKey(selectedScope) : ""}
+                >
+                  <option disabled value="">
+                    スコープを選択
                   </option>
-                ))}
-              </select>
-            </label>
-
-            <div className="hidden lg:block">
-              <p className="px-1 pb-2 text-xs text-ink-faint">スコープ</p>
-              <div
-                aria-label="メモリスコープ一覧"
-                className="max-h-[calc(100vh-14rem)] overflow-y-auto border-t border-rule"
-              >
-                {scopes.map((summary) => {
-                  const selected =
-                    selectedScope !== null &&
-                    memoryScopeKey(selectedScope) === memoryScopeKey(summary.scope);
-                  return (
-                    <button
+                  {scopes.map((summary) => (
+                    <option
                       key={memoryScopeKey(summary.scope)}
-                      aria-current={selected ? "true" : undefined}
-                      className={`block w-full border-b border-rule border-l-2 py-3 pr-2 pl-3 text-left transition-colors ${
-                        selected
-                          ? "border-l-brass bg-night-900/70"
-                          : "border-l-transparent hover:bg-night-850/60"
-                      }`}
-                      onClick={() => onSelect(summary.scope)}
-                      type="button"
+                      value={memoryScopeKey(summary.scope)}
                     >
-                      <span className="flex items-baseline justify-between gap-2">
-                        <span
-                          className={`text-[0.82rem] ${selected ? "text-brass-soft" : "text-ink"}`}
-                        >
-                          {scopeTypeLabel(summary.scope)}
-                        </span>
-                        <span className="font-mono text-[0.62rem] text-ink-faint">
-                          {summary.entryCount} 件
-                        </span>
+                      {scopeTypeLabel(summary.scope)}（{summary.entryCount} 件）
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <div className="hidden items-center justify-between border-b border-line px-3 py-2 lg:flex">
+              <span className="text-[0.7rem] font-medium text-ink-faint">スコープ</span>
+              <span className="font-mono text-[0.62rem] text-ink-faint">{scopes.length} 件</span>
+            </div>
+
+            <div className="hidden divide-y divide-line lg:block">
+              {scopes.map((summary) => {
+                const selected =
+                  selectedScope !== null &&
+                  memoryScopeKey(selectedScope) === memoryScopeKey(summary.scope);
+                return (
+                  <button
+                    key={memoryScopeKey(summary.scope)}
+                    aria-current={selected ? "true" : undefined}
+                    className={`block w-full border-l-2 px-3 py-2.5 text-left transition-colors ${
+                      selected
+                        ? "border-l-green bg-green-soft/60"
+                        : "border-l-transparent hover:bg-surface-muted"
+                    }`}
+                    onClick={() => onSelect(summary.scope)}
+                    type="button"
+                  >
+                    <span className="flex items-baseline justify-between gap-2">
+                      <span className="text-[0.8rem] font-medium text-ink">
+                        {scopeTypeLabel(summary.scope)}
                       </span>
-                      {summary.scope.type === "guild" && (
-                        <span className="mt-0.5 block truncate font-mono text-[0.62rem] text-ink-faint">
-                          {summary.scope.guildId}
-                        </span>
-                      )}
-                      <span className="mt-1 block font-mono text-[0.62rem] text-ink-faint">
-                        更新 {formatCompactTimestamp(summary.updatedAt ?? undefined)}
+                      <span className="font-mono text-[0.62rem] text-ink-faint">
+                        {summary.entryCount} 件
                       </span>
-                    </button>
-                  );
-                })}
-              </div>
+                    </span>
+                    {summary.scope.type === "guild" && (
+                      <span className="mt-0.5 block truncate font-mono text-[0.62rem] text-ink-faint">
+                        {summary.scope.guildId}
+                      </span>
+                    )}
+                    <span className="mt-1 block font-mono text-[0.62rem] text-ink-faint">
+                      更新 {formatCompactTimestamp(summary.updatedAt ?? undefined)}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
-          <div className="min-w-0">
+          <div className="flex min-w-0 flex-col gap-3">
             {deleteError && (
               <ErrorNotice
                 message={deleteError}
@@ -168,21 +178,23 @@ export function MemoryView(props: MemoryViewProps) {
               />
             )}
             {detailError && <ErrorNotice message={detailError} onRetry={onRetryDetail} />}
-            {loadingDetail ? (
-              <LoadingState label="メモリを読み込み中…" />
-            ) : selectedScope ? (
-              <MemoryEntries
-                addingRule={addingRule}
-                addRuleError={addRuleError}
-                deletingEntryId={deletingEntryId}
-                entries={entries}
-                onAddRule={onAddRule}
-                onDelete={onDelete}
-                scope={selectedScope}
-              />
-            ) : (
-              <EmptyState>スコープを選択してください</EmptyState>
-            )}
+            <div className="panel overflow-hidden">
+              {loadingDetail ? (
+                <LoadingState label="メモリを読み込み中…" />
+              ) : selectedScope ? (
+                <MemoryEntries
+                  addingRule={addingRule}
+                  addRuleError={addRuleError}
+                  deletingEntryId={deletingEntryId}
+                  entries={entries}
+                  onAddRule={onAddRule}
+                  onDelete={onDelete}
+                  scope={selectedScope}
+                />
+              ) : (
+                <EmptyState>スコープを選択してください</EmptyState>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -212,22 +224,22 @@ function MemoryEntries({
 
   return (
     <div className="flex min-w-0 flex-col">
-      <header className="flex flex-wrap items-start justify-between gap-3 border-b border-rule pb-4">
+      <header className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-4 py-4">
         <div className="min-w-0">
-          <h2 className="text-[1.35rem] leading-snug text-ink">
+          <h2 className="text-[1.05rem] font-semibold text-ink">
             {scope.type === "owner" ? "オーナーのメモリ" : "ギルドのメモリ"}
           </h2>
-          <p className="mt-1 truncate font-mono text-[0.66rem] text-ink-faint">
+          <p className="mt-1 truncate font-mono text-[0.64rem] text-ink-faint">
             {scope.type === "owner" ? "owner" : `guild ${scope.guildId}`}
           </p>
         </div>
-        <p className="shrink-0 font-mono text-xs text-ink-faint">
+        <p className="shrink-0 font-mono text-[0.68rem] text-ink-faint">
           {entries.length.toLocaleString("ja-JP")} 件
         </p>
       </header>
 
-      <details className="group border-b border-rule">
-        <summary className="flex cursor-pointer list-none items-center justify-between py-3 text-sm text-ink-soft transition-colors hover:text-ink [&::-webkit-details-marker]:hidden">
+      <details className="group border-b border-line">
+        <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-sm text-ink-soft transition-colors hover:bg-surface-muted [&::-webkit-details-marker]:hidden">
           <span>ルールを追加</span>
           <span aria-hidden="true" className="font-mono text-base text-ink-faint">
             <span className="group-open:hidden">＋</span>
@@ -235,7 +247,7 @@ function MemoryEntries({
           </span>
         </summary>
         <form
-          className="flex max-w-[44rem] flex-col gap-3 pb-5"
+          className="flex max-w-2xl flex-col gap-3 border-t border-line bg-surface-muted/60 px-4 py-4"
           onSubmit={(event) => {
             event.preventDefault();
             const title = ruleTitle.trim();
@@ -246,8 +258,8 @@ function MemoryEntries({
             setRuleContent("");
           }}
         >
-          <label className="flex flex-col gap-1.5">
-            <span className="text-xs text-ink-faint">タイトル</span>
+          <label className="flex flex-col gap-1">
+            <span className="text-[0.7rem] font-medium text-ink-soft">タイトル</span>
             <input
               className="field"
               maxLength={200}
@@ -256,8 +268,8 @@ function MemoryEntries({
               value={ruleTitle}
             />
           </label>
-          <label className="flex flex-col gap-1.5">
-            <span className="text-xs text-ink-faint">内容</span>
+          <label className="flex flex-col gap-1">
+            <span className="text-[0.7rem] font-medium text-ink-soft">内容</span>
             <textarea
               className="field min-h-[5.5rem] resize-y"
               maxLength={10000}
@@ -286,54 +298,45 @@ function MemoryEntries({
       {entries.length === 0 ? (
         <EmptyState>このスコープのメモリは空です</EmptyState>
       ) : (
-        <div className="divide-y divide-rule/60">
+        <div className="divide-y divide-line">
           {entries.map((entry) => (
-            <article
-              className="py-5 sm:grid sm:grid-cols-[6.5rem_minmax(0,1fr)] sm:gap-x-5"
-              key={entry.id}
-            >
-              <div className="flex items-center gap-2 sm:flex-col sm:items-start sm:gap-1.5 sm:pt-1">
-                <span
-                  aria-hidden="true"
-                  className={`size-1.5 rounded-full ${KIND_DOTS[entry.kind]}`}
-                />
-                <span className="font-mono text-[0.66rem] text-ink-faint">
-                  {KIND_LABELS[entry.kind]}
-                </span>
-              </div>
-              <div className="mt-2 min-w-0 max-w-[44rem] sm:mt-0">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <h3 className="text-[1.05rem] leading-snug text-ink">{entry.title}</h3>
-                  <button
-                    className="btn btn-danger btn-xs"
-                    disabled={deletingEntryId !== null}
-                    onClick={() => {
-                      if (
-                        window.confirm(
-                          `「${entry.title}」を削除しますか？\nこの操作は元に戻せません。`,
-                        )
-                      )
-                        onDelete(entry.id);
-                    }}
-                    type="button"
+            <article className="px-4 py-4" key={entry.id}>
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <span
+                    className={`rounded px-1.5 py-0.5 text-[0.62rem] font-medium ${KIND_TONES[entry.kind]}`}
                   >
-                    {deletingEntryId === entry.id ? "削除中…" : "削除"}
-                  </button>
+                    {KIND_LABELS[entry.kind]}
+                  </span>
+                  <h3 className="text-[0.9rem] font-semibold text-ink">{entry.title}</h3>
                 </div>
-                <p className="mt-2 text-[0.83rem] leading-7 break-words whitespace-pre-wrap text-ink-soft">
-                  {entry.content}
-                </p>
-                <footer className="mt-2.5 flex flex-wrap gap-x-5 gap-y-1 font-mono text-[0.62rem] text-ink-faint">
-                  <span>更新 {formatDate(entry.updatedAt)}</span>
-                  <span>作成 {formatDate(entry.createdAt)}</span>
-                  <span>参照 {entry.sourceMessageIds.length.toLocaleString("ja-JP")} 件</span>
-                  {(entry.scope.type === "channel" || entry.scope.type === "thread") && (
-                    <span title={entryScopeDetail(entry.scope)}>
-                      {entryScopeDetail(entry.scope)}
-                    </span>
-                  )}
-                </footer>
+                <button
+                  className="btn btn-danger btn-xs"
+                  disabled={deletingEntryId !== null}
+                  onClick={() => {
+                    if (
+                      window.confirm(
+                        `「${entry.title}」を削除しますか？\nこの操作は元に戻せません。`,
+                      )
+                    )
+                      onDelete(entry.id);
+                  }}
+                  type="button"
+                >
+                  {deletingEntryId === entry.id ? "削除中…" : "削除"}
+                </button>
               </div>
+              <p className="mt-2 max-w-[60rem] text-[0.82rem] leading-6 break-words whitespace-pre-wrap text-ink-soft">
+                {entry.content}
+              </p>
+              <footer className="mt-2 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[0.62rem] text-ink-faint">
+                <span>更新 {formatDate(entry.updatedAt)}</span>
+                <span>作成 {formatDate(entry.createdAt)}</span>
+                <span>参照 {entry.sourceMessageIds.length.toLocaleString("ja-JP")} 件</span>
+                {(entry.scope.type === "channel" || entry.scope.type === "thread") && (
+                  <span title={entryScopeDetail(entry.scope)}>{entryScopeDetail(entry.scope)}</span>
+                )}
+              </footer>
             </article>
           ))}
         </div>
