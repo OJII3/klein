@@ -19,13 +19,13 @@ interface SessionTimelineProps {
 function roleTone(role: string | undefined): string {
   switch (role) {
     case "user":
-      return "bg-blue-soft text-blue";
+      return "badge-info badge-soft";
     case "assistant":
-      return "bg-green-soft text-green-strong";
+      return "badge-success badge-soft";
     case "tool":
-      return "bg-surface-muted text-ink-soft";
+      return "badge-neutral badge-soft";
     default:
-      return "bg-surface-muted text-ink-faint";
+      return "badge-ghost";
   }
 }
 
@@ -99,11 +99,7 @@ export function SessionTimeline({
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-1.5">
                   {event.role && (
-                    <span
-                      className={`rounded px-1.5 py-0.5 text-[0.62rem] font-medium ${roleTone(
-                        event.role,
-                      )}`}
-                    >
+                    <span className={`badge badge-sm font-medium ${roleTone(event.role)}`}>
                       {event.role}
                     </span>
                   )}
@@ -111,7 +107,7 @@ export function SessionTimeline({
                 </div>
                 {event.errorMessage && (
                   <div
-                    className="mt-2 rounded border border-red/25 bg-red-soft px-3 py-2 text-[0.8rem] leading-6 text-red"
+                    className="alert alert-error alert-soft mt-2 text-[0.8rem] leading-6"
                     role="alert"
                   >
                     {event.errorMessage}

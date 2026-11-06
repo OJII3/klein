@@ -27,23 +27,25 @@ interface NavLinksProps {
 function NavLinks({ view, className, onViewChange }: NavLinksProps) {
   return (
     <nav aria-label="表示切り替え" className={className}>
-      {VIEWS.map((item) => {
-        const active = view === item.value;
-        return (
-          <a
-            key={item.value}
-            aria-current={active ? "page" : undefined}
-            className="nav-link"
-            href={`/${item.value}`}
-            onClick={(event) => {
-              event.preventDefault();
-              onViewChange(item.value);
-            }}
-          >
-            {item.label}
-          </a>
-        );
-      })}
+      <ul className="menu menu-horizontal menu-sm gap-0.5 p-0 [--menu-active-bg:var(--color-green-soft)] [--menu-active-fg:var(--color-green-strong)]">
+        {VIEWS.map((item) => {
+          const active = view === item.value;
+          return (
+            <li key={item.value}>
+              <a
+                aria-current={active ? "page" : undefined}
+                href={`/${item.value}`}
+                onClick={(event) => {
+                  event.preventDefault();
+                  onViewChange(item.value);
+                }}
+              >
+                {item.label}
+              </a>
+            </li>
+          );
+        })}
+      </ul>
     </nav>
   );
 }
@@ -53,31 +55,35 @@ export function AppShell({ view, lastUpdated, onViewChange, onRefresh, children 
 
   return (
     <div className="min-h-screen">
-      <header className="sticky top-0 z-20 border-b border-line bg-surface">
-        <div className="mx-auto flex h-14 max-w-[88rem] items-center gap-3 px-4 sm:px-6 lg:px-8">
-          <a
-            className="flex items-center gap-2"
-            href="/logs"
-            onClick={(event) => {
-              event.preventDefault();
-              onViewChange("logs");
-            }}
-          >
-            <span className="grid size-7 place-items-center rounded bg-green text-[0.8rem] font-semibold text-white">
-              K
-            </span>
-            <span className="text-[0.95rem] font-semibold tracking-tight text-ink">Klein</span>
-          </a>
+      <header className="sticky top-0 z-20 border-b border-base-300 bg-base-100">
+        <div className="navbar mx-auto h-14 min-h-0 max-w-[88rem] gap-3 px-4 sm:px-6 lg:px-8">
+          <div className="navbar-start gap-3">
+            <a
+              className="flex items-center gap-2"
+              href="/logs"
+              onClick={(event) => {
+                event.preventDefault();
+                onViewChange("logs");
+              }}
+            >
+              <div className="avatar avatar-placeholder">
+                <div className="w-7 rounded bg-primary">
+                  <span className="text-[0.8rem] font-semibold text-primary-content">K</span>
+                </div>
+              </div>
+              <span className="text-[0.95rem] font-semibold tracking-tight text-ink">Klein</span>
+            </a>
 
-          <NavLinks
-            className="ml-4 hidden items-center gap-0.5 md:flex"
-            onViewChange={onViewChange}
-            view={view}
-          />
+            <NavLinks
+              className="ml-4 hidden items-center md:flex"
+              onViewChange={onViewChange}
+              view={view}
+            />
+          </div>
 
-          <div className="ml-auto flex items-center gap-2.5 text-xs sm:gap-3">
+          <div className="navbar-end gap-2.5 text-xs sm:gap-3">
             <span className="flex items-center gap-1.5 text-ink-soft">
-              <span aria-hidden="true" className="size-1.5 rounded-full bg-green" />
+              <span aria-hidden="true" className="status status-success" />
               <span className="hidden sm:inline">ローカル接続</span>
             </span>
             {updatedAt && (
@@ -95,9 +101,9 @@ export function AppShell({ view, lastUpdated, onViewChange, onRefresh, children 
           </div>
         </div>
 
-        <div className="border-t border-line px-3 py-1.5 md:hidden">
+        <div className="border-t border-base-300 px-3 py-1.5 md:hidden">
           <NavLinks
-            className="flex items-center gap-0.5 overflow-x-auto"
+            className="flex items-center overflow-x-auto"
             onViewChange={onViewChange}
             view={view}
           />

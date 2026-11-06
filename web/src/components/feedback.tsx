@@ -6,12 +6,9 @@ interface ErrorNoticeProps {
 
 export function ErrorNotice({ message, onRetry, retryLabel = "再試行" }: ErrorNoticeProps) {
   return (
-    <div
-      className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-red/25 bg-red-soft px-4 py-3"
-      role="alert"
-    >
-      <p className="text-sm text-red">{message}</p>
-      <button className="btn btn-xs btn-danger" onClick={onRetry} type="button">
+    <div className="alert alert-error alert-soft" role="alert">
+      <span className="flex-1 text-sm">{message}</span>
+      <button className="btn btn-xs btn-error btn-soft" onClick={onRetry} type="button">
         {retryLabel}
       </button>
     </div>
@@ -29,7 +26,7 @@ export function EmptyState({ children }: { children: string }) {
 export function LoadingState({ label = "読み込み中…" }: { label?: string }) {
   return (
     <div className="flex items-center justify-center gap-2.5 px-4 py-12" role="status">
-      <span aria-hidden="true" className="spinner" />
+      <span aria-hidden="true" className="loading loading-spinner loading-sm text-primary" />
       <span className="text-sm text-ink-faint">{label}</span>
     </div>
   );

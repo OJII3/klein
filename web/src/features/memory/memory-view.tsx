@@ -43,11 +43,11 @@ const KIND_LABELS: Record<MemoryKind, string> = {
 };
 
 const KIND_TONES: Record<MemoryKind, string> = {
-  fact: "bg-surface-muted text-ink-soft",
-  rule: "bg-green-soft text-green-strong",
-  decision: "bg-blue-soft text-blue",
-  procedure: "bg-green-soft text-green-strong",
-  temporary: "bg-amber-soft text-amber",
+  fact: "badge-ghost",
+  rule: "badge-success badge-soft",
+  decision: "badge-info badge-soft",
+  procedure: "badge-success badge-soft",
+  temporary: "badge-warning badge-soft",
 };
 
 export function MemoryView(props: MemoryViewProps) {
@@ -84,25 +84,25 @@ export function MemoryView(props: MemoryViewProps) {
 
       {error && <ErrorNotice message={error} onRetry={onRetry} />}
       {!error && !enabled ? (
-        <div className="panel">
+        <div className="card border border-base-300 bg-base-100">
           <EmptyState>メモリ機能が無効です</EmptyState>
         </div>
       ) : loading && scopes.length === 0 ? (
-        <div className="panel">
+        <div className="card border border-base-300 bg-base-100">
           <LoadingState />
         </div>
       ) : scopes.length === 0 ? (
-        <div className="panel">
+        <div className="card border border-base-300 bg-base-100">
           <EmptyState>保存されたメモリがまだありません</EmptyState>
         </div>
       ) : (
         <div className="grid gap-4 lg:grid-cols-[17rem_minmax(0,1fr)] lg:items-start">
-          <div className="panel overflow-hidden lg:sticky lg:top-[4.25rem]">
+          <div className="card overflow-hidden border border-base-300 bg-base-100 lg:sticky lg:top-[4.25rem]">
             <div className="border-b border-line p-3 lg:hidden">
               <label className="flex flex-col gap-1">
                 <span className="text-[0.7rem] font-medium text-ink-soft">スコープ</span>
                 <select
-                  className="field"
+                  className="select select-sm w-full"
                   onChange={(event) => {
                     const key = (event.target as HTMLSelectElement).value;
                     const summary = scopes.find((item) => memoryScopeKey(item.scope) === key);
@@ -130,42 +130,43 @@ export function MemoryView(props: MemoryViewProps) {
               <span className="font-mono text-[0.62rem] text-ink-faint">{scopes.length} 件</span>
             </div>
 
-            <div className="hidden divide-y divide-line lg:block">
-              {scopes.map((summary) => {
-                const selected =
-                  selectedScope !== null &&
-                  memoryScopeKey(selectedScope) === memoryScopeKey(summary.scope);
-                return (
-                  <button
-                    key={memoryScopeKey(summary.scope)}
-                    aria-current={selected ? "true" : undefined}
-                    className={`block w-full border-l-2 px-3 py-2.5 text-left transition-colors ${
-                      selected
-                        ? "border-l-green bg-green-soft/60"
-                        : "border-l-transparent hover:bg-surface-muted"
-                    }`}
-                    onClick={() => onSelect(summary.scope)}
-                    type="button"
-                  >
-                    <span className="flex items-baseline justify-between gap-2">
-                      <span className="text-[0.8rem] font-medium text-ink">
-                        {scopeTypeLabel(summary.scope)}
-                      </span>
-                      <span className="font-mono text-[0.62rem] text-ink-faint">
-                        {summary.entryCount} 件
-                      </span>
-                    </span>
-                    {summary.scope.type === "guild" && (
-                      <span className="mt-0.5 block truncate font-mono text-[0.62rem] text-ink-faint">
-                        {summary.scope.guildId}
-                      </span>
-                    )}
-                    <span className="mt-1 block font-mono text-[0.62rem] text-ink-faint">
-                      更新 {formatCompactTimestamp(summary.updatedAt ?? undefined)}
-                    </span>
-                  </button>
-                );
-              })}
+            <div className="hidden lg:block">
+              <ul className="menu menu-sm w-full flex-nowrap p-0 [--menu-active-bg:var(--color-green-soft)] [--menu-active-fg:var(--color-green-strong)]">
+                {scopes.map((summary) => {
+                  const selected =
+                    selectedScope !== null &&
+                    memoryScopeKey(selectedScope) === memoryScopeKey(summary.scope);
+                  return (
+                    <li key={memoryScopeKey(summary.scope)}>
+                      <button
+                        aria-current={selected ? "true" : undefined}
+                        className="w-full"
+                        onClick={() => onSelect(summary.scope)}
+                        type="button"
+                      >
+                        <span className="flex w-full min-w-0 flex-col items-stretch gap-0.5">
+                          <span className="flex items-baseline justify-between gap-2">
+                            <span className="text-[0.8rem] font-medium text-ink">
+                              {scopeTypeLabel(summary.scope)}
+                            </span>
+                            <span className="font-mono text-[0.62rem] text-ink-faint">
+                              {summary.entryCount} 件
+                            </span>
+                          </span>
+                          {summary.scope.type === "guild" && (
+                            <span className="truncate font-mono text-[0.62rem] text-ink-faint">
+                              {summary.scope.guildId}
+                            </span>
+                          )}
+                          <span className="font-mono text-[0.62rem] text-ink-faint">
+                            更新 {formatCompactTimestamp(summary.updatedAt ?? undefined)}
+                          </span>
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
             </div>
           </div>
 
@@ -178,7 +179,7 @@ export function MemoryView(props: MemoryViewProps) {
               />
             )}
             {detailError && <ErrorNotice message={detailError} onRetry={onRetryDetail} />}
-            <div className="panel overflow-hidden">
+            <div className="card overflow-hidden border border-base-300 bg-base-100">
               {loadingDetail ? (
                 <LoadingState label="メモリを読み込み中…" />
               ) : selectedScope ? (
@@ -238,16 +239,10 @@ function MemoryEntries({
         </p>
       </header>
 
-      <details className="group border-b border-line">
-        <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-sm text-ink-soft transition-colors hover:bg-surface-muted [&::-webkit-details-marker]:hidden">
-          <span>ルールを追加</span>
-          <span aria-hidden="true" className="font-mono text-base text-ink-faint">
-            <span className="group-open:hidden">＋</span>
-            <span className="hidden group-open:inline">−</span>
-          </span>
-        </summary>
+      <details className="collapse collapse-arrow border-b border-base-300">
+        <summary className="collapse-title text-sm text-ink-soft">ルールを追加</summary>
         <form
-          className="flex max-w-2xl flex-col gap-3 border-t border-line bg-surface-muted/60 px-4 py-4"
+          className="collapse-content flex max-w-2xl flex-col gap-3 px-4"
           onSubmit={(event) => {
             event.preventDefault();
             const title = ruleTitle.trim();
@@ -261,7 +256,7 @@ function MemoryEntries({
           <label className="flex flex-col gap-1">
             <span className="text-[0.7rem] font-medium text-ink-soft">タイトル</span>
             <input
-              className="field"
+              className="input input-sm w-full"
               maxLength={200}
               onChange={(event) => setRuleTitle((event.target as HTMLInputElement).value)}
               required
@@ -271,7 +266,7 @@ function MemoryEntries({
           <label className="flex flex-col gap-1">
             <span className="text-[0.7rem] font-medium text-ink-soft">内容</span>
             <textarea
-              className="field min-h-[5.5rem] resize-y"
+              className="textarea textarea-sm min-h-[5.5rem] w-full resize-y"
               maxLength={10000}
               onChange={(event) => setRuleContent((event.target as HTMLTextAreaElement).value)}
               required
@@ -286,7 +281,7 @@ function MemoryEntries({
             />
           )}
           <button
-            className="btn btn-primary w-fit"
+            className="btn btn-primary btn-sm w-fit"
             disabled={addingRule || !ruleTitle.trim() || !ruleContent.trim()}
             type="submit"
           >
@@ -303,15 +298,13 @@ function MemoryEntries({
             <article className="px-4 py-4" key={entry.id}>
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="flex min-w-0 flex-wrap items-center gap-2">
-                  <span
-                    className={`rounded px-1.5 py-0.5 text-[0.62rem] font-medium ${KIND_TONES[entry.kind]}`}
-                  >
+                  <span className={`badge badge-sm font-medium ${KIND_TONES[entry.kind]}`}>
                     {KIND_LABELS[entry.kind]}
                   </span>
                   <h3 className="text-[0.9rem] font-semibold text-ink">{entry.title}</h3>
                 </div>
                 <button
-                  className="btn btn-danger btn-xs"
+                  className="btn btn-error btn-soft btn-xs"
                   disabled={deletingEntryId !== null}
                   onClick={() => {
                     if (
