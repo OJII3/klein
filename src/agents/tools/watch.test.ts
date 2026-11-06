@@ -62,10 +62,11 @@ test("provides watch add, list, and delete tools in the given scope", async () =
     undefined,
     {} as never,
   );
-  assert.equal(
-    (listResult.details as unknown as { watches: unknown[] }).watches instanceof Array,
-    true,
-  );
+  const listed = (listResult.details as unknown as { watches: Record<string, unknown>[] }).watches;
+  assert.equal(listed instanceof Array, true);
+  assert.equal(listed[0]?.script, "return { stock: args[0] };");
+  assert.equal(listed[0]?.cooldownMinutes, 60);
+  assert.equal(listed[0]?.consecutiveFailures, 0);
 
   await deleteTool.execute(
     "tool-call",

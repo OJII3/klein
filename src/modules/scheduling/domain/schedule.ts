@@ -1,5 +1,8 @@
 export const SCHEDULE_WEEKDAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
 
+/** One year. Keeps every interval well inside the range of a JavaScript Date. */
+export const MAX_SCHEDULE_INTERVAL_MINUTES = 525_600;
+
 export type ScheduleWeekday = (typeof SCHEDULE_WEEKDAYS)[number];
 
 export type RecurringSchedule =
@@ -30,6 +33,9 @@ export function resolveSchedule(input: ScheduleInput, now: number): ResolvedSche
     case "after": {
       if (!Number.isInteger(input.minutes) || input.minutes < 1) {
         throw new Error("相対時間は1分以上で指定してください。");
+      }
+      if (input.minutes > MAX_SCHEDULE_INTERVAL_MINUTES) {
+        throw new Error("相対時間は1年以内で指定してください。");
       }
       const at = new Date(now + input.minutes * 60_000).toISOString();
       return { schedule: { type: "once", at }, nextRunAt: at };
@@ -127,6 +133,9 @@ export function parseStoredSchedule(value: unknown): StoredSchedule {
       if (!Number.isInteger(record.minutes) || (record.minutes as number) < 1) {
         throw new Error("間隔スケジュールは1分以上で指定してください。");
       }
+      if ((record.minutes as number) > MAX_SCHEDULE_INTERVAL_MINUTES) {
+        throw new Error("間隔スケジュールは1年以内で指定してください。");
+      }
       return { type: "every", minutes: record.minutes as number };
     default:
       throw new Error("スケジュールの種類が不正です。");
@@ -146,6 +155,9 @@ function getNextRecurringTimestamp(schedule: RecurringSchedule, now: number): nu
     case "every":
       if (!Number.isInteger(schedule.minutes) || schedule.minutes < 1) {
         throw new Error("間隔は1分以上で指定してください。");
+      }
+      if (schedule.minutes > MAX_SCHEDULE_INTERVAL_MINUTES) {
+        throw new Error("間隔は1年以内で指定してください。");
       }
       return now + schedule.minutes * 60_000;
   }
