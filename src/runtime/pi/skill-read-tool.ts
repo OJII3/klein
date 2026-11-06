@@ -1,5 +1,5 @@
 import { readFile, realpath, stat } from "node:fs/promises";
-import { isAbsolute, relative, resolve } from "node:path";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
@@ -81,9 +81,9 @@ async function resolveSkillPath(root: string, input: string): Promise<string> {
     }
 
     const relativePath = relative(realRoot, target);
-    if (relativePath === "" || (!relativePath.startsWith("..") && !isAbsolute(relativePath))) {
-      return target;
-    }
+    const escapesRoot =
+      relativePath === ".." || relativePath.startsWith(`..${sep}`) || isAbsolute(relativePath);
+    if (!escapesRoot) return target;
   }
 
   throw new Error(`Skill file is not readable: ${input}`);
