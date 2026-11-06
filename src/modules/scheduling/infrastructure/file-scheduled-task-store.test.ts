@@ -92,15 +92,14 @@ test("rejects the old reminder file shape", async () => {
   }
 });
 
-test("rejects public watch records", async () => {
+test("accepts public watch records", async () => {
   const directory = await mkdtemp(join(tmpdir(), "klein-schedules-"));
   const store = new FileScheduledTaskStore(directory);
+  const publicWatch: WatchTask = { ...watch, accessScope: "public" };
   try {
-    await writeFile(
-      join(directory, "public-watch.json"),
-      JSON.stringify({ ...watch, accessScope: "public" }),
-    );
-    await assert.rejects(store.listDue(Date.now()), /監視設定の保存内容が不正/u);
+    await writeFile(join(directory, "public-watch.json"), JSON.stringify(publicWatch));
+    assert.deepEqual(await store.listDue(Date.parse("2026-10-14T00:05:00.000Z")), [publicWatch]);
+    assert.deepEqual(await store.listForScope("watch", "channel-a", "public"), [publicWatch]);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

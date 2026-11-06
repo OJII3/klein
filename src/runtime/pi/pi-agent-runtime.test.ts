@@ -27,7 +27,6 @@ import {
   createPiSessionManager,
   createResourceLoader,
   PiAgentRuntime,
-  readSkillMarkdownFiles,
   resolveConfiguredModel,
   withOpenCodeSessionHeader,
 } from "./pi-agent-runtime";
@@ -438,21 +437,6 @@ test("loads skills from a selected profile directory", async () => {
     );
   } finally {
     await rm(directory, { recursive: true, force: true });
-  }
-});
-
-test("reads skill markdown files for the system prompt", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "klein-profile-skills-"));
-  await mkdir(join(directory, "demo", "references"), { recursive: true });
-  await writeFile(join(directory, "demo", "SKILL.md"), "SKILL BODY", "utf8");
-  await writeFile(join(directory, "demo", "references", "notes.md"), "REFERENCE BODY", "utf8");
-
-  try {
-    const contents = await readSkillMarkdownFiles(directory);
-    assert.deepEqual([...contents].sort(), ["REFERENCE BODY", "SKILL BODY"]);
-    assert.deepEqual(await readSkillMarkdownFiles(join(directory, "missing")), []);
-  } finally {
-    await rm(directory, { force: true, recursive: true });
   }
 });
 

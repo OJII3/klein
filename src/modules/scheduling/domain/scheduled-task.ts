@@ -86,7 +86,6 @@ export function parseScheduledTask(value: unknown): ScheduledTask {
 
   if (record.kind === "watch") {
     if (
-      !record.accessScope.startsWith("owner:") ||
       typeof record.name !== "string" ||
       record.name.length === 0 ||
       typeof record.script !== "string" ||

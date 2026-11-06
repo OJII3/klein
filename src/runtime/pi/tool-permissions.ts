@@ -22,6 +22,7 @@ export class ToolAuthorization {
   constructor(
     readonly ownerSession: boolean,
     private readonly permissions: ToolPermissions = {},
+    private readonly alwaysAllowedTools: ReadonlySet<string> = new Set(),
   ) {}
   rememberServers(names: readonly string[]): void {
     for (const name of names) this.servers.add(name);
@@ -37,6 +38,7 @@ export class ToolAuthorization {
     );
   }
   allowsTool(name: string): boolean {
+    if (this.alwaysAllowedTools.has(name)) return true;
     const server = this.toolServers.get(name) ?? /^mcp__(.+?)__/.exec(name)?.[1];
     if (server) {
       const matching = [...this.servers].filter((name) => name.replace(/-/g, "_") === server);

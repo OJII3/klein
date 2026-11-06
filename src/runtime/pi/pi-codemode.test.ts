@@ -117,6 +117,7 @@ for (const restricted of [false, true]) {
           "discord_send",
           "fetch_content",
           "get_search_content",
+          "read",
           "tool_search",
           "web_search",
         ]

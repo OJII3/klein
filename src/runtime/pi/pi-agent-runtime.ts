@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { readFile, readdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { Logger } from "pino";
 
@@ -49,6 +48,7 @@ import {
 } from "./pi-model-runtime";
 import { adaptPiTools } from "./pi-tool-adapter";
 import { PiRuntimeTrace } from "./pi-runtime-trace";
+import { createSkillReadTool } from "./skill-read-tool";
 import { ToolAuthorization, piMcpConfigLoader, type ToolPermissions } from "./tool-permissions";
 
 export {
@@ -463,13 +463,9 @@ export function createPiAgentFactory({
   const imageModel = llm.image
     ? resolveConfiguredImageModel(llm.image.provider, llm.image.model, modelRuntime)
     : undefined;
-  // Pi advertises skills through its read/bash tools, which Klein excludes, so the skill files
-  // are inlined into the system prompt as the previous runtime did.
-  let skillContentsPromise: Promise<readonly string[]> | undefined;
-  const loadSkillContents = (): Promise<readonly string[]> =>
-    (skillContentsPromise ??= skillsDirectory
-      ? readSkillMarkdownFiles(skillsDirectory)
-      : Promise.resolve([]));
+  // Pi advertises skills through a read tool, so replace the excluded built-in reader with one
+  // restricted to the configured skills directory.
+  const skillReadTool = skillsDirectory ? createSkillReadTool(skillsDirectory) : undefined;
 
   return {
     async create<TTool>(
@@ -480,13 +476,16 @@ export function createPiAgentFactory({
       const authorization = new ToolAuthorization(
         options.ownerFeaturesAllowed === true,
         permissions,
+        skillReadTool ? new Set([skillReadTool.name]) : undefined,
       );
-      const customTools = adaptPiTools(tools).filter((tool) => authorization.allowsTool(tool.name));
+      const customTools = [
+        ...adaptPiTools(tools),
+        ...(skillReadTool ? [skillReadTool] : []),
+      ].filter((tool) => authorization.allowsTool(tool.name));
       const hasDiscordSend = customTools.some((tool) => tool.name === "discord_send");
       const hasWatchAdd = customTools.some((tool) => tool.name === "watch_add");
       const systemPrompt = [
         definition.systemPrompt,
-        ...(await loadSkillContents()),
         ...(hasWatchAdd && watchToolCatalog ? [renderWatchToolSection(watchToolCatalog)] : []),
       ]
         .filter(Boolean)
@@ -542,7 +541,7 @@ export function createPiAgentFactory({
         settingsManager,
         thinkingLevel: llm.thinkingLevel,
         excludeTools: [
-          "read",
+          ...(skillReadTool ? [] : ["read"]),
           "bash",
           "edit",
           "write",
@@ -581,19 +580,4 @@ export function createPiAgentFactory({
 
 function isCompactionTooSmall(error: unknown): boolean {
   return error instanceof Error && error.message === "Nothing to compact (session too small)";
-}
-
-export async function readSkillMarkdownFiles(directory: string): Promise<readonly string[]> {
-  let entries;
-  try {
-    entries = await readdir(directory, { withFileTypes: true, recursive: true });
-  } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") return [];
-    throw error;
-  }
-
-  const paths = entries
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
-    .map((entry) => resolve(entry.parentPath, entry.name));
-  return Promise.all(paths.map((path) => readFile(path, "utf8")));
 }
