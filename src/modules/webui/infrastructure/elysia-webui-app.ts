@@ -24,6 +24,10 @@ export interface WebUiServer {
 export type WebUiApp = ReturnType<typeof createWebUiApp>;
 
 const IMMUTABLE_ASSET_CACHE_CONTROL = "public, max-age=31536000, immutable";
+// Never reuse the HTML document: behind Cloudflare Access a cached document can
+// outlive its Access session, leaving the browser to load auth-blocked assets
+// (a blank page) instead of being redirected to the Access login.
+const HTML_CACHE_CONTROL = "no-store";
 
 export async function startWebUi(options: WebUiServerOptions): Promise<WebUiServer> {
   const staticApp = await staticPlugin({
@@ -36,12 +40,11 @@ export async function startWebUi(options: WebUiServerOptions): Promise<WebUiServ
   const app = createWebUiApp(options)
     .onAfterHandle(({ request, set }) => {
       const { pathname } = new URL(request.url);
-      // Vite fingerprints everything under /assets, so only the HTML entry point
-      // needs revalidation. Caching it made browsers load stale asset hashes after
-      // a rebuild.
+      // Vite fingerprints everything under /assets, so those are immutable.
+      // Everything else (the HTML entry point and SPA routes) must not be stored.
       set.headers["cache-control"] = pathname.startsWith("/assets/")
         ? IMMUTABLE_ASSET_CACHE_CONTROL
-        : "no-cache";
+        : HTML_CACHE_CONTROL;
     })
     .get("/:view", async ({ params, set }) => {
       if (params.view !== "logs" && params.view !== "sessions" && params.view !== "memory") {
@@ -50,14 +53,16 @@ export async function startWebUi(options: WebUiServerOptions): Promise<WebUiServ
       }
       return new Response(await readFile(resolve(options.staticDirectory, "index.html")), {
         headers: {
-          "cache-control": "no-cache",
+          "cache-control": HTML_CACHE_CONTROL,
           "content-type": "text/html; charset=utf-8",
         },
       });
     })
     .use(staticApp);
 
-  app.listen({ hostname: options.host, port: options.port });
+  // Elysia enables SO_REUSEPORT by default, which lets a second Klein instance
+  // bind the same port and silently split traffic between old and new builds.
+  app.listen({ hostname: options.host, port: options.port, reusePort: false });
   let tunnel: CloudflareTunnel | undefined;
   try {
     if (options.tunnelToken) {
