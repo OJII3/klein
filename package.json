@@ -25,7 +25,6 @@
     "@earendil-works/pi-ai": "^1.4.0",
     "@earendil-works/pi-codemode": "1.4.0",
     "@earendil-works/pi-coding-agent": "^1.4.0",
-    "@earendil-works/pi-mcp": "^1.4.0",
     "@elysia/static": "^1.4.11",
     "@snazzah/davey": "^0.1.12",
     "discord.js": "^14.27.0",
