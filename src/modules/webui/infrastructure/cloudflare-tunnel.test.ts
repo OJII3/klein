@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { EventEmitter, once } from "node:events";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -112,6 +112,8 @@ test("serves local HTTP without a token and releases the listener when tunnel st
     assert.ok(address && typeof address !== "string");
     await new Promise<void>((resolve) => socket.close(() => resolve()));
     await writeFile(join(directory, "index.html"), "<html>Klein</html>");
+    await mkdir(join(directory, "assets"), { recursive: true });
+    await writeFile(join(directory, "assets", "app.js"), "console.log('klein')");
     const options = {
       host: "127.0.0.1",
       port: address.port,
@@ -124,6 +126,15 @@ test("serves local HTTP without a token and releases the listener when tunnel st
     try {
       const health = await fetch(`http://127.0.0.1:${address.port}/api/health`);
       assert.deepEqual(await health.json(), { ok: true });
+
+      const index = await fetch(`http://127.0.0.1:${address.port}/`);
+      assert.equal(index.headers.get("cache-control"), "no-cache");
+
+      const view = await fetch(`http://127.0.0.1:${address.port}/sessions`);
+      assert.equal(view.headers.get("cache-control"), "no-cache");
+
+      const asset = await fetch(`http://127.0.0.1:${address.port}/assets/app.js`);
+      assert.equal(asset.headers.get("cache-control"), "public, max-age=31536000, immutable");
     } finally {
       await webUi.stop();
     }

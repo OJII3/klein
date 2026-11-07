@@ -23,6 +23,8 @@ export interface WebUiServer {
 
 export type WebUiApp = ReturnType<typeof createWebUiApp>;
 
+const IMMUTABLE_ASSET_CACHE_CONTROL = "public, max-age=31536000, immutable";
+
 export async function startWebUi(options: WebUiServerOptions): Promise<WebUiServer> {
   const staticApp = await staticPlugin({
     assets: resolve(options.staticDirectory),
@@ -32,13 +34,25 @@ export async function startWebUi(options: WebUiServerOptions): Promise<WebUiServ
     prefix: "/",
   });
   const app = createWebUiApp(options)
+    .onAfterHandle(({ request, set }) => {
+      const { pathname } = new URL(request.url);
+      // Vite fingerprints everything under /assets, so only the HTML entry point
+      // needs revalidation. Caching it made browsers load stale asset hashes after
+      // a rebuild.
+      set.headers["cache-control"] = pathname.startsWith("/assets/")
+        ? IMMUTABLE_ASSET_CACHE_CONTROL
+        : "no-cache";
+    })
     .get("/:view", async ({ params, set }) => {
       if (params.view !== "logs" && params.view !== "sessions" && params.view !== "memory") {
         set.status = 404;
         return { error: "Not found" };
       }
       return new Response(await readFile(resolve(options.staticDirectory, "index.html")), {
-        headers: { "content-type": "text/html; charset=utf-8" },
+        headers: {
+          "cache-control": "no-cache",
+          "content-type": "text/html; charset=utf-8",
+        },
       });
     })
     .use(staticApp);
