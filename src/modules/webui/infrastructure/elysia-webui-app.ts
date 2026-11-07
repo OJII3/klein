@@ -57,7 +57,9 @@ export async function startWebUi(options: WebUiServerOptions): Promise<WebUiServ
     })
     .use(staticApp);
 
-  app.listen({ hostname: options.host, port: options.port });
+  // Elysia enables SO_REUSEPORT by default, which lets a second Klein instance
+  // bind the same port and silently split traffic between old and new builds.
+  app.listen({ hostname: options.host, port: options.port, reusePort: false });
   let tunnel: CloudflareTunnel | undefined;
   try {
     if (options.tunnelToken) {
