@@ -1,5 +1,4 @@
 import { resolve } from "node:path";
-import { pathToFileURL } from "node:url";
 
 import type { CodemodeJsonSchema } from "@earendil-works/pi-codemode";
 import type { WatchTool } from "@modules/scheduling/application/watch-tool";
@@ -186,8 +185,8 @@ function textOf(result: WatchFetchCoreResult): string {
 
 async function loadWatchFetchCore(agentDir: string): Promise<WatchFetchCore> {
   process.env.PI_CODING_AGENT_DIR = resolve(agentDir);
-  const module = (await import(
-    pathToFileURL(resolve(process.cwd(), "node_modules/pi-web-access/web-tool-core.ts")).href
-  )) as { createStandaloneWebToolCore(): WatchFetchCore };
+  const module = (await import("pi-web-access/web-tool-core.ts")) as {
+    createStandaloneWebToolCore(): WatchFetchCore;
+  };
   return module.createStandaloneWebToolCore();
 }

@@ -452,7 +452,7 @@ test("loads Pi web access tools", async () => {
   assert.deepEqual(loader.getExtensions().errors, []);
   const webAccess = loader
     .getExtensions()
-    .extensions.find((extension) => extension.path.endsWith("node_modules/pi-web-access/index.ts"));
+    .extensions.find((extension) => extension.tools.has("web_search"));
 
   assert.ok(webAccess);
   assert.deepEqual(
