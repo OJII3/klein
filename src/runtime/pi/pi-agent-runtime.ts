@@ -39,6 +39,7 @@ import {
   HANDOFF_SUMMARY_SYSTEM_PROMPT,
 } from "./handoff-summary";
 import { createPiEventPrompt } from "./pi-event-prompt";
+import { loadMcpConfig } from "./pi-internals";
 import { PiImageAnalyzer, type ImageAnalyzer } from "./pi-image-analyzer";
 import {
   createPiModelRuntime,
@@ -49,7 +50,7 @@ import {
 import { adaptPiTools } from "./pi-tool-adapter";
 import { PiRuntimeTrace } from "./pi-runtime-trace";
 import { createSkillReadTool } from "./skill-read-tool";
-import { ToolAuthorization, piMcpConfigLoader, type ToolPermissions } from "./tool-permissions";
+import { ToolAuthorization, type ToolPermissions } from "./tool-permissions";
 
 export {
   createPiModelRuntime,
@@ -336,7 +337,7 @@ export function createResourceLoader(
           authorization
             ? {
                 loadConfig: (ctx) => {
-                  const config = piMcpConfigLoader({
+                  const config = loadMcpConfig({
                     agentDir,
                     cwd: ctx.cwd,
                     projectTrusted: ctx.isProjectTrusted(),

@@ -160,13 +160,16 @@ async function withWorkspace(
   run: (workspace: Workspace) => Promise<void>,
 ): Promise<void> {
   const workspace = await createWorkspace(mcpUrl);
-  const previous = process.env.CONFIG_PATH;
+  const previousConfig = process.env.CONFIG_PATH;
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
   process.env.CONFIG_PATH = workspace.configPath;
   try {
     await run(workspace);
   } finally {
-    if (previous === undefined) delete process.env.CONFIG_PATH;
-    else process.env.CONFIG_PATH = previous;
+    if (previousConfig === undefined) delete process.env.CONFIG_PATH;
+    else process.env.CONFIG_PATH = previousConfig;
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
     await rm(workspace.root, { force: true, recursive: true });
   }
 }
@@ -231,39 +234,39 @@ test("mcp login signs in through the loopback callback", async () => {
   }
 });
 
-test("mcp login accepts a pasted redirect URL when the browser cannot reach the callback", async () => {
+test("mcp login reports an unknown server", async () => {
   const server = await startOAuthMcpServer();
   try {
-    await withWorkspace(server.url, async (workspace) => {
+    await withWorkspace(server.url, async () => {
       const errors: string[] = [];
-      let authorizationUrl: string | undefined;
-      const code = await runMcpCommand(["login", "docs"], {
+      const code = await runMcpCommand(["login", "missing"], {
         log: () => undefined,
         error: (message) => errors.push(message),
-        openUrl: (url) => {
-          authorizationUrl = url;
-        },
-        promptForRedirectUrl: async () => {
-          assert.ok(authorizationUrl, "the authorization URL must be shown before the prompt");
-          return visitAuthorizationUrl(authorizationUrl);
-        },
       });
-
-      assert.equal(code, 0, errors.join("\n"));
-      const stored = JSON.parse(await readFile(join(workspace.agentDir, "mcp-auth.json"), "utf8"));
-      assert.equal(stored[`mcp__docs|${server.url}`]?.tokens?.access_token, ACCESS_TOKEN);
+      assert.equal(code, 1);
+      assert.match(errors.join("\n"), /No MCP server named "missing"/);
     });
   } finally {
     await server.close();
   }
 });
 
-test("mcp login reports usage for a missing server name", async () => {
-  const errors: string[] = [];
-  const code = await runMcpCommand([], {
-    log: () => undefined,
-    error: (message) => errors.push(message),
-  });
-  assert.equal(code, 2);
-  assert.deepEqual(errors, ["Usage: klein mcp login <server>"]);
+test("mcp list reports the configured servers", async () => {
+  const server = await startOAuthMcpServer();
+  try {
+    await withWorkspace(server.url, async () => {
+      const logs: string[] = [];
+      const code = await runMcpCommand(["list", "--json"], {
+        log: (message) => logs.push(message),
+        error: () => undefined,
+      });
+      // The server needs a sign-in, so list reports it rather than connecting.
+      assert.equal(code, 1);
+      const report = JSON.parse(logs.join("\n"));
+      assert.equal(report.servers[0].name, "docs");
+      assert.equal(report.servers[0].state, "needs-auth");
+    });
+  } finally {
+    await server.close();
+  }
 });
