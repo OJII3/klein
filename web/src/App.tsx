@@ -4,7 +4,7 @@ import { AppShell, type View } from "./components/app-shell";
 import { useLogs } from "./hooks/use-logs";
 import { useSessions } from "./hooks/use-sessions";
 import { useMemory } from "./hooks/use-memory";
-import { useTools } from "./hooks/use-tools";
+import { useToolUsage } from "./hooks/use-tool-usage";
 import { LogsView } from "./features/logs/logs-view";
 import { MemoryView } from "./features/memory/memory-view";
 import { SessionsView } from "./features/sessions/sessions-view";
@@ -43,7 +43,7 @@ export default function App() {
     onUpdated,
     initialScopeKey: initialSearch.get("scope"),
   });
-  const tools = useTools({ active: view === "tools", onUpdated });
+  const toolUsage = useToolUsage({ active: view === "tools", onUpdated });
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -60,9 +60,9 @@ export default function App() {
   const refreshCurrentView = useCallback(() => {
     if (view === "logs") logs.reload();
     else if (view === "sessions") void sessions.reload();
-    else if (view === "tools") void tools.reload();
+    else if (view === "tools") void toolUsage.reload();
     else void memory.reload();
-  }, [logs.reload, memory.reload, sessions.reload, tools.reload, view]);
+  }, [logs.reload, memory.reload, sessions.reload, toolUsage.reload, view]);
 
   return (
     <AppShell
@@ -104,10 +104,10 @@ export default function App() {
         />
       ) : view === "tools" ? (
         <ToolsView
-          error={tools.error}
-          loading={tools.loading}
-          onRetry={() => void tools.reload()}
-          report={tools.report}
+          error={toolUsage.error}
+          loading={toolUsage.loading}
+          onRetry={() => void toolUsage.reload()}
+          report={toolUsage.report}
         />
       ) : (
         <MemoryView

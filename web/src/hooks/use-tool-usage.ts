@@ -2,12 +2,12 @@ import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 
 import { getToolUsage, type ToolUsageReport } from "../api";
 
-interface UseToolsOptions {
+interface UseToolUsageOptions {
   active: boolean;
   onUpdated: () => void;
 }
 
-export function useTools({ active, onUpdated }: UseToolsOptions) {
+export function useToolUsage({ active, onUpdated }: UseToolUsageOptions) {
   const [report, setReport] = useState<ToolUsageReport | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
