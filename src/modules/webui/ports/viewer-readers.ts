@@ -1,5 +1,6 @@
 import type {
   PinoViewerEvent,
+  ToolUsageReport,
   ViewerPage,
   ViewerSessionDetail,
   ViewerSessionSummary,
@@ -26,4 +27,8 @@ export interface ViewerSessionQuery {
 export interface ViewerSessionReader {
   list(query?: ViewerSessionQuery): Promise<ViewerPage<ViewerSessionSummary>>;
   get(sessionId: string, query?: ViewerSessionQuery): Promise<ViewerSessionDetail | undefined>;
+}
+
+export interface ToolUsageReader {
+  read(): Promise<ToolUsageReport>;
 }

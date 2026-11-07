@@ -95,7 +95,7 @@ Locations and tools can be restricted with `owner` in addition to `allow` and `d
 
 ### Web UI
 
-An optional dashboard for Pino logs, Pi sessions, and guild memories. Enable it in `config/config.jsonc`:
+An optional dashboard for Pino logs, Pi sessions, guild memories, and tool usage. Enable it in `config/config.jsonc`:
 
 ```jsonc
 {
@@ -110,6 +110,8 @@ An optional dashboard for Pino logs, Pi sessions, and guild memories. Enable it 
 ```
 
 Open `http://127.0.0.1:4310` after starting Klein.
+
+The **ツール** view counts every tool execution stored in Pi session history, both per tool and per MCP server. Counts include calls made from codemode scripts and do not reset when Klein restarts.
 
 For frontend development, run the bot as usual and start Vite separately:
 

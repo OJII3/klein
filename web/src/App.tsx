@@ -4,9 +4,11 @@ import { AppShell, type View } from "./components/app-shell";
 import { useLogs } from "./hooks/use-logs";
 import { useSessions } from "./hooks/use-sessions";
 import { useMemory } from "./hooks/use-memory";
+import { useTools } from "./hooks/use-tools";
 import { LogsView } from "./features/logs/logs-view";
 import { MemoryView } from "./features/memory/memory-view";
 import { SessionsView } from "./features/sessions/sessions-view";
+import { ToolsView } from "./features/tools/tools-view";
 import { memoryScopeKey } from "./api";
 
 export default function App() {
@@ -41,6 +43,7 @@ export default function App() {
     onUpdated,
     initialScopeKey: initialSearch.get("scope"),
   });
+  const tools = useTools({ active: view === "tools", onUpdated });
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -57,8 +60,9 @@ export default function App() {
   const refreshCurrentView = useCallback(() => {
     if (view === "logs") logs.reload();
     else if (view === "sessions") void sessions.reload();
+    else if (view === "tools") void tools.reload();
     else void memory.reload();
-  }, [logs.reload, memory.reload, sessions.reload, view]);
+  }, [logs.reload, memory.reload, sessions.reload, tools.reload, view]);
 
   return (
     <AppShell
@@ -98,6 +102,13 @@ export default function App() {
           sessionsNextCursor={sessions.sessionsNextCursor}
           sessions={sessions.sessions}
         />
+      ) : view === "tools" ? (
+        <ToolsView
+          error={tools.error}
+          loading={tools.loading}
+          onRetry={() => void tools.reload()}
+          report={tools.report}
+        />
       ) : (
         <MemoryView
           detailError={memory.detailError}
@@ -126,5 +137,5 @@ export default function App() {
 
 function viewFromPath(pathname: string): View {
   const segment = pathname.split("/").filter(Boolean)[0];
-  return segment === "sessions" || segment === "memory" ? segment : "logs";
+  return segment === "sessions" || segment === "memory" || segment === "tools" ? segment : "logs";
 }

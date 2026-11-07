@@ -2,7 +2,7 @@ import type { ComponentChildren } from "preact";
 
 import { formatClock, formatTimestamp } from "../lib/format";
 
-export type View = "logs" | "sessions" | "memory";
+export type View = "logs" | "sessions" | "memory" | "tools";
 
 interface AppShellProps {
   view: View;
@@ -15,6 +15,7 @@ interface AppShellProps {
 const VIEWS: { value: View; label: string }[] = [
   { value: "logs", label: "ログ" },
   { value: "sessions", label: "セッション" },
+  { value: "tools", label: "ツール" },
   { value: "memory", label: "メモリ" },
 ];
 
