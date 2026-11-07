@@ -10,6 +10,7 @@ import { createLogger } from "@app/logger";
 import { startCloudflareTunnel } from "./cloudflare-tunnel";
 import { startWebUi } from "./elysia-webui-app";
 import { PiSessionReader } from "./pi-session-reader";
+import { PiToolUsageReader } from "./pi-tool-usage-reader";
 import { PinoJsonlReader } from "./pino-jsonl-reader";
 
 function captureLogs() {
@@ -120,6 +121,7 @@ test("serves local HTTP without a token and releases the listener when tunnel st
       staticDirectory: directory,
       piSessions: new PiSessionReader(directory),
       pinoLogs: new PinoJsonlReader(directory),
+      toolUsage: new PiToolUsageReader(directory),
     };
     process.env.PATH = directory;
     const webUi = await startWebUi(options);

@@ -47,6 +47,7 @@ import {
 import { startWebUi } from "@modules/webui/infrastructure/elysia-webui-app";
 import { PinoJsonlReader } from "@modules/webui/infrastructure/pino-jsonl-reader";
 import { PiSessionReader } from "@modules/webui/infrastructure/pi-session-reader";
+import { PiToolUsageReader } from "@modules/webui/infrastructure/pi-tool-usage-reader";
 import { Sbv2Tts } from "@modules/tts/infrastructure/sbv2-tts";
 import { WebSocketAsrClient } from "@modules/asr/infrastructure/websocket-asr-client";
 import { FileScheduledTaskStore } from "@modules/scheduling/infrastructure/file-scheduled-task-store";
@@ -287,6 +288,7 @@ export async function bootstrap(): Promise<void> {
         memoryEditor: webUiMemory,
         piSessions: new PiSessionReader(agentDir),
         pinoLogs: new PinoJsonlReader(logDirectory),
+        toolUsage: new PiToolUsageReader(agentDir),
         port: webUiConfig.port,
         staticDirectory: resolveWebUiStaticDirectory(),
         tunnelToken: process.env.TUNNEL_TOKEN,

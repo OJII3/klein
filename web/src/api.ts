@@ -100,6 +100,29 @@ export interface MemoryDetailResponse {
   entries: MemoryEntry[];
 }
 
+export interface ToolUsageStat {
+  name: string;
+  calls: number;
+  errors: number;
+  lastCalledAt: string | null;
+}
+
+export interface McpServerUsageStat {
+  name: string;
+  calls: number;
+  errors: number;
+  toolCount: number;
+  lastCalledAt: string | null;
+}
+
+export interface ToolUsageReport {
+  totalCalls: number;
+  totalErrors: number;
+  sessionCount: number;
+  tools: ToolUsageStat[];
+  mcpServers: McpServerUsageStat[];
+}
+
 const apiOrigin = typeof window === "undefined" ? "http://127.0.0.1:4310" : window.location.origin;
 
 const client = treaty<WebUiApp>(apiOrigin, { parseDate: false });
@@ -156,6 +179,10 @@ export function getSession(
 
 export function listMemoryScopes(): Promise<MemoryScopesResponse> {
   return unwrap<MemoryScopesResponse>(client.api.memory.get());
+}
+
+export function getToolUsage(): Promise<ToolUsageReport> {
+  return unwrap<ToolUsageReport>(client.api.tools.get());
 }
 
 export function getMemory(scope: MemoryScope): Promise<MemoryDetailResponse> {

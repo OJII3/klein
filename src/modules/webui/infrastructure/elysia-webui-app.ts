@@ -47,7 +47,12 @@ export async function startWebUi(options: WebUiServerOptions): Promise<WebUiServ
         : HTML_CACHE_CONTROL;
     })
     .get("/:view", async ({ params, set }) => {
-      if (params.view !== "logs" && params.view !== "sessions" && params.view !== "memory") {
+      if (
+        params.view !== "logs" &&
+        params.view !== "sessions" &&
+        params.view !== "memory" &&
+        params.view !== "tools"
+      ) {
         set.status = 404;
         return { error: "Not found" };
       }

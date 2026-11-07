@@ -8,6 +8,7 @@ import { createPiSessionManager } from "@runtime/pi/pi-agent-runtime";
 import { createWebUiApp } from "./elysia-webui-app";
 import { PinoJsonlReader } from "./pino-jsonl-reader";
 import { PiSessionReader } from "./pi-session-reader";
+import { PiToolUsageReader } from "./pi-tool-usage-reader";
 
 test("serves health, logs, Pi sessions, and scoped memory through Elysia", async () => {
   const rootDirectory = await mkdtemp(join(tmpdir(), "klein-webui-"));
@@ -87,6 +88,7 @@ test("serves health, logs, Pi sessions, and scoped memory through Elysia", async
       },
       piSessions: new PiSessionReader(agentDirectory),
       pinoLogs: new PinoJsonlReader(logDirectory),
+      toolUsage: new PiToolUsageReader(agentDirectory),
     });
 
     const health = await app.handle(new Request("http://localhost/api/health"));
@@ -96,6 +98,16 @@ test("serves health, logs, Pi sessions, and scoped memory through Elysia", async
     const logs = await app.handle(new Request("http://localhost/api/logs?limit=1"));
     assert.equal(logs.status, 200);
     assert.equal((await logs.json()).items[0].kind, "test_event");
+
+    const tools = await app.handle(new Request("http://localhost/api/tools"));
+    assert.equal(tools.status, 200);
+    assert.deepEqual(await tools.json(), {
+      mcpServers: [],
+      sessionCount: 1,
+      tools: [],
+      totalCalls: 0,
+      totalErrors: 0,
+    });
 
     const sessions = await app.handle(new Request("http://localhost/api/sessions"));
     assert.equal(sessions.status, 200);
