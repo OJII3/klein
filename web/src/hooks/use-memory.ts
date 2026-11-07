@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "preact/hooks";
+import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 
 import {
   deleteMemory,
@@ -34,9 +34,11 @@ export function useMemory({ active, onUpdated, initialScopeKey }: UseMemoryOptio
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [addRuleError, setAddRuleError] = useState<string | null>(null);
   const [addingRule, setAddingRule] = useState(false);
+  const scopesLoadedRef = useRef(false);
+  const detailScopeKeyRef = useRef<string | null>(null);
 
   const load = useCallback(async () => {
-    setScopesLoading(true);
+    if (!scopesLoadedRef.current) setScopesLoading(true);
     setScopesError(null);
 
     try {
@@ -44,12 +46,12 @@ export function useMemory({ active, onUpdated, initialScopeKey }: UseMemoryOptio
       setEnabled(response.enabled);
       setScopes(response.items);
       setSelectedScope((current) => {
-        const currentKey = current ? memoryScopeKey(current) : null;
-        return (
-          response.items.find((item) => memoryScopeKey(item.scope) === currentKey)?.scope ??
-          response.items[0]?.scope ??
-          null
-        );
+        if (current) {
+          const currentKey = memoryScopeKey(current);
+          const matches = response.items.some((item) => memoryScopeKey(item.scope) === currentKey);
+          if (matches) return current;
+        }
+        return response.items[0]?.scope ?? null;
       });
       if (response.items.length === 0) setEntries([]);
       onUpdated();
@@ -58,6 +60,7 @@ export function useMemory({ active, onUpdated, initialScopeKey }: UseMemoryOptio
         requestError instanceof Error ? requestError.message : "メモリ一覧の取得に失敗しました",
       );
     } finally {
+      scopesLoadedRef.current = true;
       setScopesLoading(false);
     }
   }, [onUpdated]);
@@ -66,20 +69,26 @@ export function useMemory({ active, onUpdated, initialScopeKey }: UseMemoryOptio
     if (!active) return;
 
     void load();
-    const timer = window.setInterval(load, 10000);
+    const timer = window.setInterval(() => {
+      void load();
+      setDetailReloadKey((key) => key + 1);
+    }, 10000);
     return () => window.clearInterval(timer);
   }, [active, load]);
 
   useEffect(() => {
     if (!active || !selectedScope) return;
 
+    const scopeKey = memoryScopeKey(selectedScope);
+    const silent = detailScopeKeyRef.current === scopeKey;
     let current = true;
-    setDetailLoading(true);
+    if (!silent) setDetailLoading(true);
     setDetailError(null);
 
     void getMemory(selectedScope)
       .then((response) => {
         if (!current) return;
+        detailScopeKeyRef.current = scopeKey;
         setEntries(response.entries);
       })
       .catch((requestError: unknown) => {
@@ -89,7 +98,7 @@ export function useMemory({ active, onUpdated, initialScopeKey }: UseMemoryOptio
         );
       })
       .finally(() => {
-        if (current) setDetailLoading(false);
+        if (current && !silent) setDetailLoading(false);
       });
 
     return () => {
