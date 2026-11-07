@@ -19,6 +19,7 @@ import {
   type ExtensionFactory,
 } from "@earendil-works/pi-coding-agent";
 import type { Api, AssistantMessage, Message, Model } from "@earendil-works/pi-ai";
+import webAccessExtension from "pi-web-access";
 
 import type { AgentDefinition } from "@agents/core/agent-definition";
 import type { AgentFactory, AgentCreationOptions } from "@agents/core/agent-factory";
@@ -84,7 +85,6 @@ export interface PiAgentFactoryOptions {
 }
 
 export const DEFAULT_SKILLS_DIRECTORY = "config/klein/skills";
-const PI_WEB_ACCESS_EXTENSION_PATH = "node_modules/pi-web-access/index.ts";
 const HANDOFF_COMPACTION_INSTRUCTIONS =
   "Create the concise Japanese handoff summary requested by Klein's handoff extension.";
 const HANDOFF_CUSTOM_MESSAGE_TYPE = "klein-context-handoff";
@@ -329,6 +329,7 @@ export function createResourceLoader(
     cwd: process.cwd(),
     agentDir,
     extensionFactories: [
+      webAccessExtension,
       wrap(createCodemodeExtension({ mode: "on", models: false })),
       ...(options?.normalizeAssistantText === false ? [] : [createAssistantTextContextExtension()]),
       wrap(createToolSearchExtension()),
@@ -363,7 +364,6 @@ export function createResourceLoader(
       ...(trace ? [trace.extension] : []),
       ...(authorization ? [authorization.extension] : []),
     ],
-    additionalExtensionPaths: [resolve(process.cwd(), PI_WEB_ACCESS_EXTENSION_PATH)],
     settingsManager,
     additionalSkillPaths: [resolve(process.cwd(), skillsDirectory)],
     noContextFiles: true,
