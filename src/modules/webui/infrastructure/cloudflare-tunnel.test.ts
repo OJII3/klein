@@ -128,10 +128,10 @@ test("serves local HTTP without a token and releases the listener when tunnel st
       assert.deepEqual(await health.json(), { ok: true });
 
       const index = await fetch(`http://127.0.0.1:${address.port}/`);
-      assert.equal(index.headers.get("cache-control"), "no-cache");
+      assert.equal(index.headers.get("cache-control"), "no-store");
 
       const view = await fetch(`http://127.0.0.1:${address.port}/sessions`);
-      assert.equal(view.headers.get("cache-control"), "no-cache");
+      assert.equal(view.headers.get("cache-control"), "no-store");
 
       const asset = await fetch(`http://127.0.0.1:${address.port}/assets/app.js`);
       assert.equal(asset.headers.get("cache-control"), "public, max-age=31536000, immutable");
