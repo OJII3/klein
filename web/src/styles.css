@@ -8,28 +8,28 @@
   name: "klein";
   default: true;
   prefersdark: false;
-  color-scheme: light;
+  color-scheme: dark;
 
-  --color-base-100: #ffffff;
-  --color-base-200: #f5f8f6;
-  --color-base-300: #dbe4de;
-  --color-base-content: #17221c;
-  --color-primary: #16794f;
-  --color-primary-content: #ffffff;
-  --color-secondary: #2563a8;
-  --color-secondary-content: #ffffff;
-  --color-accent: #2563a8;
-  --color-accent-content: #ffffff;
-  --color-neutral: #4d5f55;
-  --color-neutral-content: #ffffff;
-  --color-info: #2563a8;
-  --color-info-content: #ffffff;
-  --color-success: #16794f;
-  --color-success-content: #ffffff;
-  --color-warning: #946000;
-  --color-warning-content: #ffffff;
-  --color-error: #b23a31;
-  --color-error-content: #ffffff;
+  --color-base-100: #121a15;
+  --color-base-200: #0e1511;
+  --color-base-300: #26322b;
+  --color-base-content: #e6efe9;
+  --color-primary: #3ecf8e;
+  --color-primary-content: #06251a;
+  --color-secondary: #6aa9e9;
+  --color-secondary-content: #08192b;
+  --color-accent: #6aa9e9;
+  --color-accent-content: #08192b;
+  --color-neutral: #1f2b24;
+  --color-neutral-content: #e6efe9;
+  --color-info: #6aa9e9;
+  --color-info-content: #08192b;
+  --color-success: #3ecf8e;
+  --color-success-content: #06251a;
+  --color-warning: #e0a94a;
+  --color-warning-content: #2b1e04;
+  --color-error: #ef7a70;
+  --color-error-content: #3a1310;
 
   --radius-selector: 4px;
   --radius-field: 4px;
@@ -47,28 +47,28 @@
     sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
 
-  --color-canvas: #eef3ef;
-  --color-surface: #ffffff;
-  --color-surface-muted: #f5f8f6;
-  --color-line: #dbe4de;
-  --color-line-strong: #c2d1c8;
-  --color-ink: #17221c;
-  --color-ink-soft: #4d5f55;
-  --color-ink-faint: #65786e;
-  --color-green: #16794f;
-  --color-green-strong: #0f5c3b;
-  --color-green-soft: #e2f2e9;
-  --color-blue: #2563a8;
-  --color-blue-soft: #e8f0fa;
-  --color-amber: #946000;
-  --color-amber-soft: #fbf0d7;
-  --color-red: #b23a31;
-  --color-red-soft: #fbeae7;
+  --color-canvas: #0a0f0c;
+  --color-surface: #121a15;
+  --color-surface-muted: #182119;
+  --color-line: #26322b;
+  --color-line-strong: #35463c;
+  --color-ink: #e6efe9;
+  --color-ink-soft: #a9bdb1;
+  --color-ink-faint: #81968a;
+  --color-green: #3ecf8e;
+  --color-green-strong: #7ee2b4;
+  --color-green-soft: #14342a;
+  --color-blue: #6aa9e9;
+  --color-blue-soft: #14243a;
+  --color-amber: #e0a94a;
+  --color-amber-soft: #35290f;
+  --color-red: #ef7a70;
+  --color-red-soft: #3a1c19;
 }
 
 @layer base {
   html {
-    color-scheme: light;
+    color-scheme: dark;
     scrollbar-color: var(--color-line-strong) transparent;
   }
 
