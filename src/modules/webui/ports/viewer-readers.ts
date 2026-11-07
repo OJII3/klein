@@ -1,10 +1,10 @@
 import type {
   PinoViewerEvent,
-  ToolUsageReport,
   ViewerPage,
   ViewerSessionDetail,
   ViewerSessionSummary,
 } from "../domain/viewer-event";
+import type { ToolUsageReport } from "../domain/tool-usage";
 
 export interface ViewerLogQuery {
   readonly limit?: number;

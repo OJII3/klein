@@ -1,5 +1,4 @@
-import { readdir, readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { readFile } from "node:fs/promises";
 
 import {
   parseSessionEntries,
@@ -19,12 +18,13 @@ import {
   normalizeSessionLimit,
 } from "./pi-session-cursor";
 import { toViewerEvent, toViewerSessionSummary } from "./pi-session-event-mapper";
+import { listPiSessionDirectories } from "./pi-session-files";
 
 export class PiSessionReader implements ViewerSessionReader {
   constructor(private readonly agentDirectory: string) {}
 
   async list(query: ViewerSessionQuery = {}): Promise<ViewerPage<ViewerSessionSummary>> {
-    const sessionDirectories = await this.listSessionDirectories();
+    const sessionDirectories = await listPiSessionDirectories(this.agentDirectory);
     const sessions: ViewerSessionSummary[] = [];
 
     for (const { channelKey, directory } of sessionDirectories) {
@@ -96,7 +96,7 @@ export class PiSessionReader implements ViewerSessionReader {
   private async findSession(
     sessionId: string,
   ): Promise<{ readonly channelKey: string; readonly info: SessionInfo } | undefined> {
-    const sessionDirectories = await this.listSessionDirectories();
+    const sessionDirectories = await listPiSessionDirectories(this.agentDirectory);
 
     for (const { channelKey, directory } of sessionDirectories) {
       const infos = await SessionManager.listAll(directory);
@@ -106,39 +106,4 @@ export class PiSessionReader implements ViewerSessionReader {
 
     return undefined;
   }
-
-  private async listSessionDirectories(): Promise<
-    { readonly channelKey: string; readonly directory: string }[]
-  > {
-    const sessionsDirectory = resolve(this.agentDirectory, "sessions");
-
-    let entries;
-    try {
-      entries = await readdir(sessionsDirectory, { withFileTypes: true });
-    } catch (error) {
-      if (isNodeError(error) && error.code === "ENOENT") return [];
-      throw error;
-    }
-
-    return entries
-      .filter((entry) => entry.isDirectory())
-      .flatMap((entry) => {
-        const channelKey = decodeChannelKey(entry.name);
-        return channelKey === undefined
-          ? []
-          : [{ channelKey, directory: resolve(sessionsDirectory, entry.name) }];
-      });
-  }
-}
-
-function decodeChannelKey(directoryName: string): string | undefined {
-  try {
-    return decodeURIComponent(directoryName);
-  } catch {
-    return undefined;
-  }
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && "code" in error;
 }

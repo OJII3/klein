@@ -1,8 +1,10 @@
-import { open, readdir, stat } from "node:fs/promises";
-import { resolve } from "node:path";
+import { open, stat } from "node:fs/promises";
 
-import type { McpServerUsageStat, ToolUsageReport, ToolUsageStat } from "../domain/viewer-event";
+import { parseSessionEntries, type FileEntry } from "@earendil-works/pi-coding-agent";
+
+import type { McpServerUsageStat, ToolUsageReport, ToolUsageStat } from "../domain/tool-usage";
 import type { ToolUsageReader } from "../ports/viewer-readers";
+import { listPiSessionFiles } from "./pi-session-files";
 
 interface ToolCounter {
   calls: number;
@@ -37,7 +39,7 @@ export class PiToolUsageReader implements ToolUsageReader {
   constructor(private readonly agentDirectory: string) {}
 
   async read(): Promise<ToolUsageReport> {
-    const sessionFiles = await this.listSessionFiles();
+    const sessionFiles = await listPiSessionFiles(this.agentDirectory);
     const seen = new Set(sessionFiles);
 
     for (const filePath of sessionFiles) {
@@ -54,40 +56,6 @@ export class PiToolUsageReader implements ToolUsageReader {
     }
 
     return this.buildReport(sessionFiles.length);
-  }
-
-  private async listSessionFiles(): Promise<string[]> {
-    const sessionsDirectory = resolve(this.agentDirectory, "sessions");
-
-    let entries;
-    try {
-      entries = await readdir(sessionsDirectory, { withFileTypes: true });
-    } catch (error) {
-      if (isNodeError(error) && error.code === "ENOENT") return [];
-      throw error;
-    }
-
-    const files: string[] = [];
-    for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
-
-      const directory = resolve(sessionsDirectory, entry.name);
-      let children;
-      try {
-        children = await readdir(directory, { withFileTypes: true });
-      } catch (error) {
-        if (isNodeError(error) && error.code === "ENOENT") continue;
-        throw error;
-      }
-
-      for (const child of children) {
-        if (child.isFile() && child.name.endsWith(".jsonl")) {
-          files.push(resolve(directory, child.name));
-        }
-      }
-    }
-
-    return files.sort();
   }
 
   private async ingest(filePath: string): Promise<void> {
@@ -126,7 +94,9 @@ export class PiToolUsageReader implements ToolUsageReader {
     const chunk = cached.remainder + buffer.subarray(0, bytesRead).toString("utf8");
     const lines = chunk.split("\n");
     cached.remainder = lines.pop() ?? "";
-    for (const line of lines) countToolResult(line, cached.counters);
+    for (const entry of parseSessionEntries(lines.join("\n"))) {
+      countToolResult(entry, cached.counters);
+    }
 
     cached.offset += bytesRead;
     cached.mtimeMs = stats.mtimeMs;
@@ -189,31 +159,18 @@ export class PiToolUsageReader implements ToolUsageReader {
   }
 }
 
-function countToolResult(line: string, counters: Map<string, ToolCounter>): void {
-  if (!line.includes('"toolResult"')) return;
-
-  let entry: unknown;
-  try {
-    entry = JSON.parse(line);
-  } catch {
-    return;
-  }
-
-  if (!isRecord(entry) || entry.type !== "message" || !isRecord(entry.message)) return;
+function countToolResult(entry: FileEntry, counters: Map<string, ToolCounter>): void {
+  if (entry.type !== "message") return;
   const message = entry.message;
-  if (message.role !== "toolResult" || typeof message.toolName !== "string") return;
-  if (message.toolName.length === 0) return;
+  if (message.role !== "toolResult") return;
 
-  const timestamp = typeof entry.timestamp === "string" ? Date.parse(entry.timestamp) : Number.NaN;
+  const timestamp = Date.parse(entry.timestamp);
   const at = Number.isNaN(timestamp) ? undefined : timestamp;
-  recordCall(counters, message.toolName, message.isError === true, at);
+  recordCall(counters, message.toolName, message.isError, at);
 
   // Codemode and other tools can invoke further tools without producing model-visible results.
-  if (isRecord(message.nestedCalls) && Array.isArray(message.nestedCalls.calls)) {
-    for (const call of message.nestedCalls.calls) {
-      if (!isRecord(call) || typeof call.name !== "string" || call.name.length === 0) continue;
-      recordCall(counters, call.name, call.status === "error", at);
-    }
+  for (const call of message.nestedCalls?.calls ?? []) {
+    recordCall(counters, call.name, call.status === "error", at);
   }
 }
 
@@ -256,10 +213,6 @@ function latestTimestamp(
 
 function formatTimestamp(value: number | undefined): string | null {
   return value === undefined ? null : new Date(value).toISOString();
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
