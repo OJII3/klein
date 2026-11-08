@@ -58,7 +58,7 @@ const DiscordGuildAccessSchema = Type.Object(
 
 const LlmProviderSchema = Type.Union([
   Type.Literal("opencode-go"),
-  Type.Literal("google-vertex"),
+  Type.Literal("google"),
   Type.Literal("mistral"),
 ]);
 

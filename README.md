@@ -40,12 +40,12 @@ Select one with `"profile"` in `config/config.jsonc` (default: `klein`). The bun
 
 - **Access control** — `discord.access` is evaluated thread → channel → guild → default. The Discord **Message Content Intent** is required.
 - **Commands** — `/status idle` pauses message processing and `/status online` resumes it (Manage Server only).
-- **Activity status** — shows remaining OpenCode Go, Vertex AI, or Mistral budget usage, refreshed hourly.
+- **Activity status** — shows remaining OpenCode Go, Google, or Mistral budget usage, refreshed hourly.
 
 ### LLM providers
 
-- Supports OpenCode Go (`opencode-go`), Google Cloud Vertex AI Express Mode (`google-vertex`), and Mistral (`mistral`).
-- **Mistral** — the OpenCode Console connection is discovered on startup from `OPENCODE_API_KEY`; set `MISTRAL_CONSOLE_URL` to override it. Without a connection, requests go directly to Mistral with `MISTRAL_API_KEY`. The activity status reports the spend Console records for the month.
+- Supports OpenCode Go (`opencode-go`), Google Gemini (`google`, `GEMINI_API_KEY`), and Mistral (`mistral`, `MISTRAL_API_KEY`).
+- **Google and Mistral** — the activity status estimates the spend recorded in local session usage for the month.
 - **Context window** — `llm.contextWindowRatio` (`0.01`–`1.0`) caps context usage for automatic compaction. `llm.compaction.backgroundTokens` sets the token count before the blocking threshold at which background compaction starts (default `32768`; `0` starts it at the blocking threshold).
 - **Image analysis** — `llm.image` configures a separate one-shot vision model whose analysis is added to the main conversation.
 
