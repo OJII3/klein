@@ -5,6 +5,7 @@ import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { Api, Model, Models } from "@earendil-works/pi-ai";
 
 const MODEL_CATALOG_REFRESH_TIMEOUT_MS = 5_000;
+const MISTRAL_CONSOLE_URL_ENV = "MISTRAL_CONSOLE_URL";
 
 const DEEPSEEK_V41_FLASH_FALLBACK: Model<"openai-completions"> = {
   id: "deepseek-v4.1-flash",
@@ -73,12 +74,61 @@ const FALLBACK_MODELS: readonly Model<Api>[] = [
 ];
 
 export async function createPiModelRuntime(agentDir: string): Promise<ModelRuntime> {
-  return ModelRuntime.create({
+  const runtime = await ModelRuntime.create({
     authPath: resolve(agentDir, "auth.json"),
     modelsPath: resolve(agentDir, "models.json"),
     modelsStorePath: resolve(agentDir, "models-store.json"),
     allowModelNetwork: true,
     modelRefreshTimeoutMs: MODEL_CATALOG_REFRESH_TIMEOUT_MS,
+  });
+
+  const consoleUrl = process.env[MISTRAL_CONSOLE_URL_ENV];
+  if (consoleUrl) {
+    const apiKey = process.env.OPENCODE_API_KEY;
+    if (!apiKey) {
+      throw new Error(`${MISTRAL_CONSOLE_URL_ENV} requires OPENCODE_API_KEY`);
+    }
+    registerMistralConsoleProvider(runtime, consoleUrl, apiKey);
+  }
+
+  return runtime;
+}
+
+export function registerMistralConsoleProvider(
+  runtime: Pick<ModelRuntime, "registerProvider">,
+  baseUrl: string,
+  apiKey: string,
+): void {
+  runtime.registerProvider("mistral", {
+    name: "Mistral (OpenCode Console)",
+    baseUrl,
+    apiKey,
+    models: [
+      {
+        id: "deepseek-v4-1-flash-1017",
+        name: "DeepSeek V4.1 Flash 1017",
+        api: "openai-completions",
+        reasoning: true,
+        thinkingLevelMap: {
+          off: "none",
+          low: "low",
+          high: "high",
+          max: "max",
+          minimal: null,
+          medium: null,
+          xhigh: null,
+        },
+        input: ["text"],
+        cost: {
+          input: 0.3,
+          output: 1.2,
+          cacheRead: 0.007,
+          cacheWrite: 0,
+        },
+        contextWindow: 1_048_576,
+        maxTokens: 128_000,
+      },
+    ],
   });
 }
 

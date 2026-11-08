@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
+
 import {
+  registerMistralConsoleProvider,
   resolveConfiguredImageModel,
   resolveConfiguredModel,
   withOpenCodeSessionHeader,
@@ -74,5 +77,30 @@ test("rejects an image model without image input", () => {
   assert.throws(
     () => resolveConfiguredImageModel("opencode-go", "glm-5.3"),
     /Configured Pi image model does not support image input: opencode-go\/glm-5.3/,
+  );
+});
+
+test("registers the Mistral Console connection as the mistral provider", () => {
+  const registrations: Array<Parameters<ModelRuntime["registerProvider"]>> = [];
+  const runtime = {
+    registerProvider: (...args: Parameters<ModelRuntime["registerProvider"]>) => {
+      registrations.push(args);
+    },
+  };
+
+  registerMistralConsoleProvider(
+    runtime,
+    "https://opencode.ai/inference/custom/conn_test",
+    "secret-key",
+  );
+
+  assert.equal(registrations.length, 1);
+  const [providerId, config] = registrations[0];
+  assert.equal(providerId, "mistral");
+  assert.equal(config.baseUrl, "https://opencode.ai/inference/custom/conn_test");
+  assert.equal(config.apiKey, "secret-key");
+  assert.deepEqual(
+    config.models?.map((model) => [model.id, model.api]),
+    [["deepseek-v4-1-flash-1017", "openai-completions"]],
   );
 });
