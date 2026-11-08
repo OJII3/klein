@@ -40,6 +40,38 @@ const DEEPSEEK_V41_FLASH_FALLBACK: Model<"openai-completions"> = {
 
 const BUILTIN_MODEL_CATALOG = builtinModels();
 
+const MISTRAL_DEEPSEEK_V41_FLASH_1017_FALLBACK: Model<"mistral-conversations"> = {
+  id: "deepseek-v4-1-flash-1017",
+  name: "DeepSeek V4.1 Flash 1017",
+  api: "mistral-conversations",
+  provider: "mistral",
+  baseUrl: "https://api.mistral.ai",
+  reasoning: true,
+  thinkingLevelMap: {
+    off: "none",
+    minimal: null,
+    low: "low",
+    medium: null,
+    high: "high",
+    xhigh: null,
+    max: "max",
+  },
+  input: ["text"],
+  cost: {
+    input: 0.3,
+    output: 1.2,
+    cacheRead: 0.007,
+    cacheWrite: 0,
+  },
+  contextWindow: 1_048_576,
+  maxTokens: 128_000,
+};
+
+const FALLBACK_MODELS: readonly Model<Api>[] = [
+  DEEPSEEK_V41_FLASH_FALLBACK,
+  MISTRAL_DEEPSEEK_V41_FLASH_1017_FALLBACK,
+];
+
 export async function createPiModelRuntime(agentDir: string): Promise<ModelRuntime> {
   return ModelRuntime.create({
     authPath: resolve(agentDir, "auth.json"),
@@ -57,8 +89,11 @@ export function resolveConfiguredModel(
 ): Model<Api> {
   const model = modelCatalog.getModel(provider, modelId);
   if (!model) {
-    if (provider === "opencode-go" && modelId === DEEPSEEK_V41_FLASH_FALLBACK.id) {
-      return DEEPSEEK_V41_FLASH_FALLBACK;
+    const fallback = FALLBACK_MODELS.find(
+      (candidate) => candidate.provider === provider && candidate.id === modelId,
+    );
+    if (fallback) {
+      return fallback;
     }
 
     throw new Error(`Configured Pi model was not found: ${provider}/${modelId}`);

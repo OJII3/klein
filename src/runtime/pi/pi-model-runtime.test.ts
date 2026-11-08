@@ -24,6 +24,17 @@ test("resolves DeepSeek V4.1 Flash when the local catalog is stale", () => {
   assert.deepEqual(model.input, ["text", "image"]);
 });
 
+test("resolves Mistral DeepSeek V4.1 Flash 1017 when the local catalog is stale", () => {
+  const model = resolveConfiguredModel("mistral", "deepseek-v4-1-flash-1017", {
+    getModel: () => undefined,
+  });
+
+  assert.equal(model.id, "deepseek-v4-1-flash-1017");
+  assert.equal(model.api, "mistral-conversations");
+  assert.equal(model.baseUrl, "https://api.mistral.ai");
+  assert.equal(model.contextWindow, 1_048_576);
+});
+
 test("prefers the online catalog model over the local fallback", () => {
   const onlineModel = {
     ...resolveConfiguredModel("opencode-go", "kimi-k3"),
