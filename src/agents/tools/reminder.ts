@@ -16,30 +16,36 @@ import type {
 } from "@modules/scheduling/domain/scheduled-task";
 
 const weekdaySchema = Type.Union(SCHEDULE_WEEKDAYS.map((weekday) => Type.Literal(weekday)));
-const scheduleSchema = Type.Union([
-  Type.Object({
-    type: Type.Literal("after"),
-    minutes: Type.Integer({ minimum: 1, maximum: MAX_SCHEDULE_INTERVAL_MINUTES }),
-  }),
-  Type.Object({
-    type: Type.Literal("at"),
-    date: Type.Optional(Type.String({ pattern: "^\\d{4}-\\d{2}-\\d{2}$" })),
-    time: Type.String({ pattern: "^\\d{2}:\\d{2}$" }),
-  }),
-  Type.Object({
-    type: Type.Literal("daily"),
-    time: Type.String({ pattern: "^\\d{2}:\\d{2}$" }),
-  }),
-  Type.Object({
-    type: Type.Literal("weekly"),
-    time: Type.String({ pattern: "^\\d{2}:\\d{2}$" }),
-    weekdays: Type.Array(weekdaySchema, { minItems: 1, uniqueItems: true }),
-  }),
-  Type.Object({
-    type: Type.Literal("every"),
-    minutes: Type.Integer({ minimum: 1, maximum: MAX_SCHEDULE_INTERVAL_MINUTES }),
-  }),
-]);
+const scheduleSchema = Type.Union(
+  [
+    Type.Object({
+      type: Type.Literal("after"),
+      minutes: Type.Integer({ minimum: 1, maximum: MAX_SCHEDULE_INTERVAL_MINUTES }),
+    }),
+    Type.Object({
+      type: Type.Literal("at"),
+      date: Type.Optional(Type.String({ pattern: "^\\d{4}-\\d{2}-\\d{2}$" })),
+      time: Type.String({ pattern: "^\\d{2}:\\d{2}$" }),
+    }),
+    Type.Object({
+      type: Type.Literal("daily"),
+      time: Type.String({ pattern: "^\\d{2}:\\d{2}$" }),
+    }),
+    Type.Object({
+      type: Type.Literal("weekly"),
+      time: Type.String({ pattern: "^\\d{2}:\\d{2}$" }),
+      weekdays: Type.Array(weekdaySchema, { minItems: 1, uniqueItems: true }),
+    }),
+    Type.Object({
+      type: Type.Literal("every"),
+      minutes: Type.Integer({ minimum: 1, maximum: MAX_SCHEDULE_INTERVAL_MINUTES }),
+    }),
+  ],
+  {
+    description:
+      "Once ('after'/'at') or recurring ('every' N minutes, 'daily', 'weekly'). With 'at', omit date for the next occurrence.",
+  },
+);
 
 export function createReminderTools(
   store: ScheduledTaskStore,
@@ -50,9 +56,7 @@ export function createReminderTools(
     defineTool({
       name: "reminder_add",
       label: "Add Reminder",
-      description:
-        "Add a one-time reminder after a duration or at a date and time, or a repeating reminder every N minutes, daily, or weekly. " +
-        "Times use Japan Standard Time (JST). Weekly reminders require one or more weekdays: sun, mon, tue, wed, thu, fri, sat.",
+      description: "Add a reminder for the current conversation; times are JST.",
       parameters: Type.Object({
         message: Type.String({ minLength: 1, maxLength: 2_000 }),
         schedule: scheduleSchema,
