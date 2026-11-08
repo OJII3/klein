@@ -40,7 +40,7 @@ Select one with `"profile"` in `config/config.jsonc` (default: `klein`). The bun
 
 - **Access control** — `discord.access` is evaluated thread → channel → guild → default. The Discord **Message Content Intent** is required.
 - **Commands** — `/status idle` pauses message processing and `/status online` resumes it (Manage Server only).
-- **Activity status** — shows remaining monthly usage and estimated cost, refreshed hourly.
+- **Activity status** — shows remaining OpenCode Go, Vertex AI, or Mistral budget usage, refreshed hourly.
 
 ### LLM providers
 
