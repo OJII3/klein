@@ -5,7 +5,6 @@ import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { Api, Model, Models } from "@earendil-works/pi-ai";
 
 const MODEL_CATALOG_REFRESH_TIMEOUT_MS = 5_000;
-const MISTRAL_CONSOLE_URL_ENV = "MISTRAL_CONSOLE_URL";
 
 const DEEPSEEK_V41_FLASH_FALLBACK: Model<"openai-completions"> = {
   id: "deepseek-v4.1-flash",
@@ -73,7 +72,10 @@ const FALLBACK_MODELS: readonly Model<Api>[] = [
   MISTRAL_DEEPSEEK_V41_FLASH_1017_FALLBACK,
 ];
 
-export async function createPiModelRuntime(agentDir: string): Promise<ModelRuntime> {
+export async function createPiModelRuntime(
+  agentDir: string,
+  mistralConsoleUrl?: string,
+): Promise<ModelRuntime> {
   const runtime = await ModelRuntime.create({
     authPath: resolve(agentDir, "auth.json"),
     modelsPath: resolve(agentDir, "models.json"),
@@ -82,13 +84,12 @@ export async function createPiModelRuntime(agentDir: string): Promise<ModelRunti
     modelRefreshTimeoutMs: MODEL_CATALOG_REFRESH_TIMEOUT_MS,
   });
 
-  const consoleUrl = process.env[MISTRAL_CONSOLE_URL_ENV];
-  if (consoleUrl) {
+  if (mistralConsoleUrl) {
     const apiKey = process.env.OPENCODE_API_KEY;
     if (!apiKey) {
-      throw new Error(`${MISTRAL_CONSOLE_URL_ENV} requires OPENCODE_API_KEY`);
+      throw new Error("OPENCODE_API_KEY is required for the Mistral Console connection");
     }
-    registerMistralConsoleProvider(runtime, consoleUrl, apiKey);
+    registerMistralConsoleProvider(runtime, mistralConsoleUrl, apiKey);
   }
 
   return runtime;
