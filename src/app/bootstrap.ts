@@ -38,6 +38,7 @@ import {
 import { createGetMonthlyUsageLimit } from "@modules/usage/application/get-monthly-usage-limit";
 import { formatMonthlyUsageStatus } from "@modules/usage/application/format-monthly-usage-status";
 import { EstimatedUsageProvider } from "@modules/usage/infrastructure/estimated-usage-provider";
+import { LangfuseUsageProvider } from "@modules/usage/infrastructure/langfuse-usage-provider";
 import { OpenCodeGoUsageProvider } from "@modules/usage/infrastructure/opencode-go-usage-provider";
 import {
   resolveLogDirectory,
@@ -265,11 +266,28 @@ export async function bootstrap(): Promise<void> {
     watchCheckRunner,
     taskCoordinator,
   });
+  const langfusePublicKey = process.env.LANGFUSE_PUBLIC_KEY;
+  const langfuseSecretKey = process.env.LANGFUSE_SECRET_KEY;
+  const mistralModels = [
+    ...new Set(
+      modelsInUse.flatMap((model) => (model?.provider === "mistral" ? [model.model] : [])),
+    ),
+  ];
+  const mistralUsageProvider =
+    langfusePublicKey && langfuseSecretKey && mistralModels.length > 0
+      ? new LangfuseUsageProvider({
+          baseUrl: process.env.LANGFUSE_BASE_URL ?? "https://cloud.langfuse.com",
+          models: mistralModels,
+          monthlyBudgetUsd: 150,
+          publicKey: langfusePublicKey,
+          secretKey: langfuseSecretKey,
+        })
+      : new EstimatedUsageProvider(agentDir, "mistral", 150);
   const usageProvider =
     config.llm.provider === "google"
       ? new EstimatedUsageProvider(agentDir, "google", 10)
       : config.llm.provider === "mistral"
-        ? new EstimatedUsageProvider(agentDir, "mistral", 150)
+        ? mistralUsageProvider
         : config.llm.provider === "opencode-go" && openCodeGoApiKey
           ? new OpenCodeGoUsageProvider(openCodeGoApiKey)
           : undefined;
