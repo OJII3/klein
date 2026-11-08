@@ -83,6 +83,7 @@ export async function bootstrap(): Promise<void> {
   if (usesOpenCodeGo && !openCodeGoApiKey) {
     throw new Error("OPENCODE_API_KEY is required");
   }
+  const usesMistral = modelsInUse.some((model) => model?.provider === "mistral");
   const discordOperatingState = new DiscordOperatingState();
   const ownerUserId = config.owner?.discord.userId;
   const discordAccessPolicy = createDiscordAccessPolicy(config.discord.access, ownerUserId);
@@ -108,6 +109,9 @@ export async function bootstrap(): Promise<void> {
       )
     : undefined;
   const modelRuntime = await createPiModelRuntime(agentDir);
+  if (usesMistral && !(await modelRuntime.checkAuth("mistral"))) {
+    throw new Error("MISTRAL_API_KEY is required");
+  }
   const reactionConfiguration = voiceChatConfiguration?.enabled
     ? voiceChatConfiguration.reactions
     : undefined;
@@ -260,7 +264,7 @@ export async function bootstrap(): Promise<void> {
   const usageProvider =
     config.llm.provider === "google-vertex"
       ? new VertexAiEstimatedUsageProvider(agentDir)
-      : openCodeGoApiKey
+      : config.llm.provider === "opencode-go" && openCodeGoApiKey
         ? new OpenCodeGoUsageProvider(openCodeGoApiKey)
         : undefined;
   const getMonthlyUsageLimit = usageProvider
