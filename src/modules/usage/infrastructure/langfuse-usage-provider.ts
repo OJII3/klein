@@ -10,7 +10,7 @@ const LANGFUSE_USAGE_TIMEOUT_MS = 10_000;
 const LangfuseMetricsResponseSchema = Type.Object({
   data: Type.Array(
     Type.Object({
-      sum_totalCost: Type.Optional(Type.Number()),
+      sum_totalCost: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
     }),
   ),
 });

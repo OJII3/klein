@@ -60,9 +60,9 @@ test("reads the current month's Mistral spend from the Langfuse metrics API", as
   }
 });
 
-test("treats an empty Langfuse metrics response as zero spend", async () => {
+test("treats a null Langfuse total as zero spend", async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () => Response.json({ data: [] });
+  globalThis.fetch = async () => Response.json({ data: [{ sum_totalCost: null }] });
 
   try {
     const usage = await createProvider().getMonthlyUsageLimit();
