@@ -70,6 +70,9 @@ export class PiRuntimeTrace {
       this.providerStartedAt = this.now();
       this.requestPreparedAt = undefined;
       this.streamStarted = false;
+      this.telemetrySession?.startGeneration(
+        this.llmCallId ? { "gen_ai.response.id": this.llmCallId } : {},
+      );
       this.log("pi_llm_provider_started");
     });
     pi.on("after_provider_response", (event) => {
@@ -207,11 +210,20 @@ export class PiRuntimeTrace {
         this.log("pi_turn_started");
         break;
       case "message_start": {
-        if (event.message.role !== "user") break;
+        const message = event.message;
+        if (message.role === "assistant") {
+          this.telemetrySession?.startGeneration({
+            "gen_ai.provider.name": message.provider,
+            "gen_ai.request.model": message.model,
+            ...(this.llmCallId ? { "gen_ai.response.id": this.llmCallId } : {}),
+          });
+          break;
+        }
+        if (message.role !== "user") break;
         const text =
-          typeof event.message.content === "string"
-            ? event.message.content
-            : event.message.content
+          typeof message.content === "string"
+            ? message.content
+            : message.content
                 .filter((part) => part.type === "text")
                 .map((part) => part.text)
                 .join("\n");
@@ -260,6 +272,7 @@ export class PiRuntimeTrace {
             usage: event.message.usage,
             deltas: Object.fromEntries(this.deltas),
           });
+          this.telemetrySession?.endGeneration();
           break;
         }
         if (event.message.role === "toolResult") {

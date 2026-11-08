@@ -150,17 +150,17 @@ function langfuseAttributesForSpan(record: SpanRecord): SpanAttributes {
   if (record.name === "pi.ai.request" || record.name === "pi.ai.poll") {
     attributes["langfuse.observation.type"] = "generation";
     attributes["gen_ai.operation.name"] = "chat";
-    const provider = record.attributes.provider;
+    const provider = record.attributes.provider ?? record.attributes["gen_ai.provider.name"];
     if (typeof provider === "string") {
       attributes["gen_ai.system"] = provider;
       attributes["gen_ai.provider.name"] = provider;
     }
-    const model = record.attributes.model;
+    const model = record.attributes.model ?? record.attributes["gen_ai.request.model"];
     if (typeof model === "string") {
       attributes["gen_ai.request.model"] = model;
       attributes["langfuse.observation.model.name"] = model;
     }
-    const reasoning = record.attributes.reasoning;
+    const reasoning = record.attributes.reasoning ?? record.attributes["gen_ai.request.reasoning"];
     if (typeof reasoning === "string") attributes["gen_ai.request.reasoning"] = reasoning;
     const stop = record.attributes.stop;
     if (typeof stop === "string") attributes["gen_ai.response.finish_reasons"] = [stop];
@@ -396,6 +396,7 @@ export class OtelSpan implements TelemetrySpan {
 export class PiTelemetrySession implements TelemetryContext {
   private agentSpan?: OtelSpan;
   private turnSpan?: OtelSpan;
+  private generationSpan?: OtelSpan;
   private compactionSpan?: OtelSpan;
   private readonly toolSpans = new Map<string, OtelSpan>();
   private turnIndex = 0;
@@ -456,6 +457,8 @@ export class PiTelemetrySession implements TelemetryContext {
   }
 
   startTurn(attributes: SpanAttributes = {}): void {
+    this.generationSpan?.end();
+    this.generationSpan = undefined;
     this.turnSpan?.end();
     this.turnIndex += 1;
     this.turnSpan = this.telemetry.beginSpan({
@@ -467,6 +470,8 @@ export class PiTelemetrySession implements TelemetryContext {
   }
 
   endTurn(attributes: SpanAttributes = {}): void {
+    this.generationSpan?.end();
+    this.generationSpan = undefined;
     this.turnSpan?.setAttributes(attributes);
     this.turnSpan?.end();
     this.turnSpan = undefined;
@@ -481,22 +486,49 @@ export class PiTelemetrySession implements TelemetryContext {
       typeof message === "object" && message !== null && "stopReason" in message
         ? (message as { stopReason?: unknown }).stopReason
         : undefined;
-    this.turnSpan?.setAttributes({
+    const generation: SpanAttributes = {
       ...usageAttributes(message),
       ...(typeof stopReason === "string" ? { "gen_ai.response.finish_reasons": [stopReason] } : {}),
-    });
+    };
     const details = usageDetails(message);
-    if (details) {
-      this.turnSpan?.setAttributes({
-        "langfuse.observation.usage_details": JSON.stringify(details),
-      });
-    }
+    if (details) generation["langfuse.observation.usage_details"] = JSON.stringify(details);
     const cost = costDetails(message);
-    if (cost) {
-      this.turnSpan?.setAttributes({ "langfuse.observation.cost_details": JSON.stringify(cost) });
-    }
+    if (cost) generation["langfuse.observation.cost_details"] = JSON.stringify(cost);
+    this.turnSpan?.setAttributes(generation);
     const chars = messageCharacterCount(message);
     if (chars !== undefined) this.turnSpan?.setAttributes({ "output.chars": chars });
+    this.generationSpan?.setAttributes(generation);
+    this.generationSpan?.end();
+    this.generationSpan = undefined;
+  }
+
+  /**
+   * Opens the generation span for one provider request. Pi's own `pi.ai.request`
+   * spans only come from its `Models` facade, and `ModelRuntime` calls providers
+   * directly, so the request is timed from the session events instead.
+   */
+  startGeneration(attributes: SpanAttributes): void {
+    this.generationSpan?.end();
+    this.generationSpan = this.telemetry.beginSpan({
+      name: "pi.ai.request",
+      attributes: {
+        "gen_ai.operation.name": "chat",
+        ...(this.options.provider ? { "gen_ai.provider.name": this.options.provider } : {}),
+        ...(this.options.model ? { "gen_ai.request.model": this.options.model } : {}),
+        ...(this.options.thinkingLevel
+          ? { "gen_ai.request.reasoning": this.options.thinkingLevel }
+          : {}),
+        ...attributes,
+      },
+      parent: this.turnSpan ?? this.agentSpan,
+      traceAttributes: this.traceAttributes,
+    });
+  }
+
+  endGeneration(attributes: SpanAttributes = {}): void {
+    this.generationSpan?.setAttributes(attributes);
+    this.generationSpan?.end();
+    this.generationSpan = undefined;
   }
 
   recordUserMessage(message: unknown): void {
@@ -556,6 +588,8 @@ export class PiTelemetrySession implements TelemetryContext {
   }
 
   endAgent(attributes: SpanAttributes = {}): void {
+    this.generationSpan?.end();
+    this.generationSpan = undefined;
     for (const span of this.toolSpans.values()) span.end();
     this.toolSpans.clear();
     this.endCompaction();
