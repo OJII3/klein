@@ -37,6 +37,7 @@ import {
 } from "@modules/memory/application/owner-memory-store";
 import { createGetMonthlyUsageLimit } from "@modules/usage/application/get-monthly-usage-limit";
 import { formatMonthlyUsageStatus } from "@modules/usage/application/format-monthly-usage-status";
+import { MistralEstimatedUsageProvider } from "@modules/usage/infrastructure/mistral-estimated-usage-provider";
 import { OpenCodeGoUsageProvider } from "@modules/usage/infrastructure/opencode-go-usage-provider";
 import { VertexAiEstimatedUsageProvider } from "@modules/usage/infrastructure/vertex-ai-estimated-usage-provider";
 import {
@@ -264,9 +265,11 @@ export async function bootstrap(): Promise<void> {
   const usageProvider =
     config.llm.provider === "google-vertex"
       ? new VertexAiEstimatedUsageProvider(agentDir)
-      : config.llm.provider === "opencode-go" && openCodeGoApiKey
-        ? new OpenCodeGoUsageProvider(openCodeGoApiKey)
-        : undefined;
+      : config.llm.provider === "mistral"
+        ? new MistralEstimatedUsageProvider(agentDir)
+        : config.llm.provider === "opencode-go" && openCodeGoApiKey
+          ? new OpenCodeGoUsageProvider(openCodeGoApiKey)
+          : undefined;
   const getMonthlyUsageLimit = usageProvider
     ? createGetMonthlyUsageLimit(usageProvider)
     : undefined;

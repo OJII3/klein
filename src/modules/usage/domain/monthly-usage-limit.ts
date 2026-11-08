@@ -1,7 +1,19 @@
 export type MonthlyUsageLimitStatus = "ok" | "rate-limited";
 
-export interface MonthlyUsageLimit {
+interface BaseMonthlyUsageLimit {
   readonly status: MonthlyUsageLimitStatus;
-  readonly usedPercentage: number;
   readonly resetsAt?: Date;
 }
+
+export interface PercentageMonthlyUsageLimit extends BaseMonthlyUsageLimit {
+  readonly kind: "percentage";
+  readonly usedPercentage: number;
+}
+
+export interface CostMonthlyUsageLimit extends BaseMonthlyUsageLimit {
+  readonly kind: "cost";
+  readonly usedAmount: number;
+  readonly currency: string;
+}
+
+export type MonthlyUsageLimit = PercentageMonthlyUsageLimit | CostMonthlyUsageLimit;

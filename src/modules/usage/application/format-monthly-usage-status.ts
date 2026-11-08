@@ -6,18 +6,27 @@ function formatPercentage(value: number): string {
   return Number.isInteger(value) ? `${value}%` : `${value.toFixed(1)}%`;
 }
 
+function formatResetSuffix(resetsAt: Date | undefined, now: Date): string {
+  if (!resetsAt) return "";
+  const resetInDays = Math.max(
+    0,
+    Math.ceil((resetsAt.getTime() - now.getTime()) / MILLISECONDS_PER_DAY),
+  );
+  return ` (reset in ${resetInDays} days)`;
+}
+
 export function formatMonthlyUsageStatus(
   monthly: MonthlyUsageLimit,
   now: Date = new Date(),
 ): string {
-  const remainingPercentage = 100 - monthly.usedPercentage;
-  if (!monthly.resetsAt) {
-    return `${formatPercentage(remainingPercentage)}/month`;
+  if (monthly.kind === "cost") {
+    const amount = new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: monthly.currency,
+    }).format(monthly.usedAmount);
+    return `${amount} this month${formatResetSuffix(monthly.resetsAt, now)}`;
   }
-  const resetInDays = Math.max(
-    0,
-    Math.ceil((monthly.resetsAt.getTime() - now.getTime()) / MILLISECONDS_PER_DAY),
-  );
 
-  return `${formatPercentage(remainingPercentage)}/month (reset in ${resetInDays} days)`;
+  const remainingPercentage = 100 - monthly.usedPercentage;
+  return `${formatPercentage(remainingPercentage)}/month${formatResetSuffix(monthly.resetsAt, now)}`;
 }
