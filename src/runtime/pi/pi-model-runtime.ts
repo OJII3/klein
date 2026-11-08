@@ -72,13 +72,64 @@ const FALLBACK_MODELS: readonly Model<Api>[] = [
   MISTRAL_DEEPSEEK_V41_FLASH_1017_FALLBACK,
 ];
 
-export async function createPiModelRuntime(agentDir: string): Promise<ModelRuntime> {
-  return ModelRuntime.create({
+export async function createPiModelRuntime(
+  agentDir: string,
+  mistralConsoleUrl?: string,
+): Promise<ModelRuntime> {
+  const runtime = await ModelRuntime.create({
     authPath: resolve(agentDir, "auth.json"),
     modelsPath: resolve(agentDir, "models.json"),
     modelsStorePath: resolve(agentDir, "models-store.json"),
     allowModelNetwork: true,
     modelRefreshTimeoutMs: MODEL_CATALOG_REFRESH_TIMEOUT_MS,
+  });
+
+  if (mistralConsoleUrl) {
+    const apiKey = process.env.OPENCODE_API_KEY;
+    if (!apiKey) {
+      throw new Error("OPENCODE_API_KEY is required for the Mistral Console connection");
+    }
+    registerMistralConsoleProvider(runtime, mistralConsoleUrl, apiKey);
+  }
+
+  return runtime;
+}
+
+export function registerMistralConsoleProvider(
+  runtime: Pick<ModelRuntime, "registerProvider">,
+  baseUrl: string,
+  apiKey: string,
+): void {
+  runtime.registerProvider("mistral", {
+    name: "Mistral (OpenCode Console)",
+    baseUrl,
+    apiKey,
+    models: [
+      {
+        id: "deepseek-v4-1-flash-1017",
+        name: "DeepSeek V4.1 Flash 1017",
+        api: "openai-completions",
+        reasoning: true,
+        thinkingLevelMap: {
+          off: "none",
+          low: "low",
+          high: "high",
+          max: "max",
+          minimal: null,
+          medium: null,
+          xhigh: null,
+        },
+        input: ["text"],
+        cost: {
+          input: 0.3,
+          output: 1.2,
+          cacheRead: 0.007,
+          cacheWrite: 0,
+        },
+        contextWindow: 1_048_576,
+        maxTokens: 128_000,
+      },
+    ],
   });
 }
 

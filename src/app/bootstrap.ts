@@ -20,6 +20,7 @@ import {
   withOpenCodeSessionHeader,
 } from "@runtime/pi/pi-agent-runtime";
 import { migratePiDurableStorage } from "@runtime/pi/pi-durable-migration";
+import { resolveMistralConnectionUrl } from "@runtime/pi/opencode-console";
 import { createWatchFetchTool } from "@runtime/pi/watch-fetch-tool";
 import { PiMemoryProcessor } from "@runtime/pi/pi-memory-processor";
 import { PiVoiceReactionSelector } from "@runtime/pi/pi-voice-reaction-selector";
@@ -58,6 +59,29 @@ import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 const DISCORD_USAGE_STATUS_REFRESH_INTERVAL_MS = 60 * 60 * 1_000;
 const CHANNEL_CONTEXT_ROTATION_CHECK_INTERVAL_MS = 60 * 1_000;
 const SCHEDULED_TASK_CHECK_INTERVAL_MS = 10 * 1_000;
+
+async function resolveConfiguredMistralConsoleUrl(
+  apiKey: string | undefined,
+  logger: ReturnType<typeof createLogger>,
+): Promise<string | undefined> {
+  const configured = process.env.MISTRAL_CONSOLE_URL;
+  if (configured) {
+    return configured;
+  }
+  if (!apiKey) {
+    return undefined;
+  }
+
+  try {
+    return await resolveMistralConnectionUrl(apiKey);
+  } catch (error) {
+    logger.warn(
+      { err: error, event: "mistral_console_connection_lookup_failed" },
+      "Failed to resolve the Mistral Console connection",
+    );
+    return undefined;
+  }
+}
 
 export async function bootstrap(): Promise<void> {
   const { sessionMode } = parseCliOptions(process.argv.slice(2));
@@ -109,9 +133,14 @@ export async function bootstrap(): Promise<void> {
         ),
       )
     : undefined;
-  const modelRuntime = await createPiModelRuntime(agentDir);
+  const mistralConsoleUrl = usesMistral
+    ? await resolveConfiguredMistralConsoleUrl(openCodeGoApiKey, logger)
+    : undefined;
+  const modelRuntime = await createPiModelRuntime(agentDir, mistralConsoleUrl);
   if (usesMistral && !(await modelRuntime.checkAuth("mistral"))) {
-    throw new Error("OPENCODE_API_KEY is required for the Mistral provider");
+    throw new Error(
+      "Mistral credentials are missing: set OPENCODE_API_KEY for the Console connection or MISTRAL_API_KEY",
+    );
   }
   const reactionConfiguration = voiceChatConfiguration?.enabled
     ? voiceChatConfiguration.reactions
