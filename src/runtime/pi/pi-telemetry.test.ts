@@ -306,10 +306,16 @@ test("PiRuntimeTrace emits agent, turn, and tool spans", async () => {
   emit({ type: "agent_start" });
   emit({ type: "turn_start" });
   emit({
+    type: "message_start",
+    message: { role: "assistant", provider: "mistral", model: "mistral-large-latest" },
+  });
+  emit({
     type: "message_end",
     message: {
       role: "assistant",
       content: [{ type: "text", text: "hello" }],
+      provider: "mistral",
+      model: "mistral-large-latest",
       stopReason: "stop",
       usage: { input: 10, output: 5, cacheRead: 1, cacheWrite: 2, cost: { total: 0.001 } },
     },
@@ -331,6 +337,7 @@ test("PiRuntimeTrace emits agent, turn, and tool spans", async () => {
     "klein.agent",
     "klein.tool",
     "klein.turn",
+    "pi.ai.request",
   ]);
   const turn = spans.find((span) => span.name === "klein.turn")!;
   const turnAttributes = attributesOf(turn);
@@ -341,6 +348,19 @@ test("PiRuntimeTrace emits agent, turn, and tool spans", async () => {
     cache_creation_input_tokens: 2,
   });
   assert.equal(turnAttributes["output.chars"], 5);
+
+  const generation = spans.find((span) => span.name === "pi.ai.request")!;
+  assert.equal(generation.parentSpanId, turn.spanId);
+  const generationAttributes = attributesOf(generation);
+  assert.equal(generationAttributes["langfuse.observation.type"], "generation");
+  assert.equal(generationAttributes["gen_ai.provider.name"], "mistral");
+  assert.equal(generationAttributes["gen_ai.request.model"], "mistral-large-latest");
+  assert.equal(generationAttributes["langfuse.observation.model.name"], "mistral-large-latest");
+  assert.deepEqual(generationAttributes["gen_ai.response.finish_reasons"], ["stop"]);
+  assert.deepEqual(
+    JSON.parse(generationAttributes["langfuse.observation.cost_details"] as string),
+    { total: 0.001 },
+  );
 
   trace.dispose();
 });
