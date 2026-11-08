@@ -30,7 +30,7 @@ async function createTrace() {
   let now = 0;
   let listener!: AgentSessionEventListener;
   let unsubscribed = false;
-  const trace = new PiRuntimeTrace(logger, () => now);
+  const trace = new PiRuntimeTrace(logger, { now: () => now });
   const handlers = new Map<string, (event: never, context: ExtensionContext) => unknown>();
   await trace.extension({
     on: (event: string, handler: (event: never, context: ExtensionContext) => unknown) => {

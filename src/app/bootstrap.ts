@@ -20,6 +20,7 @@ import {
   withOpenCodeSessionHeader,
 } from "@runtime/pi/pi-agent-runtime";
 import { migratePiDurableStorage } from "@runtime/pi/pi-durable-migration";
+import { createPiTelemetryFromEnv } from "@runtime/pi/pi-telemetry";
 import { createWatchFetchTool } from "@runtime/pi/watch-fetch-tool";
 import { PiMemoryProcessor } from "@runtime/pi/pi-memory-processor";
 import { PiVoiceReactionSelector } from "@runtime/pi/pi-voice-reaction-selector";
@@ -65,6 +66,7 @@ export async function bootstrap(): Promise<void> {
   const profile = resolveProfile(config.profile);
   const logDirectory = resolveLogDirectory(config);
   const logger = createLogger({ filePath: createLogFilePath(logDirectory) });
+  const piTelemetry = createPiTelemetryFromEnv({ logger });
   logger.info({ event: "application_starting" }, "Starting Klein");
 
   const systemPrompt = await loadPromptFile(profile.systemPromptFile);
@@ -147,8 +149,10 @@ export async function bootstrap(): Promise<void> {
     skillsDirectory: profile.skillsDirectory,
     logger,
     modelRuntime,
+    ownerUserId,
     sessionMode,
     permissions: config.permissions,
+    telemetry: piTelemetry,
     watchToolCatalog,
   });
   const voiceChatAgentFactory = voiceChatLlmConfiguration
@@ -158,8 +162,10 @@ export async function bootstrap(): Promise<void> {
         skillsDirectory: profile.skillsDirectory,
         logger,
         modelRuntime,
+        ownerUserId,
         sessionMode,
         permissions: config.permissions,
+        telemetry: piTelemetry,
       })
     : piAgentFactory;
   let discordService!: DiscordJsService;
@@ -350,6 +356,7 @@ export async function bootstrap(): Promise<void> {
     await taskCoordinator.waitForCompletion();
     await discordService.stop();
     await agentCoordinator.dispose();
+    await piTelemetry?.shutdown();
     logger.info({ event: "shutdown_completed" }, "Shutdown complete");
     flushLogger(logger);
   };
