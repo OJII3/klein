@@ -2,7 +2,7 @@
   "providers": {
     "mistral": {
       "name": "Mistral (OpenCode Console)",
-      "baseUrl": "https://opencode.ai/inference/custom/conn_01M6XH7PFS7G718F7K9WMNH3C0",
+      "baseUrl": "https://opencode.ai/inference/custom/conn_...",
       "apiKey": "$OPENCODE_API_KEY",
       "models": [
         {

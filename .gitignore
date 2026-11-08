@@ -10,6 +10,7 @@
 /config/config.json
 /config/config.jsonc
 /config/klein.json
+/config/pi-models.json
 
 # nodejs
 /node_modules/

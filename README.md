@@ -45,7 +45,7 @@ Select one with `"profile"` in `config/config.jsonc` (default: `klein`). The bun
 ### LLM providers
 
 - Supports OpenCode Go (`opencode-go`), Google Cloud Vertex AI Express Mode (`google-vertex`), and Mistral (`mistral`).
-- **Mistral** — requests go through an OpenCode Console provider connection. `config/pi-models.json` (linked as `<agentDir>/models.json`) sets the connection URL and authenticates with `OPENCODE_API_KEY`; the activity status reports the spend Console records for the month.
+- **Mistral** — requests go through an OpenCode Console provider connection. Copy `config/pi-models.example.json` to `config/pi-models.json`, set the connection URL, and link it as `<agentDir>/models.json`; it authenticates with `OPENCODE_API_KEY`, and the activity status reports the spend Console records for the month.
 - **Context window** — `llm.contextWindowRatio` (`0.01`–`1.0`) caps context usage for automatic compaction. `llm.compaction.backgroundTokens` sets the token count before the blocking threshold at which background compaction starts (default `32768`; `0` starts it at the blocking threshold).
 - **Image analysis** — `llm.image` configures a separate one-shot vision model whose analysis is added to the main conversation.
 
