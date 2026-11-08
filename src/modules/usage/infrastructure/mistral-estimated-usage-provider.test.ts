@@ -54,11 +54,9 @@ test("estimates the current month's Mistral spend from session usage", async () 
     );
 
     assert.deepEqual(await provider.getMonthlyUsageLimit(), {
-      kind: "cost",
       resetsAt: new Date(Date.UTC(2026, 9)),
       status: "ok",
-      usedAmount: 1.234,
-      currency: "USD",
+      usedPercentage: (1.234 / 150) * 100,
     });
   } finally {
     await rm(agentDirectory, { force: true, recursive: true });

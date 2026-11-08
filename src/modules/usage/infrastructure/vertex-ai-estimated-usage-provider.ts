@@ -13,7 +13,6 @@ export class VertexAiEstimatedUsageProvider implements UsageLimitProvider {
     const cost = await sumMonthlyProviderCost(this.agentDirectory, "google-vertex", monthStart);
 
     return {
-      kind: "percentage",
       status: "ok",
       usedPercentage: (cost / MONTHLY_BUDGET_USD) * 100,
     };
