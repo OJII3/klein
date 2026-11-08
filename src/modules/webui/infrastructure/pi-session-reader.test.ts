@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import test from "node:test";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -130,6 +130,69 @@ test("lists and reads Pi sessions without exposing image data", async () => {
       /Invalid session cursor/,
     );
     await assert.rejects(() => reader.list({ cursor: "bad" }), /Invalid session list cursor/);
+  } finally {
+    await rm(agentDirectory, { force: true, recursive: true });
+  }
+});
+
+test("migrates legacy session entries before serving them", async () => {
+  const agentDirectory = await mkdtemp(join(tmpdir(), "klein-pi-reader-"));
+
+  try {
+    const sessionId = "8a1f1d8e-1b0f-4e5a-9d1c-2f3b4a5c6d7e";
+    const channelDirectory = join(
+      agentDirectory,
+      "sessions",
+      encodeURIComponent("discord-channel:123"),
+    );
+    await mkdir(channelDirectory, { recursive: true });
+    const legacyEntries = [
+      {
+        type: "session",
+        version: 1,
+        id: sessionId,
+        timestamp: "2026-01-01T00:00:00.000Z",
+        cwd: process.cwd(),
+      },
+      {
+        type: "message",
+        timestamp: "2026-01-01T00:00:01.000Z",
+        message: { role: "user", content: "hello" },
+      },
+      {
+        type: "message",
+        timestamp: "2026-01-01T00:00:02.000Z",
+        message: { role: "assistant", content: "hello back" },
+      },
+      {
+        type: "message",
+        timestamp: "2026-01-01T00:00:03.000Z",
+        message: { role: "user", content: "again" },
+      },
+    ];
+    await writeFile(
+      join(channelDirectory, `2026-01-01T00-00-00-000Z_${sessionId}.jsonl`),
+      `${legacyEntries.map((entry) => JSON.stringify(entry)).join("\n")}\n`,
+    );
+
+    const reader = new PiSessionReader(agentDirectory);
+    const newestPage = await reader.get(sessionId, { limit: 2 });
+    assert.ok(newestPage);
+    assert.deepEqual(
+      newestPage.items.map((item) => item.summary),
+      ["hello back", "again"],
+    );
+    assert.ok(newestPage.items.every((item) => typeof item.id === "string" && item.id.length > 0));
+    assert.ok(newestPage.nextCursor);
+
+    const previousPage = await reader.get(sessionId, {
+      cursor: newestPage.nextCursor,
+      limit: 2,
+    });
+    assert.deepEqual(
+      previousPage?.items.map((item) => item.summary),
+      ["hello"],
+    );
   } finally {
     await rm(agentDirectory, { force: true, recursive: true });
   }

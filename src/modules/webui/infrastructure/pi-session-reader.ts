@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 
 import {
+  migrateSessionEntries,
   parseSessionEntries,
   SessionManager,
   type FileEntry,
@@ -61,6 +62,13 @@ export class PiSessionReader implements ViewerSessionReader {
     if (!session) return undefined;
 
     const entries = parseSessionEntries(await readFile(session.info.path, "utf8"));
+    // Legacy sessions carry no entry ids; the viewer's cursors reference them, so
+    // replace Pi's randomly generated ids with stable ones derived from the position.
+    const needsStableIds = entries.some(
+      (entry) => entry.type !== "session" && typeof entry.id !== "string",
+    );
+    migrateSessionEntries(entries);
+    if (needsStableIds) stabilizeMigratedIds(entries);
     const header = entries.find((entry): entry is Extract<FileEntry, { type: "session" }> => {
       return entry.type === "session";
     });
@@ -105,5 +113,22 @@ export class PiSessionReader implements ViewerSessionReader {
     }
 
     return undefined;
+  }
+}
+
+function stabilizeMigratedIds(entries: FileEntry[]): void {
+  const remappedIds = new Map<string, string>();
+  const sessionEntries = entries.filter((entry): entry is SessionEntry => entry.type !== "session");
+
+  for (const [index, entry] of sessionEntries.entries()) {
+    const stableId = `legacy-${index}`;
+    remappedIds.set(entry.id, stableId);
+    entry.id = stableId;
+  }
+
+  for (const entry of sessionEntries) {
+    if (entry.parentId !== null) {
+      entry.parentId = remappedIds.get(entry.parentId) ?? null;
+    }
   }
 }
