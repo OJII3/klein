@@ -20,7 +20,6 @@ import {
   withOpenCodeSessionHeader,
 } from "@runtime/pi/pi-agent-runtime";
 import { migratePiDurableStorage } from "@runtime/pi/pi-durable-migration";
-import { resolveMistralConnectionUrl } from "@runtime/pi/opencode-console";
 import { createWatchFetchTool } from "@runtime/pi/watch-fetch-tool";
 import { PiMemoryProcessor } from "@runtime/pi/pi-memory-processor";
 import { PiVoiceReactionSelector } from "@runtime/pi/pi-voice-reaction-selector";
@@ -38,9 +37,8 @@ import {
 } from "@modules/memory/application/owner-memory-store";
 import { createGetMonthlyUsageLimit } from "@modules/usage/application/get-monthly-usage-limit";
 import { formatMonthlyUsageStatus } from "@modules/usage/application/format-monthly-usage-status";
-import { MistralConsoleUsageProvider } from "@modules/usage/infrastructure/mistral-console-usage-provider";
+import { EstimatedUsageProvider } from "@modules/usage/infrastructure/estimated-usage-provider";
 import { OpenCodeGoUsageProvider } from "@modules/usage/infrastructure/opencode-go-usage-provider";
-import { VertexAiEstimatedUsageProvider } from "@modules/usage/infrastructure/vertex-ai-estimated-usage-provider";
 import {
   resolveLogDirectory,
   resolveWebUiConfig,
@@ -59,29 +57,6 @@ import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 const DISCORD_USAGE_STATUS_REFRESH_INTERVAL_MS = 60 * 60 * 1_000;
 const CHANNEL_CONTEXT_ROTATION_CHECK_INTERVAL_MS = 60 * 1_000;
 const SCHEDULED_TASK_CHECK_INTERVAL_MS = 10 * 1_000;
-
-async function resolveConfiguredMistralConsoleUrl(
-  apiKey: string | undefined,
-  logger: ReturnType<typeof createLogger>,
-): Promise<string | undefined> {
-  const configured = process.env.MISTRAL_CONSOLE_URL;
-  if (configured) {
-    return configured;
-  }
-  if (!apiKey) {
-    return undefined;
-  }
-
-  try {
-    return await resolveMistralConnectionUrl(apiKey);
-  } catch (error) {
-    logger.warn(
-      { err: error, event: "mistral_console_connection_lookup_failed" },
-      "Failed to resolve the Mistral Console connection",
-    );
-    return undefined;
-  }
-}
 
 export async function bootstrap(): Promise<void> {
   const { sessionMode } = parseCliOptions(process.argv.slice(2));
@@ -109,6 +84,7 @@ export async function bootstrap(): Promise<void> {
     throw new Error("OPENCODE_API_KEY is required");
   }
   const usesMistral = modelsInUse.some((model) => model?.provider === "mistral");
+  const usesGoogle = modelsInUse.some((model) => model?.provider === "google");
   const discordOperatingState = new DiscordOperatingState();
   const ownerUserId = config.owner?.discord.userId;
   const discordAccessPolicy = createDiscordAccessPolicy(config.discord.access, ownerUserId);
@@ -133,14 +109,12 @@ export async function bootstrap(): Promise<void> {
         ),
       )
     : undefined;
-  const mistralConsoleUrl = usesMistral
-    ? await resolveConfiguredMistralConsoleUrl(openCodeGoApiKey, logger)
-    : undefined;
-  const modelRuntime = await createPiModelRuntime(agentDir, mistralConsoleUrl);
+  const modelRuntime = await createPiModelRuntime(agentDir);
   if (usesMistral && !(await modelRuntime.checkAuth("mistral"))) {
-    throw new Error(
-      "Mistral credentials are missing: set OPENCODE_API_KEY for the Console connection or MISTRAL_API_KEY",
-    );
+    throw new Error("MISTRAL_API_KEY is required");
+  }
+  if (usesGoogle && !(await modelRuntime.checkAuth("google"))) {
+    throw new Error("GEMINI_API_KEY is required");
   }
   const reactionConfiguration = voiceChatConfiguration?.enabled
     ? voiceChatConfiguration.reactions
@@ -292,10 +266,10 @@ export async function bootstrap(): Promise<void> {
     taskCoordinator,
   });
   const usageProvider =
-    config.llm.provider === "google-vertex"
-      ? new VertexAiEstimatedUsageProvider(agentDir)
-      : config.llm.provider === "mistral" && openCodeGoApiKey
-        ? new MistralConsoleUsageProvider(openCodeGoApiKey)
+    config.llm.provider === "google"
+      ? new EstimatedUsageProvider(agentDir, "google", 10)
+      : config.llm.provider === "mistral"
+        ? new EstimatedUsageProvider(agentDir, "mistral", 150)
         : config.llm.provider === "opencode-go" && openCodeGoApiKey
           ? new OpenCodeGoUsageProvider(openCodeGoApiKey)
           : undefined;
