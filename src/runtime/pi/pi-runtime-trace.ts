@@ -70,7 +70,9 @@ export class PiRuntimeTrace {
       this.providerStartedAt = this.now();
       this.requestPreparedAt = undefined;
       this.streamStarted = false;
-      this.telemetrySession?.startGeneration((this.llmCallId ? { "gen_ai.response.id": this.llmCallId } : {}));
+      this.telemetrySession?.startGeneration(
+        this.llmCallId ? { "gen_ai.response.id": this.llmCallId } : {},
+      );
       this.log("pi_llm_provider_started");
     });
     pi.on("after_provider_response", (event) => {
