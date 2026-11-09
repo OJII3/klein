@@ -2,6 +2,11 @@ import type { Api, AssistantMessage, ImageContent, Model } from "@earendil-works
 import type { CreateAgentSessionOptions, ModelRuntime } from "@earendil-works/pi-coding-agent";
 
 import type { AgentPrompt } from "@agents/core/agent-runtime";
+import {
+  classifyImageAnalysisFailure,
+  ImageAnalysisError,
+  toImageAnalysisFailure,
+} from "@agents/core/image-analysis";
 
 type ThinkingLevel = NonNullable<CreateAgentSessionOptions["thinkingLevel"]>;
 
@@ -23,32 +28,41 @@ export class PiImageAnalyzer implements ImageAnalyzer {
   ) {}
 
   async analyze(prompt: AgentPrompt): Promise<string> {
-    const response = await this.modelRuntime.completeSimple(
-      this.model,
-      {
-        systemPrompt: IMAGE_ANALYSIS_SYSTEM_PROMPT,
-        messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text: `Analyze the attached image(s) for this user request:\n${prompt.text || "(image only)"}`,
-              },
-              ...prompt.images.map((image): ImageContent => ({
-                type: "image",
-                data: image.data,
-                mimeType: image.mimeType,
-              })),
-            ],
-            timestamp: Date.now(),
-          },
-        ],
-      },
-      this.thinkingLevel && this.thinkingLevel !== "off"
-        ? { reasoning: this.thinkingLevel }
-        : undefined,
-    );
+    let response: AssistantMessage;
+    try {
+      response = await this.modelRuntime.completeSimple(
+        this.model,
+        {
+          systemPrompt: IMAGE_ANALYSIS_SYSTEM_PROMPT,
+          messages: [
+            {
+              role: "user",
+              content: [
+                {
+                  type: "text",
+                  text: `Analyze the attached image(s) for this user request:\n${prompt.text || "(image only)"}`,
+                },
+                ...prompt.images.map((image): ImageContent => ({
+                  type: "image",
+                  data: image.data,
+                  mimeType: image.mimeType,
+                })),
+              ],
+              timestamp: Date.now(),
+            },
+          ],
+        },
+        this.thinkingLevel && this.thinkingLevel !== "off"
+          ? { reasoning: this.thinkingLevel }
+          : undefined,
+      );
+    } catch (error) {
+      if (error instanceof ImageAnalysisError) throw error;
+      throw new ImageAnalysisError(
+        toImageAnalysisFailure(error),
+        error instanceof Error ? error.message : undefined,
+      );
+    }
 
     return extractAnalysisText(response);
   }
@@ -56,7 +70,11 @@ export class PiImageAnalyzer implements ImageAnalyzer {
 
 function extractAnalysisText(response: AssistantMessage): string {
   if (response.stopReason === "error" || response.stopReason === "aborted") {
-    throw new Error(`Image analysis failed: ${response.errorMessage ?? response.stopReason}`);
+    const detail = response.errorMessage ?? response.stopReason;
+    throw new ImageAnalysisError(
+      classifyImageAnalysisFailure(detail),
+      `Image analysis failed: ${detail}`,
+    );
   }
 
   const text = response.content
@@ -66,7 +84,10 @@ function extractAnalysisText(response: AssistantMessage): string {
     .trim();
 
   if (!text) {
-    throw new Error("Image analysis returned no text");
+    throw new ImageAnalysisError(
+      { reason: "empty_result", retryable: true },
+      "Image analysis returned no text",
+    );
   }
 
   return text;

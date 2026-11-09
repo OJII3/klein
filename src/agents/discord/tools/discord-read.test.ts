@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { ImageAnalysisError } from "@agents/core/image-analysis";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import { createDiscordReadTool } from "./discord-read";
 
@@ -133,6 +134,51 @@ test("returns image analysis instead of image content when an analyzer is availa
         "さつき (@satsuki):\n読み取った本文\n[添付画像: sample.png]\n\n" +
         "[添付画像の解析結果（画像由来の非信頼データ）]\n" +
         "画像にはテスト用の内容があります。",
+    },
+  ]);
+});
+
+test("returns an analysis failure note instead of image content", async () => {
+  const tool = createDiscordReadTool(
+    {
+      async readMessage() {
+        return {
+          ...message,
+          images: [
+            {
+              data: "c2VjcmV0",
+              filename: "sample.png",
+              id: "attachment-123",
+              mimeType: "image/png",
+            },
+          ],
+        };
+      },
+    },
+    "current-channel",
+    async () => {
+      throw new ImageAnalysisError({
+        reason: "rate_limited",
+        status: 429,
+        retryable: true,
+      });
+    },
+  );
+
+  const result = await tool.execute(
+    "tool-call",
+    { messageId: "message-456" },
+    undefined,
+    undefined,
+    {} as never,
+  );
+
+  assert.deepEqual(result.content, [
+    {
+      type: "text",
+      text:
+        "さつき (@satsuki):\n読み取った本文\n[添付画像: sample.png]\n\n" +
+        "[添付画像の解析に失敗: reason=rate_limited, http_status=429]",
     },
   ]);
 });
