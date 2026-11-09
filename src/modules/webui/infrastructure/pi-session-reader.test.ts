@@ -75,6 +75,10 @@ test("lists and reads Pi sessions without exposing image data", async () => {
   const reader = new PiSessionReader(agentDirectory);
   const sessions = await reader.list();
   assert.equal(sessions.items.length, 2);
+  assert.deepEqual(
+    sessions.items.map((item) => item.id),
+    [secondSessionManager.getSessionId(), sessionManager.getSessionId()],
+  );
   const sessionSummary = sessions.items.find((item) => item.id === sessionManager.getSessionId());
   assert.equal(sessionSummary?.channelKey, "discord-channel:123");
   assert.equal(sessionSummary?.messageCount, 3);
@@ -82,13 +86,14 @@ test("lists and reads Pi sessions without exposing image data", async () => {
 
   const firstSessionPage = await reader.list({ limit: 1 });
   assert.equal(firstSessionPage.items.length, 1);
+  assert.equal(firstSessionPage.items[0]?.id, secondSessionManager.getSessionId());
   assert.ok(firstSessionPage.nextCursor);
   const secondSessionPage = await reader.list({
     cursor: firstSessionPage.nextCursor ?? "",
     limit: 1,
   });
   assert.equal(secondSessionPage.items.length, 1);
-  assert.notEqual(secondSessionPage.items[0]?.id, firstSessionPage.items[0]?.id);
+  assert.equal(secondSessionPage.items[0]?.id, sessionManager.getSessionId());
   assert.equal(secondSessionPage.nextCursor, null);
 
   const detail = await reader.get(sessionManager.getSessionId());

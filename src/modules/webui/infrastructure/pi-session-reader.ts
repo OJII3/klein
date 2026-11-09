@@ -36,19 +36,19 @@ export class PiSessionReader implements ViewerSessionReader {
 
     const limit = normalizeSessionLimit(query.limit);
     const cursor = query.cursor ? decodeSessionListCursor(query.cursor) : undefined;
-    const endIndex = cursor
-      ? sessions.findIndex((session) => session.id === cursor.beforeSessionId)
-      : sessions.length;
-    if (cursor && endIndex < 0) throw new Error("Unknown session list cursor session");
+    const pageStart = cursor
+      ? sessions.findIndex((session) => session.id === cursor.beforeSessionId) + 1
+      : 0;
+    if (cursor && pageStart === 0) throw new Error("Unknown session list cursor session");
 
-    const pageEnd = cursor ? endIndex + 1 : sessions.length;
-    const pageStart = Math.max(0, pageEnd - limit);
+    const pageEnd = Math.min(sessions.length, pageStart + limit);
+    const pageItems = sessions.slice(pageStart, pageEnd);
 
     return {
-      items: sessions.slice(pageStart, pageEnd),
+      items: pageItems,
       nextCursor:
-        pageStart > 0
-          ? encodeSessionListCursor({ beforeSessionId: sessions[pageStart - 1]?.id ?? "" })
+        pageEnd < sessions.length
+          ? encodeSessionListCursor({ beforeSessionId: pageItems.at(-1)?.id ?? "" })
           : null,
     };
   }
