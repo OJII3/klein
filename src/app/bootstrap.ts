@@ -8,7 +8,7 @@ import { loadConfig } from "./config";
 import { resolveCredentials } from "./credentials";
 import { createLogFilePath, createLogger, flushLogger } from "./logger";
 import { runMcpCommand } from "./mcp-cli";
-import { collectModelNamesOfProvider, collectModelsInUse } from "./model-configuration";
+import { collectModelsInUse } from "./model-configuration";
 import { loadPromptFile } from "./prompt";
 import { resolveProfile } from "./profile";
 import { TaskCoordinator } from "./task-coordinator";
@@ -22,7 +22,7 @@ import {
   withOpenCodeSessionHeader,
 } from "@runtime/pi/pi-agent-runtime";
 import { migratePiDurableStorage } from "@runtime/pi/pi-durable-migration";
-import { createPiTelemetryFromEnv } from "@runtime/pi/pi-telemetry";
+import { createPiUsageReporterFromEnv } from "@runtime/pi/pi-usage-reporter";
 import { createWatchFetchTool } from "@runtime/pi/watch-fetch-tool";
 import { PiMemoryProcessor } from "@runtime/pi/pi-memory-processor";
 import { PiVoiceReactionSelector } from "@runtime/pi/pi-voice-reaction-selector";
@@ -68,7 +68,7 @@ export async function bootstrap(): Promise<void> {
   const profile = resolveProfile(config.profile);
   const logDirectory = resolveLogDirectory(config);
   const logger = createLogger({ filePath: createLogFilePath(logDirectory) });
-  const piTelemetry = createPiTelemetryFromEnv({ logger });
+  const piUsageReporter = createPiUsageReporterFromEnv({ logger });
   logger.info({ event: "application_starting" }, "Starting Klein");
 
   const systemPrompt = await loadPromptFile(profile.systemPromptFile);
@@ -136,10 +136,9 @@ export async function bootstrap(): Promise<void> {
     skillsDirectory: profile.skillsDirectory,
     logger,
     modelRuntime,
-    ownerUserId,
     sessionMode,
     permissions: config.permissions,
-    telemetry: piTelemetry,
+    usageReporter: piUsageReporter,
     watchToolCatalog,
   });
   const voiceChatAgentFactory = voiceChatConfig?.llm
@@ -149,10 +148,9 @@ export async function bootstrap(): Promise<void> {
         skillsDirectory: profile.skillsDirectory,
         logger,
         modelRuntime,
-        ownerUserId,
         sessionMode,
         permissions: config.permissions,
-        telemetry: piTelemetry,
+        usageReporter: piUsageReporter,
       })
     : piAgentFactory;
   let discordService!: DiscordJsService;
@@ -256,9 +254,7 @@ export async function bootstrap(): Promise<void> {
   const usageProvider = resolveUsageProvider({
     agentDirectory: agentDir,
     provider: config.llm.provider,
-    googleModels: collectModelNamesOfProvider(modelsInUse, "google"),
-    mistralModels: collectModelNamesOfProvider(modelsInUse, "mistral"),
-    langfuse: credentials.langfuse,
+    usage: credentials.usage,
     openCodeGoApiKey: credentials.openCodeGoApiKey,
   });
   const getMonthlyUsageLimit = usageProvider
@@ -320,7 +316,7 @@ export async function bootstrap(): Promise<void> {
     await taskCoordinator.waitForCompletion();
     await discordService.stop();
     await agentCoordinator.dispose();
-    await piTelemetry?.shutdown();
+    await piUsageReporter?.shutdown();
     logger.info({ event: "shutdown_completed" }, "Shutdown complete");
     flushLogger(logger);
   };

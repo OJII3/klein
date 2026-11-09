@@ -16,12 +16,3 @@ export function collectModelsInUse(config: AppConfig): ConfiguredModel[] {
 
   return models.filter((model): model is ConfiguredModel => model !== undefined);
 }
-
-export function collectModelNamesOfProvider(
-  models: readonly ConfiguredModel[],
-  provider: ConfiguredModel["provider"],
-): string[] {
-  return [
-    ...new Set(models.filter((model) => model.provider === provider).map((model) => model.model)),
-  ];
-}

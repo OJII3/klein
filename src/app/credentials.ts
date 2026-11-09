@@ -4,10 +4,9 @@ export interface EnvironmentCredentials {
   readonly discordBotToken: string;
   readonly openCodeGoApiKey?: string;
   readonly tunnelToken?: string;
-  readonly langfuse?: {
-    readonly publicKey: string;
-    readonly secretKey: string;
-    readonly baseUrl?: string;
+  readonly usage?: {
+    readonly endpoint: string;
+    readonly token: string;
   };
 }
 
@@ -37,23 +36,16 @@ export function resolveCredentials({
     throw new Error("OPENCODE_API_KEY is required");
   }
 
-  const langfusePublicKey = optionalValue(environment, "LANGFUSE_PUBLIC_KEY");
-  const langfuseSecretKey = optionalValue(environment, "LANGFUSE_SECRET_KEY");
-  const langfuseBaseUrl = optionalValue(environment, "LANGFUSE_BASE_URL");
-  const langfuse =
-    langfusePublicKey && langfuseSecretKey
-      ? {
-          publicKey: langfusePublicKey,
-          secretKey: langfuseSecretKey,
-          ...(langfuseBaseUrl ? { baseUrl: langfuseBaseUrl } : {}),
-        }
-      : undefined;
+  const usageEndpoint = optionalValue(environment, "USAGE_ENDPOINT");
+  const usageToken = optionalValue(environment, "USAGE_TOKEN");
+  const usage =
+    usageEndpoint && usageToken ? { endpoint: usageEndpoint, token: usageToken } : undefined;
   const tunnelToken = optionalValue(environment, "TUNNEL_TOKEN");
 
   return {
     discordBotToken,
     ...(openCodeGoApiKey ? { openCodeGoApiKey } : {}),
     ...(tunnelToken ? { tunnelToken } : {}),
-    ...(langfuse ? { langfuse } : {}),
+    ...(usage ? { usage } : {}),
   };
 }

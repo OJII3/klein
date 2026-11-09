@@ -11,19 +11,17 @@ test("reads the Discord bot token and the optional credentials", () => {
     environment: {
       DISCORD_BOT_TOKEN: BOT_TOKEN,
       TUNNEL_TOKEN: "tunnel-token",
-      LANGFUSE_PUBLIC_KEY: "langfuse-public-key",
-      LANGFUSE_SECRET_KEY: "langfuse-secret-key",
-      LANGFUSE_BASE_URL: "https://langfuse.local",
+      USAGE_ENDPOINT: "https://usage.local/ingest",
+      USAGE_TOKEN: "usage-token",
     },
   });
 
   assert.equal(credentials.discordBotToken, BOT_TOKEN);
   assert.equal(credentials.tunnelToken, "tunnel-token");
   assert.equal(credentials.openCodeGoApiKey, undefined);
-  assert.deepEqual(credentials.langfuse, {
-    publicKey: "langfuse-public-key",
-    secretKey: "langfuse-secret-key",
-    baseUrl: "https://langfuse.local",
+  assert.deepEqual(credentials.usage, {
+    endpoint: "https://usage.local/ingest",
+    token: "usage-token",
   });
 });
 
@@ -62,10 +60,10 @@ test("treats empty values as missing", () => {
     modelsInUse: [],
     environment: {
       DISCORD_BOT_TOKEN: BOT_TOKEN,
-      LANGFUSE_PUBLIC_KEY: "langfuse-public-key",
-      LANGFUSE_SECRET_KEY: "",
+      USAGE_ENDPOINT: "https://usage.local/ingest",
+      USAGE_TOKEN: "",
     },
   });
 
-  assert.equal(credentials.langfuse, undefined);
+  assert.equal(credentials.usage, undefined);
 });

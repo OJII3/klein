@@ -55,7 +55,7 @@ import {
 } from "./pi-model-runtime";
 import { adaptPiTools } from "./pi-tool-adapter";
 import { PiRuntimeTrace } from "./pi-runtime-trace";
-import { withPiTelemetry, type PiTelemetry } from "./pi-telemetry";
+import type { PiUsageReporter } from "./pi-usage-reporter";
 import { createSkillReadTool } from "./skill-read-tool";
 import { ToolAuthorization, type ToolPermissions } from "./tool-permissions";
 
@@ -88,8 +88,7 @@ export interface PiAgentFactoryOptions {
   };
   readonly logger: Logger;
   readonly watchToolCatalog?: WatchToolCatalog;
-  readonly telemetry?: PiTelemetry;
-  readonly ownerUserId?: string;
+  readonly usageReporter?: PiUsageReporter;
 }
 
 export const DEFAULT_SKILLS_DIRECTORY = "config/klein/skills";
@@ -494,8 +493,7 @@ export function createPiAgentFactory({
   skillsDirectory = DEFAULT_SKILLS_DIRECTORY,
   permissions,
   watchToolCatalog,
-  telemetry,
-  ownerUserId,
+  usageReporter,
 }: PiAgentFactoryOptions): AgentFactory {
   // Pi's MCP extension resolves config, credentials, and logs through this environment variable.
   process.env.PI_CODING_AGENT_DIR = resolve(agentDir);
@@ -532,7 +530,7 @@ export function createPiAgentFactory({
         .join("\n\n");
       const trace = new PiRuntimeTrace(
         logger.child({ component: "pi-runtime", sessionKey: options.sessionKey }),
-        { telemetry, sessionKey: options.sessionKey, userId: ownerUserId },
+        { usageReporter },
       );
       const settingsManager = SettingsManager.create(process.cwd(), agentDir);
       const resourceLoader = createResourceLoader(
@@ -561,9 +559,6 @@ export function createPiAgentFactory({
         process.cwd(),
       );
       const sessionId = sessionManager.getSessionId();
-      const telemetryModelRuntime = telemetry
-        ? withPiTelemetry(modelRuntime, telemetry, sessionId)
-        : modelRuntime;
       const model = withOpenCodeSessionHeader(
         withContextWindowRatio(
           resolveConfiguredModel(llm.provider, llm.model, modelRuntime),
@@ -579,7 +574,7 @@ export function createPiAgentFactory({
         agentDir,
         customTools,
         model,
-        modelRuntime: telemetryModelRuntime,
+        modelRuntime,
         resourceLoader,
         sessionManager,
         settingsManager,
@@ -617,7 +612,7 @@ export function createPiAgentFactory({
         ? new PiImageAnalyzer(session.modelRuntime, sessionImageModel, llm.image?.thinkingLevel)
         : undefined;
 
-      return new PiAgentRuntime(session, imageAnalyzer, trace, telemetryModelRuntime);
+      return new PiAgentRuntime(session, imageAnalyzer, trace, modelRuntime);
     },
   };
 }
