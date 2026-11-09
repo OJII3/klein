@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
@@ -9,6 +8,7 @@ import { ChannelSessionStateStore } from "@app/channel-session-state-store";
 import { PiSessionReader } from "@modules/webui/infrastructure/pi-session-reader";
 import { createPiSessionManager } from "./pi-agent-runtime";
 import { applyDeltaOps, migratePiDurableStorage } from "./pi-durable-migration";
+import { createTempDir } from "../../testing/temp-dir";
 
 function createTestDurableSqlite(sqlitePath: string): void {
   const db = new DatabaseSync(sqlitePath);
@@ -271,69 +271,67 @@ function createTestDurableSqlite(sqlitePath: string): void {
 }
 
 test("migrates pi-durable SQLite channel states and conversations idempotently", async () => {
-  const agentDir = await mkdtemp(join(tmpdir(), "klein-pi-durable-migration-"));
+  await using temp = await createTempDir("klein-pi-durable-migration-");
+  const agentDir = temp.path;
   const durableDir = join(agentDir, "pi-durable");
   await mkdir(durableDir, { recursive: true });
   const sqlitePath = join(durableDir, "pi-durable.sqlite");
   createTestDurableSqlite(sqlitePath);
 
-  try {
-    const firstRun = await migratePiDurableStorage({ agentDir, cwd: process.cwd() });
-    assert.equal(firstRun.migratedChannelStates, 2);
-    assert.equal(firstRun.migratedConversations, 2);
+  const firstRun = await migratePiDurableStorage({ agentDir, cwd: process.cwd() });
+  assert.equal(firstRun.migratedChannelStates, 2);
+  assert.equal(firstRun.migratedConversations, 2);
 
-    const channelStore = new ChannelSessionStateStore(join(agentDir, "channel-sessions"));
-    const states = await channelStore.list();
-    assert.equal(states.length, 2);
-    const ownerState = states.find((s) => s.conversationKey.channelId === "channel-123");
-    assert.deepEqual(ownerState, {
-      conversationKey: { kind: "discord", channelId: "channel-123" },
-      accessScope: "owner:user-1",
-      sessionKey: "discord-channel:channel-123:owner:user-1:2",
-      lastActivityAt: 1_700_000_030_000,
-      lastRotationDate: "2026-10-14T12",
-      hasActivitySinceRotation: true,
-      handoffContext: "## Goal\nクラインとして振る舞う\n\n## 引き継ぎ\n- テスト要約",
-    });
-    const legacyState = states.find((s) => s.conversationKey.channelId === "legacy-channel");
-    assert.deepEqual(legacyState, {
-      conversationKey: { kind: "discord", channelId: "legacy-channel" },
-      sessionKey: "discord-channel:legacy-channel:1",
-      lastActivityAt: 1_700_000_000_000,
-      lastRotationDate: "2026-10-13T08",
-      hasActivitySinceRotation: true,
-    });
+  const channelStore = new ChannelSessionStateStore(join(agentDir, "channel-sessions"));
+  const states = await channelStore.list();
+  assert.equal(states.length, 2);
+  const ownerState = states.find((s) => s.conversationKey.channelId === "channel-123");
+  assert.deepEqual(ownerState, {
+    conversationKey: { kind: "discord", channelId: "channel-123" },
+    accessScope: "owner:user-1",
+    sessionKey: "discord-channel:channel-123:owner:user-1:2",
+    lastActivityAt: 1_700_000_030_000,
+    lastRotationDate: "2026-10-14T12",
+    hasActivitySinceRotation: true,
+    handoffContext: "## Goal\nクラインとして振る舞う\n\n## 引き継ぎ\n- テスト要約",
+  });
+  const legacyState = states.find((s) => s.conversationKey.channelId === "legacy-channel");
+  assert.deepEqual(legacyState, {
+    conversationKey: { kind: "discord", channelId: "legacy-channel" },
+    sessionKey: "discord-channel:legacy-channel:1",
+    lastActivityAt: 1_700_000_000_000,
+    lastRotationDate: "2026-10-13T08",
+    hasActivitySinceRotation: true,
+  });
 
-    const sessionKey = "discord-channel:channel-123:owner:user-1:2";
-    const resumed = createPiSessionManager(agentDir, sessionKey, "resume", process.cwd());
-    const contextMessages = resumed.buildSessionContext().messages;
-    const serialized = JSON.stringify(contextMessages);
-    assert.match(serialized, /Compacted durable summary/);
-    assert.match(serialized, /Kept recent message/);
-    assert.match(serialized, /Latest durable reply/);
-    assert.doesNotMatch(serialized, /Summarized early message/);
-    assert.doesNotMatch(serialized, /Old conversation message/);
+  const sessionKey = "discord-channel:channel-123:owner:user-1:2";
+  const resumed = createPiSessionManager(agentDir, sessionKey, "resume", process.cwd());
+  const contextMessages = resumed.buildSessionContext().messages;
+  const serialized = JSON.stringify(contextMessages);
+  assert.match(serialized, /Compacted durable summary/);
+  assert.match(serialized, /Kept recent message/);
+  assert.match(serialized, /Latest durable reply/);
+  assert.doesNotMatch(serialized, /Summarized early message/);
+  assert.doesNotMatch(serialized, /Old conversation message/);
 
-    const reader = new PiSessionReader(agentDir);
-    const listed = await reader.list();
-    assert.equal(listed.items.length, 2);
+  const reader = new PiSessionReader(agentDir);
+  const listed = await reader.list();
+  assert.equal(listed.items.length, 2);
 
-    const sessionDir = join(agentDir, "sessions", encodeURIComponent(sessionKey));
-    const filesBefore = (await readdir(sessionDir)).sort();
-    assert.equal(filesBefore.length, 2);
+  const sessionDir = join(agentDir, "sessions", encodeURIComponent(sessionKey));
+  const filesBefore = (await readdir(sessionDir)).sort();
+  assert.equal(filesBefore.length, 2);
 
-    const secondRun = await migratePiDurableStorage({ agentDir, cwd: process.cwd() });
-    assert.equal(secondRun.migratedChannelStates, 0);
-    assert.equal(secondRun.migratedConversations, 0);
-    const filesAfter = (await readdir(sessionDir)).sort();
-    assert.deepEqual(filesAfter, filesBefore);
-  } finally {
-    await rm(agentDir, { force: true, recursive: true });
-  }
+  const secondRun = await migratePiDurableStorage({ agentDir, cwd: process.cwd() });
+  assert.equal(secondRun.migratedChannelStates, 0);
+  assert.equal(secondRun.migratedConversations, 0);
+  const filesAfter = (await readdir(sessionDir)).sort();
+  assert.deepEqual(filesAfter, filesBefore);
 });
 
 test("converts legacy channel session state files instead of copying them", async () => {
-  const agentDir = await mkdtemp(join(tmpdir(), "klein-pi-durable-migration-"));
+  await using temp = await createTempDir("klein-pi-durable-migration-");
+  const agentDir = temp.path;
   const legacyDir = join(agentDir, "channel-session-state");
   await mkdir(legacyDir, { recursive: true });
   await writeFile(
@@ -350,36 +348,32 @@ test("converts legacy channel session state files instead of copying them", asyn
     "utf8",
   );
 
-  try {
-    const result = await migratePiDurableStorage({
-      agentDir,
-      cwd: process.cwd(),
-      sqlitePaths: [],
-    });
-    assert.equal(result.migratedChannelStates, 1);
+  const result = await migratePiDurableStorage({
+    agentDir,
+    cwd: process.cwd(),
+    sqlitePaths: [],
+  });
+  assert.equal(result.migratedChannelStates, 1);
 
-    const store = new ChannelSessionStateStore(join(agentDir, "channel-sessions"));
-    assert.deepEqual(await store.list(), [
-      {
-        conversationKey: { kind: "discord", channelId: "42" },
-        accessScope: "public",
-        sessionKey: "discord-channel:42:public:rotation:2026-10-11",
-        lastActivityAt: 1_700_000_000_000,
-        lastRotationDate: "2026-10-11",
-        hasActivitySinceRotation: false,
-        handoffContext: "legacy handoff",
-      },
-    ]);
+  const store = new ChannelSessionStateStore(join(agentDir, "channel-sessions"));
+  assert.deepEqual(await store.list(), [
+    {
+      conversationKey: { kind: "discord", channelId: "42" },
+      accessScope: "public",
+      sessionKey: "discord-channel:42:public:rotation:2026-10-11",
+      lastActivityAt: 1_700_000_000_000,
+      lastRotationDate: "2026-10-11",
+      hasActivitySinceRotation: false,
+      handoffContext: "legacy handoff",
+    },
+  ]);
 
-    const secondRun = await migratePiDurableStorage({
-      agentDir,
-      cwd: process.cwd(),
-      sqlitePaths: [],
-    });
-    assert.equal(secondRun.migratedChannelStates, 0);
-  } finally {
-    await rm(agentDir, { force: true, recursive: true });
-  }
+  const secondRun = await migratePiDurableStorage({
+    agentDir,
+    cwd: process.cwd(),
+    sqlitePaths: [],
+  });
+  assert.equal(secondRun.migratedChannelStates, 0);
 });
 
 test("replays chord delta operations accurately", () => {

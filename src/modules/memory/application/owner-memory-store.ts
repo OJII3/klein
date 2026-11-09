@@ -230,5 +230,5 @@ function createOwnerMemorySummary(document: MemoryDocument): MemoryScopeSummary 
 }
 
 function mostRecentlyUpdated(entries: readonly MemoryEntry[]): MemoryEntry[] {
-  return [...entries].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+  return entries.toSorted((left, right) => right.updatedAt.localeCompare(left.updatedAt));
 }

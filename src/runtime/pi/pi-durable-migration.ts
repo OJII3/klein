@@ -83,9 +83,9 @@ export async function migratePiDurableStorage(
     resolve(agentDir, "pi-durable", "pi-durable.sqlite"),
     resolve(agentDir, "pi-durable-voice", "pi-durable.sqlite"),
   ];
-  const existingSqlitePaths = candidateSqlitePaths
-    .map((path) => resolve(path))
-    .filter((path, index, all) => all.indexOf(path) === index && existsSync(path));
+  const existingSqlitePaths = [
+    ...new Set(candidateSqlitePaths.map((path) => resolve(path))),
+  ].filter((path) => existsSync(path));
   if (existingSqlitePaths.length === 0) {
     return { migratedChannelStates, migratedConversations: 0 };
   }
@@ -345,12 +345,12 @@ export function applyDeltaOps(root: unknown, ops: readonly unknown[]): unknown {
       }
       case "s": {
         const parent = navigateToParent(current, path);
-        parent[path[path.length - 1]!] = op[2];
+        parent[path.at(-1)!] = op[2];
         break;
       }
       case "d": {
         const parent = navigateToParent(current, path);
-        delete parent[path[path.length - 1]!];
+        delete parent[path.at(-1)!];
         break;
       }
       case "a": {
@@ -359,7 +359,7 @@ export function applyDeltaOps(root: unknown, ops: readonly unknown[]): unknown {
           current = (current as string) + suffix;
         } else {
           const parent = navigateToParent(current, path);
-          const key = path[path.length - 1]!;
+          const key = path.at(-1)!;
           parent[key] = (parent[key] as string) + suffix;
         }
         break;
@@ -370,7 +370,7 @@ export function applyDeltaOps(root: unknown, ops: readonly unknown[]): unknown {
           current = (current as string).slice(trimCount);
         } else {
           const parent = navigateToParent(current, path);
-          const key = path[path.length - 1]!;
+          const key = path.at(-1)!;
           parent[key] = (parent[key] as string).slice(trimCount);
         }
         break;

@@ -44,7 +44,7 @@ export class ToolAuthorization {
     if (this.alwaysAllowedTools.has(name)) return true;
     const server = /^mcp__(.+?)__/.exec(name)?.[1];
     if (server) {
-      const matching = [...this.servers].filter((name) => name.replace(/-/g, "_") === server);
+      const matching = [...this.servers].filter((name) => name.replaceAll("-", "_") === server);
       if (!(matching.length ? matching : [server]).every((name) => this.allowsServer(name)))
         return false;
     }

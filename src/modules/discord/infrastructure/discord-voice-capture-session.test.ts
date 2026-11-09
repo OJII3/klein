@@ -1,29 +1,13 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 import type { Logger } from "pino";
+
 import type { AsrConnection, AsrRequest } from "@modules/asr/domain/asr-client";
-
 import { DiscordVoiceCaptureSession } from "./discord-voice-capture-session";
-
-interface Deferred<T> {
-  promise: Promise<T>;
-  resolve(value: T): void;
-  reject(error: Error): void;
-}
-
-function deferred<T>(): Deferred<T> {
-  let resolve!: (value: T) => void;
-  let reject!: (error: Error) => void;
-  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
-    resolve = resolvePromise;
-    reject = rejectPromise;
-  });
-  return { promise, resolve, reject };
-}
+import { createTempDir } from "../../../testing/temp-dir";
 
 function createCapture() {
   const logs: Array<Record<string, unknown>> = [];
@@ -35,14 +19,14 @@ function createCapture() {
   };
   const requestIds: string[] = [];
   const deliveredRequestIds: Array<string | undefined> = [];
-  const results: Deferred<{ readonly text: string }>[] = [];
+  const results: PromiseWithResolvers<{ readonly text: string }>[] = [];
   const decoders: Array<{ emit(type: string, value?: unknown): boolean }> = [];
   const transcripts: string[] = [];
   const connection: AsrConnection = {
     onError: () => () => undefined,
     start: ({ requestId }): AsrRequest => {
       requestIds.push(requestId);
-      const result = deferred<{ readonly text: string }>();
+      const result = Promise.withResolvers<{ readonly text: string }>();
       results.push(result);
       return {
         write: () => undefined,
@@ -220,7 +204,7 @@ test("aborting a preset reaction stops only that playback", async () => {
 });
 
 test("a ready reply preempts a reaction without allowing its stale completion to stop the reply", async () => {
-  const synthesis = deferred<Uint8Array>();
+  const synthesis = Promise.withResolvers<Uint8Array>();
   const { capture } = createCapture();
   playbackOf(capture).options.tts = {
     synthesize: () => synthesis.promise,
@@ -310,7 +294,8 @@ test("resource creation failure clears playback state for a later reaction", asy
 });
 
 test("loads saved reaction audio without synthesizing it", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "klein-reaction-"));
+  await using temp = await createTempDir("klein-reaction-");
+  const directory = temp.path;
   const audioFile = join(directory, "neutral.pcm");
   const expectedAudio = new Uint8Array([4, 5, 6]);
   await writeFile(audioFile, expectedAudio);
@@ -353,7 +338,6 @@ test("loads saved reaction audio without synthesizing it", async () => {
     assert.equal(playbackOf(capture).reactionAudio.has("missing"), false);
   } finally {
     await capture.stop();
-    await rm(directory, { recursive: true, force: true });
   }
 });
 
@@ -393,7 +377,7 @@ test("traces out-of-order ASR results through ordered transcript delivery withou
 
 test("distinguishes synthesis completion from playback interrupted by session stop", async () => {
   const { capture, logs } = createCapture();
-  const played = deferred<void>();
+  const played = Promise.withResolvers<void>();
   playbackOf(capture).audioPlayer = {
     play: () => played.resolve(),
     stop: () => undefined,

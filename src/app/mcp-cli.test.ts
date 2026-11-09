@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 
 import { runMcpCommand } from "./mcp-cli";
+import { createTempDir } from "../testing/temp-dir";
 
 const ACCESS_TOKEN = "signed-in-token";
 const AUTHORIZATION_CODE = "test-code";
@@ -131,8 +131,7 @@ interface Workspace {
   agentDir: string;
 }
 
-async function createWorkspace(mcpUrl: string): Promise<Workspace> {
-  const root = await mkdtemp(join(tmpdir(), "klein-mcp-cli-"));
+async function createWorkspace(root: string, mcpUrl: string): Promise<Workspace> {
   const agentDir = join(root, "agent");
   await mkdir(agentDir, { recursive: true });
   const configPath = join(root, "config.jsonc");
@@ -159,7 +158,8 @@ async function withWorkspace(
   mcpUrl: string,
   run: (workspace: Workspace) => Promise<void>,
 ): Promise<void> {
-  const workspace = await createWorkspace(mcpUrl);
+  await using temp = await createTempDir("klein-mcp-cli-");
+  const workspace = await createWorkspace(temp.path, mcpUrl);
   const previousConfig = process.env.CONFIG_PATH;
   const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
   process.env.CONFIG_PATH = workspace.configPath;
@@ -170,7 +170,6 @@ async function withWorkspace(
     else process.env.CONFIG_PATH = previousConfig;
     if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
     else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
-    await rm(workspace.root, { force: true, recursive: true });
   }
 }
 

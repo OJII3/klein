@@ -21,18 +21,10 @@ function createLogger(info: (...args: unknown[]) => void = () => undefined): Log
   return { info } as unknown as Logger;
 }
 
-function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((res) => {
-    resolve = res;
-  });
-  return { promise, resolve };
-}
-
 test("merges adjacent queued transcripts before continuing processing", async () => {
   let processing = true;
   let queue!: VoiceTranscriptQueue;
-  const processed = deferred<DiscordMessage>();
+  const processed = Promise.withResolvers<DiscordMessage>();
   queue = new VoiceTranscriptQueue({
     selector: { select: async () => "merge" },
     logger: createLogger((data) => {
@@ -56,7 +48,7 @@ test("merges adjacent queued transcripts before continuing processing", async ()
 });
 
 test("steers the active response with the first queued transcript", async () => {
-  const steered = deferred<DiscordMessage>();
+  const steered = Promise.withResolvers<DiscordMessage>();
   const queue = new VoiceTranscriptQueue({
     selector: { select: async () => "steer" },
     logger: createLogger(),

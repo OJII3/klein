@@ -3,7 +3,7 @@
   "compilerOptions": {
     "jsx": "react-jsx",
     "jsxImportSource": "preact",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "lib": ["ES2025", "ESNext.Disposable", "DOM", "DOM.Iterable"],
     "noEmit": true,
     "rootDir": "..",
     "paths": {
