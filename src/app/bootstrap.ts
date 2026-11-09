@@ -256,6 +256,7 @@ export async function bootstrap(): Promise<void> {
   const usageProvider = resolveUsageProvider({
     agentDirectory: agentDir,
     provider: config.llm.provider,
+    googleModels: collectModelNamesOfProvider(modelsInUse, "google"),
     mistralModels: collectModelNamesOfProvider(modelsInUse, "mistral"),
     langfuse: credentials.langfuse,
     openCodeGoApiKey: credentials.openCodeGoApiKey,

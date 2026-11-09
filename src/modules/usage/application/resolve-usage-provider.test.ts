@@ -16,6 +16,7 @@ function createInput(overrides: Partial<ResolveUsageProviderInput>): ResolveUsag
   return {
     agentDirectory: AGENT_DIRECTORY,
     provider: "google",
+    googleModels: [],
     mistralModels: [],
     ...overrides,
   };
@@ -25,6 +26,26 @@ test("estimates Google spend from local session usage", () => {
   assert.ok(
     resolveUsageProvider(createInput({ provider: "google" })) instanceof EstimatedUsageProvider,
   );
+});
+
+test("reads Google spend from Langfuse when credentials and models are available", () => {
+  const provider = resolveUsageProvider(
+    createInput({
+      provider: "google",
+      googleModels: ["gemini-3-pro-preview"],
+      langfuse: LANGFUSE_CREDENTIALS,
+    }),
+  );
+
+  assert.ok(provider instanceof LangfuseUsageProvider);
+});
+
+test("estimates Google spend when Langfuse credentials are missing", () => {
+  const provider = resolveUsageProvider(
+    createInput({ provider: "google", googleModels: ["gemini-3-pro-preview"] }),
+  );
+
+  assert.ok(provider instanceof EstimatedUsageProvider);
 });
 
 test("reads Mistral spend from Langfuse when credentials and models are available", () => {
