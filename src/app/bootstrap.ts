@@ -5,8 +5,10 @@ import { AgentCoordinator } from "./agent-coordinator";
 import { ChannelSessionStateStore } from "./channel-session-state-store";
 import { parseCliOptions } from "./cli-options";
 import { loadConfig } from "./config";
+import { resolveCredentials } from "./credentials";
 import { createLogFilePath, createLogger, flushLogger } from "./logger";
 import { runMcpCommand } from "./mcp-cli";
+import { collectModelNamesOfProvider, collectModelsInUse } from "./model-configuration";
 import { loadPromptFile } from "./prompt";
 import { resolveProfile } from "./profile";
 import { TaskCoordinator } from "./task-coordinator";
@@ -27,10 +29,12 @@ import { PiVoiceReactionSelector } from "@runtime/pi/pi-voice-reaction-selector"
 import { PiVoiceTranscriptQueueSelector } from "@runtime/pi/pi-voice-transcript-queue-selector";
 import { createDiscordAccessPolicy } from "@modules/discord/domain/discord-access-policy";
 import { DiscordOperatingState } from "@modules/discord/domain/discord-operating-state";
+import { resolveVoiceChatConfig } from "@modules/discord/domain/voice-chat-config";
 import { DiscordJsService } from "@modules/discord/infrastructure/discord-js-service";
 import { loadVoiceReactionPresets } from "@modules/discord/infrastructure/voice-reaction-presets";
 import { FileDiscordChannelRuleStore } from "@modules/discord/infrastructure/file-discord-channel-rule-store";
 import { MemoryCoordinator } from "@modules/memory/application/memory-coordinator";
+import { resolveMemoryConfig } from "@modules/memory/application/memory-config";
 import { JsonMemoryStore } from "@modules/memory/infrastructure/json-memory-store";
 import {
   createWebUiMemoryAccessor,
@@ -38,9 +42,7 @@ import {
 } from "@modules/memory/application/owner-memory-store";
 import { createGetMonthlyUsageLimit } from "@modules/usage/application/get-monthly-usage-limit";
 import { formatMonthlyUsageStatus } from "@modules/usage/application/format-monthly-usage-status";
-import { EstimatedUsageProvider } from "@modules/usage/infrastructure/estimated-usage-provider";
-import { LangfuseUsageProvider } from "@modules/usage/infrastructure/langfuse-usage-provider";
-import { OpenCodeGoUsageProvider } from "@modules/usage/infrastructure/opencode-go-usage-provider";
+import { resolveUsageProvider } from "@modules/usage/application/resolve-usage-provider";
 import {
   resolveLogDirectory,
   resolveWebUiConfig,
@@ -70,28 +72,14 @@ export async function bootstrap(): Promise<void> {
   logger.info({ event: "application_starting" }, "Starting Klein");
 
   const systemPrompt = await loadPromptFile(profile.systemPromptFile);
-  const token = process.env.DISCORD_BOT_TOKEN;
-  if (!token) {
-    throw new Error("DISCORD_BOT_TOKEN is required");
-  }
-  const openCodeGoApiKey = process.env.OPENCODE_API_KEY;
-  const voiceChatConfiguration = config.features.voiceChat;
-  const voiceChatLlmConfiguration = voiceChatConfiguration?.enabled
-    ? voiceChatConfiguration.llm
-    : undefined;
-  const memoryLlmConfiguration = config.features.memory.llm ?? config.llm;
-  const modelsInUse = [config.llm, config.llm.image, voiceChatLlmConfiguration];
-  if (config.features.memory.enabled) modelsInUse.push(memoryLlmConfiguration);
-  const usesOpenCodeGo = modelsInUse.some((model) => model?.provider === "opencode-go");
-  if (usesOpenCodeGo && !openCodeGoApiKey) {
-    throw new Error("OPENCODE_API_KEY is required");
-  }
-  const usesMistral = modelsInUse.some((model) => model?.provider === "mistral");
-  const usesGoogle = modelsInUse.some((model) => model?.provider === "google");
+  const voiceChatConfig = resolveVoiceChatConfig(config);
+  const memoryConfig = resolveMemoryConfig(config);
+  const modelsInUse = collectModelsInUse(config);
+  const credentials = resolveCredentials({ modelsInUse, environment: process.env });
   const discordOperatingState = new DiscordOperatingState();
   const ownerUserId = config.owner?.discord.userId;
   const discordAccessPolicy = createDiscordAccessPolicy(config.discord.access, ownerUserId);
-  const voiceSystemPrompt = voiceChatConfiguration?.enabled
+  const voiceSystemPrompt = voiceChatConfig
     ? await loadPromptFile(profile.voiceSystemPromptFile)
     : undefined;
   const taskCoordinator = new TaskCoordinator();
@@ -113,15 +101,14 @@ export async function bootstrap(): Promise<void> {
       )
     : undefined;
   const modelRuntime = await createPiModelRuntime(agentDir);
-  if (usesMistral && !(await modelRuntime.checkAuth("mistral"))) {
+  const providersInUse = new Set(modelsInUse.map((model) => model.provider));
+  if (providersInUse.has("mistral") && !(await modelRuntime.checkAuth("mistral"))) {
     throw new Error("MISTRAL_API_KEY is required");
   }
-  if (usesGoogle && !(await modelRuntime.checkAuth("google"))) {
+  if (providersInUse.has("google") && !(await modelRuntime.checkAuth("google"))) {
     throw new Error("GEMINI_API_KEY is required");
   }
-  const reactionConfiguration = voiceChatConfiguration?.enabled
-    ? voiceChatConfiguration.reactions
-    : undefined;
+  const reactionConfiguration = voiceChatConfig?.reactions;
   const reactionPresets = reactionConfiguration
     ? await loadVoiceReactionPresets(reactionConfiguration.presetsFile)
     : undefined;
@@ -155,10 +142,10 @@ export async function bootstrap(): Promise<void> {
     telemetry: piTelemetry,
     watchToolCatalog,
   });
-  const voiceChatAgentFactory = voiceChatLlmConfiguration
+  const voiceChatAgentFactory = voiceChatConfig?.llm
     ? createPiAgentFactory({
         agentDir,
-        llm: voiceChatLlmConfiguration,
+        llm: voiceChatConfig.llm,
         skillsDirectory: profile.skillsDirectory,
         logger,
         modelRuntime,
@@ -218,41 +205,35 @@ export async function bootstrap(): Promise<void> {
           transcriptQueueSelector,
         });
   discordService = new DiscordJsService(
-    token,
+    credentials.discordBotToken,
     discordAccessPolicy,
     logger,
     discordOperatingState,
-    voiceChatConfiguration?.enabled && voiceChatCoordinator
+    voiceChatConfig && voiceChatCoordinator
       ? {
-          asr: new WebSocketAsrClient(voiceChatConfiguration.asrServerUrl),
+          asr: new WebSocketAsrClient(voiceChatConfig.asrServerUrl),
           conversationFactory: voiceChatCoordinator,
-          language: voiceChatConfiguration.language ?? "ja",
+          language: voiceChatConfig.language,
           tts,
           ...(reactionPresets ? { reactionPresets } : {}),
         }
       : undefined,
     channelRuleStore,
   );
-  const memoryConfiguration = config.features.memory;
-  const resolvedMemoryLlmConfiguration = memoryConfiguration.llm ?? config.llm;
   const memorySessionId = `memory-${randomUUID()}`;
-  const memoryCoordinator = memoryConfiguration.enabled
+  const memoryCoordinator = memoryConfig.enabled
     ? new MemoryCoordinator({
-        filePath: memoryConfiguration.filePath ?? ".runtime/memory/{guildId}/MEMORY.json",
-        idleSeconds: memoryConfiguration.idleSeconds ?? 180,
+        filePath: memoryConfig.filePath,
+        idleSeconds: memoryConfig.idleSeconds,
         logger,
-        maxBatchAgeSeconds: memoryConfiguration.maxBatchAgeSeconds ?? 1800,
-        maxBatchMessages: memoryConfiguration.maxBatchMessages ?? 32,
+        maxBatchAgeSeconds: memoryConfig.maxBatchAgeSeconds,
+        maxBatchMessages: memoryConfig.maxBatchMessages,
         processor: new PiMemoryProcessor(
           withOpenCodeSessionHeader(
-            resolveConfiguredModel(
-              resolvedMemoryLlmConfiguration.provider,
-              resolvedMemoryLlmConfiguration.model,
-              modelRuntime,
-            ),
+            resolveConfiguredModel(memoryConfig.llm.provider, memoryConfig.llm.model, modelRuntime),
             memorySessionId,
           ),
-          resolvedMemoryLlmConfiguration.thinkingLevel,
+          memoryConfig.llm.thinkingLevel,
         ),
         taskCoordinator,
       })
@@ -272,31 +253,13 @@ export async function bootstrap(): Promise<void> {
     watchCheckRunner,
     taskCoordinator,
   });
-  const langfusePublicKey = process.env.LANGFUSE_PUBLIC_KEY;
-  const langfuseSecretKey = process.env.LANGFUSE_SECRET_KEY;
-  const mistralModels = [
-    ...new Set(
-      modelsInUse.flatMap((model) => (model?.provider === "mistral" ? [model.model] : [])),
-    ),
-  ];
-  const mistralUsageProvider =
-    langfusePublicKey && langfuseSecretKey && mistralModels.length > 0
-      ? new LangfuseUsageProvider({
-          baseUrl: process.env.LANGFUSE_BASE_URL ?? "https://cloud.langfuse.com",
-          models: mistralModels,
-          monthlyBudgetUsd: 150,
-          publicKey: langfusePublicKey,
-          secretKey: langfuseSecretKey,
-        })
-      : new EstimatedUsageProvider(agentDir, "mistral", 150);
-  const usageProvider =
-    config.llm.provider === "google"
-      ? new EstimatedUsageProvider(agentDir, "google", 10)
-      : config.llm.provider === "mistral"
-        ? mistralUsageProvider
-        : config.llm.provider === "opencode-go" && openCodeGoApiKey
-          ? new OpenCodeGoUsageProvider(openCodeGoApiKey)
-          : undefined;
+  const usageProvider = resolveUsageProvider({
+    agentDirectory: agentDir,
+    provider: config.llm.provider,
+    mistralModels: collectModelNamesOfProvider(modelsInUse, "mistral"),
+    langfuse: credentials.langfuse,
+    openCodeGoApiKey: credentials.openCodeGoApiKey,
+  });
   const getMonthlyUsageLimit = usageProvider
     ? createGetMonthlyUsageLimit(usageProvider)
     : undefined;
@@ -325,7 +288,7 @@ export async function bootstrap(): Promise<void> {
         toolUsage: new PiToolUsageReader(agentDir),
         port: webUiConfig.port,
         staticDirectory: resolveWebUiStaticDirectory(),
-        tunnelToken: process.env.TUNNEL_TOKEN,
+        tunnelToken: credentials.tunnelToken,
       })
     : undefined;
 
