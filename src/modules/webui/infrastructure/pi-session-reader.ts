@@ -32,7 +32,10 @@ export class PiSessionReader implements ViewerSessionReader {
       sessions.push(...infos.map((info) => toViewerSessionSummary(info, channelKey)));
     }
 
-    sessions.sort((left, right) => right.modified.localeCompare(left.modified));
+    sessions.sort(
+      (left, right) =>
+        right.modified.localeCompare(left.modified) || right.id.localeCompare(left.id),
+    );
 
     const limit = normalizeSessionLimit(query.limit);
     const cursor = query.cursor ? decodeSessionListCursor(query.cursor) : undefined;
