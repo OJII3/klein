@@ -1,12 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import pino from "pino";
 
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import { TaskCoordinator } from "@app/task-coordinator";
+
 import {
   MemoryEntryNotFoundError,
   type MemoryMessage,
@@ -15,9 +14,11 @@ import {
 } from "../domain/memory";
 import { JsonMemoryStore } from "../infrastructure/json-memory-store";
 import { MemoryCoordinator } from "./memory-coordinator";
+import { createTempDir } from "../../../testing/temp-dir";
 
 test("batches recent guild messages and keeps guild memory files separate", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "klein-memory-"));
+  await using temp = await createTempDir("klein-memory-");
+  const directory = temp.path;
   const processed: string[][] = [];
   const processor: MemoryProcessor = {
     async process(
@@ -89,12 +90,12 @@ test("batches recent guild messages and keeps guild memory files separate", asyn
     );
   } finally {
     coordinator.dispose();
-    await rm(directory, { force: true, recursive: true });
   }
 });
 
 test("deletes a persisted memory entry for a guild", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "klein-memory-"));
+  await using temp = await createTempDir("klein-memory-");
+  const directory = temp.path;
   const taskCoordinator = new TaskCoordinator();
   const coordinator = new MemoryCoordinator({
     filePath: join(directory, "{guildId}", "MEMORY.json"),
@@ -132,7 +133,6 @@ test("deletes a persisted memory entry for a guild", async () => {
     await assert.rejects(coordinator.deleteEntry("guild-a", entry.id), MemoryEntryNotFoundError);
   } finally {
     coordinator.dispose();
-    await rm(directory, { force: true, recursive: true });
   }
 });
 

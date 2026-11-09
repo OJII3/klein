@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
 import { EventEmitter, once } from "node:events";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
@@ -12,6 +11,7 @@ import { startWebUi } from "./elysia-webui-app";
 import { PiSessionReader } from "./pi-session-reader";
 import { PiToolUsageReader } from "./pi-tool-usage-reader";
 import { PinoJsonlReader } from "./pino-jsonl-reader";
+import { createTempDir } from "../../../testing/temp-dir";
 
 function captureLogs() {
   const events = new EventEmitter();
@@ -29,7 +29,8 @@ function captureLogs() {
 }
 
 test("runs cloudflared without forwarding application secrets and stops its process", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "klein-tunnel-"));
+  await using temp = await createTempDir("klein-tunnel-");
+  const directory = temp.path;
   const originalPath = process.env.PATH;
   const originalSecret = process.env.KLEIN_TEST_SECRET;
   const { events, logger, records } = captureLogs();
@@ -65,12 +66,12 @@ while :; do /bin/sleep 1; done
     if (originalSecret === undefined) delete process.env.KLEIN_TEST_SECRET;
     else process.env.KLEIN_TEST_SECRET = originalSecret;
     await tunnel?.stop();
-    await rm(directory, { recursive: true, force: true });
   }
 });
 
 test("reports a missing cloudflared executable", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "klein-tunnel-missing-"));
+  await using temp = await createTempDir("klein-tunnel-missing-");
+  const directory = temp.path;
   const originalPath = process.env.PATH;
   try {
     process.env.PATH = directory;
@@ -78,12 +79,12 @@ test("reports a missing cloudflared executable", async () => {
   } finally {
     if (originalPath === undefined) delete process.env.PATH;
     else process.env.PATH = originalPath;
-    await rm(directory, { recursive: true, force: true });
   }
 });
 
 test("logs an unexpected cloudflared exit", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "klein-tunnel-exit-"));
+  await using temp = await createTempDir("klein-tunnel-exit-");
+  const directory = temp.path;
   const originalPath = process.env.PATH;
   const { events, logger } = captureLogs();
   try {
@@ -98,12 +99,12 @@ test("logs an unexpected cloudflared exit", async () => {
   } finally {
     if (originalPath === undefined) delete process.env.PATH;
     else process.env.PATH = originalPath;
-    await rm(directory, { recursive: true, force: true });
   }
 });
 
 test("serves local HTTP without a token and releases the listener when tunnel startup fails", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "klein-webui-tunnel-"));
+  await using temp = await createTempDir("klein-webui-tunnel-");
+  const directory = temp.path;
   const originalPath = process.env.PATH;
   const socket = createServer();
   try {
@@ -156,6 +157,5 @@ test("serves local HTTP without a token and releases the listener when tunnel st
     if (originalPath === undefined) delete process.env.PATH;
     else process.env.PATH = originalPath;
     if (socket.listening) await new Promise<void>((resolve) => socket.close(() => resolve()));
-    await rm(directory, { recursive: true, force: true });
   }
 });

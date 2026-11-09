@@ -1,8 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+
 import {
   fauxAssistantMessage,
   fauxProvider,
@@ -10,6 +8,7 @@ import {
   InMemoryCredentialStore,
 } from "@earendil-works/pi-ai";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
+
 import type {
   AgentSessionEvent,
   AgentSessionEventListener,
@@ -20,6 +19,7 @@ import { createLogger } from "@app/logger";
 import { PiRuntimeTrace } from "./pi-runtime-trace";
 import { createPiAgentFactory } from "./pi-agent-runtime";
 import { createDiscordSpeakTool } from "@agents/discord/tools/discord-speak";
+import { createTempDir } from "../../testing/temp-dir";
 
 async function createTrace() {
   const lines: string[] = [];
@@ -249,7 +249,8 @@ test("background cache warming cannot overwrite the active model's provider timi
 });
 
 test("real Pi keeps accepting steer while a spoken tool blocks the next model call", async () => {
-  const agentDir = await mkdtemp(join(tmpdir(), "klein-voice-trace-"));
+  await using temp = await createTempDir("klein-voice-trace-");
+  const agentDir = temp.path;
   const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
   const lines: string[] = [];
   const logger = createLogger({ destination: { write: (line) => void lines.push(line) } });
@@ -339,6 +340,5 @@ test("real Pi keeps accepting steer while a spoken tool blocks the next model ca
     runtime.dispose();
     if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
     else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
-    await rm(agentDir, { recursive: true, force: true });
   }
 });

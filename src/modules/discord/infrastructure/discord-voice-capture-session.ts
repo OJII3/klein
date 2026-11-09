@@ -280,10 +280,9 @@ export class DiscordVoiceCaptureSession {
         try {
           const request = asrConnection.start({ requestId, language: this.options.language });
           const queuedAt = performance.now();
-          let resolveTranscript!: (text: string) => void;
-          const transcriptResult = new Promise<{ text: string; receivedAt: number }>((resolve) => {
-            resolveTranscript = (text) => resolve({ text, receivedAt: performance.now() });
-          });
+          const transcriptResult = Promise.withResolvers<{ text: string; receivedAt: number }>();
+          const resolveTranscript = (text: string) =>
+            transcriptResult.resolve({ text, receivedAt: performance.now() });
           this.activeAsrRequest = {
             request,
             requestId,
@@ -295,7 +294,7 @@ export class DiscordVoiceCaptureSession {
             "Detected speech and started an ASR request",
           );
           this.transcriptQueue = this.transcriptQueue.then(async () => {
-            const { text, receivedAt } = await transcriptResult;
+            const { text, receivedAt } = await transcriptResult.promise;
             if (this.stopped || !text.trim()) return;
             const deliveryStartedAt = performance.now();
             this.logger?.info(

@@ -1,42 +1,33 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import test from "node:test";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
 
 import { resolveWebUiStaticDirectory } from "./webui-config";
+import { createTempDir } from "../../../testing/temp-dir";
 
 test("resolves bundled Web UI assets next to the server executable", async () => {
-  const rootDirectory = await mkdtemp(join(tmpdir(), "klein-webui-config-"));
+  await using temp = await createTempDir("klein-webui-config-");
+  const rootDirectory = temp.path;
 
-  try {
-    const staticDirectory = join(rootDirectory, "dist", "web");
-    await mkdir(staticDirectory, { recursive: true });
+  const staticDirectory = join(rootDirectory, "dist", "web");
+  await mkdir(staticDirectory, { recursive: true });
 
-    assert.equal(
-      resolveWebUiStaticDirectory(
-        join(rootDirectory, "dist", "klein"),
-        join(rootDirectory, "other"),
-      ),
-      staticDirectory,
-    );
-  } finally {
-    await rm(rootDirectory, { force: true, recursive: true });
-  }
+  assert.equal(
+    resolveWebUiStaticDirectory(join(rootDirectory, "dist", "klein"), join(rootDirectory, "other")),
+    staticDirectory,
+  );
 });
 
 test("falls back to dist/web under the working directory for source runs", async () => {
-  const rootDirectory = await mkdtemp(join(tmpdir(), "klein-webui-config-"));
+  await using temp = await createTempDir("klein-webui-config-");
+  const rootDirectory = temp.path;
 
-  try {
-    const staticDirectory = join(rootDirectory, "dist", "web");
-    await mkdir(staticDirectory, { recursive: true });
+  const staticDirectory = join(rootDirectory, "dist", "web");
+  await mkdir(staticDirectory, { recursive: true });
 
-    assert.equal(
-      resolveWebUiStaticDirectory(join(rootDirectory, "src", "app", "bootstrap.ts"), rootDirectory),
-      staticDirectory,
-    );
-  } finally {
-    await rm(rootDirectory, { force: true, recursive: true });
-  }
+  assert.equal(
+    resolveWebUiStaticDirectory(join(rootDirectory, "src", "app", "bootstrap.ts"), rootDirectory),
+    staticDirectory,
+  );
 });

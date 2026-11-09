@@ -1,7 +1,4 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import test from "node:test";
 import pino from "pino";
 
@@ -15,14 +12,15 @@ import {
   type TranscriptContext,
 } from "@earendil-works/pi-ai";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
-
 import { createDiscordReadTool } from "@agents/discord/tools/discord-read";
 import { createDiscordSendTool } from "@agents/discord/tools/discord-send";
 import { createPiAgentFactory } from "./pi-agent-runtime";
+import { createTempDir } from "../../testing/temp-dir";
 
 for (const restricted of [false, true]) {
   test(`codemode research respects tool permissions (restricted=${restricted})`, async () => {
-    const agentDir = await mkdtemp(join(tmpdir(), "klein-codemode-"));
+    await using temp = await createTempDir("klein-codemode-");
+    const agentDir = temp.path;
     const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
     const provider = fauxProvider({ tokensPerSecond: 100_000 });
     const model = provider.getModel();
@@ -206,7 +204,6 @@ for (const restricted of [false, true]) {
       runtime.dispose();
       if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
       else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
-      await rm(agentDir, { force: true, recursive: true });
     }
   });
 }

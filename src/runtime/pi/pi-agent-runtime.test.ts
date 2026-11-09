@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import test from "node:test";
-import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 import {
@@ -12,7 +11,6 @@ import {
   type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
-
 import { createPiEventPrompt } from "./pi-event-prompt";
 import type { AgentEvent } from "@agents/core/agent-event";
 
@@ -22,6 +20,7 @@ import {
   createBackgroundCompactionExtension,
   shouldStartBackgroundCompaction,
 } from "./background-compaction";
+
 import {
   createAssistantTextContextExtension,
   createPiSessionManager,
@@ -30,6 +29,7 @@ import {
   resolveConfiguredModel,
   withOpenCodeSessionHeader,
 } from "./pi-agent-runtime";
+import { createTempDir } from "../../testing/temp-dir";
 
 test("records completed turn outcomes while preserving the active turn after sending", async () => {
   const oldCall = fauxAssistantMessage([
@@ -411,7 +411,8 @@ test("loads skills from the default profile directory", async () => {
 });
 
 test("loads skills from a selected profile directory", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "klein-profile-skills-"));
+  await using temp = await createTempDir("klein-profile-skills-");
+  const directory = temp.path;
   const skillDirectory = join(directory, "skills");
   await mkdir(join(skillDirectory, "selected-skill"), { recursive: true });
   await writeFile(
@@ -420,24 +421,20 @@ test("loads skills from a selected profile directory", async () => {
     "utf8",
   );
 
-  try {
-    const loader = createResourceLoader(
-      resolve(".runtime/pi"),
-      "Test system prompt",
-      SettingsManager.inMemory(),
-      undefined,
-      skillDirectory,
-    );
+  const loader = createResourceLoader(
+    resolve(".runtime/pi"),
+    "Test system prompt",
+    SettingsManager.inMemory(),
+    undefined,
+    skillDirectory,
+  );
 
-    await loader.reload();
+  await loader.reload();
 
-    assert.deepEqual(
-      loader.getSkills().skills.map((skill) => skill.name),
-      ["selected-skill"],
-    );
-  } finally {
-    await rm(directory, { recursive: true, force: true });
-  }
+  assert.deepEqual(
+    loader.getSkills().skills.map((skill) => skill.name),
+    ["selected-skill"],
+  );
 });
 
 test("loads Pi web access tools", async () => {
@@ -462,52 +459,36 @@ test("loads Pi web access tools", async () => {
 });
 
 test("resumes the latest session for each session key", async () => {
-  const agentDir = await mkdtemp(join(tmpdir(), "klein-pi-session-"));
+  await using temp = await createTempDir("klein-pi-session-");
+  const agentDir = temp.path;
 
-  try {
-    const first = createPiSessionManager(agentDir, "discord-channel:123", "resume", process.cwd());
-    appendTestConversation(first);
+  const first = createPiSessionManager(agentDir, "discord-channel:123", "resume", process.cwd());
+  appendTestConversation(first);
 
-    const resumed = createPiSessionManager(
-      agentDir,
-      "discord-channel:123",
-      "resume",
-      process.cwd(),
-    );
-    const otherChannel = createPiSessionManager(
-      agentDir,
-      "discord-channel:456",
-      "resume",
-      process.cwd(),
-    );
+  const resumed = createPiSessionManager(agentDir, "discord-channel:123", "resume", process.cwd());
+  const otherChannel = createPiSessionManager(
+    agentDir,
+    "discord-channel:456",
+    "resume",
+    process.cwd(),
+  );
 
-    assert.equal(resumed.getSessionId(), first.getSessionId());
-    assert.equal(resumed.buildSessionContext().messages.length, 2);
-    assert.equal(otherChannel.buildSessionContext().messages.length, 0);
-  } finally {
-    await rm(agentDir, { force: true, recursive: true });
-  }
+  assert.equal(resumed.getSessionId(), first.getSessionId());
+  assert.equal(resumed.buildSessionContext().messages.length, 2);
+  assert.equal(otherChannel.buildSessionContext().messages.length, 0);
 });
 
 test("starts a separate session in new mode", async () => {
-  const agentDir = await mkdtemp(join(tmpdir(), "klein-pi-session-"));
+  await using temp = await createTempDir("klein-pi-session-");
+  const agentDir = temp.path;
 
-  try {
-    const previous = createPiSessionManager(
-      agentDir,
-      "discord-channel:123",
-      "resume",
-      process.cwd(),
-    );
-    appendTestConversation(previous);
+  const previous = createPiSessionManager(agentDir, "discord-channel:123", "resume", process.cwd());
+  appendTestConversation(previous);
 
-    const fresh = createPiSessionManager(agentDir, "discord-channel:123", "new", process.cwd());
+  const fresh = createPiSessionManager(agentDir, "discord-channel:123", "new", process.cwd());
 
-    assert.notEqual(fresh.getSessionId(), previous.getSessionId());
-    assert.equal(fresh.buildSessionContext().messages.length, 0);
-  } finally {
-    await rm(agentDir, { force: true, recursive: true });
-  }
+  assert.notEqual(fresh.getSessionId(), previous.getSessionId());
+  assert.equal(fresh.buildSessionContext().messages.length, 0);
 });
 
 test("starts background compaction before the built-in threshold", async () => {

@@ -1,7 +1,4 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import test from "node:test";
 import pino from "pino";
 
@@ -10,12 +7,14 @@ import type { AgentFactory } from "@agents/core/agent-factory";
 import type { AgentRuntime } from "@agents/core/agent-runtime";
 import type { AgentEvent } from "@agents/core/agent-event";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
+
 import {
   createDiscordAccessPolicy,
   type DiscordAccess,
 } from "@modules/discord/domain/discord-access-policy";
 import { DiscordOperatingState } from "@modules/discord/domain/discord-operating-state";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
+
 import type {
   ReminderTask,
   ScheduledTask,
@@ -26,6 +25,7 @@ import type { WatchCheckRunner } from "@modules/scheduling/application/watch-che
 import { TaskCoordinator } from "./task-coordinator";
 import { AgentCoordinator, type AgentCoordinatorDependencies } from "./agent-coordinator";
 import { ChannelSessionStateStore, getChannelRotationBucket } from "./channel-session-state-store";
+import { createTempDir } from "../testing/temp-dir";
 
 interface TestHarness {
   readonly agentCoordinator: AgentCoordinator;
@@ -411,7 +411,8 @@ const dueWatch: WatchTask = {
 };
 
 test("delivers reminders to the current rotated session and reuses it for conversation", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "klein-reminder-session-"));
+  await using temp = await createTempDir("klein-reminder-session-");
+  const directory = temp.path;
   const channelSessionStateStore = new ChannelSessionStateStore(directory);
   const sessionKey = "discord-channel:test-channel:public:rotation:2026-10-14";
   await channelSessionStateStore.save({
@@ -446,12 +447,12 @@ test("delivers reminders to the current rotated session and reuses it for conver
     assert.equal(events?.[1].type, "discord.message");
   } finally {
     await harness.agentCoordinator.dispose();
-    await rm(directory, { recursive: true, force: true });
   }
 });
 
 test("rotates an idle session before delivering a reminder into the new conversation", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "klein-reminder-rotation-"));
+  await using temp = await createTempDir("klein-reminder-rotation-");
+  const directory = temp.path;
   const channelSessionStateStore = new ChannelSessionStateStore(directory);
   const oldKey = "discord-channel:test-channel:public:rotation:2000-01-01";
   const newKey = `discord-channel:test-channel:public:rotation:${getChannelRotationBucket(Date.now())}`;
@@ -485,7 +486,6 @@ test("rotates an idle session before delivering a reminder into the new conversa
     assert.equal(state.handoffContext, undefined);
   } finally {
     await harness.agentCoordinator.dispose();
-    await rm(directory, { recursive: true, force: true });
   }
 });
 

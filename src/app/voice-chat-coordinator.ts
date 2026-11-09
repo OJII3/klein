@@ -76,17 +76,15 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
       if (!this.dependencies.reactionSelector || !playReaction) return reactionController;
 
       void (async () => {
-        const timeout = setTimeout(() => reactionController.abort(), 600);
+        const selectionSignal = AbortSignal.any([
+          reactionController.signal,
+          AbortSignal.timeout(600),
+        ]);
         try {
-          let reaction: string | undefined;
-          try {
-            reaction = await this.dependencies.reactionSelector!.select(
-              { text, recentTranscripts: history, lastReaction },
-              reactionController.signal,
-            );
-          } finally {
-            clearTimeout(timeout);
-          }
+          const reaction = await this.dependencies.reactionSelector!.select(
+            { text, recentTranscripts: history, lastReaction },
+            selectionSignal,
+          );
           if (reactionController.signal.aborted || reaction === undefined) return;
           const played = await playReaction(reaction, reactionController.signal);
           if (played && !reactionController.signal.aborted) lastReaction = reaction;
@@ -95,8 +93,6 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
             { err: error, event: "voice_chat_reaction_failed", messageId },
             "Failed to select or play a voice reaction",
           );
-        } finally {
-          clearTimeout(timeout);
         }
       })();
       return reactionController;

@@ -1,126 +1,112 @@
 import assert from "node:assert/strict";
-import { appendFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import test from "node:test";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
 
 import { createPiSessionManager } from "@runtime/pi/pi-agent-runtime";
 import { PiToolUsageReader } from "./pi-tool-usage-reader";
+import { createTempDir } from "../../../testing/temp-dir";
 
 test("aggregates tool calls and MCP servers from Pi sessions", async () => {
-  const agentDirectory = await mkdtemp(join(tmpdir(), "klein-tool-usage-"));
+  await using temp = await createTempDir("klein-tool-usage-");
+  const agentDirectory = temp.path;
 
-  try {
-    const sessionManager = createPiSessionManager(
-      agentDirectory,
-      "discord-channel:123",
-      "new",
-      process.cwd(),
-    );
-    appendUserMessage(sessionManager);
-    appendToolResult(sessionManager, "discord_send", false);
-    appendToolResult(sessionManager, "discord_send", false);
-    appendToolResult(sessionManager, "mcp__docs__read_note", true);
-    appendNestedToolResult(sessionManager, "codemode", [
-      { name: "mcp__docs__read_note", status: "ok" },
-    ]);
+  const sessionManager = createPiSessionManager(
+    agentDirectory,
+    "discord-channel:123",
+    "new",
+    process.cwd(),
+  );
+  appendUserMessage(sessionManager);
+  appendToolResult(sessionManager, "discord_send", false);
+  appendToolResult(sessionManager, "discord_send", false);
+  appendToolResult(sessionManager, "mcp__docs__read_note", true);
+  appendNestedToolResult(sessionManager, "codemode", [
+    { name: "mcp__docs__read_note", status: "ok" },
+  ]);
 
-    const secondSessionManager = createPiSessionManager(
-      agentDirectory,
-      "discord-channel:456",
-      "new",
-      process.cwd(),
-    );
-    appendUserMessage(secondSessionManager);
-    appendToolResult(secondSessionManager, "mcp__docs__search", false);
+  const secondSessionManager = createPiSessionManager(
+    agentDirectory,
+    "discord-channel:456",
+    "new",
+    process.cwd(),
+  );
+  appendUserMessage(secondSessionManager);
+  appendToolResult(secondSessionManager, "mcp__docs__search", false);
 
-    const reader = new PiToolUsageReader(agentDirectory);
-    const first = await reader.read();
+  const reader = new PiToolUsageReader(agentDirectory);
+  const first = await reader.read();
 
-    assert.equal(first.sessionCount, 2);
-    assert.equal(first.totalCalls, 6);
-    assert.equal(first.totalErrors, 1);
-    assert.deepEqual(
-      first.tools.map((tool) => [tool.name, tool.calls, tool.errors]),
-      [
-        ["discord_send", 2, 0],
-        ["mcp__docs__read_note", 2, 1],
-        ["codemode", 1, 0],
-        ["mcp__docs__search", 1, 0],
-      ],
-    );
-    assert.deepEqual(
-      first.mcpServers.map((server) => [
-        server.name,
-        server.calls,
-        server.errors,
-        server.toolCount,
-      ]),
-      [["docs", 3, 1, 2]],
-    );
+  assert.equal(first.sessionCount, 2);
+  assert.equal(first.totalCalls, 6);
+  assert.equal(first.totalErrors, 1);
+  assert.deepEqual(
+    first.tools.map((tool) => [tool.name, tool.calls, tool.errors]),
+    [
+      ["discord_send", 2, 0],
+      ["mcp__docs__read_note", 2, 1],
+      ["codemode", 1, 0],
+      ["mcp__docs__search", 1, 0],
+    ],
+  );
+  assert.deepEqual(
+    first.mcpServers.map((server) => [server.name, server.calls, server.errors, server.toolCount]),
+    [["docs", 3, 1, 2]],
+  );
 
-    appendToolResult(sessionManager, "mcp__docs__read_note", false);
-    const second = await reader.read();
+  appendToolResult(sessionManager, "mcp__docs__read_note", false);
+  const second = await reader.read();
 
-    assert.equal(second.totalCalls, 7);
-    assert.equal(second.totalErrors, 1);
-    const readNote = second.tools.find((tool) => tool.name === "mcp__docs__read_note");
-    assert.equal(readNote?.calls, 3);
-    assert.equal(readNote?.errors, 1);
-    assert.equal(second.mcpServers[0]?.calls, 4);
-  } finally {
-    await rm(agentDirectory, { force: true, recursive: true });
-  }
+  assert.equal(second.totalCalls, 7);
+  assert.equal(second.totalErrors, 1);
+  const readNote = second.tools.find((tool) => tool.name === "mcp__docs__read_note");
+  assert.equal(readNote?.calls, 3);
+  assert.equal(readNote?.errors, 1);
+  assert.equal(second.mcpServers[0]?.calls, 4);
 });
 
 test("reads appends split across partial lines without duplicating them", async () => {
-  const agentDirectory = await mkdtemp(join(tmpdir(), "klein-tool-usage-partial-"));
+  await using temp = await createTempDir("klein-tool-usage-partial-");
+  const agentDirectory = temp.path;
 
-  try {
-    const sessionDirectory = join(
-      agentDirectory,
-      "sessions",
-      encodeURIComponent("discord-channel:1"),
-    );
-    await mkdir(sessionDirectory, { recursive: true });
-    const sessionFile = join(sessionDirectory, "session.jsonl");
-    const first = toolResultLine("first_tool");
-    const second = toolResultLine("second_tool");
+  const sessionDirectory = join(
+    agentDirectory,
+    "sessions",
+    encodeURIComponent("discord-channel:1"),
+  );
+  await mkdir(sessionDirectory, { recursive: true });
+  const sessionFile = join(sessionDirectory, "session.jsonl");
+  const first = toolResultLine("first_tool");
+  const second = toolResultLine("second_tool");
 
-    await writeFile(sessionFile, first);
-    const reader = new PiToolUsageReader(agentDirectory);
-    assert.equal((await reader.read()).totalCalls, 0);
+  await writeFile(sessionFile, first);
+  const reader = new PiToolUsageReader(agentDirectory);
+  assert.equal((await reader.read()).totalCalls, 0);
 
-    await appendFile(sessionFile, `\n${second}\n`);
-    const report = await reader.read();
-    assert.equal(report.totalCalls, 2);
-    assert.deepEqual(
-      report.tools.map((tool) => [tool.name, tool.calls]),
-      [
-        ["first_tool", 1],
-        ["second_tool", 1],
-      ],
-    );
-  } finally {
-    await rm(agentDirectory, { force: true, recursive: true });
-  }
+  await appendFile(sessionFile, `\n${second}\n`);
+  const report = await reader.read();
+  assert.equal(report.totalCalls, 2);
+  assert.deepEqual(
+    report.tools.map((tool) => [tool.name, tool.calls]),
+    [
+      ["first_tool", 1],
+      ["second_tool", 1],
+    ],
+  );
 });
 
 test("returns an empty report when there are no sessions", async () => {
-  const agentDirectory = await mkdtemp(join(tmpdir(), "klein-tool-usage-empty-"));
+  await using temp = await createTempDir("klein-tool-usage-empty-");
+  const agentDirectory = temp.path;
 
-  try {
-    const report = await new PiToolUsageReader(agentDirectory).read();
-    assert.deepEqual(report, {
-      mcpServers: [],
-      sessionCount: 0,
-      tools: [],
-      totalCalls: 0,
-      totalErrors: 0,
-    });
-  } finally {
-    await rm(agentDirectory, { force: true, recursive: true });
-  }
+  const report = await new PiToolUsageReader(agentDirectory).read();
+  assert.deepEqual(report, {
+    mcpServers: [],
+    sessionCount: 0,
+    tools: [],
+    totalCalls: 0,
+    totalErrors: 0,
+  });
 });
 
 function toolResultLine(toolName: string): string {

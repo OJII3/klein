@@ -17,8 +17,8 @@ export function createPiEventPrompt(event: AgentEvent): AgentPrompt {
     source: event.source,
     occurredAt: `${EVENT_DATE_FORMAT.format(new Date(event.occurredAt))} JST`,
   })
-    .replace(/</gu, "\\u003c")
-    .replace(/>/gu, "\\u003e");
+    .replaceAll("<", "\\u003c")
+    .replaceAll(">", "\\u003e");
   const texts: string[] = [];
   const images: AgentImage[] = [];
   for (const block of event.content) {
