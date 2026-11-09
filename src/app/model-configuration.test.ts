@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { AppConfig } from "./config-schema";
-import { collectModelNamesOfProvider, collectModelsInUse } from "./model-configuration";
+import { collectModelsInUse } from "./model-configuration";
 
 function createConfig(overrides: Partial<AppConfig> = {}): AppConfig {
   return {
@@ -59,15 +59,4 @@ test("leaves out models that disabled features would not use", () => {
   });
 
   assert.deepEqual(describeModels(collectModelsInUse(config)), ["opencode-go/main-model"]);
-});
-
-test("lists unique model names for a provider", () => {
-  const models = [
-    { provider: "mistral" as const, model: "first-model" },
-    { provider: "google" as const, model: "other-model" },
-    { provider: "mistral" as const, model: "first-model" },
-    { provider: "mistral" as const, model: "second-model" },
-  ];
-
-  assert.deepEqual(collectModelNamesOfProvider(models, "mistral"), ["first-model", "second-model"]);
 });

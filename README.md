@@ -45,8 +45,8 @@ Select one with `"profile"` in `config/config.jsonc` (default: `klein`). The bun
 ### LLM providers
 
 - Supports OpenCode Go (`opencode-go`), Google Gemini (`google`, `GEMINI_API_KEY`), and Mistral (`mistral`, `MISTRAL_API_KEY`).
-- **Google and Mistral** — the activity status reports the current month's spend. Spend is read from Langfuse (`LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY`, matched by model name) when configured, and falls back to an estimate from local session usage otherwise.
-- **Langfuse tracing** — when Langfuse credentials are configured, Pi agent runs, turns, tool calls, compactions, and `pi.ai.request` generations are exported over OTLP to `<LANGFUSE_BASE_URL>/api/public/otel/v1/traces`. Prompts, completions, tool arguments, and tool output are not recorded. Set `LANGFUSE_TRACING=0` to keep the spend lookup without exporting traces.
+- **Google and Mistral** — the activity status reports the current month's spend. Spend is read from the opencode-usage API (`USAGE_ENDPOINT` and `USAGE_TOKEN`) when configured, and falls back to an estimate from local session usage otherwise.
+- **Usage reporting** — when the opencode-usage API is configured, Klein sends each completed provider request's token counts and cost to `POST <USAGE_ENDPOINT>`. This makes the spend total cover both Klein and opencode. Prompts, completions, tool arguments, and tool output are not sent.
 - **Context window** — `llm.contextWindowRatio` (`0.01`–`1.0`) caps context usage for automatic compaction. `llm.compaction.backgroundTokens` sets the token count before the blocking threshold at which background compaction starts (default `32768`; `0` starts it at the blocking threshold).
 - **Image analysis** — `llm.image` configures a separate one-shot vision model whose analysis is added to the main conversation.
 

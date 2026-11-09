@@ -6,18 +6,16 @@ import type {
   ExtensionFactory,
 } from "@earendil-works/pi-coding-agent";
 
-import type { PiTelemetry, PiTelemetrySession } from "./pi-telemetry";
+import type { PiUsageReporter } from "./pi-usage-reporter";
 
 const BLOCKED_SESSION_ENTRY_TYPE = "klein-provider-http-400";
 
 export interface PiRuntimeTraceOptions {
   readonly now?: () => number;
-  readonly telemetry?: PiTelemetry;
-  readonly sessionKey?: string;
-  readonly userId?: string;
+  readonly usageReporter?: PiUsageReporter;
 }
 
-/** Observe Pi without recording prompts, tokens, tool arguments, or HTTP headers. */
+/** Observe Pi without recording prompts, tool arguments, or HTTP headers. */
 export class PiRuntimeTrace {
   private sessionId?: string;
   private runId?: string;
@@ -38,20 +36,15 @@ export class PiRuntimeTrace {
   private sessionBlocked = false;
   private unsubscribe?: () => void;
   private session?: AgentSession;
-  private telemetrySession?: PiTelemetrySession;
   private readonly now: () => number;
-  private readonly telemetry?: PiTelemetry;
-  private readonly sessionKey?: string;
-  private readonly userId?: string;
+  private readonly usageReporter?: PiUsageReporter;
 
   constructor(
     private readonly logger: Logger,
     options: PiRuntimeTraceOptions = {},
   ) {
     this.now = options.now ?? (() => performance.now());
-    this.telemetry = options.telemetry;
-    this.sessionKey = options.sessionKey;
-    this.userId = options.userId;
+    this.usageReporter = options.usageReporter;
   }
 
   readonly extension: ExtensionFactory = (pi) => {
@@ -70,9 +63,6 @@ export class PiRuntimeTrace {
       this.providerStartedAt = this.now();
       this.requestPreparedAt = undefined;
       this.streamStarted = false;
-      this.telemetrySession?.startGeneration(
-        this.llmCallId ? { "gen_ai.response.id": this.llmCallId } : {},
-      );
       this.log("pi_llm_provider_started");
     });
     pi.on("after_provider_response", (event) => {
@@ -110,14 +100,6 @@ export class PiRuntimeTrace {
     this.sessionId = session.sessionManager.getSessionId();
     this.sessionBlocked = session.sessionManager.getBranch().some((entry) => {
       return entry.type === "custom" && entry.customType === BLOCKED_SESSION_ENTRY_TYPE;
-    });
-    this.telemetrySession = this.telemetry?.createSession({
-      sessionId: this.sessionId,
-      sessionKey: this.sessionKey ?? this.sessionId,
-      provider: session.model?.provider,
-      model: session.model?.id,
-      thinkingLevel: session.thinkingLevel,
-      userId: this.userId,
     });
     this.unsubscribe = session.subscribe((event) => this.onEvent(event));
     this.log("pi_session_ready", {
@@ -192,11 +174,6 @@ export class PiRuntimeTrace {
         this.providerRequestId = undefined;
         this.providerTimingAmbiguous = this.session?.cacheWarmingStatus?.state === "refreshing";
         this.runStartedAt = this.now();
-        this.telemetrySession?.startAgent({
-          "gen_ai.request.model": this.session?.model?.id,
-          "gen_ai.provider.name": this.session?.model?.provider,
-          "gen_ai.request.reasoning": this.session?.thinkingLevel,
-        });
         this.log("pi_agent_started");
         break;
       case "turn_start":
@@ -206,19 +183,10 @@ export class PiRuntimeTrace {
         this.lastProgressAt = this.now();
         this.streamStarted = false;
         this.deltas.clear();
-        this.telemetrySession?.startTurn();
         this.log("pi_turn_started");
         break;
       case "message_start": {
         const message = event.message;
-        if (message.role === "assistant") {
-          this.telemetrySession?.startGeneration({
-            "gen_ai.provider.name": message.provider,
-            "gen_ai.request.model": message.model,
-            ...(this.llmCallId ? { "gen_ai.response.id": this.llmCallId } : {}),
-          });
-          break;
-        }
         if (message.role !== "user") break;
         const text =
           typeof message.content === "string"
@@ -230,7 +198,6 @@ export class PiRuntimeTrace {
         const ids = this.inputs.get(text);
         this.inputId = ids?.shift();
         if (ids?.length === 0) this.inputs.delete(text);
-        this.telemetrySession?.recordUserMessage(event.message);
         this.log("pi_input_consumed");
         break;
       }
@@ -263,7 +230,9 @@ export class PiRuntimeTrace {
       }
       case "message_end":
         if (event.message.role === "assistant") {
-          this.telemetrySession?.recordAssistantMessage(event.message);
+          if (this.sessionId) {
+            this.usageReporter?.recordAssistantMessage(this.sessionId, event.message);
+          }
           this.log("pi_llm_completed", {
             provider: event.message.provider,
             model: event.message.model,
@@ -272,21 +241,11 @@ export class PiRuntimeTrace {
             usage: event.message.usage,
             deltas: Object.fromEntries(this.deltas),
           });
-          this.telemetrySession?.endGeneration();
           break;
         }
-        if (event.message.role === "toolResult") {
-          this.telemetrySession?.recordToolResult(event.message);
-        }
-        break;
-      case "turn_end":
-        this.telemetrySession?.endTurn({
-          "tool.result.count": event.toolResults.length,
-        });
         break;
       case "tool_execution_start":
         this.tools.set(event.toolCallId, this.now());
-        this.telemetrySession?.startTool(event.toolCallId, event.toolName);
         this.log("pi_tool_started", {
           toolCallId: event.toolCallId,
           toolName: event.toolName,
@@ -296,15 +255,6 @@ export class PiRuntimeTrace {
       case "tool_execution_end": {
         const startedAt = this.tools.get(event.toolCallId);
         this.tools.delete(event.toolCallId);
-        this.telemetrySession?.endTool(event.toolCallId, {
-          "tool.is_error": event.isError,
-          ...(startedAt === undefined
-            ? {}
-            : { "tool.duration_ms": Math.round(this.now() - startedAt) }),
-        });
-        if (event.isError) {
-          this.telemetrySession?.setTurnAttributes({ "tool.error": true });
-        }
         this.log("pi_tool_completed", {
           toolCallId: event.toolCallId,
           toolName: event.toolName,
@@ -315,21 +265,12 @@ export class PiRuntimeTrace {
         break;
       }
       case "queue_update":
-        this.telemetrySession?.setAgentAttributes({
-          "queue.steering_count": event.steering.length,
-          "queue.follow_up_count": event.followUp.length,
-        });
         this.log("pi_queue_updated", {
           steeringCount: event.steering.length,
           followUpCount: event.followUp.length,
         });
         break;
       case "auto_retry_start":
-        this.telemetrySession?.addAgentEvent("pi.retry_start", {
-          "retry.attempt": event.attempt,
-          "retry.max_attempts": event.maxAttempts,
-          "retry.delay_ms": event.delayMs,
-        });
         this.log("pi_retry_scheduled", {
           attempt: event.attempt,
           maxAttempts: event.maxAttempts,
@@ -337,23 +278,13 @@ export class PiRuntimeTrace {
         });
         break;
       case "auto_retry_end":
-        this.telemetrySession?.addAgentEvent("pi.retry_end", {
-          "retry.attempt": event.attempt,
-          "retry.success": event.success,
-        });
         this.log("pi_retry_completed", { attempt: event.attempt, success: event.success });
         break;
       case "compaction_start":
         this.compactionStartedAt = this.now();
-        this.telemetrySession?.startCompaction(event.reason);
         this.log("pi_compaction_started", { reason: event.reason });
         break;
       case "compaction_end":
-        this.telemetrySession?.endCompaction({
-          "compaction.aborted": event.aborted,
-          "compaction.will_retry": event.willRetry,
-          "compaction.duration_ms": Math.round(this.now() - this.compactionStartedAt),
-        });
         this.log("pi_compaction_completed", {
           reason: event.reason,
           aborted: event.aborted,
@@ -362,14 +293,12 @@ export class PiRuntimeTrace {
         });
         break;
       case "agent_end":
-        this.telemetrySession?.setAgentAttributes({ "agent.will_retry": event.willRetry });
         this.log("pi_agent_ended", {
           durationMs: this.elapsed(this.runStartedAt),
           willRetry: event.willRetry,
         });
         break;
       case "agent_settled":
-        this.telemetrySession?.endAgent({ "agent.aborted": event.aborted });
         this.log("pi_agent_settled", { durationMs: this.elapsed(this.runStartedAt) });
         this.inputs.clear();
         this.runId = undefined;
@@ -382,8 +311,6 @@ export class PiRuntimeTrace {
 
   dispose(): void {
     this.unsubscribe?.();
-    if (this.telemetry && this.sessionId) this.telemetry.removeSession(this.sessionId);
-    this.telemetrySession = undefined;
     this.session = undefined;
     this.inputs.clear();
     this.tools.clear();
