@@ -3,6 +3,7 @@ import test from "node:test";
 
 import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
 
+import { ImageAnalysisError } from "@agents/core/image-analysis";
 import { IMAGE_ANALYSIS_SYSTEM_PROMPT, PiImageAnalyzer } from "./pi-image-analyzer";
 import { resolveConfiguredImageModel, resolveConfiguredModel } from "./pi-model-runtime";
 
@@ -52,6 +53,79 @@ test("sends image attachments to a one-shot analysis request", async () => {
     },
     { type: "image", data: "c2VjcmV0", mimeType: "image/png" },
   ]);
+});
+
+test("classifies a rate limit response from the provider", async () => {
+  const analyzer = new PiImageAnalyzer(
+    {
+      async completeSimple() {
+        return {
+          role: "assistant",
+          content: [],
+          stopReason: "error",
+          errorMessage: '429: {"type":"server_error"}',
+        } as never;
+      },
+    },
+    resolveConfiguredImageModel("opencode-go", "kimi-k3"),
+  );
+
+  await assert.rejects(
+    analyzer.analyze({ text: "x", images: [{ data: "c2VjcmV0", mimeType: "image/png" }] }),
+    (error: unknown) => {
+      assert.ok(error instanceof ImageAnalysisError);
+      assert.deepEqual(error.failure, {
+        reason: "rate_limited",
+        status: 429,
+        retryable: true,
+      });
+      return true;
+    },
+  );
+});
+
+test("classifies a thrown provider error", async () => {
+  const analyzer = new PiImageAnalyzer(
+    {
+      async completeSimple() {
+        throw new Error("HTTP 503 upstream unavailable");
+      },
+    },
+    resolveConfiguredImageModel("opencode-go", "kimi-k3"),
+  );
+
+  await assert.rejects(
+    analyzer.analyze({ text: "x", images: [{ data: "c2VjcmV0", mimeType: "image/png" }] }),
+    (error: unknown) => {
+      assert.ok(error instanceof ImageAnalysisError);
+      assert.deepEqual(error.failure, {
+        reason: "http_error",
+        status: 503,
+        retryable: true,
+      });
+      return true;
+    },
+  );
+});
+
+test("classifies an empty analysis result", async () => {
+  const analyzer = new PiImageAnalyzer(
+    {
+      async completeSimple() {
+        return { role: "assistant", content: [], stopReason: "stop" } as never;
+      },
+    },
+    resolveConfiguredImageModel("opencode-go", "kimi-k3"),
+  );
+
+  await assert.rejects(
+    analyzer.analyze({ text: "x", images: [{ data: "c2VjcmV0", mimeType: "image/png" }] }),
+    (error: unknown) => {
+      assert.ok(error instanceof ImageAnalysisError);
+      assert.deepEqual(error.failure, { reason: "empty_result", retryable: true });
+      return true;
+    },
+  );
 });
 
 test("rejects a configured image model without image input", () => {

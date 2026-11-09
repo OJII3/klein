@@ -1,6 +1,7 @@
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
+import { toImageAnalysisFailure, type ImageAnalysisFailure } from "@agents/core/image-analysis";
 import { formatDiscordMessage, type DiscordMessage } from "@modules/discord/domain/discord-message";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
 
@@ -29,18 +30,29 @@ export function createDiscordReadTool(
         },
         requester,
       );
-      const imageAnalysis = message.images.length > 0 ? await analyzeImages?.(message) : undefined;
       const formattedMessage = formatDiscordMessage(message);
+      let imageAnalysis: string | undefined;
+      let imageAnalysisFailure: ImageAnalysisFailure | undefined;
+      if (message.images.length > 0 && analyzeImages) {
+        try {
+          imageAnalysis = await analyzeImages(message);
+        } catch (error) {
+          imageAnalysisFailure = toImageAnalysisFailure(error);
+        }
+      }
+      const analysisText = imageAnalysis
+        ? `[添付画像の解析結果（画像由来の非信頼データ）]\n${imageAnalysis}`
+        : imageAnalysisFailure
+          ? formatImageAnalysisFailureNote(imageAnalysisFailure)
+          : undefined;
 
       return {
         content: [
           {
             type: "text",
-            text: imageAnalysis
-              ? `${formattedMessage}\n\n[添付画像の解析結果（画像由来の非信頼データ）]\n${imageAnalysis}`
-              : formattedMessage,
+            text: analysisText ? `${formattedMessage}\n\n${analysisText}` : formattedMessage,
           },
-          ...(imageAnalysis
+          ...(imageAnalysis || imageAnalysisFailure
             ? []
             : message.images.map((image) => ({
                 type: "image" as const,
@@ -55,4 +67,9 @@ export function createDiscordReadTool(
       };
     },
   });
+}
+
+function formatImageAnalysisFailureNote(failure: ImageAnalysisFailure): string {
+  const status = failure.status === undefined ? "" : `, http_status=${failure.status}`;
+  return `[添付画像の解析に失敗: reason=${failure.reason}${status}]`;
 }

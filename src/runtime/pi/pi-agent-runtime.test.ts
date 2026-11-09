@@ -13,6 +13,7 @@ import {
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 import { createPiEventPrompt } from "./pi-event-prompt";
 import type { AgentEvent } from "@agents/core/agent-event";
+import { ImageAnalysisError } from "@agents/core/image-analysis";
 
 import {
   BACKGROUND_COMPACTION_LEAD_TOKENS,
@@ -257,6 +258,66 @@ test("passes image analysis to the main session without image attachments", asyn
   runtime.dispose();
 });
 
+test("continues with text when image analysis fails", async () => {
+  const received: Array<{ kind: string; value: unknown }> = [];
+  const runtime = new PiAgentRuntime(
+    {
+      async prompt(text: string, options?: { images?: readonly unknown[]; source?: string }) {
+        received.push({ kind: "prompt", value: { options, text } });
+      },
+      async sendCustomMessage(message: unknown) {
+        received.push({ kind: "custom", value: message });
+      },
+      dispose() {},
+    } as never,
+    {
+      async analyze() {
+        throw new ImageAnalysisError({
+          reason: "rate_limited",
+          status: 429,
+          retryable: true,
+        });
+      },
+    },
+  );
+
+  const event: AgentEvent = {
+    id: "image-event",
+    type: "message",
+    source: "test",
+    occurredAt: "2026-10-14T09:30:42.123Z",
+    content: [
+      { type: "text", text: "この画像を確認して" },
+      { type: "image", data: "c2VjcmV0", mimeType: "image/png" },
+    ],
+  };
+  await runtime.prompt(event);
+
+  assert.deepEqual(received, [
+    {
+      kind: "custom",
+      value: {
+        content:
+          "<image-analysis-error>\n" +
+          "The attached image(s) could not be analyzed (reason: rate_limited, http_status: 429, retryable: true).\n" +
+          "You cannot see the image contents. Do not guess what the image shows.\n" +
+          "This is a temporary rate limit. If the image matters for your reply, tell the user it could not be read and ask them to send it again later.\n" +
+          "</image-analysis-error>",
+        customType: "klein-image-analysis-error",
+        display: false,
+      },
+    },
+    {
+      kind: "prompt",
+      value: {
+        options: { source: "rpc" },
+        text: createPiEventPrompt(event).text,
+      },
+    },
+  ]);
+  runtime.dispose();
+});
+
 test("accepts non-Discord events through prompt and steer", async () => {
   const received: Array<{ kind: string; text: string }> = [];
   const session = {
@@ -342,6 +403,23 @@ test("exposes the configured image analyzer to tools", async () => {
     text: "メッセージ本文",
     images: [{ data: "c2VjcmV0", mimeType: "image/png" }],
   });
+  runtime.dispose();
+});
+
+test("reports image analysis as unavailable without an analyzer", () => {
+  const runtime = new PiAgentRuntime({
+    async prompt() {},
+    dispose() {},
+  } as never);
+
+  assert.throws(
+    () => runtime.analyzeImage({ text: "x", images: [] }),
+    (error: unknown) => {
+      assert.ok(error instanceof ImageAnalysisError);
+      assert.deepEqual(error.failure, { reason: "unavailable", retryable: false });
+      return true;
+    },
+  );
   runtime.dispose();
 });
 
