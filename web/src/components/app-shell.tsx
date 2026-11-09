@@ -1,13 +1,12 @@
 import type { ComponentChildren } from "preact";
 
 import { formatClock, formatTimestamp } from "../lib/format";
-
-export type View = "logs" | "sessions" | "memory" | "tools";
+import type { View } from "../router";
+import { Link } from "./link";
 
 interface AppShellProps {
   view: View;
   lastUpdated: Date | null;
-  onViewChange: (view: View) => void;
   onRefresh: () => void;
   children: ComponentChildren;
 }
@@ -22,10 +21,9 @@ const VIEWS: { value: View; label: string }[] = [
 interface NavLinksProps {
   view: View;
   className: string;
-  onViewChange: (view: View) => void;
 }
 
-function NavLinks({ view, className, onViewChange }: NavLinksProps) {
+function NavLinks({ view, className }: NavLinksProps) {
   return (
     <nav aria-label="表示切り替え" className={className}>
       <ul className="menu menu-horizontal menu-sm gap-0.5 p-0 [--menu-active-bg:var(--color-green-soft)] [--menu-active-fg:var(--color-green-strong)]">
@@ -33,16 +31,9 @@ function NavLinks({ view, className, onViewChange }: NavLinksProps) {
           const active = view === item.value;
           return (
             <li key={item.value}>
-              <a
-                aria-current={active ? "page" : undefined}
-                href={`/${item.value}`}
-                onClick={(event) => {
-                  event.preventDefault();
-                  onViewChange(item.value);
-                }}
-              >
+              <Link aria-current={active ? "page" : undefined} href={`/${item.value}`}>
                 {item.label}
-              </a>
+              </Link>
             </li>
           );
         })}
@@ -51,7 +42,7 @@ function NavLinks({ view, className, onViewChange }: NavLinksProps) {
   );
 }
 
-export function AppShell({ view, lastUpdated, onViewChange, onRefresh, children }: AppShellProps) {
+export function AppShell({ view, lastUpdated, onRefresh, children }: AppShellProps) {
   const updatedAt = lastUpdated?.toISOString();
 
   return (
@@ -59,27 +50,16 @@ export function AppShell({ view, lastUpdated, onViewChange, onRefresh, children 
       <header className="sticky top-0 z-20 border-b border-base-300 bg-base-100">
         <div className="navbar mx-auto h-14 min-h-0 max-w-[88rem] gap-3 px-4 sm:px-6 lg:px-8">
           <div className="navbar-start gap-3">
-            <a
-              className="flex items-center gap-2"
-              href="/logs"
-              onClick={(event) => {
-                event.preventDefault();
-                onViewChange("logs");
-              }}
-            >
+            <Link className="flex items-center gap-2" href="/logs">
               <div className="avatar avatar-placeholder">
                 <div className="w-7 rounded bg-primary">
                   <span className="text-[0.8rem] font-semibold text-primary-content">K</span>
                 </div>
               </div>
               <span className="text-[0.95rem] font-semibold tracking-tight text-ink">Klein</span>
-            </a>
+            </Link>
 
-            <NavLinks
-              className="ml-4 hidden items-center md:flex"
-              onViewChange={onViewChange}
-              view={view}
-            />
+            <NavLinks className="ml-4 hidden items-center md:flex" view={view} />
           </div>
 
           <div className="navbar-end gap-2.5 text-xs sm:gap-3">
@@ -103,11 +83,7 @@ export function AppShell({ view, lastUpdated, onViewChange, onRefresh, children 
         </div>
 
         <div className="border-t border-base-300 px-3 py-1.5 md:hidden">
-          <NavLinks
-            className="flex items-center overflow-x-auto"
-            onViewChange={onViewChange}
-            view={view}
-          />
+          <NavLinks className="flex items-center overflow-x-auto" view={view} />
         </div>
       </header>
 

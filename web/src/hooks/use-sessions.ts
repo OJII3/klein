@@ -11,16 +11,15 @@ import {
 interface UseSessionsOptions {
   active: boolean;
   onUpdated: () => void;
-  initialSessionId: string | null;
+  selectedSessionId: string | null;
 }
 
-export function useSessions({ active, onUpdated, initialSessionId }: UseSessionsOptions) {
+export function useSessions({ active, onUpdated, selectedSessionId }: UseSessionsOptions) {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [sessionsLoadingMore, setSessionsLoadingMore] = useState(false);
   const [sessionsError, setSessionsError] = useState<string | null>(null);
   const [sessionsNextCursor, setSessionsNextCursor] = useState<string | null>(null);
-  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(initialSessionId);
   const [selectedSession, setSelectedSession] = useState<SessionSummary | null>(null);
   const [events, setEvents] = useState<PiSessionEvent[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -28,8 +27,9 @@ export function useSessions({ active, onUpdated, initialSessionId }: UseSessions
   const [detailLoadingMore, setDetailLoadingMore] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [detailReloadKey, setDetailReloadKey] = useState(0);
-  const selectedSessionIdRef = useRef<string | null>(null);
-  selectedSessionIdRef.current = selectedSessionId;
+  const effectiveSessionId = selectedSessionId ?? sessions[0]?.id ?? null;
+  const effectiveSessionIdRef = useRef<string | null>(null);
+  effectiveSessionIdRef.current = effectiveSessionId;
 
   const load = useCallback(
     async (query: SessionQuery = {}, append = false) => {
@@ -41,7 +41,6 @@ export function useSessions({ active, onUpdated, initialSessionId }: UseSessions
         const response = await listSessions(query);
         setSessions((current) => (append ? [...current, ...response.items] : response.items));
         setSessionsNextCursor(response.nextCursor);
-        if (!append) setSelectedSessionId((current) => current ?? response.items[0]?.id ?? null);
         onUpdated();
       } catch (requestError) {
         setSessionsError(
@@ -64,7 +63,7 @@ export function useSessions({ active, onUpdated, initialSessionId }: UseSessions
   }, [active, load]);
 
   useEffect(() => {
-    if (!active || !selectedSessionId) return;
+    if (!active || !effectiveSessionId) return;
 
     let current = true;
     setDetailLoading(true);
@@ -73,7 +72,7 @@ export function useSessions({ active, onUpdated, initialSessionId }: UseSessions
     setEvents([]);
     setNextCursor(null);
 
-    void getSession(selectedSessionId, { limit: 100 })
+    void getSession(effectiveSessionId, { limit: 100 })
       .then((response) => {
         if (!current) return;
         setSelectedSession(response.session);
@@ -93,7 +92,7 @@ export function useSessions({ active, onUpdated, initialSessionId }: UseSessions
     return () => {
       current = false;
     };
-  }, [active, detailReloadKey, selectedSessionId]);
+  }, [active, detailReloadKey, effectiveSessionId]);
 
   const retryDetail = useCallback(() => {
     setDetailReloadKey((key) => key + 1);
@@ -105,30 +104,31 @@ export function useSessions({ active, onUpdated, initialSessionId }: UseSessions
   }, [load, sessionsLoadingMore, sessionsNextCursor]);
 
   const loadMoreDetail = useCallback(() => {
-    if (!selectedSessionId || !nextCursor || detailLoadingMore) return;
+    if (!effectiveSessionId || !nextCursor || detailLoadingMore) return;
 
-    const requestedSessionId = selectedSessionId;
+    const requestedSessionId = effectiveSessionId;
     setDetailLoadingMore(true);
     setDetailError(null);
     void getSession(requestedSessionId, { cursor: nextCursor, limit: 100 })
       .then((response) => {
-        if (selectedSessionIdRef.current !== requestedSessionId) return;
+        if (effectiveSessionIdRef.current !== requestedSessionId) return;
         setEvents((current) => [...response.items, ...current]);
         setNextCursor(response.nextCursor);
       })
       .catch((requestError: unknown) => {
-        if (selectedSessionIdRef.current !== requestedSessionId) return;
+        if (effectiveSessionIdRef.current !== requestedSessionId) return;
         setDetailError(
           requestError instanceof Error ? requestError.message : "セッションの取得に失敗しました",
         );
       })
       .finally(() => {
-        if (selectedSessionIdRef.current === requestedSessionId) setDetailLoadingMore(false);
+        if (effectiveSessionIdRef.current === requestedSessionId) setDetailLoadingMore(false);
       });
-  }, [detailLoadingMore, nextCursor, selectedSessionId]);
+  }, [detailLoadingMore, effectiveSessionId, nextCursor]);
 
   const selectedFromList =
-    sessions.find((session) => session.id === selectedSessionId) ?? selectedSession;
+    sessions.find((session) => session.id === effectiveSessionId) ??
+    (selectedSession?.id === effectiveSessionId ? selectedSession : null);
 
   return {
     sessions,
@@ -136,14 +136,13 @@ export function useSessions({ active, onUpdated, initialSessionId }: UseSessions
     sessionsLoadingMore,
     sessionsError,
     sessionsNextCursor,
-    selectedSessionId,
-    selectedSession: selectedFromList ?? null,
+    selectedSessionId: effectiveSessionId,
+    selectedSession: selectedFromList,
     events,
     nextCursor,
     detailLoading,
     detailLoadingMore,
     detailError,
-    selectSession: setSelectedSessionId,
     reload: load,
     retryDetail,
     loadMoreSessions,

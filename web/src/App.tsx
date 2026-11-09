@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from "preact/hooks";
+import { useCallback, useState } from "preact/hooks";
 
-import { AppShell, type View } from "./components/app-shell";
+import { AppShell } from "./components/app-shell";
 import { useLogs } from "./hooks/use-logs";
 import { useSessions } from "./hooks/use-sessions";
 import { useMemory } from "./hooks/use-memory";
@@ -9,69 +9,44 @@ import { LogsView } from "./features/logs/logs-view";
 import { MemoryView } from "./features/memory/memory-view";
 import { SessionsView } from "./features/sessions/sessions-view";
 import { ToolsView } from "./features/tools/tools-view";
-import { memoryScopeKey } from "./api";
+import { memoryScopeKey, type MemoryScope } from "./api";
+import { navigate, useRoute } from "./router";
 
 export default function App() {
-  const [view, setView] = useState<View>(() => viewFromPath(window.location.pathname));
-  const [initialSearch] = useState(() => new URLSearchParams(window.location.search));
+  const route = useRoute();
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const onUpdated = useCallback(() => setLastUpdated(new Date()), []);
-  const changeView = useCallback((nextView: View) => {
-    window.history.pushState(null, "", `/${nextView}${window.location.search}`);
-    setView(nextView);
-  }, []);
-  useEffect(() => {
-    const syncView = () => {
-      const nextView = viewFromPath(window.location.pathname);
-      setView(nextView);
-      if (window.location.pathname !== `/${nextView}`) {
-        window.history.replaceState(null, "", `/${nextView}${window.location.search}`);
-      }
-    };
-    window.addEventListener("popstate", syncView);
-    syncView();
-    return () => window.removeEventListener("popstate", syncView);
-  }, []);
-  const logs = useLogs({ active: view === "logs", onUpdated });
+
+  const logs = useLogs({ active: route.view === "logs", onUpdated });
   const sessions = useSessions({
-    active: view === "sessions",
+    active: route.view === "sessions",
     onUpdated,
-    initialSessionId: initialSearch.get("session"),
+    selectedSessionId: route.view === "sessions" ? route.sessionId : null,
   });
   const memory = useMemory({
-    active: view === "memory",
+    active: route.view === "memory",
     onUpdated,
-    initialScopeKey: initialSearch.get("scope"),
+    selectedScopeKey: route.view === "memory" ? route.scopeKey : null,
   });
-  const toolUsage = useToolUsage({ active: view === "tools", onUpdated });
+  const toolUsage = useToolUsage({ active: route.view === "tools", onUpdated });
 
-  useEffect(() => {
-    const url = new URL(window.location.href);
-    url.searchParams.delete("session");
-    url.searchParams.delete("scope");
-    if (view === "sessions" && sessions.selectedSessionId) {
-      url.searchParams.set("session", sessions.selectedSessionId);
-    } else if (view === "memory" && memory.selectedScope) {
-      url.searchParams.set("scope", memoryScopeKey(memory.selectedScope));
-    }
-    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
-  }, [memory.selectedScope, sessions.selectedSessionId, view]);
+  const selectSession = useCallback((sessionId: string) => {
+    navigate(`/sessions?session=${encodeURIComponent(sessionId)}`);
+  }, []);
+  const selectScope = useCallback((scope: MemoryScope) => {
+    navigate(`/memory?scope=${encodeURIComponent(memoryScopeKey(scope))}`);
+  }, []);
 
   const refreshCurrentView = useCallback(() => {
-    if (view === "logs") logs.reload();
-    else if (view === "sessions") void sessions.reload();
-    else if (view === "tools") void toolUsage.reload();
+    if (route.view === "logs") logs.reload();
+    else if (route.view === "sessions") void sessions.reload();
+    else if (route.view === "tools") void toolUsage.reload();
     else void memory.reload();
-  }, [logs.reload, memory.reload, sessions.reload, toolUsage.reload, view]);
+  }, [logs.reload, memory.reload, sessions.reload, toolUsage.reload, route.view]);
 
   return (
-    <AppShell
-      lastUpdated={lastUpdated}
-      onRefresh={refreshCurrentView}
-      onViewChange={changeView}
-      view={view}
-    >
-      {view === "logs" ? (
+    <AppShell lastUpdated={lastUpdated} onRefresh={refreshCurrentView} view={route.view}>
+      {route.view === "logs" ? (
         <LogsView
           error={logs.error}
           filters={logs.filters}
@@ -83,7 +58,7 @@ export default function App() {
           onLoadMore={logs.loadMore}
           onRetry={logs.reload}
         />
-      ) : view === "sessions" ? (
+      ) : route.view === "sessions" ? (
         <SessionsView
           detailError={sessions.detailError}
           error={sessions.sessionsError}
@@ -97,12 +72,12 @@ export default function App() {
           onRetry={() => void sessions.reload()}
           onLoadMoreDetail={sessions.loadMoreDetail}
           onRetryDetail={sessions.retryDetail}
-          onSelect={sessions.selectSession}
+          onSelect={selectSession}
           selectedSession={sessions.selectedSession}
           sessionsNextCursor={sessions.sessionsNextCursor}
           sessions={sessions.sessions}
         />
-      ) : view === "tools" ? (
+      ) : route.view === "tools" ? (
         <ToolsView
           error={toolUsage.error}
           loading={toolUsage.loading}
@@ -127,15 +102,10 @@ export default function App() {
           onDismissDeleteError={memory.dismissDeleteError}
           onRetry={() => void memory.reload()}
           onRetryDetail={memory.retryDetail}
-          onSelect={memory.selectScope}
+          onSelect={selectScope}
           selectedScope={memory.selectedScope}
         />
       )}
     </AppShell>
   );
-}
-
-function viewFromPath(pathname: string): View {
-  const segment = pathname.split("/").filter(Boolean)[0];
-  return segment === "sessions" || segment === "memory" || segment === "tools" ? segment : "logs";
 }

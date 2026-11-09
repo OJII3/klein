@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "preact/hooks";
+import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 
 import {
   deleteMemory,
@@ -8,24 +8,29 @@ import {
   type MemoryEntry,
   memoryScopeKey,
   parseMemoryScopeKey,
-  type MemoryScope,
   type MemoryScopeSummary,
 } from "../api";
 
 interface UseMemoryOptions {
   active: boolean;
   onUpdated: () => void;
-  initialScopeKey: string | null;
+  selectedScopeKey: string | null;
 }
 
-export function useMemory({ active, onUpdated, initialScopeKey }: UseMemoryOptions) {
+export function useMemory({ active, onUpdated, selectedScopeKey }: UseMemoryOptions) {
   const [enabled, setEnabled] = useState(false);
   const [scopes, setScopes] = useState<MemoryScopeSummary[]>([]);
   const [scopesLoading, setScopesLoading] = useState(false);
   const [scopesError, setScopesError] = useState<string | null>(null);
-  const [selectedScope, setSelectedScope] = useState<MemoryScope | null>(() =>
-    parseMemoryScopeKey(initialScopeKey),
-  );
+  const selectedScope = useMemo(() => parseMemoryScopeKey(selectedScopeKey), [selectedScopeKey]);
+  const effectiveScope = useMemo(() => {
+    if (selectedScope) {
+      if (scopes.length === 0) return selectedScope;
+      const key = memoryScopeKey(selectedScope);
+      if (scopes.some((item) => memoryScopeKey(item.scope) === key)) return selectedScope;
+    }
+    return scopes[0]?.scope ?? null;
+  }, [scopes, selectedScope]);
   const [entries, setEntries] = useState<MemoryEntry[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
@@ -45,14 +50,6 @@ export function useMemory({ active, onUpdated, initialScopeKey }: UseMemoryOptio
       const response = await listMemoryScopes();
       setEnabled(response.enabled);
       setScopes(response.items);
-      setSelectedScope((current) => {
-        if (current) {
-          const currentKey = memoryScopeKey(current);
-          const matches = response.items.some((item) => memoryScopeKey(item.scope) === currentKey);
-          if (matches) return current;
-        }
-        return response.items[0]?.scope ?? null;
-      });
       if (response.items.length === 0) setEntries([]);
       onUpdated();
     } catch (requestError) {
@@ -77,15 +74,15 @@ export function useMemory({ active, onUpdated, initialScopeKey }: UseMemoryOptio
   }, [active, load]);
 
   useEffect(() => {
-    if (!active || !selectedScope) return;
+    if (!active || !effectiveScope) return;
 
-    const scopeKey = memoryScopeKey(selectedScope);
+    const scopeKey = memoryScopeKey(effectiveScope);
     const silent = detailScopeKeyRef.current === scopeKey;
     let current = true;
     if (!silent) setDetailLoading(true);
     setDetailError(null);
 
-    void getMemory(selectedScope)
+    void getMemory(effectiveScope)
       .then((response) => {
         if (!current) return;
         detailScopeKeyRef.current = scopeKey;
@@ -104,15 +101,15 @@ export function useMemory({ active, onUpdated, initialScopeKey }: UseMemoryOptio
     return () => {
       current = false;
     };
-  }, [active, detailReloadKey, selectedScope]);
+  }, [active, detailReloadKey, effectiveScope]);
+
+  const effectiveScopeKey = effectiveScope ? memoryScopeKey(effectiveScope) : null;
+  useEffect(() => {
+    setDeleteError(null);
+  }, [effectiveScopeKey]);
 
   const retryDetail = useCallback(() => {
     setDetailReloadKey((key) => key + 1);
-  }, []);
-
-  const selectScope = useCallback((scope: MemoryScope) => {
-    setSelectedScope(scope);
-    setDeleteError(null);
   }, []);
 
   const dismissDeleteError = useCallback(() => {
@@ -121,11 +118,11 @@ export function useMemory({ active, onUpdated, initialScopeKey }: UseMemoryOptio
 
   const createRule = useCallback(
     async (title: string, content: string) => {
-      if (!selectedScope || addingRule) return;
+      if (!effectiveScope || addingRule) return;
       setAddingRule(true);
       setAddRuleError(null);
       try {
-        await addMemoryRule(selectedScope, { title, content });
+        await addMemoryRule(effectiveScope, { title, content });
         setDetailReloadKey((key) => key + 1);
         void load();
       } catch (requestError) {
@@ -136,17 +133,17 @@ export function useMemory({ active, onUpdated, initialScopeKey }: UseMemoryOptio
         setAddingRule(false);
       }
     },
-    [addingRule, load, selectedScope],
+    [addingRule, effectiveScope, load],
   );
 
   const deleteEntry = useCallback(
     async (entryId: string) => {
-      if (!selectedScope || deletingEntryId) return;
+      if (!effectiveScope || deletingEntryId) return;
 
       setDeletingEntryId(entryId);
       setDeleteError(null);
       try {
-        await deleteMemory(selectedScope, entryId);
+        await deleteMemory(effectiveScope, entryId);
         setEntries((current) => current.filter((entry) => entry.id !== entryId));
         void load();
       } catch (requestError) {
@@ -157,7 +154,7 @@ export function useMemory({ active, onUpdated, initialScopeKey }: UseMemoryOptio
         setDeletingEntryId(null);
       }
     },
-    [deletingEntryId, load, selectedScope],
+    [deletingEntryId, effectiveScope, load],
   );
 
   const reload = useCallback(() => {
@@ -170,7 +167,7 @@ export function useMemory({ active, onUpdated, initialScopeKey }: UseMemoryOptio
     scopes,
     scopesLoading,
     scopesError,
-    selectedScope,
+    selectedScope: effectiveScope,
     entries,
     detailLoading,
     detailError,
@@ -181,7 +178,6 @@ export function useMemory({ active, onUpdated, initialScopeKey }: UseMemoryOptio
     deleteError,
     deletingEntryId,
     dismissDeleteError,
-    selectScope,
     reload,
     retryDetail,
   };
