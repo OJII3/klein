@@ -17,6 +17,7 @@ export interface LangfuseCredentials {
 export interface ResolveUsageProviderInput {
   readonly agentDirectory: string;
   readonly provider: AppConfig["llm"]["provider"];
+  readonly googleModels: readonly string[];
   readonly mistralModels: readonly string[];
   readonly langfuse?: LangfuseCredentials;
   readonly openCodeGoApiKey?: string;
@@ -25,19 +26,31 @@ export interface ResolveUsageProviderInput {
 export function resolveUsageProvider(
   input: ResolveUsageProviderInput,
 ): UsageLimitProvider | undefined {
+  const langfuseProvider = (
+    models: readonly string[],
+    monthlyBudgetUsd: number,
+  ): LangfuseUsageProvider | undefined =>
+    input.langfuse && models.length > 0
+      ? new LangfuseUsageProvider({
+          baseUrl: input.langfuse.baseUrl ?? DEFAULT_LANGFUSE_BASE_URL,
+          models,
+          monthlyBudgetUsd,
+          publicKey: input.langfuse.publicKey,
+          secretKey: input.langfuse.secretKey,
+        })
+      : undefined;
+
   switch (input.provider) {
     case "google":
-      return new EstimatedUsageProvider(input.agentDirectory, "google", GOOGLE_MONTHLY_BUDGET_USD);
+      return (
+        langfuseProvider(input.googleModels, GOOGLE_MONTHLY_BUDGET_USD) ??
+        new EstimatedUsageProvider(input.agentDirectory, "google", GOOGLE_MONTHLY_BUDGET_USD)
+      );
     case "mistral":
-      return input.langfuse && input.mistralModels.length > 0
-        ? new LangfuseUsageProvider({
-            baseUrl: input.langfuse.baseUrl ?? DEFAULT_LANGFUSE_BASE_URL,
-            models: input.mistralModels,
-            monthlyBudgetUsd: MISTRAL_MONTHLY_BUDGET_USD,
-            publicKey: input.langfuse.publicKey,
-            secretKey: input.langfuse.secretKey,
-          })
-        : new EstimatedUsageProvider(input.agentDirectory, "mistral", MISTRAL_MONTHLY_BUDGET_USD);
+      return (
+        langfuseProvider(input.mistralModels, MISTRAL_MONTHLY_BUDGET_USD) ??
+        new EstimatedUsageProvider(input.agentDirectory, "mistral", MISTRAL_MONTHLY_BUDGET_USD)
+      );
     case "opencode-go":
       return input.openCodeGoApiKey
         ? new OpenCodeGoUsageProvider(input.openCodeGoApiKey)
