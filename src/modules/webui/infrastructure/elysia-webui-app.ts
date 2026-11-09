@@ -29,7 +29,7 @@ const IMMUTABLE_ASSET_CACHE_CONTROL = "public, max-age=31536000, immutable";
 // (a blank page) instead of being redirected to the Access login.
 const HTML_CACHE_CONTROL = "no-store";
 
-export async function startWebUi(options: WebUiServerOptions): Promise<WebUiServer> {
+export async function createWebUiServerApp(options: WebUiServerOptions) {
   const staticApp = await staticPlugin({
     assets: resolve(options.staticDirectory),
     alwaysStatic: true,
@@ -37,7 +37,8 @@ export async function startWebUi(options: WebUiServerOptions): Promise<WebUiServ
     indexHTML: true,
     prefix: "/",
   });
-  const app = createWebUiApp(options)
+  const indexHtml = await readFile(resolve(options.staticDirectory, "index.html"));
+  return createWebUiApp(options)
     .onAfterHandle(({ request, set }) => {
       const { pathname } = new URL(request.url);
       // Vite fingerprints everything under /assets, so those are immutable.
@@ -46,17 +47,15 @@ export async function startWebUi(options: WebUiServerOptions): Promise<WebUiServ
         ? IMMUTABLE_ASSET_CACHE_CONTROL
         : HTML_CACHE_CONTROL;
     })
-    .get("/:view", async ({ params, set }) => {
-      if (
-        params.view !== "logs" &&
-        params.view !== "sessions" &&
-        params.view !== "memory" &&
-        params.view !== "tools"
-      ) {
+    .get("/*", ({ request, set }) => {
+      const { pathname } = new URL(request.url);
+      // Unknown API and asset paths stay 404s. Every other GET is an SPA route,
+      // so the client router owns which paths exist.
+      if (pathname === "/api" || pathname.startsWith("/api/") || pathname.includes(".")) {
         set.status = 404;
         return { error: "Not found" };
       }
-      return new Response(await readFile(resolve(options.staticDirectory, "index.html")), {
+      return new Response(indexHtml, {
         headers: {
           "cache-control": HTML_CACHE_CONTROL,
           "content-type": "text/html; charset=utf-8",
@@ -64,6 +63,10 @@ export async function startWebUi(options: WebUiServerOptions): Promise<WebUiServ
       });
     })
     .use(staticApp);
+}
+
+export async function startWebUi(options: WebUiServerOptions): Promise<WebUiServer> {
+  const app = await createWebUiServerApp(options);
 
   // Elysia enables SO_REUSEPORT by default, which lets a second Klein instance
   // bind the same port and silently split traffic between old and new builds.
