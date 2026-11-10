@@ -40,12 +40,19 @@ export interface DiscordAccessPolicy {
   canUseOwnerFeatures(target: DiscordAccessTarget): boolean;
 }
 
+function isOwner(ownerUserId: string | undefined, target: DiscordAccessTarget): boolean {
+  return !!ownerUserId && target.userId === ownerUserId && !target.userIsBot;
+}
+
 function resolveAccess(
   configuration: DiscordAccessConfiguration,
   rules: DiscordAccessRules | undefined,
+  ownerUserId: string | undefined,
   target: DiscordAccessTarget,
 ): DiscordAccess {
-  if (!target.guildId) return configuration.directMessages;
+  if (!target.guildId) {
+    return isOwner(ownerUserId, target) ? "owner" : configuration.directMessages;
+  }
 
   const guildRule = rules?.getGuildRule(target.guildId);
   const channelRule = guildRule?.channels?.[target.channelId];
@@ -60,19 +67,17 @@ export function createDiscordAccessPolicy(
   rules?: DiscordAccessRules,
 ): DiscordAccessPolicy {
   const canUseOwnerFeatures = (target: DiscordAccessTarget): boolean =>
-    resolveAccess(configuration, rules, target) === "owner" &&
-    !!ownerUserId &&
-    target.userId === ownerUserId &&
-    !target.userIsBot;
+    resolveAccess(configuration, rules, ownerUserId, target) === "owner" &&
+    isOwner(ownerUserId, target);
 
   return {
     canReceive(target) {
       return isAccessAllowed(
-        resolveAccess(configuration, rules, target),
+        resolveAccess(configuration, rules, ownerUserId, target),
         canUseOwnerFeatures(target),
       );
     },
-    resolveAccess: (target) => resolveAccess(configuration, rules, target),
+    resolveAccess: (target) => resolveAccess(configuration, rules, ownerUserId, target),
     canUseOwnerFeatures,
   };
 }
