@@ -1,6 +1,7 @@
 import type { Logger } from "pino";
 
 import { formatDiscordMessage, type DiscordMessage } from "@modules/discord/domain/discord-message";
+import { IdleBatchQueue } from "@app/idle-batch-queue";
 import type { TaskCoordinator } from "@app/task-coordinator";
 import { JsonMemoryStore, listMemoryGuildIds } from "../infrastructure/json-memory-store";
 import { renderMemoryContext } from "../infrastructure/memory-context-renderer";
@@ -16,13 +17,6 @@ import type {
   MemoryProcessor,
 } from "../domain/memory";
 
-interface GuildMemoryQueue {
-  readonly messages: DiscordMessage[];
-  processing: boolean;
-  idleTimer?: ReturnType<typeof setTimeout>;
-  maxAgeTimer?: ReturnType<typeof setTimeout>;
-}
-
 export interface MemoryCoordinatorOptions {
   readonly filePath: string;
   readonly idleSeconds: number;
@@ -35,40 +29,37 @@ export interface MemoryCoordinatorOptions {
 
 export class MemoryCoordinator implements GuildMemoryReader, GuildMemoryEditor {
   private readonly logger: Logger;
-  private readonly queues = new Map<string, GuildMemoryQueue>();
+  private readonly queue: IdleBatchQueue<string, DiscordMessage>;
   private readonly guildOperations = new Map<string, Promise<void>>();
   private disposed = false;
 
   constructor(private readonly options: MemoryCoordinatorOptions) {
     this.logger = options.logger.child({ component: "memory-coordinator" });
+    this.queue = new IdleBatchQueue({
+      idleSeconds: options.idleSeconds,
+      maxBatchAgeSeconds: options.maxBatchAgeSeconds,
+      maxBatchMessages: options.maxBatchMessages,
+      keyOf: (message) => message.guildId,
+      onError: ({ key: guildId, batch, error, durationMs }) => {
+        this.logger.warn(
+          {
+            durationMs,
+            err: error,
+            event: "guild_memory_processing_failed",
+            guildId,
+            messageCount: batch.length,
+          },
+          "Failed to process guild memory",
+        );
+      },
+      run: (guildId, messages) => this.processGuild(guildId, messages),
+      taskCoordinator: options.taskCoordinator,
+    });
   }
 
   enqueue(message: DiscordMessage): void {
-    if (this.disposed || !message.guildId) return;
-
-    const guildId = message.guildId;
-    let queue = this.queues.get(guildId);
-    if (!queue) {
-      queue = {
-        messages: [],
-        processing: false,
-      };
-      this.queues.set(guildId, queue);
-    }
-
-    queue.messages.push(message);
-    if (queue.messages.length >= this.options.maxBatchMessages) {
-      this.scheduleProcessing(guildId);
-      return;
-    }
-
-    this.resetIdleTimer(guildId, queue);
-    if (!queue.maxAgeTimer) {
-      queue.maxAgeTimer = setTimeout(
-        () => this.scheduleProcessing(guildId),
-        this.options.maxBatchAgeSeconds * 1_000,
-      );
-    }
+    if (this.disposed) return;
+    this.queue.enqueue(message);
   }
 
   async getContext(location: MemoryLocation, query: string): Promise<string | undefined> {
@@ -137,87 +128,32 @@ export class MemoryCoordinator implements GuildMemoryReader, GuildMemoryEditor {
 
   dispose(): void {
     this.disposed = true;
-    for (const queue of this.queues.values()) {
-      if (queue.idleTimer) clearTimeout(queue.idleTimer);
-      if (queue.maxAgeTimer) clearTimeout(queue.maxAgeTimer);
-    }
-    this.queues.clear();
+    this.queue.dispose();
   }
 
-  private scheduleProcessing(guildId: string): void {
-    const queue = this.queues.get(guildId);
-    if (!queue || this.disposed) return;
-
-    if (queue.idleTimer) {
-      clearTimeout(queue.idleTimer);
-      queue.idleTimer = undefined;
-    }
-    if (queue.maxAgeTimer) {
-      clearTimeout(queue.maxAgeTimer);
-      queue.maxAgeTimer = undefined;
-    }
-
-    void this.options.taskCoordinator.run(() => this.processGuild(guildId));
-  }
-
-  private async processGuild(guildId: string): Promise<void> {
-    const queue = this.queues.get(guildId);
-    if (!queue || queue.processing || queue.messages.length === 0) return;
-
-    queue.processing = true;
+  private processGuild(guildId: string, messages: readonly DiscordMessage[]): Promise<void> {
+    const startedAt = Date.now();
     return this.runGuildOperation(guildId, async () => {
-      const messages = queue.messages.splice(0, this.options.maxBatchMessages);
-      const startedAt = Date.now();
-      let failed = false;
-
-      try {
-        const store = new JsonMemoryStore(resolveMemoryFilePath(this.options.filePath, guildId));
-        const document = await store.read();
-        const operations = await this.options.processor.process(
-          document,
-          messages.map(toMemoryMessage),
-        );
-        await store.apply(
-          operations,
-          messages.map((message) => message.id),
-        );
-        this.logger.info(
-          {
-            durationMs: Date.now() - startedAt,
-            event: "guild_memory_processed",
-            guildId,
-            messageCount: messages.length,
-            operationCount: operations.filter((operation) => operation.type !== "noop").length,
-          },
-          "Processed guild memory",
-        );
-      } catch (error) {
-        failed = true;
-        queue.messages.unshift(...messages);
-        this.logger.warn(
-          {
-            durationMs: Date.now() - startedAt,
-            err: error,
-            event: "guild_memory_processing_failed",
-            guildId,
-            messageCount: messages.length,
-          },
-          "Failed to process guild memory",
-        );
-      } finally {
-        queue.processing = false;
-        if (queue.messages.length === 0 || this.disposed) {
-          this.queues.delete(guildId);
-        } else if (failed) {
-          this.resetIdleTimer(guildId, queue);
-          queue.maxAgeTimer = setTimeout(
-            () => this.scheduleProcessing(guildId),
-            this.options.maxBatchAgeSeconds * 1_000,
-          );
-        } else {
-          this.scheduleProcessing(guildId);
-        }
-      }
+      const store = new JsonMemoryStore(resolveMemoryFilePath(this.options.filePath, guildId));
+      const document = await store.read();
+      const operations = await this.options.processor.process(
+        document,
+        messages.map(toMemoryMessage),
+      );
+      await store.apply(
+        operations,
+        messages.map((message) => message.id),
+      );
+      this.logger.info(
+        {
+          durationMs: Date.now() - startedAt,
+          event: "guild_memory_processed",
+          guildId,
+          messageCount: messages.length,
+          operationCount: operations.filter((operation) => operation.type !== "noop").length,
+        },
+        "Processed guild memory",
+      );
     });
   }
 
@@ -235,14 +171,6 @@ export class MemoryCoordinator implements GuildMemoryReader, GuildMemoryEditor {
       }
     });
     return current;
-  }
-
-  private resetIdleTimer(guildId: string, queue: GuildMemoryQueue): void {
-    if (queue.idleTimer) clearTimeout(queue.idleTimer);
-    queue.idleTimer = setTimeout(
-      () => this.scheduleProcessing(guildId),
-      this.options.idleSeconds * 1_000,
-    );
   }
 }
 
