@@ -2,6 +2,7 @@ import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
 import type { OwnerMemoryStore } from "@modules/memory/application/owner-memory-store";
+import type { WatchCheckRunner } from "@modules/scheduling/application/watch-check-runner";
 import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
 import type { TextToSpeech } from "@modules/tts/infrastructure/sbv2-tts";
 import { ownerAccessScope, PUBLIC_ACCESS_SCOPE } from "@shared/access";
@@ -24,6 +25,7 @@ export interface DiscordAgentToolsOptions {
   readonly speak?: (text: string, toolCallId?: string) => Promise<void>;
   readonly tts?: TextToSpeech;
   readonly scheduledTaskStore?: ScheduledTaskStore;
+  readonly watchCheckRunner: WatchCheckRunner;
   readonly ownerMemoryStore?: OwnerMemoryStore;
 }
 
@@ -56,7 +58,12 @@ export function createDiscordAgentTools(
       ? createReminderTools(options.scheduledTaskStore, options.channelId, accessScope)
       : []),
     ...(options.scheduledTaskStore
-      ? createWatchTools(options.scheduledTaskStore, options.channelId, accessScope)
+      ? createWatchTools(
+          options.scheduledTaskStore,
+          options.channelId,
+          accessScope,
+          options.watchCheckRunner,
+        )
       : []),
     ...(ownerFeaturesAllowed && options.ownerMemoryStore
       ? createOwnerMemoryTools(options.ownerMemoryStore, `communication:${options.channelId}`)

@@ -11,9 +11,16 @@ import { createDiscordAgentTools } from "./discord-tools";
 import type { AgentEvent } from "../core/agent-event";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
+import type { WatchCheckRunner } from "@modules/scheduling/application/watch-check-runner";
 import type { ReminderTask, ScheduledTask } from "@modules/scheduling/domain/scheduled-task";
 import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
 import type { DiscordImageAnalysis } from "./tools/discord-read";
+
+const silentWatchCheckRunner: WatchCheckRunner = {
+  async run() {
+    return { output: "", decision: "silent", exitCode: 0, durationMs: 0, state: {} };
+  },
+};
 
 const message: DiscordMessage = {
   author: {
@@ -55,6 +62,7 @@ function createToolsFor(
         ownerUserId: options.ownerUserId,
         scheduledTaskStore: options.scheduledTaskStore,
         speak: options.speak,
+        watchCheckRunner: silentWatchCheckRunner,
       },
       analyzeImage,
     );

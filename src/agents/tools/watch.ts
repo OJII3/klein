@@ -12,6 +12,7 @@ import {
   type ScheduleInput,
   type StoredSchedule,
 } from "@modules/scheduling/domain/schedule";
+import type { WatchCheckRunner } from "@modules/scheduling/application/watch-check-runner";
 import type {
   ScheduledTaskAccessScope,
   WatchTask,
@@ -47,6 +48,7 @@ export function createWatchTools(
   store: ScheduledTaskStore,
   channelId: string,
   accessScope: ScheduledTaskAccessScope,
+  watchCheckRunner: WatchCheckRunner,
 ) {
   return [
     defineTool({
@@ -58,6 +60,7 @@ export function createWatchTools(
         "Only the tools in the `watch` section are available; normal session tools, timers, files, and process APIs are not. " +
         "`store(key, value)` and `load(key)` keep JSON values between checks of the same watch; storing `undefined` deletes a key. " +
         "Text printed with `text()` or `console.*` becomes the wake output. " +
+        "The script runs once before the watch is registered; if that run fails, the watch is not registered. " +
         "Times use Japan Standard Time (JST). Weekly schedules require one or more weekdays: sun, mon, tue, wed, thu, fri, sat.",
       parameters: Type.Object({
         name: Type.String({ minLength: 1, maxLength: 100 }),
@@ -88,6 +91,11 @@ export function createWatchTools(
         if (!watch.name || !watch.script || !watch.message) {
           throw new Error("監視名・スクリプト・通知内容を入力してください。");
         }
+        await requireSuccessfulDryRun(
+          watchCheckRunner,
+          watch,
+          "監視スクリプトの確認実行に失敗したため、監視を登録しませんでした。",
+        );
         await store.create(watch);
         return {
           content: [
@@ -106,6 +114,7 @@ export function createWatchTools(
       description:
         "Update one watch in the current conversation by its ID. Use it to edit the name, schedule, script, args, or notification message, and to disable or re-enable the watch with `enabled`. " +
         "Changing the schedule or enabling a disabled watch schedules the next check from now. " +
+        "Enabling a disabled watch runs the script once first; if that run fails, the watch stays disabled. " +
         "Use watch_list to find the ID.",
       parameters: Type.Object({
         id: Type.String({ minLength: 1 }),
@@ -155,6 +164,13 @@ export function createWatchTools(
         };
         if (!updated.name || !updated.script || !updated.message) {
           throw new Error("監視名・スクリプト・通知内容を入力してください。");
+        }
+        if (updated.enabled && !current.enabled) {
+          await requireSuccessfulDryRun(
+            watchCheckRunner,
+            updated,
+            "監視スクリプトの確認実行に失敗したため、監視を有効にしませんでした。",
+          );
         }
         await store.update(updated);
         const details: WatchUpdateDetails = {
@@ -268,4 +284,20 @@ function requireNextRunAt(schedule: StoredSchedule, now: number): string {
   const nextRunAt = getNextRunAt(schedule, now);
   if (!nextRunAt) throw new Error("監視の次回実行時刻を計算できませんでした。");
   return nextRunAt;
+}
+
+/**
+ * Runs the script once without delivering a wake or keeping `store()` writes, so a watch
+ * cannot be registered or enabled while its script fails.
+ */
+async function requireSuccessfulDryRun(
+  runner: WatchCheckRunner,
+  watch: WatchTask,
+  failureMessage: string,
+): Promise<void> {
+  try {
+    await runner.run(watch);
+  } catch (error) {
+    throw new Error(`${failureMessage}${error instanceof Error ? error.message : String(error)}`);
+  }
 }
