@@ -246,6 +246,33 @@ export function createWatchTools(
       },
     }),
     defineTool({
+      name: "watch_get",
+      label: "Show Watch",
+      description:
+        "Show one watch in the current conversation by its ID, including its script, args, schedule, saved state, and notification message. Use watch_list to find the ID.",
+      parameters: Type.Object({ id: Type.String({ minLength: 1 }) }),
+      exposure: "deferred",
+      async execute(_toolCallId, params) {
+        const watches = await store.listForScope("watch", channelId, accessScope);
+        const watch = watches.find((candidate) => candidate.id === params.id);
+        if (!watch) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `この会話にID ${params.id} の監視はありません。`,
+              },
+            ],
+            details: { id: params.id, found: false },
+          };
+        }
+        return {
+          content: [{ type: "text", text: formatWatchDetails(watch) }],
+          details: { id: watch.id, found: true },
+        };
+      },
+    }),
+    defineTool({
       name: "watch_delete",
       label: "Delete Watch",
       description:
@@ -278,6 +305,24 @@ function formatWatch(watch: WatchTask): string {
     : "";
   const nextRun = watch.enabled ? `次回: ${formatJapanDateTime(watch.nextRunAt)}` : "停止中";
   return `- ${watch.id}: ${watch.name} — ${formatSchedule(watch.schedule)} / ${nextRun}${status}${lastTriggeredAt}${error}`;
+}
+
+function formatWatchDetails(watch: WatchTask): string {
+  const nextRun = watch.enabled ? `次回: ${formatJapanDateTime(watch.nextRunAt)}` : "次回: 停止中";
+  const args = watch.args.length === 0 ? "なし" : JSON.stringify(watch.args);
+  const state = watch.state === undefined ? "なし" : JSON.stringify(watch.state);
+  return [
+    `${watch.id}: ${watch.name}`,
+    `スケジュール: ${formatSchedule(watch.schedule)}`,
+    nextRun,
+    `引数: ${args}`,
+    `通知内容: ${watch.message}`,
+    `保存値: ${state}`,
+    "スクリプト:",
+    "```js",
+    watch.script,
+    "```",
+  ].join("\n");
 }
 
 function requireNextRunAt(schedule: StoredSchedule, now: number): string {

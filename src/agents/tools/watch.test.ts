@@ -72,7 +72,7 @@ async function addWatch(tools: ReturnType<typeof createWatchTools>) {
   );
 }
 
-test("provides watch add, update, list, and delete tools in the given scope", async () => {
+test("provides watch add, update, get, list, and delete tools in the given scope", async () => {
   const { store, getStored, deletedIds } = createStore();
   const { runner, runs } = createRunner();
   const tools = createWatchTools(store, "channel-a", "public", runner);
@@ -103,6 +103,30 @@ test("provides watch add, update, list, and delete tools in the given scope", as
   assert.equal(listed[0]?.script, "text(args[0]); silent();");
   assert.equal(listed[0]?.enabled, true);
   assert.equal(listed[0]?.consecutiveFailures, 0);
+
+  const getTool = tools.find((tool) => tool.name === "watch_get");
+  assert.ok(getTool);
+  const getResult = await getTool.execute(
+    "tool-call",
+    { id: created!.id } as never,
+    undefined,
+    undefined,
+    {} as never,
+  );
+  assert.match(textOf(getResult), /在庫監視/u);
+  assert.match(textOf(getResult), /text\(args\[0\]\); silent\(\);/u);
+  assert.match(textOf(getResult), /--json/u);
+  assert.match(textOf(getResult), /在庫の変化を確認してください。/u);
+  assert.match(textOf(getResult), /保存値: なし/u);
+
+  const missingGetResult = await getTool.execute(
+    "tool-call",
+    { id: "missing" } as never,
+    undefined,
+    undefined,
+    {} as never,
+  );
+  assert.match(textOf(missingGetResult), /ありません/u);
 
   await deleteTool.execute(
     "tool-call",
