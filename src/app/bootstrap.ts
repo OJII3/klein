@@ -229,6 +229,7 @@ export async function bootstrap(): Promise<void> {
       : undefined,
     channelRuleStore,
     discordAccessRuleStore,
+    ownerUserId,
   );
   const memorySessionId = `memory-${randomUUID()}`;
   const memoryCoordinator = memoryConfig.enabled

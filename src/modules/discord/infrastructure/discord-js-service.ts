@@ -24,6 +24,7 @@ import type { DiscordGateway, DiscordMessageHandler } from "../ports/discord-gat
 import type { DiscordAccessRuleStore } from "../ports/discord-access-rule-store";
 import type { DiscordChannelRuleStore } from "../ports/discord-channel-rule-store";
 
+import { DiscordChannelAccessRequester } from "./discord-channel-access-request";
 import {
   DiscordVoiceChatController,
   type DiscordVoiceChatControllerOptions,
@@ -62,6 +63,7 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
   private readonly voiceChatController?: DiscordVoiceChatController;
   private readonly interactionHandler: DiscordJsInteractionHandler;
   private readonly messageAdapter: DiscordJsMessageAdapter;
+  private readonly channelAccessRequester?: DiscordChannelAccessRequester;
   private onMessage?: DiscordMessageHandler;
   private messageListener?: (message: Message) => void;
   private interactionListener?: (interaction: Interaction) => void;
@@ -76,6 +78,7 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
     voiceChat?: DiscordVoiceChatControllerOptions,
     channelRuleStore?: DiscordChannelRuleStore,
     accessRuleStore?: DiscordAccessRuleStore,
+    ownerUserId?: string,
   ) {
     this.logger = logger?.child({ component: "discord-service" });
     this.messageAdapter = new DiscordJsMessageAdapter(this.logger);
@@ -99,6 +102,9 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
       ],
       partials: [Partials.Channel],
     });
+    this.channelAccessRequester = accessRuleStore
+      ? new DiscordChannelAccessRequester(this.client, accessRuleStore, ownerUserId, this.logger)
+      : undefined;
   }
 
   async start(onMessage: DiscordMessageHandler): Promise<void> {
@@ -291,6 +297,16 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
         userIsBot: message.author.bot,
       })
     ) {
+      if (normalizedMessage.guildId && !message.author.bot && this.isBotMentioned(message)) {
+        await this.channelAccessRequester?.request({
+          guildId: normalizedMessage.guildId,
+          channelId: normalizedMessage.parentChannelId ?? normalizedMessage.channelId,
+          ...(normalizedMessage.threadId ? { threadId: normalizedMessage.threadId } : {}),
+          pendingChannelId: normalizedMessage.channelId,
+          ...(normalizedMessage.channelName ? { channelName: normalizedMessage.channelName } : {}),
+          requesterUserId: normalizedMessage.author.id,
+        });
+      }
       return;
     }
 
@@ -315,6 +331,11 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
     return this.acceptingMessages && this.operatingState.isActive();
   }
 
+  private isBotMentioned(message: Message): boolean {
+    const botUserId = this.client.user?.id;
+    return !!botUserId && message.mentions.users.has(botUserId);
+  }
+
   private applyOperatingModePresence(): void {
     if (!this.client.user) return;
 
@@ -326,6 +347,13 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
   }
 
   private async handleInteraction(interaction: Interaction): Promise<void> {
+    if (
+      this.channelAccessRequester &&
+      interaction.isButton?.() &&
+      (await this.channelAccessRequester.handleButton(interaction))
+    ) {
+      return;
+    }
     await this.interactionHandler.handle(interaction);
   }
 }
