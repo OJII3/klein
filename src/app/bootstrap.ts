@@ -42,6 +42,7 @@ import {
   createWebUiMemoryAccessor,
   OwnerMemoryStore,
 } from "@modules/memory/application/owner-memory-store";
+import { MarkdownUserMemoryStore } from "@modules/user-memory/infrastructure/markdown-user-memory-store";
 import { createGetMonthlyUsageLimit } from "@modules/usage/application/get-monthly-usage-limit";
 import { formatMonthlyUsageStatus } from "@modules/usage/application/format-monthly-usage-status";
 import { resolveUsageProvider } from "@modules/usage/application/resolve-usage-provider";
@@ -112,6 +113,14 @@ export async function bootstrap(): Promise<void> {
         new JsonMemoryStore(
           resolve(config.owner?.memoryFilePath ?? resolve(agentDir, "owner-memory/MEMORY.json")),
         ),
+      )
+    : undefined;
+  const userMemoryConfig = config.features.userMemory;
+  const userMemoryStore = userMemoryConfig?.enabled
+    ? new MarkdownUserMemoryStore(
+        userMemoryConfig.directory
+          ? resolve(userMemoryConfig.directory)
+          : resolve(agentDir, "user-memory"),
       )
     : undefined;
   const modelRuntime = await createPiModelRuntime(agentDir);
@@ -190,6 +199,7 @@ export async function bootstrap(): Promise<void> {
             ownerUserId,
             scheduledTaskStore,
             tts,
+            userMemoryStore,
             watchCheckRunner,
           },
           analyzeImage,
@@ -209,6 +219,7 @@ export async function bootstrap(): Promise<void> {
                     channelId,
                     ownerFeaturesAllowed: false,
                     speak,
+                    userMemoryStore,
                     watchCheckRunner,
                   },
                   analyzeImage,

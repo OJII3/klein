@@ -85,6 +85,14 @@ const MemoryConfigurationSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const UserMemoryConfigurationSchema = Type.Object(
+  {
+    enabled: Type.Boolean(),
+    directory: Type.Optional(Type.String({ minLength: 1 })),
+  },
+  { additionalProperties: false },
+);
+
 const WebUiConfigurationSchema = Type.Object(
   {
     enabled: Type.Boolean(),
@@ -179,6 +187,7 @@ export const ConfigSchema = Type.Object(
     features: Type.Object(
       {
         memory: Type.Object(MemoryConfigurationSchema.properties, { additionalProperties: false }),
+        userMemory: Type.Optional(UserMemoryConfigurationSchema),
         minecraft: Type.Object(
           {
             enabled: Type.Boolean(),

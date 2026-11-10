@@ -5,9 +5,11 @@ import type { OwnerMemoryStore } from "@modules/memory/application/owner-memory-
 import type { WatchCheckRunner } from "@modules/scheduling/application/watch-check-runner";
 import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
 import type { TextToSpeech } from "@modules/tts/infrastructure/sbv2-tts";
+import type { UserMemoryStore } from "@modules/user-memory/domain/user-memory";
 import { ownerAccessScope, PUBLIC_ACCESS_SCOPE } from "@shared/access";
 import { createOwnerMemoryTools } from "../tools/owner-memory";
 import { createReminderTools } from "../tools/reminder";
+import { createUserMemoryTools } from "../tools/user-memory";
 import { createWatchTools } from "../tools/watch";
 import { createDiscordReadTool, type DiscordImageAnalysis } from "./tools/discord-read";
 import { createDiscordSendTool } from "./tools/discord-send";
@@ -27,6 +29,7 @@ export interface DiscordAgentToolsOptions {
   readonly scheduledTaskStore?: ScheduledTaskStore;
   readonly watchCheckRunner: WatchCheckRunner;
   readonly ownerMemoryStore?: OwnerMemoryStore;
+  readonly userMemoryStore?: UserMemoryStore;
 }
 
 /**
@@ -68,5 +71,6 @@ export function createDiscordAgentTools(
     ...(ownerFeaturesAllowed && options.ownerMemoryStore
       ? createOwnerMemoryTools(options.ownerMemoryStore, `communication:${options.channelId}`)
       : []),
+    ...(options.userMemoryStore ? createUserMemoryTools(options.userMemoryStore) : []),
   ];
 }
