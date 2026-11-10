@@ -29,6 +29,7 @@ import { PiVoiceReactionSelector } from "@runtime/pi/pi-voice-reaction-selector"
 import { PiVoiceTranscriptQueueSelector } from "@runtime/pi/pi-voice-transcript-queue-selector";
 import { createDiscordAccessPolicy } from "@modules/discord/domain/discord-access-policy";
 import { DiscordOperatingState } from "@modules/discord/domain/discord-operating-state";
+import { DiscordUserDirectory } from "@modules/discord/application/discord-user-directory";
 import { resolveVoiceChatConfig } from "@modules/discord/domain/voice-chat-config";
 import { DiscordJsService } from "@modules/discord/infrastructure/discord-js-service";
 import { loadVoiceReactionPresets } from "@modules/discord/infrastructure/voice-reaction-presets";
@@ -88,6 +89,11 @@ export async function bootstrap(): Promise<void> {
   const tts = config.features.tts?.enabled ? new Sbv2Tts(config.features.tts.serverUrl) : undefined;
   const agentDir = resolve(config.runtime.agentDir);
   await migratePiDurableStorage({ agentDir, logger });
+  const discordUserDirectory = new DiscordUserDirectory(
+    resolve(agentDir, "discord-users.json"),
+    logger,
+  );
+  await discordUserDirectory.load();
   const channelSessionStateStore = new ChannelSessionStateStore(
     resolve(agentDir, "channel-sessions"),
   );
@@ -194,6 +200,7 @@ export async function bootstrap(): Promise<void> {
           {
             channelApi: discordService,
             channelId,
+            discordUserDirectory,
             ownerFeaturesAllowed,
             ownerMemoryStore,
             ownerUserId,
@@ -217,6 +224,7 @@ export async function bootstrap(): Promise<void> {
                   {
                     channelApi: discordService,
                     channelId,
+                    discordUserDirectory,
                     ownerFeaturesAllowed: false,
                     speak,
                     userMemoryStore,
@@ -226,6 +234,7 @@ export async function bootstrap(): Promise<void> {
                 ),
             }),
           logger,
+          discordUserDirectory,
           reactionSelector,
           transcriptQueueSelector,
         });
@@ -274,6 +283,7 @@ export async function bootstrap(): Promise<void> {
     channelRuleStore,
     channelApi: discordService,
     logger,
+    discordUserDirectory,
     memoryCoordinator,
     ownerMemoryStore,
     operatingState: discordOperatingState,
@@ -351,6 +361,7 @@ export async function bootstrap(): Promise<void> {
     await taskCoordinator.waitForCompletion();
     await discordService.stop();
     await agentCoordinator.dispose();
+    await discordUserDirectory.flush();
     await piUsageReporter?.shutdown();
     logger.info({ event: "shutdown_completed" }, "Shutdown complete");
     flushLogger(logger);

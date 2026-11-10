@@ -56,16 +56,8 @@ export interface UserMemoryPatch {
 }
 
 export interface UserMemoryStore {
-  read(discordId: string): Promise<UserMemory | undefined>;
-  update(discordId: string, patch: UserMemoryPatch): Promise<UserMemory>;
-}
-
-export function normalizeDiscordId(value: string): string {
-  return value.trim().replace(/^@+/u, "").trim().toLowerCase();
-}
-
-export function isValidDiscordId(value: string): boolean {
-  return value.length > 0 && value.length <= 100 && /^[^\s/\\]+$/u.test(value);
+  read(userId: string): Promise<UserMemory | undefined>;
+  update(userId: string, username: string, patch: UserMemoryPatch): Promise<UserMemory>;
 }
 
 export function clampImpression(value: number): number {

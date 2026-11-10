@@ -3,9 +3,12 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
 import {
+  isValidDiscordUserId,
+  isValidDiscordUsername,
+  normalizeDiscordUsername,
+} from "@modules/discord/domain/discord-user";
+import {
   clampImpression,
-  isValidDiscordId,
-  normalizeDiscordId,
   USER_MEMORY_DEFAULT_SECTION_CONTENT,
   USER_MEMORY_SECTION_HEADINGS,
   USER_MEMORY_SECTION_KEYS,
@@ -25,9 +28,8 @@ export class MarkdownUserMemoryStore implements UserMemoryStore {
     this.directory = resolve(directory);
   }
 
-  async read(discordId: string): Promise<UserMemory | undefined> {
-    const normalizedId = normalizeDiscordId(discordId);
-    const filePath = this.filePath(normalizedId);
+  async read(userId: string): Promise<UserMemory | undefined> {
+    const filePath = this.filePath(userId);
     let content: string;
     try {
       content = await readFile(filePath, "utf8");
@@ -37,17 +39,20 @@ export class MarkdownUserMemoryStore implements UserMemoryStore {
     }
 
     try {
-      return parseUserMemory(content, normalizedId);
+      return parseUserMemory(content);
     } catch (error) {
       throw new Error(`Failed to parse user memory file: ${filePath}`, { cause: error });
     }
   }
 
-  async update(discordId: string, patch: UserMemoryPatch): Promise<UserMemory> {
-    const normalizedId = normalizeDiscordId(discordId);
-    const filePath = this.filePath(normalizedId);
+  async update(userId: string, username: string, patch: UserMemoryPatch): Promise<UserMemory> {
+    const normalizedUsername = normalizeDiscordUsername(username);
+    if (!isValidDiscordUsername(normalizedUsername)) {
+      throw new Error(`Invalid Discord username: ${username}`);
+    }
+    const filePath = this.filePath(userId);
     return this.runWrite(async () => {
-      const existing = await this.read(normalizedId);
+      const existing = await this.read(userId);
       const displayName = normalizeFrontmatterText(
         patch.displayName ?? existing?.displayName ?? "",
       );
@@ -60,7 +65,7 @@ export class MarkdownUserMemoryStore implements UserMemoryStore {
       const firstName = resolveOptionalText(patch.firstName, existing?.firstName);
       const lastName = resolveOptionalText(patch.lastName, existing?.lastName);
       const memory: UserMemory = {
-        discordId: normalizedId,
+        discordId: normalizedUsername,
         displayName,
         ...(nickname !== undefined ? { nickname } : {}),
         ...(firstName !== undefined ? { firstName } : {}),
@@ -86,11 +91,11 @@ export class MarkdownUserMemoryStore implements UserMemoryStore {
     });
   }
 
-  private filePath(discordId: string): string {
-    if (!isValidDiscordId(discordId)) {
-      throw new Error(`Invalid Discord username: ${discordId}`);
+  private filePath(userId: string): string {
+    if (!isValidDiscordUserId(userId)) {
+      throw new Error(`Invalid Discord user ID: ${userId}`);
     }
-    return join(this.directory, `${encodeURIComponent(discordId)}.md`);
+    return join(this.directory, `${userId}.md`);
   }
 
   private runWrite<T>(operation: () => Promise<T>): Promise<T> {
@@ -125,7 +130,7 @@ export function renderUserMemory(memory: UserMemory): string {
   return lines.join("\n");
 }
 
-function parseUserMemory(content: string, discordId: string): UserMemory {
+function parseUserMemory(content: string): UserMemory {
   const normalized = content.replace(/\r\n?/g, "\n");
   const lines = normalized.split("\n");
   if (lines[0]?.trim() !== FRONTMATTER_DELIMITER) {
@@ -140,11 +145,9 @@ function parseUserMemory(content: string, discordId: string): UserMemory {
   }
 
   const fields = parseFrontmatter(lines.slice(1, endIndex));
-  const storedDiscordId = fields.get("discord_id");
-  if (storedDiscordId !== discordId) {
-    throw new Error(
-      `discord_id in front matter (${storedDiscordId ?? "missing"}) does not match ${discordId}`,
-    );
+  const discordId = normalizeDiscordUsername(fields.get("discord_id") ?? "");
+  if (!isValidDiscordUsername(discordId)) {
+    throw new Error("discord_id is missing or invalid in front matter");
   }
 
   const displayName = fields.get("display_name")?.trim();

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Logger } from "pino";
 
 import { DiscordAgent } from "@agents/discord/discord-agent";
+import type { DiscordUserDirectory } from "@modules/discord/application/discord-user-directory";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import type {
   VoiceChatConversation,
@@ -19,6 +20,7 @@ export interface VoiceChatCoordinatorDependencies {
     speak: (text: string, toolCallId?: string) => Promise<void>,
   ) => Promise<DiscordAgent>;
   readonly logger: Logger;
+  readonly discordUserDirectory?: DiscordUserDirectory;
   readonly reactionSelector?: VoiceReactionSelector;
   readonly transcriptQueueSelector?: VoiceTranscriptQueueSelector;
 }
@@ -232,6 +234,7 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
     return {
       handleTranscript: (text, requestId) => {
         if (stopped) return Promise.resolve();
+        this.dependencies.discordUserDirectory?.remember(context.user);
         const message: DiscordMessage = {
           occurredAt: new Date().toISOString(),
           author: context.user,

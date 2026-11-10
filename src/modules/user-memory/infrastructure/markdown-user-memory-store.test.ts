@@ -6,13 +6,16 @@ import test from "node:test";
 import { createTempDir } from "../../../testing/temp-dir";
 import { MarkdownUserMemoryStore, renderUserMemory } from "./markdown-user-memory-store";
 
-test("creates and reads a user memory markdown file by username", async () => {
+const userId = "123456789012345678";
+const username = "alice";
+
+test("creates and reads a user memory markdown file by numeric user ID", async () => {
   await using temp = await createTempDir("klein-user-memory-");
   const store = new MarkdownUserMemoryStore(temp.path);
 
-  assert.equal(await store.read("alice"), undefined);
+  assert.equal(await store.read(userId), undefined);
 
-  const created = await store.update("alice", {
+  const created = await store.update(userId, username, {
     displayName: "Alice",
     nickname: "A",
     firstName: "Alice",
@@ -25,12 +28,11 @@ test("creates and reads a user memory markdown file by username", async () => {
     strengthening: "- 次は誕生日を祝う",
   });
 
-  assert.equal(created.discordId, "alice");
+  assert.equal(created.discordId, username);
   assert.equal(created.impression, 10);
-  assert.deepEqual(await store.read("alice"), created);
-  assert.deepEqual(await store.read("@Alice"), created);
+  assert.deepEqual(await store.read(userId), created);
 
-  const markdown = await readFile(join(temp.path, "alice.md"), "utf8");
+  const markdown = await readFile(join(temp.path, `${userId}.md`), "utf8");
   assert.match(markdown, /^---\ndiscord_id: "alice"\n/u);
   assert.match(markdown, /display_name: "Alice"/u);
   assert.match(markdown, /nickname: "A"/u);
@@ -48,7 +50,7 @@ test("updates only the provided fields and clamps impression", async () => {
   await using temp = await createTempDir("klein-user-memory-");
   const store = new MarkdownUserMemoryStore(temp.path);
 
-  await store.update("alice", {
+  await store.update(userId, username, {
     displayName: "Alice",
     nickname: "A",
     summary: "最初の要約",
@@ -57,7 +59,7 @@ test("updates only the provided fields and clamps impression", async () => {
     history: "- 2026-01-01: 初めて話した",
   });
 
-  const updated = await store.update("alice", {
+  const updated = await store.update(userId, username, {
     nickname: null,
     impressionDelta: 50,
     history: "- 2026-02-01: 二回目に話した",
@@ -73,11 +75,25 @@ test("updates only the provided fields and clamps impression", async () => {
   assert.equal(updated.strengthening, "なし");
 });
 
+test("keeps the numeric user ID as the file key when the username changes", async () => {
+  await using temp = await createTempDir("klein-user-memory-");
+  const store = new MarkdownUserMemoryStore(temp.path);
+
+  await store.update(userId, username, { displayName: "Alice", summary: "最初の要約" });
+  const updated = await store.update(userId, "@Alice_New", { nickname: "A" });
+
+  assert.equal(updated.discordId, "alice_new");
+  assert.equal(updated.summary, "最初の要約");
+  assert.equal(updated.nickname, "A");
+  assert.deepEqual(await store.read(userId), updated);
+  await assert.rejects(readFile(join(temp.path, `${username}.md`), "utf8"));
+});
+
 test("uses default section contents for a new memory", async () => {
   await using temp = await createTempDir("klein-user-memory-");
   const store = new MarkdownUserMemoryStore(temp.path);
 
-  const memory = await store.update("alice", { displayName: "Alice" });
+  const memory = await store.update(userId, username, { displayName: "Alice" });
 
   assert.equal(memory.facts, "不明");
   assert.equal(memory.history, "なし");
@@ -91,7 +107,7 @@ test("keeps front matter values on one line", async () => {
   await using temp = await createTempDir("klein-user-memory-");
   const store = new MarkdownUserMemoryStore(temp.path);
 
-  const memory = await store.update("alice", {
+  const memory = await store.update(userId, username, {
     displayName: " Alice\nSmith ",
     nickname: "A\nB",
     summary: "一行目\n二行目",
@@ -100,23 +116,27 @@ test("keeps front matter values on one line", async () => {
   assert.equal(memory.displayName, "Alice Smith");
   assert.equal(memory.nickname, "A B");
   assert.equal(memory.summary, "一行目 二行目");
-  assert.deepEqual(await store.read("alice"), memory);
+  assert.deepEqual(await store.read(userId), memory);
 });
 
 test("requires display_name when creating a new memory", async () => {
   await using temp = await createTempDir("klein-user-memory-");
   const store = new MarkdownUserMemoryStore(temp.path);
 
-  await assert.rejects(store.update("alice", { summary: "要約" }), /display_name/u);
+  await assert.rejects(store.update(userId, username, { summary: "要約" }), /display_name/u);
 });
 
-test("rejects invalid Discord usernames and conflicting impression updates", async () => {
+test("rejects invalid IDs, invalid usernames, and conflicting impression updates", async () => {
   await using temp = await createTempDir("klein-user-memory-");
   const store = new MarkdownUserMemoryStore(temp.path);
 
-  await assert.rejects(store.read("../escape"), /Invalid Discord username/u);
+  await assert.rejects(store.read("../escape"), /Invalid Discord user ID/u);
   await assert.rejects(
-    store.update("alice", {
+    store.update(userId, "../escape", { displayName: "Alice" }),
+    /Invalid Discord username/u,
+  );
+  await assert.rejects(
+    store.update(userId, username, {
       displayName: "Alice",
       impression: 1,
       impressionDelta: 1,
@@ -125,13 +145,12 @@ test("rejects invalid Discord usernames and conflicting impression updates", asy
   );
 });
 
-test("parses a manually written memory file and rejects a mismatched ID", async () => {
+test("parses a manually written memory file", async () => {
   await using temp = await createTempDir("klein-user-memory-");
   const store = new MarkdownUserMemoryStore(temp.path);
-  const discordId = "alice";
   const markdown = [
     "---",
-    `discord_id: "${discordId}"`,
+    `discord_id: "${username}"`,
     "display_name: 'Alice'",
     'summary: "a: b"',
     "impression: 42",
@@ -147,32 +166,23 @@ test("parses a manually written memory file and rejects a mismatched ID", async 
     "- 2026-01-01: 初めて話した",
     "",
   ].join("\n");
-  await writeFile(join(temp.path, `${discordId}.md`), markdown, "utf8");
+  await writeFile(join(temp.path, `${userId}.md`), markdown, "utf8");
 
-  const memory = await store.read(discordId);
+  const memory = await store.read(userId);
   assert.ok(memory);
+  assert.equal(memory.discordId, username);
   assert.equal(memory.displayName, "Alice");
   assert.equal(memory.summary, "a: b");
   assert.equal(memory.impression, 42);
   assert.equal(memory.facts, "- birthday: 2000-01-02");
   assert.equal(memory.history, "- 2026-01-01: 初めて話した");
   assert.equal(memory.inCommon, "なし");
-
-  const mismatched = markdown.replace(`discord_id: "${discordId}"`, 'discord_id: "bob"');
-  await writeFile(join(temp.path, `${discordId}.md`), mismatched, "utf8");
-  await assert.rejects(store.read(discordId), (error: unknown) => {
-    assert.ok(error instanceof Error);
-    assert.match(error.message, /Failed to parse user memory file/u);
-    assert.ok(error.cause instanceof Error);
-    assert.match(error.cause.message, /does not match/u);
-    return true;
-  });
 });
 
 test("renders the documented section headings and front matter order", async () => {
   await using temp = await createTempDir("klein-user-memory-");
   const store = new MarkdownUserMemoryStore(temp.path);
-  const memory = await store.update("alice", {
+  const memory = await store.update(userId, username, {
     displayName: "Alice",
     summary: "要約",
   });

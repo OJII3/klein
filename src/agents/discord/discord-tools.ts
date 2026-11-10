@@ -1,6 +1,7 @@
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
+import type { DiscordUserResolver } from "@modules/discord/domain/discord-user";
 import type { OwnerMemoryStore } from "@modules/memory/application/owner-memory-store";
 import type { WatchCheckRunner } from "@modules/scheduling/application/watch-check-runner";
 import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
@@ -30,6 +31,7 @@ export interface DiscordAgentToolsOptions {
   readonly watchCheckRunner: WatchCheckRunner;
   readonly ownerMemoryStore?: OwnerMemoryStore;
   readonly userMemoryStore?: UserMemoryStore;
+  readonly discordUserDirectory?: DiscordUserResolver;
 }
 
 /**
@@ -71,6 +73,8 @@ export function createDiscordAgentTools(
     ...(ownerFeaturesAllowed && options.ownerMemoryStore
       ? createOwnerMemoryTools(options.ownerMemoryStore, `communication:${options.channelId}`)
       : []),
-    ...(options.userMemoryStore ? createUserMemoryTools(options.userMemoryStore) : []),
+    ...(options.userMemoryStore && options.discordUserDirectory
+      ? createUserMemoryTools(options.userMemoryStore, options.discordUserDirectory)
+      : []),
   ];
 }

@@ -1,6 +1,7 @@
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
+import type { DiscordUserResolver } from "@modules/discord/domain/discord-user";
 import {
   USER_MEMORY_FACTS_FORMAT_GUIDE,
   USER_MEMORY_IMPRESSION_MAX,
@@ -44,10 +45,22 @@ const userMemoryUpdateParameters = Type.Object({
 });
 
 type UserMemoryGetDetails =
-  | { readonly found: false; readonly discordId: string }
-  | { readonly found: true; readonly discordId: string; readonly updatedAt: string };
+  | { readonly resolved: false; readonly found: false; readonly discordId: string }
+  | {
+      readonly resolved: true;
+      readonly found: false;
+      readonly discordId: string;
+      readonly userId: string;
+    }
+  | {
+      readonly resolved: true;
+      readonly found: true;
+      readonly discordId: string;
+      readonly userId: string;
+      readonly updatedAt: string;
+    };
 
-export function createUserMemoryTools(store: UserMemoryStore) {
+export function createUserMemoryTools(store: UserMemoryStore, users: DiscordUserResolver) {
   return [
     defineTool<typeof userMemoryGetParameters, UserMemoryGetDetails>({
       name: "user_memory_get",
@@ -55,30 +68,52 @@ export function createUserMemoryTools(store: UserMemoryStore) {
       description:
         "Read the per-user memory for a Discord user. Pass the user-set Discord username shown " +
         "as @username in messages, without the @, as discord_id. This is not the numeric " +
-        "snowflake ID. The memory is a Markdown document with front matter (display_name, " +
-        "summary, impression, updated_at) and the sections Facts, History, In common, and " +
-        "Strengthening. This tool looks up by username only; it does not search by display name.",
+        "snowflake ID. The username is resolved to the numeric user ID through the shared user " +
+        "directory, so only users the bot has seen in messages can be resolved. The memory is " +
+        "a Markdown document with front matter (display_name, summary, impression, updated_at) " +
+        "and the sections Facts, History, In common, and Strengthening. This tool does not " +
+        "search by display name.",
       parameters: userMemoryGetParameters,
       exposure: "deferred",
       async execute(_toolCallId, params) {
-        const memory = await store.read(params.discord_id);
+        const user = users.resolve(params.discord_id);
+        if (!user) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Discordユーザーが見つかりません。discord_id: ${params.discord_id}。まだメッセージを見ていないユーザーは指定できません。`,
+              },
+            ],
+            details: { resolved: false, found: false, discordId: params.discord_id },
+          };
+        }
+
+        const memory = await store.read(user.id);
         if (!memory) {
           return {
             content: [
               {
                 type: "text",
-                text: `ユーザーメモリはまだありません。discord_id: ${params.discord_id}`,
+                text: `ユーザーメモリはまだありません。discord_id: ${user.username}`,
               },
             ],
-            details: { found: false, discordId: params.discord_id },
+            details: {
+              resolved: true,
+              found: false,
+              discordId: user.username,
+              userId: user.id,
+            },
           };
         }
 
         return {
           content: [{ type: "text", text: renderUserMemory(memory) }],
           details: {
+            resolved: true,
             found: true,
-            discordId: memory.discordId,
+            discordId: user.username,
+            userId: user.id,
             updatedAt: memory.updatedAt,
           },
         };
@@ -90,8 +125,10 @@ export function createUserMemoryTools(store: UserMemoryStore) {
       description:
         "Create or update the per-user memory for a Discord user. Pass the user-set Discord " +
         "username shown as @username in messages, without the @, as discord_id. This is not " +
-        "the numeric snowflake ID. Only the fields you pass are changed. The section fields " +
-        "replace the whole section, so call user_memory_get first. " +
+        "the numeric snowflake ID. The username is resolved to the numeric user ID through " +
+        "the shared user directory, so only users the bot has seen in messages can be " +
+        "resolved. Only the fields you pass are changed. The section fields replace the whole " +
+        "section, so call user_memory_get first. " +
         `${USER_MEMORY_FACTS_FORMAT_GUIDE} ` +
         "impression is an integer from -100 (strong dislike) to 100 (strong affinity), with 0 " +
         "neutral; impression_delta adds to the current value and is clamped to that range. " +
@@ -105,6 +142,13 @@ export function createUserMemoryTools(store: UserMemoryStore) {
         }
         if (params.impression !== undefined && params.impression_delta !== undefined) {
           throw new Error("impression と impression_delta は同時に指定できません。");
+        }
+
+        const user = users.resolve(params.discord_id);
+        if (!user) {
+          throw new Error(
+            `Discordユーザーが見つかりません: ${params.discord_id}。まだメッセージを見ていないユーザーは指定できません。`,
+          );
         }
 
         const patch: UserMemoryPatch = {
@@ -122,7 +166,7 @@ export function createUserMemoryTools(store: UserMemoryStore) {
           ...(params.in_common !== undefined ? { inCommon: params.in_common } : {}),
           ...(params.strengthening !== undefined ? { strengthening: params.strengthening } : {}),
         };
-        const memory = await store.update(params.discord_id, patch);
+        const memory = await store.update(user.id, user.username, patch);
         return {
           content: [
             {
