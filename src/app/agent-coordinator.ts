@@ -10,6 +10,7 @@ import type { DiscordUserDirectory } from "@modules/discord/application/discord-
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
 import type { MemoryCoordinator } from "@modules/memory/application/memory-coordinator";
 import type { OwnerMemoryStore } from "@modules/memory/application/owner-memory-store";
+import type { UserMemoryCoordinator } from "@modules/user-memory/application/user-memory-coordinator";
 import type { DiscordChannelRuleStore } from "@modules/discord/ports/discord-channel-rule-store";
 import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
 import type { WatchCheckRunner } from "@modules/scheduling/application/watch-check-runner";
@@ -37,6 +38,7 @@ export interface AgentCoordinatorDependencies {
   readonly ownerMemoryStore?: OwnerMemoryStore;
   readonly operatingState: DiscordOperatingState;
   readonly scheduledTaskStore?: ScheduledTaskStore;
+  readonly userMemoryCoordinator?: UserMemoryCoordinator;
   readonly watchCheckRunner: WatchCheckRunner;
   readonly taskCoordinator: TaskCoordinator;
 }
@@ -121,6 +123,7 @@ export class AgentCoordinator {
     if (message.replyTo?.author) {
       this.dependencies.discordUserDirectory?.remember(message.replyTo.author);
     }
+    await this.dependencies.userMemoryCoordinator?.observe(message);
 
     const ownerFeaturesAllowed =
       this.dependencies.accessPolicy?.canUseOwnerFeatures(target) ?? false;

@@ -47,6 +47,23 @@ test("creates and reads a user memory markdown file by numeric user ID", async (
   assert.match(markdown, /## Strengthening\n\n- 次は誕生日を祝う/u);
 });
 
+test("ensures a user memory exists without overwriting an existing one", async () => {
+  await using temp = await createTempDir("klein-user-memory-");
+  const store = new MarkdownUserMemoryStore(temp.path);
+
+  const created = await store.ensure(userId, identity);
+  assert.equal(created.discordId, username);
+  assert.equal(created.displayName, "Alice");
+  assert.equal(created.summary, "");
+
+  const updated = await store.update(userId, identity, { summary: "覚えておく" });
+  const ensured = await store.ensure(userId, { username, displayName: "別の表示名" });
+
+  assert.deepEqual(ensured, updated);
+  assert.equal(ensured.displayName, "Alice");
+  assert.equal(ensured.summary, "覚えておく");
+});
+
 test("updates only the provided fields and clamps impression", async () => {
   await using temp = await createTempDir("klein-user-memory-");
   const store = new MarkdownUserMemoryStore(temp.path);

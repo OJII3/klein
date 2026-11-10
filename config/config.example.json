@@ -55,7 +55,12 @@
     },
     "userMemory": {
       "enabled": false,
-      "directory": ".runtime/pi/user-memory"
+      "directory": ".runtime/pi/user-memory",
+      "llm": {
+        "provider": "opencode-go",
+        "model": "qwen3.8-flash",
+        "thinkingLevel": "low"
+      }
     },
     "minecraft": {
       "enabled": false

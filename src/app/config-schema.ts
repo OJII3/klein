@@ -89,6 +89,7 @@ const UserMemoryConfigurationSchema = Type.Object(
   {
     enabled: Type.Boolean(),
     directory: Type.Optional(Type.String({ minLength: 1 })),
+    llm: Type.Optional(MemoryModelConfigurationSchema),
   },
   { additionalProperties: false },
 );
