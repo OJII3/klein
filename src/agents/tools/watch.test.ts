@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import {
+  WatchCheckError,
+  type WatchCheckRunner,
+} from "@modules/scheduling/application/watch-check-runner";
 import type { ScheduledTask, WatchTask } from "@modules/scheduling/domain/scheduled-task";
 import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
 import { createWatchTools } from "./watch";
@@ -32,6 +36,19 @@ function createStore() {
   return { store, getStored: () => stored, deletedIds };
 }
 
+function createRunner() {
+  const runs: { script: string; args: readonly string[] }[] = [];
+  let failure: string | undefined;
+  const runner: WatchCheckRunner = {
+    async run(watch) {
+      runs.push({ script: watch.script, args: watch.args });
+      if (failure) throw new WatchCheckError(failure);
+      return { output: "", decision: "silent", exitCode: 0, durationMs: 0, state: {} };
+    },
+  };
+  return { runner, runs, fail: (message: string) => (failure = message) };
+}
+
 function textOf(result: { content: readonly unknown[] }): string {
   const block = result.content[0] as { type: string; text: string } | undefined;
   return block?.type === "text" ? block.text : "";
@@ -57,7 +74,8 @@ async function addWatch(tools: ReturnType<typeof createWatchTools>) {
 
 test("provides watch add, update, list, and delete tools in the given scope", async () => {
   const { store, getStored, deletedIds } = createStore();
-  const tools = createWatchTools(store, "channel-a", "public");
+  const { runner, runs } = createRunner();
+  const tools = createWatchTools(store, "channel-a", "public", runner);
   const updateTool = tools.find((tool) => tool.name === "watch_update");
   const listTool = tools.find((tool) => tool.name === "watch_list");
   const deleteTool = tools.find((tool) => tool.name === "watch_delete");
@@ -70,6 +88,7 @@ test("provides watch add, update, list, and delete tools in the given scope", as
   assert.deepEqual(created?.args, ["--json"]);
   assert.equal(created?.script, "text(args[0]); silent();");
   assert.equal(created?.enabled, true);
+  assert.deepEqual(runs, [{ script: "text(args[0]); silent();", args: ["--json"] }]);
   assert.match(textOf(addResult), /登録しました/u);
 
   const listResult = await listTool.execute(
@@ -97,7 +116,8 @@ test("provides watch add, update, list, and delete tools in the given scope", as
 
 test("updates a watch and can disable and re-enable it", async () => {
   const { store, getStored } = createStore();
-  const tools = createWatchTools(store, "channel-a", "public");
+  const { runner, runs } = createRunner();
+  const tools = createWatchTools(store, "channel-a", "public", runner);
   const updateTool = tools.find((tool) => tool.name === "watch_update");
   assert.ok(updateTool);
 
@@ -114,6 +134,7 @@ test("updates a watch and can disable and re-enable it", async () => {
   const disabled = getStored();
   assert.equal(disabled?.script, "text('updated'); silent();");
   assert.equal(disabled?.enabled, false);
+  assert.equal(runs.length, 1);
   assert.match(textOf(disabledResult), /停止中/u);
 
   const enabledResult = await updateTool.execute(
@@ -126,6 +147,7 @@ test("updates a watch and can disable and re-enable it", async () => {
   const enabled = getStored();
   assert.equal(enabled?.enabled, true);
   assert.ok(Date.parse(enabled!.nextRunAt) > Date.now());
+  assert.deepEqual(runs.at(-1), { script: "text('updated'); silent();", args: ["--json"] });
   assert.match(textOf(enabledResult), /次回:/u);
 
   const missingResult = await updateTool.execute(
@@ -136,4 +158,47 @@ test("updates a watch and can disable and re-enable it", async () => {
     {} as never,
   );
   assert.equal((missingResult.details as { updated: boolean }).updated, false);
+});
+
+test("does not register a watch when the dry run fails", async () => {
+  const { store, getStored } = createStore();
+  const { runner, fail } = createRunner();
+  fail("監視スクリプトが失敗しました: boom");
+  const tools = createWatchTools(store, "channel-a", "public", runner);
+
+  await assert.rejects(addWatch(tools), /監視を登録しませんでした。.*boom/u);
+  assert.equal(getStored(), undefined);
+});
+
+test("keeps a watch disabled when the dry run fails on re-enable", async () => {
+  const { store, getStored } = createStore();
+  const { runner, fail } = createRunner();
+  const tools = createWatchTools(store, "channel-a", "public", runner);
+  const updateTool = tools.find((tool) => tool.name === "watch_update");
+  assert.ok(updateTool);
+
+  await addWatch(tools);
+  const id = getStored()!.id;
+  await updateTool.execute(
+    "tool-call",
+    { id, enabled: false } as never,
+    undefined,
+    undefined,
+    {} as never,
+  );
+
+  fail("監視スクリプトが失敗しました: boom");
+  await assert.rejects(
+    updateTool.execute(
+      "tool-call",
+      { id, enabled: true } as never,
+      undefined,
+      undefined,
+      {} as never,
+    ),
+    /監視を有効にしませんでした。.*boom/u,
+  );
+  const stored = getStored();
+  assert.equal(stored?.enabled, false);
+  assert.equal(stored?.lastStatus, undefined);
 });
