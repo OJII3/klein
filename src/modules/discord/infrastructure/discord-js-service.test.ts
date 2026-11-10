@@ -323,15 +323,18 @@ test("message reads enforce inherited access and trusted requester identity", as
       {
         default: "deny",
         directMessages: "deny",
-        guilds: {
-          "guild-123": {
-            channels: {
-              private: { access: "owner", threads: { public: { access: "allow" } } },
-            },
-          },
-        },
       },
       "user-123",
+      {
+        getGuildRule: (guildId) =>
+          guildId === "guild-123"
+            ? {
+                channels: {
+                  private: { access: "owner", threads: { public: { access: "allow" } } },
+                },
+              }
+            : undefined,
+      },
     ),
   );
   const testableService = service as unknown as TestableDiscordJsService;

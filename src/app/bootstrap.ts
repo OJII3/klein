@@ -32,6 +32,7 @@ import { DiscordOperatingState } from "@modules/discord/domain/discord-operating
 import { resolveVoiceChatConfig } from "@modules/discord/domain/voice-chat-config";
 import { DiscordJsService } from "@modules/discord/infrastructure/discord-js-service";
 import { loadVoiceReactionPresets } from "@modules/discord/infrastructure/voice-reaction-presets";
+import { FileDiscordAccessRuleStore } from "@modules/discord/infrastructure/file-discord-access-rule-store";
 import { FileDiscordChannelRuleStore } from "@modules/discord/infrastructure/file-discord-channel-rule-store";
 import { MemoryCoordinator } from "@modules/memory/application/memory-coordinator";
 import { resolveMemoryConfig } from "@modules/memory/application/memory-config";
@@ -78,7 +79,6 @@ export async function bootstrap(): Promise<void> {
   const credentials = resolveCredentials({ modelsInUse, environment: process.env });
   const discordOperatingState = new DiscordOperatingState();
   const ownerUserId = config.owner?.discord.userId;
-  const discordAccessPolicy = createDiscordAccessPolicy(config.discord.access, ownerUserId);
   const voiceSystemPrompt = voiceChatConfig
     ? await loadPromptFile(profile.voiceSystemPromptFile)
     : undefined;
@@ -93,6 +93,15 @@ export async function bootstrap(): Promise<void> {
   const watchToolCatalog = { tools: [createWatchFetchTool({ agentDir })] };
   const watchCheckRunner = new QuickJsWatchCheckRunner({ tools: watchToolCatalog.tools });
   const channelRuleStore = new FileDiscordChannelRuleStore(resolve(agentDir, "channel-rules"));
+  const discordAccessRuleStore = new FileDiscordAccessRuleStore(
+    resolve(agentDir, "discord-access.json"),
+  );
+  await discordAccessRuleStore.load();
+  const discordAccessPolicy = createDiscordAccessPolicy(
+    config.discord.access,
+    ownerUserId,
+    discordAccessRuleStore,
+  );
   const ownerMemoryStore = ownerUserId
     ? new OwnerMemoryStore(
         new JsonMemoryStore(

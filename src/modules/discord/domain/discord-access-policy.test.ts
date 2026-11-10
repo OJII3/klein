@@ -1,25 +1,38 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createDiscordAccessPolicy } from "./discord-access-policy";
+import {
+  createDiscordAccessPolicy,
+  type DiscordAccessRules,
+  type DiscordGuildAccessRule,
+} from "./discord-access-policy";
 
-const policy = createDiscordAccessPolicy({
-  default: "deny",
-  directMessages: "allow",
-  guilds: {
-    guild: {
-      access: "allow",
-      channels: {
-        denied: { access: "deny" },
-        inherited: {
-          threads: {
-            allowed: { access: "allow" },
-          },
+function createRules(guilds: Record<string, DiscordGuildAccessRule>): DiscordAccessRules {
+  return { getGuildRule: (guildId) => guilds[guildId] };
+}
+
+const rules = createRules({
+  guild: {
+    access: "allow",
+    channels: {
+      denied: { access: "deny" },
+      inherited: {
+        threads: {
+          allowed: { access: "allow" },
         },
       },
     },
   },
 });
+
+const policy = createDiscordAccessPolicy(
+  {
+    default: "deny",
+    directMessages: "allow",
+  },
+  undefined,
+  rules,
+);
 
 test("uses directMessages for direct messages", () => {
   assert.equal(policy.canReceive({ channelId: "dm" }), true);
@@ -49,22 +62,22 @@ const ownerPolicy = createDiscordAccessPolicy(
   {
     default: "deny",
     directMessages: "owner",
-    guilds: {
-      guild: {
-        access: "owner",
-        channels: {
-          public: { access: "allow" },
-          private: {
-            threads: {
-              public: { access: "allow" },
-              denied: { access: "deny" },
-            },
+  },
+  "owner-user",
+  createRules({
+    guild: {
+      access: "owner",
+      channels: {
+        public: { access: "allow" },
+        private: {
+          threads: {
+            public: { access: "allow" },
+            denied: { access: "deny" },
           },
         },
       },
     },
-  },
-  "owner-user",
+  }),
 );
 
 test("owner access requires the configured owner and rejects bots and missing identity", () => {

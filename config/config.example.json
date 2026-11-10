@@ -37,25 +37,7 @@
   "discord": {
     "access": {
       "default": "deny",
-      "directMessages": "allow",
-      "guilds": {
-        "123456789012345678": {
-          "access": "allow",
-          "channels": {
-            "234567890123456789": {
-              "access": "deny",
-              "threads": {
-                "345678901234567890": {
-                  "access": "allow"
-                }
-              }
-            },
-            "456789012345678901": {
-              "access": "owner"
-            }
-          }
-        }
-      }
+      "directMessages": "allow"
     }
   },
   "features": {

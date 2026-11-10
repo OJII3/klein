@@ -33,29 +33,6 @@ const McpPermissionsSchema = Type.Object(
   { additionalProperties: false },
 );
 
-const DiscordThreadAccessSchema = Type.Object(
-  {
-    access: Type.Optional(DiscordAccessSchema),
-  },
-  { additionalProperties: false },
-);
-
-const DiscordChannelAccessSchema = Type.Object(
-  {
-    access: Type.Optional(DiscordAccessSchema),
-    threads: Type.Optional(Type.Record(DiscordIdSchema, DiscordThreadAccessSchema)),
-  },
-  { additionalProperties: false },
-);
-
-const DiscordGuildAccessSchema = Type.Object(
-  {
-    access: Type.Optional(DiscordAccessSchema),
-    channels: Type.Optional(Type.Record(DiscordIdSchema, DiscordChannelAccessSchema)),
-  },
-  { additionalProperties: false },
-);
-
 const LlmProviderSchema = Type.Union([
   Type.Literal("opencode-go"),
   Type.Literal("google"),
@@ -193,7 +170,6 @@ export const ConfigSchema = Type.Object(
           {
             default: DiscordAccessSchema,
             directMessages: DiscordAccessSchema,
-            guilds: Type.Optional(Type.Record(DiscordIdSchema, DiscordGuildAccessSchema)),
           },
           { additionalProperties: false },
         ),

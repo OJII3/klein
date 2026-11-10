@@ -220,16 +220,19 @@ test("does not resume saved channel sessions after their access scope changes", 
       {
         default: "deny",
         directMessages: "deny",
-        guilds: {
-          "guild-123": {
-            channels: {
-              "channel-a": { access: "allow" },
-              "channel-b": { access: "owner" },
-            },
-          },
-        },
       },
       "user-123",
+      {
+        getGuildRule: (guildId) =>
+          guildId === "guild-123"
+            ? {
+                channels: {
+                  "channel-a": { access: "allow" },
+                  "channel-b": { access: "owner" },
+                },
+              }
+            : undefined,
+      },
     ),
     channelSessionStateStore,
     ownerUserId: "user-123",

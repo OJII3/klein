@@ -38,7 +38,7 @@ Select one with `"profile"` in `config/config.jsonc` (default: `klein`). The bun
 
 ### Discord
 
-- **Access control** — `discord.access` is evaluated thread → channel → guild → default. The Discord **Message Content Intent** is required.
+- **Access control** — `discord.access` sets `default` and `directMessages` in `config/config.jsonc`, while `<runtime.agentDir>/discord-access.json` holds the guild, channel, and thread rules. Rules are evaluated thread → channel → guild → default. The rules file is read at startup, so restart Klein after editing it. The Discord **Message Content Intent** is required.
 - **Commands** — `/status idle` pauses message processing and `/status online` resumes it (Manage Server only).
 - **Activity status** — shows remaining OpenCode Go, Google, or Mistral budget usage, refreshed hourly.
 
