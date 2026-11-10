@@ -25,7 +25,7 @@ import { migratePiDurableStorage } from "@runtime/pi/pi-durable-migration";
 import { createPiUsageReporterFromEnv } from "@runtime/pi/pi-usage-reporter";
 import { createWatchFetchTool } from "@runtime/pi/watch-fetch-tool";
 import { PiMemoryProcessor } from "@runtime/pi/pi-memory-processor";
-import { PiUserMemoryProcessor } from "@runtime/pi/pi-user-memory-processor";
+import { PiUserMemoryAgent } from "@runtime/pi/pi-user-memory-agent";
 import { PiVoiceReactionSelector } from "@runtime/pi/pi-voice-reaction-selector";
 import { PiVoiceTranscriptQueueSelector } from "@runtime/pi/pi-voice-transcript-queue-selector";
 import { createDiscordAccessPolicy } from "@modules/discord/domain/discord-access-policy";
@@ -125,14 +125,15 @@ export async function bootstrap(): Promise<void> {
       )
     : undefined;
   const userMemoryConfig = resolveUserMemoryConfig(config);
-  const userMemoryStore =
+  const userMemoryDirectory =
     userMemoryConfig?.enabled === true
-      ? new MarkdownUserMemoryStore(
-          userMemoryConfig.directory
-            ? resolve(userMemoryConfig.directory)
-            : resolve(agentDir, "user-memory"),
-        )
+      ? userMemoryConfig.directory
+        ? resolve(userMemoryConfig.directory)
+        : resolve(agentDir, "user-memory")
       : undefined;
+  const userMemoryStore = userMemoryDirectory
+    ? new MarkdownUserMemoryStore(userMemoryDirectory)
+    : undefined;
   const modelRuntime = await createPiModelRuntime(agentDir);
   const providersInUse = new Set(modelsInUse.map((model) => model.provider));
   if (providersInUse.has("mistral") && !(await modelRuntime.checkAuth("mistral"))) {
@@ -217,11 +218,13 @@ export async function bootstrap(): Promise<void> {
         ),
     });
   const userMemoryCoordinator =
-    userMemoryConfig?.enabled === true && userMemoryStore
+    userMemoryConfig?.enabled === true && userMemoryStore && userMemoryDirectory
       ? new UserMemoryCoordinator({
           store: userMemoryStore,
-          processor: new PiUserMemoryProcessor(
-            withOpenCodeSessionHeader(
+          processor: new PiUserMemoryAgent({
+            agentDir,
+            directory: userMemoryDirectory,
+            model: withOpenCodeSessionHeader(
               resolveConfiguredModel(
                 userMemoryConfig.llm.provider,
                 userMemoryConfig.llm.model,
@@ -229,8 +232,9 @@ export async function bootstrap(): Promise<void> {
               ),
               `user-memory-${randomUUID()}`,
             ),
-            userMemoryConfig.llm.thinkingLevel,
-          ),
+            modelRuntime,
+            thinkingLevel: userMemoryConfig.llm.thinkingLevel,
+          }),
           logger,
           taskCoordinator,
         })

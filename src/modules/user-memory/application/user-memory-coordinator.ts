@@ -141,31 +141,35 @@ export class UserMemoryCoordinator {
         return;
       }
 
-      const patch = await this.options.processor.process(before, messages.map(toUserMemoryMessage));
-      if (Object.keys(patch).length > 0) {
-        const current = await this.options.store.read(userId);
-        if (current?.updatedAt === before.updatedAt) {
-          const lastMessage = messages.at(-1);
-          if (!lastMessage) return;
-          await this.options.store.update(userId, identityOf(lastMessage.author), patch);
-          this.logger.info(
-            {
-              durationMs: Date.now() - startedAt,
-              event: "user_memory_processed",
-              messageCount: messages.length,
-              userId,
-            },
-            "Processed user memory",
-          );
-        } else {
-          this.logger.info(
-            {
-              event: "user_memory_processing_skipped_stale",
-              userId,
-            },
-            "Skipped user memory update because the memory changed during processing",
-          );
-        }
+      const updated = await this.options.processor.process(
+        userId,
+        before,
+        messages.map(toUserMemoryMessage),
+      );
+      if (updated) {
+        const lastMessage = messages.at(-1);
+        if (!lastMessage) return;
+        await this.options.store.update(userId, identityOf(lastMessage.author), {
+          displayName: before.displayName,
+          nickname: updated.nickname ?? null,
+          firstName: updated.firstName ?? null,
+          lastName: updated.lastName ?? null,
+          summary: updated.summary,
+          impression: before.impression,
+          facts: updated.facts,
+          history: updated.history,
+          inCommon: updated.inCommon,
+          strengthening: updated.strengthening,
+        });
+        this.logger.info(
+          {
+            durationMs: Date.now() - startedAt,
+            event: "user_memory_processed",
+            messageCount: messages.length,
+            userId,
+          },
+          "Processed user memory",
+        );
       }
     } catch (error) {
       failed = true;

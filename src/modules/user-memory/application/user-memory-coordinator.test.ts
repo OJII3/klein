@@ -6,12 +6,7 @@ import pino from "pino";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import { TaskCoordinator } from "@app/task-coordinator";
 
-import type {
-  UserMemory,
-  UserMemoryMessage,
-  UserMemoryPatch,
-  UserMemoryProcessor,
-} from "../domain/user-memory";
+import type { UserMemory, UserMemoryMessage, UserMemoryProcessor } from "../domain/user-memory";
 import { MarkdownUserMemoryStore } from "../infrastructure/markdown-user-memory-store";
 import { UserMemoryCoordinator } from "./user-memory-coordinator";
 import { createTempDir } from "../../../testing/temp-dir";
@@ -22,8 +17,8 @@ test("creates a memory as soon as a message is observed", async () => {
   const coordinator = new UserMemoryCoordinator({
     store,
     processor: {
-      async process(): Promise<UserMemoryPatch> {
-        return {};
+      async process(): Promise<UserMemory | undefined> {
+        return undefined;
       },
     },
     logger: pino({ level: "silent" }),
@@ -51,9 +46,10 @@ test("batches messages per user and applies the generated patch", async () => {
   const store = new MarkdownUserMemoryStore(join(temp.path, "memory"));
   const processed: { ids: string[]; userId: string }[] = [];
   const processor: UserMemoryProcessor = {
-    async process(memory: UserMemory, messages: readonly UserMemoryMessage[]) {
-      processed.push({ ids: messages.map((message) => message.id), userId: memory.discordId });
+    async process(userId: string, memory: UserMemory, messages: readonly UserMemoryMessage[]) {
+      processed.push({ ids: messages.map((message) => message.id), userId });
       return {
+        ...memory,
         facts: `- 好きなもの: ${messages.at(-1)?.content ?? ""}`,
         summary: "TypeScriptが好きなユーザー",
       };
@@ -85,8 +81,8 @@ test("batches messages per user and applies the generated patch", async () => {
     assert.deepEqual(
       processed.toSorted((left, right) => left.userId.localeCompare(right.userId)),
       [
-        { ids: ["message-a1", "message-a2"], userId: "alice" },
-        { ids: ["message-b1"], userId: "bob" },
+        { ids: ["message-a1", "message-a2"], userId: "100000000000000001" },
+        { ids: ["message-b1"], userId: "100000000000000002" },
       ],
     );
 

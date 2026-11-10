@@ -69,7 +69,11 @@ export interface UserMemoryMessage {
 }
 
 export interface UserMemoryProcessor {
-  process(memory: UserMemory, messages: readonly UserMemoryMessage[]): Promise<UserMemoryPatch>;
+  process(
+    userId: string,
+    memory: UserMemory,
+    messages: readonly UserMemoryMessage[],
+  ): Promise<UserMemory | undefined>;
 }
 
 export function clampImpression(value: number): number {

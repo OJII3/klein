@@ -146,7 +146,7 @@ export function renderUserMemory(memory: UserMemory): string {
   return lines.join("\n");
 }
 
-function parseUserMemory(content: string): UserMemory {
+export function parseUserMemory(content: string): UserMemory {
   const normalized = content.replace(/\r\n?/g, "\n");
   const lines = normalized.split("\n");
   if (lines[0]?.trim() !== FRONTMATTER_DELIMITER) {
