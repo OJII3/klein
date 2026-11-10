@@ -9,6 +9,7 @@ import type {
 
 const FIRST_MESSAGE_MAX_LENGTH = 240;
 const EVENT_SUMMARY_MAX_LENGTH = 500;
+const EVENT_METADATA_PATTERN = /^<event-metadata>\n[\s\S]*?\n<\/event-metadata>\n*/u;
 
 export function toViewerSessionSummary(
   info: SessionInfo,
@@ -25,7 +26,10 @@ export function toViewerSessionSummary(
     created: info.created.toISOString(),
     modified: info.modified.toISOString(),
     messageCount: info.messageCount,
-    firstMessage: truncate(info.firstMessage, FIRST_MESSAGE_MAX_LENGTH),
+    firstMessage: truncate(
+      info.firstMessage.replace(EVENT_METADATA_PATTERN, "").trimStart(),
+      FIRST_MESSAGE_MAX_LENGTH,
+    ),
   };
 }
 
