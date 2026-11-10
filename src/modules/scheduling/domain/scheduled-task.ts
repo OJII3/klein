@@ -27,6 +27,8 @@ export interface WatchTask extends ScheduledTaskBase {
   readonly condition: WatchCondition;
   readonly message: string;
   readonly cooldownMinutes: number;
+  /** Values the script kept with `store()`. */
+  readonly state?: Readonly<Record<string, unknown>>;
   readonly lastCheckedAt?: string;
   readonly lastTriggeredAt?: string;
   readonly lastOutputHash?: string;
@@ -95,6 +97,7 @@ export function parseScheduledTask(value: unknown): ScheduledTask {
       record.message.length === 0 ||
       !Number.isInteger(record.cooldownMinutes) ||
       (record.cooldownMinutes as number) < 0 ||
+      (record.state !== undefined && !isJsonObject(record.state)) ||
       !isRecurringSchedule(schedule) ||
       (record.lastCheckedAt !== undefined &&
         (typeof record.lastCheckedAt !== "string" ||
@@ -126,6 +129,7 @@ export function parseScheduledTask(value: unknown): ScheduledTask {
       condition: record.condition,
       message: record.message,
       cooldownMinutes: record.cooldownMinutes as number,
+      ...(record.state !== undefined ? { state: record.state as Record<string, unknown> } : {}),
       ...(record.lastCheckedAt !== undefined
         ? { lastCheckedAt: record.lastCheckedAt as string }
         : {}),
@@ -142,4 +146,8 @@ export function parseScheduledTask(value: unknown): ScheduledTask {
   }
 
   throw new Error("スケジュールの種類が不正です。");
+}
+
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

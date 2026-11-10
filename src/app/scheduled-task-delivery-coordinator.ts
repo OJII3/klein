@@ -224,6 +224,7 @@ export class ScheduledTaskDeliveryCoordinator {
     const hasOutput = normalizeWatchOutput(result.output).length > 0;
     const checkedTask: WatchTask = {
       ...task,
+      state: result.state,
       lastCheckedAt: checkedAt,
       lastStatus: "ok",
       consecutiveFailures: 0,

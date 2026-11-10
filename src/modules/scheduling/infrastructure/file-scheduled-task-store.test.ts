@@ -29,6 +29,7 @@ const watch: WatchTask = {
   condition: "change",
   message: "在庫の変化を確認してください。",
   cooldownMinutes: 30,
+  state: { cursor: "abc" },
   consecutiveFailures: 0,
   createdAt: "2026-10-14T00:00:00.000Z",
   schedule: { type: "every", minutes: 5 },

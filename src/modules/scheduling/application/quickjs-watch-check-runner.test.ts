@@ -81,10 +81,23 @@ test("limits the memory a watch script may allocate", async () => {
   );
 });
 
-test("rejects store and load instead of silently losing state", async () => {
+test("keeps store values between checks", async () => {
   const runner = new QuickJsWatchCheckRunner({ tools: [], timeoutMs: 5_000 });
-  await assert.rejects(runner.run({ script: 'store("x", 1);', args: [] }), /store/u);
-  await assert.rejects(runner.run({ script: 'return load("x");', args: [] }), /load/u);
+  const script = 'store("runs", (load("runs") ?? 0) + 1); return load("runs");';
+  const first = await runner.run({ script, args: [] });
+  assert.deepEqual(first.state, { runs: 1 });
+  const second = await runner.run({ script, args: [], state: first.state });
+  assert.deepEqual(second.state, { runs: 2 });
+});
+
+test("deletes state keys stored as undefined", async () => {
+  const runner = new QuickJsWatchCheckRunner({ tools: [], timeoutMs: 5_000 });
+  const result = await runner.run({
+    script: 'store("kept", load("kept")); store("gone", undefined);',
+    args: [],
+    state: { kept: 1, gone: 2 },
+  });
+  assert.deepEqual(result.state, { kept: 1 });
 });
 
 test("rejects output over the byte limit", async () => {

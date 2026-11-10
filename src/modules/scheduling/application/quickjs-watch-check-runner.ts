@@ -42,7 +42,7 @@ export class QuickJsWatchCheckRunner implements WatchCheckRunner {
     }));
   }
 
-  async run(watch: Pick<WatchTask, "script" | "args">): Promise<WatchCheckResult> {
+  async run(watch: Pick<WatchTask, "script" | "args" | "state">): Promise<WatchCheckResult> {
     const startedAt = Date.now();
     const sandbox = new CodemodeSandbox({
       timeoutMs: this.timeoutMs,
@@ -50,17 +50,10 @@ export class QuickJsWatchCheckRunner implements WatchCheckRunner {
       tools: this.sandboxTools,
     });
     try {
-      // `store` and `load` are codemode globals, but watch checks do not persist a store. Shadow
-      // them so a script that tries to keep state fails loudly instead of silently losing it.
+      const state = { ...watch.state };
       const result = await sandbox.execute(
-        [
-          `const args = ${JSON.stringify(watch.args)};`,
-          "{",
-          '  const store = () => { throw new Error("watch スクリプトでは store() を使えません。状態は実行ごとに保持されません。"); };',
-          '  const load = () => { throw new Error("watch スクリプトでは load() を使えません。状態は実行ごとに保持されません。"); };',
-          watch.script,
-          "}",
-        ].join("\n"),
+        [`const args = ${JSON.stringify(watch.args)};`, watch.script].join("\n"),
+        { store: state },
       );
       if (!result.ok) {
         throw new WatchCheckError(
@@ -75,7 +68,9 @@ export class QuickJsWatchCheckRunner implements WatchCheckRunner {
           `監視スクリプトの出力が上限（${this.maxOutputBytes}バイト）を超えました。`,
         );
       }
-      return { output, exitCode: 0, durationMs: Date.now() - startedAt };
+      for (const key of result.storeWrites.delete) delete state[key];
+      Object.assign(state, result.storeWrites.set);
+      return { output, exitCode: 0, durationMs: Date.now() - startedAt, state };
     } finally {
       await sandbox.close();
     }
