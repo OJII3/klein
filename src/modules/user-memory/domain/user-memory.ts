@@ -26,6 +26,7 @@ export const USER_MEMORY_FACTS_FORMAT_GUIDE =
   "`- anniversary: 2024-04-01`.";
 
 export interface UserMemory {
+  /** User-set Discord username (the part after @), not the numeric snowflake ID. */
   readonly discordId: string;
   readonly displayName: string;
   readonly nickname?: string;
@@ -59,8 +60,12 @@ export interface UserMemoryStore {
   update(discordId: string, patch: UserMemoryPatch): Promise<UserMemory>;
 }
 
-export function isValidDiscordUserId(value: string): boolean {
-  return /^\d+$/.test(value);
+export function normalizeDiscordId(value: string): string {
+  return value.trim().replace(/^@+/u, "").trim().toLowerCase();
+}
+
+export function isValidDiscordId(value: string): boolean {
+  return value.length > 0 && value.length <= 100 && /^[^\s/\\]+$/u.test(value);
 }
 
 export function clampImpression(value: number): number {

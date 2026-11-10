@@ -5,7 +5,7 @@ import { createTempDir } from "../../testing/temp-dir";
 import { MarkdownUserMemoryStore } from "@modules/user-memory/infrastructure/markdown-user-memory-store";
 import { createUserMemoryTools } from "./user-memory";
 
-const discordId = "123456789012345678";
+const discordId = "alice";
 
 function textOf(result: { content: readonly unknown[] }): string {
   const block = result.content[0] as { type: string; text: string } | undefined;
@@ -26,7 +26,7 @@ test("gets and updates user memory through tools", async () => {
 
   const missing = await getTool.execute(
     "tool-call",
-    { user_id: discordId } as never,
+    { discord_id: discordId } as never,
     undefined,
     undefined,
     {} as never,
@@ -36,7 +36,7 @@ test("gets and updates user memory through tools", async () => {
   const created = await updateTool.execute(
     "tool-call",
     {
-      user_id: discordId,
+      discord_id: discordId,
       display_name: "Alice",
       nickname: "A",
       summary: "TypeScriptが好きなユーザー",
@@ -54,13 +54,13 @@ test("gets and updates user memory through tools", async () => {
 
   const got = await getTool.execute(
     "tool-call",
-    { user_id: discordId } as never,
+    { discord_id: "@Alice" } as never,
     undefined,
     undefined,
     {} as never,
   );
   const markdown = textOf(got);
-  assert.match(markdown, /^---\ndiscord_id: "123456789012345678"/u);
+  assert.match(markdown, /^---\ndiscord_id: "alice"/u);
   assert.match(markdown, /display_name: "Alice"/u);
   assert.match(markdown, /nickname: "A"/u);
   assert.match(markdown, /summary: "TypeScriptが好きなユーザー"/u);
@@ -71,7 +71,7 @@ test("gets and updates user memory through tools", async () => {
   await updateTool.execute(
     "tool-call",
     {
-      user_id: discordId,
+      discord_id: discordId,
       nickname: null,
       impression_delta: 85,
       history: "- 2026-02-01: 二回目に話した",
@@ -83,7 +83,7 @@ test("gets and updates user memory through tools", async () => {
 
   const updated = await getTool.execute(
     "tool-call",
-    { user_id: discordId } as never,
+    { discord_id: discordId } as never,
     undefined,
     undefined,
     {} as never,
@@ -103,7 +103,7 @@ test("rejects empty updates and conflicting impression inputs", async () => {
   await assert.rejects(
     updateTool.execute(
       "tool-call",
-      { user_id: discordId } as never,
+      { discord_id: discordId } as never,
       undefined,
       undefined,
       {} as never,
@@ -114,7 +114,7 @@ test("rejects empty updates and conflicting impression inputs", async () => {
     updateTool.execute(
       "tool-call",
       {
-        user_id: discordId,
+        discord_id: discordId,
         display_name: "Alice",
         impression: 1,
         impression_delta: 1,
@@ -128,7 +128,7 @@ test("rejects empty updates and conflicting impression inputs", async () => {
   await assert.rejects(
     updateTool.execute(
       "tool-call",
-      { user_id: discordId, summary: "要約" } as never,
+      { discord_id: discordId, summary: "要約" } as never,
       undefined,
       undefined,
       {} as never,

@@ -10,16 +10,16 @@ import {
 } from "@modules/user-memory/domain/user-memory";
 import { renderUserMemory } from "@modules/user-memory/infrastructure/markdown-user-memory-store";
 
-const userIdSchema = Type.String({ minLength: 1, pattern: "^[0-9]+$" });
+const discordIdSchema = Type.String({ minLength: 1, maxLength: 100 });
 const optionalTextSchema = Type.Union([Type.String({ maxLength: 100 }), Type.Null()]);
 const sectionSchema = Type.String({ maxLength: 20_000 });
 
 const userMemoryGetParameters = Type.Object({
-  user_id: userIdSchema,
+  discord_id: discordIdSchema,
 });
 
 const userMemoryUpdateParameters = Type.Object({
-  user_id: userIdSchema,
+  discord_id: discordIdSchema,
   display_name: Type.Optional(Type.String({ minLength: 1, maxLength: 100 })),
   nickname: Type.Optional(optionalTextSchema),
   first_name: Type.Optional(optionalTextSchema),
@@ -44,8 +44,8 @@ const userMemoryUpdateParameters = Type.Object({
 });
 
 type UserMemoryGetDetails =
-  | { readonly found: false; readonly userId: string }
-  | { readonly found: true; readonly userId: string; readonly updatedAt: string };
+  | { readonly found: false; readonly discordId: string }
+  | { readonly found: true; readonly discordId: string; readonly updatedAt: string };
 
 export function createUserMemoryTools(store: UserMemoryStore) {
   return [
@@ -53,23 +53,24 @@ export function createUserMemoryTools(store: UserMemoryStore) {
       name: "user_memory_get",
       label: "Get User Memory",
       description:
-        "Read the per-user memory for a Discord user ID. The memory is a Markdown document with " +
-        "front matter (display_name, summary, impression, updated_at) and the sections Facts, " +
-        "History, In common, and Strengthening. Use this when you need what you know about a " +
-        "specific user. This tool looks up by Discord user ID only; it does not search by name.",
+        "Read the per-user memory for a Discord user. Pass the user-set Discord username shown " +
+        "as @username in messages, without the @, as discord_id. This is not the numeric " +
+        "snowflake ID. The memory is a Markdown document with front matter (display_name, " +
+        "summary, impression, updated_at) and the sections Facts, History, In common, and " +
+        "Strengthening. This tool looks up by username only; it does not search by display name.",
       parameters: userMemoryGetParameters,
       exposure: "deferred",
       async execute(_toolCallId, params) {
-        const memory = await store.read(params.user_id);
+        const memory = await store.read(params.discord_id);
         if (!memory) {
           return {
             content: [
               {
                 type: "text",
-                text: `ユーザーメモリはまだありません。user_id: ${params.user_id}`,
+                text: `ユーザーメモリはまだありません。discord_id: ${params.discord_id}`,
               },
             ],
-            details: { found: false, userId: params.user_id },
+            details: { found: false, discordId: params.discord_id },
           };
         }
 
@@ -77,7 +78,7 @@ export function createUserMemoryTools(store: UserMemoryStore) {
           content: [{ type: "text", text: renderUserMemory(memory) }],
           details: {
             found: true,
-            userId: memory.discordId,
+            discordId: memory.discordId,
             updatedAt: memory.updatedAt,
           },
         };
@@ -87,8 +88,10 @@ export function createUserMemoryTools(store: UserMemoryStore) {
       name: "user_memory_update",
       label: "Update User Memory",
       description:
-        "Create or update the per-user memory for a Discord user ID. Only the fields you pass are " +
-        "changed. The section fields replace the whole section, so call user_memory_get first. " +
+        "Create or update the per-user memory for a Discord user. Pass the user-set Discord " +
+        "username shown as @username in messages, without the @, as discord_id. This is not " +
+        "the numeric snowflake ID. Only the fields you pass are changed. The section fields " +
+        "replace the whole section, so call user_memory_get first. " +
         `${USER_MEMORY_FACTS_FORMAT_GUIDE} ` +
         "impression is an integer from -100 (strong dislike) to 100 (strong affinity), with 0 " +
         "neutral; impression_delta adds to the current value and is clamped to that range. " +
@@ -119,16 +122,16 @@ export function createUserMemoryTools(store: UserMemoryStore) {
           ...(params.in_common !== undefined ? { inCommon: params.in_common } : {}),
           ...(params.strengthening !== undefined ? { strengthening: params.strengthening } : {}),
         };
-        const memory = await store.update(params.user_id, patch);
+        const memory = await store.update(params.discord_id, patch);
         return {
           content: [
             {
               type: "text",
-              text: `ユーザーメモリを更新しました。user_id: ${memory.discordId} / updated_at: ${memory.updatedAt}`,
+              text: `ユーザーメモリを更新しました。discord_id: ${memory.discordId} / updated_at: ${memory.updatedAt}`,
             },
           ],
           details: {
-            userId: memory.discordId,
+            discordId: memory.discordId,
             updatedAt: memory.updatedAt,
             impression: memory.impression,
           },
@@ -139,5 +142,5 @@ export function createUserMemoryTools(store: UserMemoryStore) {
 }
 
 function hasAnyUpdate(params: Record<string, unknown>): boolean {
-  return Object.keys(params).some((key) => key !== "user_id" && params[key] !== undefined);
+  return Object.keys(params).some((key) => key !== "discord_id" && params[key] !== undefined);
 }

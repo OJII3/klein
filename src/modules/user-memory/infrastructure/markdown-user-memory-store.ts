@@ -4,7 +4,8 @@ import { dirname, join, resolve } from "node:path";
 
 import {
   clampImpression,
-  isValidDiscordUserId,
+  isValidDiscordId,
+  normalizeDiscordId,
   USER_MEMORY_DEFAULT_SECTION_CONTENT,
   USER_MEMORY_SECTION_HEADINGS,
   USER_MEMORY_SECTION_KEYS,
@@ -25,7 +26,8 @@ export class MarkdownUserMemoryStore implements UserMemoryStore {
   }
 
   async read(discordId: string): Promise<UserMemory | undefined> {
-    const filePath = this.filePath(discordId);
+    const normalizedId = normalizeDiscordId(discordId);
+    const filePath = this.filePath(normalizedId);
     let content: string;
     try {
       content = await readFile(filePath, "utf8");
@@ -35,16 +37,17 @@ export class MarkdownUserMemoryStore implements UserMemoryStore {
     }
 
     try {
-      return parseUserMemory(content, discordId);
+      return parseUserMemory(content, normalizedId);
     } catch (error) {
       throw new Error(`Failed to parse user memory file: ${filePath}`, { cause: error });
     }
   }
 
   async update(discordId: string, patch: UserMemoryPatch): Promise<UserMemory> {
-    const filePath = this.filePath(discordId);
+    const normalizedId = normalizeDiscordId(discordId);
+    const filePath = this.filePath(normalizedId);
     return this.runWrite(async () => {
-      const existing = await this.read(discordId);
+      const existing = await this.read(normalizedId);
       const displayName = normalizeFrontmatterText(
         patch.displayName ?? existing?.displayName ?? "",
       );
@@ -57,7 +60,7 @@ export class MarkdownUserMemoryStore implements UserMemoryStore {
       const firstName = resolveOptionalText(patch.firstName, existing?.firstName);
       const lastName = resolveOptionalText(patch.lastName, existing?.lastName);
       const memory: UserMemory = {
-        discordId,
+        discordId: normalizedId,
         displayName,
         ...(nickname !== undefined ? { nickname } : {}),
         ...(firstName !== undefined ? { firstName } : {}),
@@ -84,10 +87,10 @@ export class MarkdownUserMemoryStore implements UserMemoryStore {
   }
 
   private filePath(discordId: string): string {
-    if (!isValidDiscordUserId(discordId)) {
-      throw new Error(`Invalid Discord user ID: ${discordId}`);
+    if (!isValidDiscordId(discordId)) {
+      throw new Error(`Invalid Discord username: ${discordId}`);
     }
-    return join(this.directory, `${discordId}.md`);
+    return join(this.directory, `${encodeURIComponent(discordId)}.md`);
   }
 
   private runWrite<T>(operation: () => Promise<T>): Promise<T> {
