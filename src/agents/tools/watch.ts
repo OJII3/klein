@@ -48,6 +48,7 @@ export function createWatchTools(
         "With condition='change', the first successful check only stores a baseline. " +
         "script runs in a QuickJS sandbox: it reads the array `args`, calls the tools listed in the `watch` section (for example `tools.fetch_content({ url })`; that `fetch_content` is a read-only subset of the session tool), and prints with `text()` or `console.*`. " +
         "Only the tools in the `watch` section are available; normal session tools, timers, files, and process APIs are not. " +
+        "`store(key, value)` and `load(key)` keep JSON values between checks of the same watch; storing `undefined` deletes a key. " +
         "The text output plus the returned value become the watch output. " +
         "Times use Japan Standard Time (JST). Weekly schedules require one or more weekdays: sun, mon, tue, wed, thu, fri, sat.",
       parameters: Type.Object({

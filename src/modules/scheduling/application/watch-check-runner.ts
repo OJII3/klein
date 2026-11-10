@@ -4,6 +4,8 @@ export interface WatchCheckResult {
   readonly output: string;
   readonly exitCode: number;
   readonly durationMs: number;
+  /** State after applying the script's `store()` writes. */
+  readonly state: Readonly<Record<string, unknown>>;
 }
 
 export interface WatchCheckRunner {
