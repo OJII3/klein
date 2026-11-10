@@ -38,6 +38,34 @@ test("uses directMessages for direct messages", () => {
   assert.equal(policy.canReceive({ channelId: "dm" }), true);
 });
 
+test("always allows the owner to direct message and use owner features", () => {
+  for (const directMessages of ["allow", "deny", "owner"] as const) {
+    const dmPolicy = createDiscordAccessPolicy({ default: "deny", directMessages }, "owner-user");
+    assert.equal(dmPolicy.canReceive({ channelId: "dm", userId: "owner-user" }), true);
+    assert.equal(dmPolicy.canUseOwnerFeatures({ channelId: "dm", userId: "owner-user" }), true);
+    assert.equal(
+      dmPolicy.canReceive({ channelId: "dm", userId: "other-user" }),
+      directMessages === "allow",
+    );
+    assert.equal(dmPolicy.canUseOwnerFeatures({ channelId: "dm", userId: "other-user" }), false);
+  }
+});
+
+test("does not treat a bot owner as the owner in direct messages", () => {
+  const dmPolicy = createDiscordAccessPolicy(
+    { default: "deny", directMessages: "deny" },
+    "owner-user",
+  );
+  assert.equal(
+    dmPolicy.canReceive({ channelId: "dm", userId: "owner-user", userIsBot: true }),
+    false,
+  );
+  assert.equal(
+    dmPolicy.canUseOwnerFeatures({ channelId: "dm", userId: "owner-user", userIsBot: true }),
+    false,
+  );
+});
+
 test("resolves guild access from guild to default", () => {
   assert.equal(policy.canReceive({ guildId: "guild", channelId: "other" }), true);
   assert.equal(policy.canReceive({ guildId: "other", channelId: "other" }), false);
