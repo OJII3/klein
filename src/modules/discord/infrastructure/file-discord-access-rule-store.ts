@@ -1,9 +1,18 @@
-import { readFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
 import { Type, type Static } from "typebox";
 import { Check, Errors } from "typebox/value";
 
-import type { DiscordGuildAccessRule } from "../domain/discord-access-policy";
-import type { DiscordAccessRuleStore } from "../ports/discord-access-rule-store";
+import type {
+  DiscordAccess,
+  DiscordChannelAccessRule,
+  DiscordGuildAccessRule,
+} from "../domain/discord-access-policy";
+import type {
+  DiscordAccessRuleStore,
+  DiscordAccessRuleTarget,
+} from "../ports/discord-access-rule-store";
 
 const DiscordIdSchema = Type.String({ minLength: 1, pattern: "^[0-9]+$" });
 const DiscordAccessSchema = Type.Union([
@@ -52,6 +61,7 @@ type DiscordAccessFile = Static<typeof DiscordAccessFileSchema>;
 
 export class FileDiscordAccessRuleStore implements DiscordAccessRuleStore {
   private guilds: Readonly<Record<string, DiscordGuildAccessRule>> = {};
+  private writeQueue: Promise<void> = Promise.resolve();
 
   constructor(private readonly filePath: string) {}
 
@@ -91,6 +101,46 @@ export class FileDiscordAccessRuleStore implements DiscordAccessRuleStore {
 
   getGuildRule(guildId: string): DiscordGuildAccessRule | undefined {
     return this.guilds[guildId];
+  }
+
+  async setAccess(target: DiscordAccessRuleTarget, access: DiscordAccess): Promise<void> {
+    const guild = this.guilds[target.guildId] ?? {};
+    const channel = guild.channels?.[target.channelId] ?? {};
+    const nextChannel: DiscordChannelAccessRule = target.threadId
+      ? {
+          ...channel,
+          threads: {
+            ...channel.threads,
+            [target.threadId]: { ...channel.threads?.[target.threadId], access },
+          },
+        }
+      : { ...channel, access };
+
+    this.guilds = {
+      ...this.guilds,
+      [target.guildId]: {
+        ...guild,
+        channels: { ...guild.channels, [target.channelId]: nextChannel },
+      },
+    };
+
+    this.writeQueue = this.writeQueue.catch(() => undefined).then(() => this.persist());
+    await this.writeQueue;
+  }
+
+  private async persist(): Promise<void> {
+    await mkdir(dirname(this.filePath), { recursive: true });
+    const temporaryPath = `${this.filePath}.${randomUUID()}.tmp`;
+    try {
+      await writeFile(
+        temporaryPath,
+        `${JSON.stringify({ guilds: this.guilds }, undefined, 2)}\n`,
+        "utf8",
+      );
+      await rename(temporaryPath, this.filePath);
+    } finally {
+      await unlink(temporaryPath).catch(() => undefined);
+    }
   }
 }
 

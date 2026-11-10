@@ -12,6 +12,8 @@ import { DiscordJsService } from "./discord-js-service";
 type TestableDiscordJsService = {
   readonly client: {
     channels: { fetch: (id: string) => Promise<unknown> };
+    guilds: { cache: Map<string, { name?: string }> };
+    users: { fetch: (id: string) => Promise<unknown> };
     user: {
       id: string;
       setActivity?: (name: string) => void;
@@ -29,6 +31,7 @@ function createMessage(
     author?: { bot?: boolean; id?: string };
     content?: string;
     attachments?: Map<string, unknown>;
+    mentionedUserIds?: string[];
   } = {},
 ): Message {
   return {
@@ -50,7 +53,7 @@ function createMessage(
     attachments: options.attachments ?? new Map(),
     mentions: {
       roles: new Map(),
-      users: new Map(),
+      users: new Map((options.mentionedUserIds ?? []).map((id) => [id, { id }])),
     },
   } as unknown as Message;
 }
@@ -297,6 +300,7 @@ test("handles status slash subcommands for members with Manage Server", async ()
 test("lists explicitly allowed channels and threads with their access levels", async () => {
   const accessRuleStore = {
     async load() {},
+    async setAccess() {},
     getGuildRule(guildId: string) {
       return guildId === "guild-123"
         ? {
@@ -631,6 +635,114 @@ test("saves a submitted rule under the interaction's channel", async () => {
       { guildId: "guild-123", channelId: "channel-b", rule: "  新しいルール  " },
     ]);
     assert.deepEqual(replies, ["このチャンネル／スレッドのルールを保存しました。"]);
+  } finally {
+    await service.stop();
+  }
+});
+
+test("asks the owner when mentioned in a channel that is not allowed and shows a pending notice", async () => {
+  const accessRuleStore = {
+    async load() {},
+    async setAccess() {},
+    getGuildRule: () => undefined,
+  };
+  const accessRequestStore = {
+    async load() {},
+    list: () => [],
+    async save() {},
+    async remove() {},
+  };
+  const service = new DiscordJsService(
+    "token",
+    createDiscordAccessPolicy({ default: "deny", directMessages: "allow" }),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    accessRuleStore,
+    "owner-123",
+    accessRequestStore,
+  );
+  const testableService = service as unknown as TestableDiscordJsService;
+  testableService.client.user = { id: "bot-123" };
+  testableService.acceptingMessages = true;
+
+  const pendingMessages: unknown[] = [];
+  const ownerMessages: unknown[] = [];
+  testableService.client.channels.fetch = async () => ({
+    send: async (payload: unknown) => {
+      pendingMessages.push(payload);
+      return { id: "pending-message" };
+    },
+    messages: { fetch: async () => ({ edit: async () => undefined }) },
+  });
+  testableService.client.users = {
+    fetch: async () => ({
+      send: async (payload: unknown) => {
+        ownerMessages.push(payload);
+        return { id: "owner-message" };
+      },
+    }),
+  };
+  testableService.client.guilds = { cache: new Map([["guild-123", { name: "テストサーバー" }]]) };
+
+  const received: DiscordMessage[] = [];
+  testableService.onMessage = async (message) => {
+    received.push(message);
+  };
+
+  try {
+    await testableService.handleMessage(
+      createMessage({ content: "<@bot-123> こんにちは", mentionedUserIds: ["bot-123"] }),
+    );
+
+    assert.equal(received.length, 0);
+    assert.equal(pendingMessages.length, 1);
+    assert.equal(ownerMessages.length, 1);
+  } finally {
+    await service.stop();
+  }
+});
+
+test("does not ask the owner when a denied channel message does not mention the bot", async () => {
+  const accessRuleStore = {
+    async load() {},
+    async setAccess() {},
+    getGuildRule: () => undefined,
+  };
+  const accessRequestStore = {
+    async load() {},
+    list: () => [],
+    async save() {},
+    async remove() {},
+  };
+  const service = new DiscordJsService(
+    "token",
+    createDiscordAccessPolicy({ default: "deny", directMessages: "allow" }),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    accessRuleStore,
+    "owner-123",
+    accessRequestStore,
+  );
+  const testableService = service as unknown as TestableDiscordJsService;
+  testableService.client.user = { id: "bot-123" };
+  testableService.acceptingMessages = true;
+
+  const pendingMessages: unknown[] = [];
+  testableService.client.channels.fetch = async () => ({
+    send: async (payload: unknown) => {
+      pendingMessages.push(payload);
+      return { id: "pending-message" };
+    },
+  });
+
+  try {
+    await testableService.handleMessage(createMessage({ content: "こんにちは" }));
+
+    assert.equal(pendingMessages.length, 0);
   } finally {
     await service.stop();
   }

@@ -33,6 +33,7 @@ import { resolveVoiceChatConfig } from "@modules/discord/domain/voice-chat-confi
 import { DiscordJsService } from "@modules/discord/infrastructure/discord-js-service";
 import { loadVoiceReactionPresets } from "@modules/discord/infrastructure/voice-reaction-presets";
 import { FileDiscordAccessRuleStore } from "@modules/discord/infrastructure/file-discord-access-rule-store";
+import { FileDiscordAccessRequestStore } from "@modules/discord/infrastructure/file-discord-access-request-store";
 import { FileDiscordChannelRuleStore } from "@modules/discord/infrastructure/file-discord-channel-rule-store";
 import { MemoryCoordinator } from "@modules/memory/application/memory-coordinator";
 import { resolveMemoryConfig } from "@modules/memory/application/memory-config";
@@ -97,6 +98,10 @@ export async function bootstrap(): Promise<void> {
     resolve(agentDir, "discord-access.json"),
   );
   await discordAccessRuleStore.load();
+  const discordAccessRequestStore = new FileDiscordAccessRequestStore(
+    resolve(agentDir, "discord-access-requests.json"),
+  );
+  await discordAccessRequestStore.load();
   const discordAccessPolicy = createDiscordAccessPolicy(
     config.discord.access,
     ownerUserId,
@@ -229,6 +234,8 @@ export async function bootstrap(): Promise<void> {
       : undefined,
     channelRuleStore,
     discordAccessRuleStore,
+    ownerUserId,
+    discordAccessRequestStore,
   );
   const memorySessionId = `memory-${randomUUID()}`;
   const memoryCoordinator = memoryConfig.enabled
