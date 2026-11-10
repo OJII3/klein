@@ -62,9 +62,12 @@ function createHarness(store: ChannelSessionStateStore, channelRule: { access: D
       {
         default: "deny",
         directMessages: "deny",
-        guilds: { guild: { channels: { channel: channelRule } } },
       },
       ownerId,
+      {
+        getGuildRule: (guildId) =>
+          guildId === "guild" ? { channels: { channel: channelRule } } : undefined,
+      },
     ),
     ownerUserId: ownerId,
     channelSessionStateStore: store,

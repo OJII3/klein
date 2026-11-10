@@ -19,7 +19,10 @@ export interface DiscordGuildAccessRule {
 export interface DiscordAccessConfiguration {
   readonly default: DiscordAccess;
   readonly directMessages: DiscordAccess;
-  readonly guilds?: Readonly<Record<string, DiscordGuildAccessRule>>;
+}
+
+export interface DiscordAccessRules {
+  getGuildRule(guildId: string): DiscordGuildAccessRule | undefined;
 }
 
 export interface DiscordAccessTarget {
@@ -39,11 +42,12 @@ export interface DiscordAccessPolicy {
 
 function resolveAccess(
   configuration: DiscordAccessConfiguration,
+  rules: DiscordAccessRules | undefined,
   target: DiscordAccessTarget,
 ): DiscordAccess {
   if (!target.guildId) return configuration.directMessages;
 
-  const guildRule = configuration.guilds?.[target.guildId];
+  const guildRule = rules?.getGuildRule(target.guildId);
   const channelRule = guildRule?.channels?.[target.channelId];
   const threadRule = target.threadId ? channelRule?.threads?.[target.threadId] : undefined;
 
@@ -53,18 +57,22 @@ function resolveAccess(
 export function createDiscordAccessPolicy(
   configuration: DiscordAccessConfiguration,
   ownerUserId?: string,
+  rules?: DiscordAccessRules,
 ): DiscordAccessPolicy {
   const canUseOwnerFeatures = (target: DiscordAccessTarget): boolean =>
-    resolveAccess(configuration, target) === "owner" &&
+    resolveAccess(configuration, rules, target) === "owner" &&
     !!ownerUserId &&
     target.userId === ownerUserId &&
     !target.userIsBot;
 
   return {
     canReceive(target) {
-      return isAccessAllowed(resolveAccess(configuration, target), canUseOwnerFeatures(target));
+      return isAccessAllowed(
+        resolveAccess(configuration, rules, target),
+        canUseOwnerFeatures(target),
+      );
     },
-    resolveAccess: (target) => resolveAccess(configuration, target),
+    resolveAccess: (target) => resolveAccess(configuration, rules, target),
     canUseOwnerFeatures,
   };
 }
