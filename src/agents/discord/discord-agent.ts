@@ -1,7 +1,7 @@
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 
 import type { AgentEvent } from "../core/agent-event";
-import { formatAgentTurn, type AgentTurn, type AgentTurnContext } from "../core/agent-turn";
+import type { AgentTurn, AgentTurnContext } from "../core/agent-turn";
 import type { ChannelAgent } from "../core/channel-agent";
 import type { AgentFactory } from "../core/agent-factory";
 import type { AgentRuntime } from "../core/agent-runtime";
@@ -63,7 +63,7 @@ export class DiscordAgent implements ChannelAgent {
   }
 
   prompt(turn: AgentTurn): Promise<void> {
-    return this.runtime.prompt(this.formatTurn(turn)).then(() => undefined);
+    return this.runtime.prompt(this.withContextAccess(turn)).then(() => undefined);
   }
 
   promptEvent(event: AgentEvent, context: AgentTurnContext = {}): Promise<void> {
@@ -71,8 +71,8 @@ export class DiscordAgent implements ChannelAgent {
   }
 
   steer(turn: AgentTurn): Promise<void> {
-    const event = this.formatTurn(turn);
-    return (this.runtime.steer ? this.runtime.steer(event) : this.runtime.prompt(event)).then(
+    const next = this.withContextAccess(turn);
+    return (this.runtime.steer ? this.runtime.steer(next) : this.runtime.prompt(next)).then(
       () => undefined,
     );
   }
@@ -95,14 +95,13 @@ export class DiscordAgent implements ChannelAgent {
     });
   }
 
-  private formatTurn(turn: AgentTurn): AgentEvent {
-    return formatAgentTurn({
-      ...turn,
-      context: {
-        ...turn.context,
-        ownerMemory: this.ownerFeaturesAllowed ? turn.context.ownerMemory : undefined,
-      },
-    });
+  private withContextAccess(turn: AgentTurn): AgentTurn {
+    if (this.ownerFeaturesAllowed) return turn;
+
+    return {
+      event: turn.event,
+      context: { ...turn.context, ownerMemory: undefined },
+    };
   }
 
   compactForHandoff(): Promise<string> | undefined {
