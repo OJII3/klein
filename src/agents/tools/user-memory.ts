@@ -116,9 +116,10 @@ export function createUserMemoryTools(store: UserMemoryStore, users: DiscordUser
       label: "Update User Memory",
       description:
         "Create or update a Discord user's memory by @username (not the numeric user ID). " +
-        "Only passed fields change; sections replace wholesale. display_name is required on " +
-        "first create. impression: -100..100 (0 neutral) or impression_delta. Facts: confirmed " +
-        "only, `不明` if unknown, dates as `- key: YYYY-MM-DD`. null clears optional names.",
+        "Only passed fields change; sections replace wholesale. display_name defaults to the " +
+        "Discord display name on first create. impression: -100..100 (0 neutral) or " +
+        "impression_delta. Facts: confirmed only, `不明` if unknown, dates as " +
+        "`- key: YYYY-MM-DD`. null clears optional names.",
       parameters: userMemoryUpdateParameters,
       exposure: "deferred",
       async execute(_toolCallId, params) {
@@ -151,7 +152,11 @@ export function createUserMemoryTools(store: UserMemoryStore, users: DiscordUser
           ...(params.in_common !== undefined ? { inCommon: params.in_common } : {}),
           ...(params.strengthening !== undefined ? { strengthening: params.strengthening } : {}),
         };
-        const memory = await store.update(user.id, user.username, patch);
+        const memory = await store.update(
+          user.id,
+          { username: user.username, displayName: user.displayName },
+          patch,
+        );
         return {
           content: [
             {

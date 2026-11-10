@@ -13,6 +13,7 @@ import {
   USER_MEMORY_SECTION_HEADINGS,
   USER_MEMORY_SECTION_KEYS,
   type UserMemory,
+  type UserMemoryIdentity,
   type UserMemoryPatch,
   type UserMemorySectionKey,
   type UserMemoryStore,
@@ -45,20 +46,23 @@ export class MarkdownUserMemoryStore implements UserMemoryStore {
     }
   }
 
-  async update(userId: string, username: string, patch: UserMemoryPatch): Promise<UserMemory> {
-    const normalizedUsername = normalizeDiscordUsername(username);
+  async update(
+    userId: string,
+    identity: UserMemoryIdentity,
+    patch: UserMemoryPatch,
+  ): Promise<UserMemory> {
+    const normalizedUsername = normalizeDiscordUsername(identity.username);
     if (!isValidDiscordUsername(normalizedUsername)) {
-      throw new Error(`Invalid Discord username: ${username}`);
+      throw new Error(`Invalid Discord username: ${identity.username}`);
     }
+    const fallbackDisplayName =
+      normalizeFrontmatterText(identity.displayName) || normalizedUsername;
     const filePath = this.filePath(userId);
     return this.runWrite(async () => {
       const existing = await this.read(userId);
-      const displayName = normalizeFrontmatterText(
-        patch.displayName ?? existing?.displayName ?? "",
-      );
-      if (!displayName) {
-        throw new Error("display_name is required when creating a user memory for the first time.");
-      }
+      const requestedDisplayName =
+        patch.displayName !== undefined ? normalizeFrontmatterText(patch.displayName) : undefined;
+      const displayName = requestedDisplayName || existing?.displayName || fallbackDisplayName;
 
       const impression = resolveImpression(existing?.impression ?? 0, patch);
       const nickname = resolveOptionalText(patch.nickname, existing?.nickname);

@@ -8,6 +8,7 @@ import { MarkdownUserMemoryStore, renderUserMemory } from "./markdown-user-memor
 
 const userId = "123456789012345678";
 const username = "alice";
+const identity = { username, displayName: "Alice" } as const;
 
 test("creates and reads a user memory markdown file by numeric user ID", async () => {
   await using temp = await createTempDir("klein-user-memory-");
@@ -15,7 +16,7 @@ test("creates and reads a user memory markdown file by numeric user ID", async (
 
   assert.equal(await store.read(userId), undefined);
 
-  const created = await store.update(userId, username, {
+  const created = await store.update(userId, identity, {
     displayName: "Alice",
     nickname: "A",
     firstName: "Alice",
@@ -50,7 +51,7 @@ test("updates only the provided fields and clamps impression", async () => {
   await using temp = await createTempDir("klein-user-memory-");
   const store = new MarkdownUserMemoryStore(temp.path);
 
-  await store.update(userId, username, {
+  await store.update(userId, identity, {
     displayName: "Alice",
     nickname: "A",
     summary: "最初の要約",
@@ -59,7 +60,7 @@ test("updates only the provided fields and clamps impression", async () => {
     history: "- 2026-01-01: 初めて話した",
   });
 
-  const updated = await store.update(userId, username, {
+  const updated = await store.update(userId, identity, {
     nickname: null,
     impressionDelta: 50,
     history: "- 2026-02-01: 二回目に話した",
@@ -79,8 +80,12 @@ test("keeps the numeric user ID as the file key when the username changes", asyn
   await using temp = await createTempDir("klein-user-memory-");
   const store = new MarkdownUserMemoryStore(temp.path);
 
-  await store.update(userId, username, { displayName: "Alice", summary: "最初の要約" });
-  const updated = await store.update(userId, "@Alice_New", { nickname: "A" });
+  await store.update(userId, identity, { displayName: "Alice", summary: "最初の要約" });
+  const updated = await store.update(
+    userId,
+    { username: "@Alice_New", displayName: "Alice New" },
+    { nickname: "A" },
+  );
 
   assert.equal(updated.discordId, "alice_new");
   assert.equal(updated.summary, "最初の要約");
@@ -93,8 +98,9 @@ test("uses default section contents for a new memory", async () => {
   await using temp = await createTempDir("klein-user-memory-");
   const store = new MarkdownUserMemoryStore(temp.path);
 
-  const memory = await store.update(userId, username, { displayName: "Alice" });
+  const memory = await store.update(userId, identity, {});
 
+  assert.equal(memory.displayName, "Alice");
   assert.equal(memory.facts, "不明");
   assert.equal(memory.history, "なし");
   assert.equal(memory.inCommon, "なし");
@@ -107,7 +113,7 @@ test("keeps front matter values on one line", async () => {
   await using temp = await createTempDir("klein-user-memory-");
   const store = new MarkdownUserMemoryStore(temp.path);
 
-  const memory = await store.update(userId, username, {
+  const memory = await store.update(userId, identity, {
     displayName: " Alice\nSmith ",
     nickname: "A\nB",
     summary: "一行目\n二行目",
@@ -119,11 +125,18 @@ test("keeps front matter values on one line", async () => {
   assert.deepEqual(await store.read(userId), memory);
 });
 
-test("requires display_name when creating a new memory", async () => {
+test("fills display_name from the identity on first create", async () => {
   await using temp = await createTempDir("klein-user-memory-");
   const store = new MarkdownUserMemoryStore(temp.path);
 
-  await assert.rejects(store.update(userId, username, { summary: "要約" }), /display_name/u);
+  const memory = await store.update(
+    userId,
+    { username, displayName: "Alice From Discord" },
+    { summary: "要約" },
+  );
+
+  assert.equal(memory.displayName, "Alice From Discord");
+  assert.equal(memory.summary, "要約");
 });
 
 test("rejects invalid IDs, invalid usernames, and conflicting impression updates", async () => {
@@ -132,11 +145,11 @@ test("rejects invalid IDs, invalid usernames, and conflicting impression updates
 
   await assert.rejects(store.read("../escape"), /Invalid Discord user ID/u);
   await assert.rejects(
-    store.update(userId, "../escape", { displayName: "Alice" }),
+    store.update(userId, { username: "../escape", displayName: "Alice" }, {}),
     /Invalid Discord username/u,
   );
   await assert.rejects(
-    store.update(userId, username, {
+    store.update(userId, identity, {
       displayName: "Alice",
       impression: 1,
       impressionDelta: 1,
@@ -182,7 +195,7 @@ test("parses a manually written memory file", async () => {
 test("renders the documented section headings and front matter order", async () => {
   await using temp = await createTempDir("klein-user-memory-");
   const store = new MarkdownUserMemoryStore(temp.path);
-  const memory = await store.update(userId, username, {
+  const memory = await store.update(userId, identity, {
     displayName: "Alice",
     summary: "要約",
   });

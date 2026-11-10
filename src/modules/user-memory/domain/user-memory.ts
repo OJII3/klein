@@ -49,9 +49,14 @@ export interface UserMemoryPatch {
   readonly strengthening?: string;
 }
 
+export interface UserMemoryIdentity {
+  readonly username: string;
+  readonly displayName: string;
+}
+
 export interface UserMemoryStore {
   read(userId: string): Promise<UserMemory | undefined>;
-  update(userId: string, username: string, patch: UserMemoryPatch): Promise<UserMemory>;
+  update(userId: string, identity: UserMemoryIdentity, patch: UserMemoryPatch): Promise<UserMemory>;
 }
 
 export function clampImpression(value: number): number {

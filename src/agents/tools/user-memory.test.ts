@@ -54,7 +54,6 @@ test("gets and updates user memory through tools", async () => {
     "tool-call",
     {
       discord_id: username,
-      display_name: "Alice",
       nickname: "A",
       summary: "TypeScriptが好きなユーザー",
       impression: 20,
@@ -165,15 +164,5 @@ test("rejects empty updates and conflicting impression inputs", async () => {
       {} as never,
     ),
     /同時に指定できません/u,
-  );
-  await assert.rejects(
-    updateTool.execute(
-      "tool-call",
-      { discord_id: username, summary: "要約" } as never,
-      undefined,
-      undefined,
-      {} as never,
-    ),
-    /display_name/u,
   );
 });
