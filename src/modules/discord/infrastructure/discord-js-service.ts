@@ -21,7 +21,9 @@ import type {
   DiscordMessageRequester,
 } from "../ports/discord-channel-api";
 import type { DiscordGateway, DiscordMessageHandler } from "../ports/discord-gateway";
+import type { DiscordAccessRuleStore } from "../ports/discord-access-rule-store";
 import type { DiscordChannelRuleStore } from "../ports/discord-channel-rule-store";
+
 import {
   DiscordVoiceChatController,
   type DiscordVoiceChatControllerOptions,
@@ -73,6 +75,7 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
     private readonly operatingState = new DiscordOperatingState(),
     voiceChat?: DiscordVoiceChatControllerOptions,
     channelRuleStore?: DiscordChannelRuleStore,
+    accessRuleStore?: DiscordAccessRuleStore,
   ) {
     this.logger = logger?.child({ component: "discord-service" });
     this.messageAdapter = new DiscordJsMessageAdapter(this.logger);
@@ -84,6 +87,7 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
       (mode) => this.setOperatingMode(mode),
       this.voiceChatController,
       channelRuleStore,
+      accessRuleStore,
     );
     this.client = new Client({
       intents: [

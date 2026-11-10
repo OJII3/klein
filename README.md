@@ -39,7 +39,7 @@ Select one with `"profile"` in `config/config.jsonc` (default: `klein`). The bun
 ### Discord
 
 - **Access control** — `discord.access` sets `default` and `directMessages` in `config/config.jsonc`, while `<runtime.agentDir>/discord-access.json` holds the guild, channel, and thread rules. Rules are evaluated thread → channel → guild → default. The bot owner can always send direct messages, and owner direct messages use owner features regardless of `directMessages`. The rules file is read at startup, so restart Klein after editing it. The Discord **Message Content Intent** is required.
-- **Commands** — `/status idle` pauses message processing and `/status online` resumes it (Manage Server only).
+- **Commands** — `/status idle` pauses message processing and `/status online` resumes it (Manage Server only). `/channels` lists the channels and threads that the access rules explicitly allow in the current guild, with their resolved levels (`allow`, `owner`).
 - **Activity status** — shows remaining OpenCode Go, Google, or Mistral budget usage, refreshed hourly.
 
 ### LLM providers
