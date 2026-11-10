@@ -98,11 +98,14 @@ for (const restricted of [false, true]) {
       ]);
 
       await runtime.prompt({
-        id: "test-event",
-        type: "message",
-        source: "test",
-        occurredAt: "2026-10-14T09:30:42.123Z",
-        content: [{ type: "text", text: "二つのメッセージを確認して" }],
+        event: {
+          id: "test-event",
+          type: "message",
+          source: "test",
+          occurredAt: "2026-10-14T09:30:42.123Z",
+          content: [{ type: "text", text: "二つのメッセージを確認して" }],
+        },
+        context: {},
       });
       assert.equal(requests.length, 2);
       assert.deepEqual(
@@ -170,11 +173,14 @@ for (const restricted of [false, true]) {
         },
       ]);
       await runtime.prompt({
-        id: "test-event",
-        type: "message",
-        source: "test",
-        occurredAt: "2026-10-14T09:30:42.123Z",
-        content: [{ type: "text", text: "ありがとう" }],
+        event: {
+          id: "test-event",
+          type: "message",
+          source: "test",
+          occurredAt: "2026-10-14T09:30:42.123Z",
+          content: [{ type: "text", text: "ありがとう" }],
+        },
+        context: {},
       });
       assert.deepEqual(sent, ["……確認したよ"]);
 
@@ -193,11 +199,14 @@ for (const restricted of [false, true]) {
         },
       ]);
       await runtime.prompt({
-        id: "next-event",
-        type: "message",
-        source: "test",
-        occurredAt: "2026-10-14T09:30:43.123Z",
-        content: [{ type: "text", text: "次の話題" }],
+        event: {
+          id: "next-event",
+          type: "message",
+          source: "test",
+          occurredAt: "2026-10-14T09:30:43.123Z",
+          content: [{ type: "text", text: "次の話題" }],
+        },
+        context: {},
       });
       assert.deepEqual(sent, ["……確認したよ"]);
     } finally {

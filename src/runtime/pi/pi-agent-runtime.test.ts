@@ -173,6 +173,7 @@ test("passes agent image attachments to Pi", async () => {
       }
     | undefined;
   const runtime = new PiAgentRuntime({
+    sessionManager: createSessionManagerStub(),
     async prompt(text: string, options?: { images?: readonly unknown[]; source?: string }) {
       receivedPrompt = { options, text };
     },
@@ -189,7 +190,7 @@ test("passes agent image attachments to Pi", async () => {
       { type: "image", data: "c2VjcmV0", mimeType: "image/png" },
     ],
   };
-  await runtime.prompt(event);
+  await runtime.prompt({ event, context: {} });
 
   assert.deepEqual(receivedPrompt, {
     options: {
@@ -201,10 +202,92 @@ test("passes agent image attachments to Pi", async () => {
   runtime.dispose();
 });
 
+test("records turn context as a custom entry before the prompt", async () => {
+  const received: Array<{ kind: string; value: unknown }> = [];
+  const sessionManager = createSessionManagerStub();
+  const runtime = new PiAgentRuntime({
+    sessionManager,
+    async prompt(text: string, options?: { images?: readonly unknown[]; source?: string }) {
+      received.push({ kind: "prompt", value: { options, text } });
+    },
+    dispose() {},
+  } as never);
+
+  const event: AgentEvent = {
+    id: "context-event",
+    type: "message",
+    source: "test",
+    occurredAt: "2026-10-14T09:30:42.123Z",
+    content: [{ type: "text", text: "本文" }],
+  };
+  await runtime.prompt({
+    event,
+    context: {
+      ownerMemory: "owner context",
+      guildMemory: "guild context",
+      channelRule: "channel rule",
+    },
+  });
+
+  assert.deepEqual(sessionManager.entries, [
+    {
+      customType: "klein-turn-context",
+      data: {
+        content: [
+          "<owner-memory>\nowner context\n</owner-memory>",
+          "<guild-memory>\nguild context\n</guild-memory>",
+          "<channel-rule>\nchannel rule\n</channel-rule>",
+        ].join("\n\n"),
+      },
+    },
+  ]);
+  assert.deepEqual(received, [
+    {
+      kind: "prompt",
+      value: {
+        options: { images: undefined, source: "rpc" },
+        text: createPiEventPrompt(event).text,
+      },
+    },
+  ]);
+  runtime.dispose();
+});
+
+test("does not record turn context when steering a streaming session", async () => {
+  const received: Array<{ kind: string; value: unknown }> = [];
+  const sessionManager = createSessionManagerStub();
+  const runtime = new PiAgentRuntime({
+    isStreaming: true,
+    sessionManager,
+    async prompt() {
+      received.push({ kind: "prompt", value: undefined });
+    },
+    async steer(text: string) {
+      received.push({ kind: "steer", value: text });
+      return "queued";
+    },
+    dispose() {},
+  } as never);
+
+  const event: AgentEvent = {
+    id: "steer-event",
+    type: "message",
+    source: "test",
+    occurredAt: "2026-10-14T09:30:42.123Z",
+    content: [{ type: "text", text: "追加の指示" }],
+  };
+  await runtime.steer({ event, context: { guildMemory: "guild context" } });
+
+  assert.deepEqual(sessionManager.entries, []);
+  assert.deepEqual(received, [{ kind: "steer", value: createPiEventPrompt(event).text }]);
+  runtime.dispose();
+});
+
 test("passes image analysis to the main session without image attachments", async () => {
   const received: Array<{ kind: string; value: unknown }> = [];
   const runtime = new PiAgentRuntime(
     {
+      sessionManager: createSessionManagerStub(),
       async prompt(text: string, options?: { images?: readonly unknown[]; source?: string }) {
         received.push({ kind: "prompt", value: { options, text } });
       },
@@ -232,7 +315,7 @@ test("passes image analysis to the main session without image attachments", asyn
       { type: "image", data: "c2VjcmV0", mimeType: "image/png" },
     ],
   };
-  await runtime.prompt(event);
+  await runtime.prompt({ event, context: {} });
 
   assert.deepEqual(received, [
     {
@@ -262,6 +345,7 @@ test("continues with text when image analysis fails", async () => {
   const received: Array<{ kind: string; value: unknown }> = [];
   const runtime = new PiAgentRuntime(
     {
+      sessionManager: createSessionManagerStub(),
       async prompt(text: string, options?: { images?: readonly unknown[]; source?: string }) {
         received.push({ kind: "prompt", value: { options, text } });
       },
@@ -291,7 +375,7 @@ test("continues with text when image analysis fails", async () => {
       { type: "image", data: "c2VjcmV0", mimeType: "image/png" },
     ],
   };
-  await runtime.prompt(event);
+  await runtime.prompt({ event, context: {} });
 
   assert.deepEqual(received, [
     {
@@ -322,6 +406,7 @@ test("accepts non-Discord events through prompt and steer", async () => {
   const received: Array<{ kind: string; text: string }> = [];
   const session = {
     isStreaming: false,
+    sessionManager: createSessionManagerStub(),
     async prompt(text: string) {
       received.push({ kind: "prompt", text });
     },
@@ -356,10 +441,10 @@ test("accepts non-Discord events through prompt and steer", async () => {
     },
   ];
 
-  await runtime.prompt(events[0]);
-  await runtime.steer(events[1]);
+  await runtime.prompt({ event: events[0], context: {} });
+  await runtime.steer({ event: events[1], context: {} });
   session.isStreaming = true;
-  await runtime.steer(events[2]);
+  await runtime.steer({ event: events[2], context: {} });
 
   assert.deepEqual(
     received.map((input) => input.kind),
@@ -673,6 +758,17 @@ test("starts background compaction at the documented default lead", () => {
   assert.equal(shouldStartBackgroundCompaction(threshold - 1, contextWindow, reserveTokens), false);
   assert.equal(shouldStartBackgroundCompaction(threshold, contextWindow, reserveTokens), true);
 });
+
+function createSessionManagerStub() {
+  const entries: Array<{ customType: string; data: unknown }> = [];
+  return {
+    entries,
+    appendCustomEntry(customType: string, data?: unknown) {
+      entries.push({ customType, data });
+      return `entry-${entries.length}`;
+    },
+  };
+}
 
 function registerExtension(extension: ReturnType<typeof createBackgroundCompactionExtension>) {
   type Handler = (event: never, context: ExtensionContext) => unknown;

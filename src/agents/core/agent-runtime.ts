@@ -1,4 +1,4 @@
-import type { AgentEvent } from "./agent-event";
+import type { AgentTurn } from "./agent-turn";
 
 export interface AgentImage {
   readonly data: string;
@@ -12,8 +12,8 @@ export interface AgentPrompt {
 }
 
 export interface AgentRuntime {
-  prompt(event: AgentEvent): Promise<void>;
-  steer?(event: AgentEvent): Promise<void>;
+  prompt(turn: AgentTurn): Promise<void>;
+  steer?(turn: AgentTurn): Promise<void>;
   abort?(): Promise<void>;
   analyzeImage?(prompt: AgentPrompt): Promise<string>;
   compactForHandoff?(): Promise<string>;

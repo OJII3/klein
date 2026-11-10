@@ -9,6 +9,7 @@ import { DiscordAgent } from "./discord-agent";
 import { createDiscordMessageAgentTurn } from "./discord-message-agent-turn";
 import { createDiscordAgentTools } from "./discord-tools";
 import type { AgentEvent } from "../core/agent-event";
+import type { AgentTurn } from "../core/agent-turn";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
 import type { WatchCheckRunner } from "@modules/scheduling/application/watch-check-runner";
@@ -72,7 +73,8 @@ test("routes voice replies through discord_speak using the existing runtime prom
   let tools: readonly ToolDefinition[] = [];
   const spoken: string[] = [];
   const runtime: AgentRuntime = {
-    async prompt(prompt) {
+    async prompt(turn) {
+      const prompt = turn.event;
       assert.equal(prompt.id, message.id);
       assert.equal(prompt.type, "discord.message");
       assert.equal(prompt.source, "discord");
@@ -176,10 +178,10 @@ test("wires the runtime image analyzer into discord_read", async () => {
 });
 
 test("adds bot-specific conversation guidance only for bot messages", async () => {
-  const prompts: AgentEvent[] = [];
+  const prompts: AgentTurn[] = [];
   const runtime: AgentRuntime = {
-    async prompt(prompt) {
-      prompts.push(prompt);
+    async prompt(turn) {
+      prompts.push(turn);
     },
     dispose() {},
   };
@@ -197,19 +199,25 @@ test("adds bot-specific conversation guidance only for bot messages", async () =
   });
 
   assert.equal(prompts.length, 2);
-  assert.equal(eventText(prompts[0]), "さつき (@satsuki):\n読み取った本文\n[添付画像: sample.png]");
-  assert.match(eventText(prompts[1]), /latest Discord message was sent by another bot/);
-  assert.match(eventText(prompts[1]), /history, experiences, preferences, or personal information/);
-  assert.match(eventText(prompts[1]), /self-contained character-driven closing remark/);
+  assert.equal(
+    eventText(prompts[0]?.event),
+    "さつき (@satsuki):\n読み取った本文\n[添付画像: sample.png]",
+  );
+  assert.match(eventText(prompts[1]?.event), /latest Discord message was sent by another bot/);
+  assert.match(
+    eventText(prompts[1]?.event),
+    /history, experiences, preferences, or personal information/,
+  );
+  assert.match(eventText(prompts[1]?.event), /self-contained character-driven closing remark/);
 
   agent.dispose();
 });
 
-test("injects the current guild memory into the agent prompt", async () => {
-  let receivedPrompt: AgentEvent | undefined;
+test("passes guild memory as turn context without merging it into the event", async () => {
+  let receivedTurn: AgentTurn | undefined;
   const runtime: AgentRuntime = {
-    async prompt(prompt) {
-      receivedPrompt = prompt;
+    async prompt(turn) {
+      receivedTurn = turn;
     },
     dispose() {},
   };
@@ -222,17 +230,17 @@ test("injects the current guild memory into the agent prompt", async () => {
 
   await agent.promptMessage(message, { guildMemory: "### 定例会の曜日\n\n毎週土曜日" });
 
-  assert.match(eventText(receivedPrompt), /<guild-memory>/u);
-  assert.match(eventText(receivedPrompt), /毎週土曜日/u);
-  assert.match(eventText(receivedPrompt), /読み取った本文/u);
+  assert.equal(receivedTurn?.context.guildMemory, "### 定例会の曜日\n\n毎週土曜日");
+  assert.doesNotMatch(eventText(receivedTurn?.event), /<guild-memory>/u);
+  assert.match(eventText(receivedTurn?.event), /読み取った本文/u);
   agent.dispose();
 });
 
 test("does not inject owner memory into a public agent turn", async () => {
-  let receivedPrompt: AgentEvent | undefined;
+  let receivedTurn: AgentTurn | undefined;
   const runtime: AgentRuntime = {
-    async prompt(prompt) {
-      receivedPrompt = prompt;
+    async prompt(turn) {
+      receivedTurn = turn;
     },
     dispose() {},
   };
@@ -247,12 +255,13 @@ test("does not inject owner memory into a public agent turn", async () => {
     createDiscordMessageAgentTurn(message, { ownerMemory: "private owner memory" }),
   );
 
-  assert.doesNotMatch(eventText(receivedPrompt), /private owner memory/u);
+  assert.equal(receivedTurn?.context.ownerMemory, undefined);
+  assert.doesNotMatch(eventText(receivedTurn?.event), /private owner memory/u);
   agent.dispose();
 });
 
 test("binds private reads to the owner and refuses other authors or channels", async () => {
-  const prompts: AgentEvent[] = [];
+  const prompts: AgentTurn[] = [];
   let tools: readonly ToolDefinition[] = [];
   let requester: Parameters<DiscordChannelApi["readMessage"]>[1];
   const factory: AgentFactory = {
@@ -260,11 +269,11 @@ test("binds private reads to the owner and refuses other authors or channels", a
       assert.equal(options.ownerFeaturesAllowed, true);
       tools = registeredTools as readonly ToolDefinition[];
       return {
-        async prompt(prompt) {
-          prompts.push(prompt);
+        async prompt(turn) {
+          prompts.push(turn);
         },
-        async steer(prompt) {
-          prompts.push(prompt);
+        async steer(turn) {
+          prompts.push(turn);
         },
         dispose() {},
       };
@@ -286,7 +295,7 @@ test("binds private reads to the owner and refuses other authors or channels", a
   });
   await agent.promptMessage(message);
   await agent.steerMessage(message);
-  assert.ok(prompts.every((event) => !("ownerFeaturesAllowed" in event)));
+  assert.ok(prompts.every((turn) => !("ownerFeaturesAllowed" in turn.event)));
   const read = tools.find((tool) => tool.name === "discord_read");
   assert.ok(read);
   await read.execute("read", { messageId: message.id } as never, undefined, undefined, {} as never);

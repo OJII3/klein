@@ -23,7 +23,7 @@ import webAccessExtension from "pi-web-access";
 
 import type { AgentDefinition } from "@agents/core/agent-definition";
 import type { AgentFactory, AgentCreationOptions } from "@agents/core/agent-factory";
-import type { AgentEvent } from "@agents/core/agent-event";
+import type { AgentTurn, AgentTurnContext } from "@agents/core/agent-turn";
 import type { AgentPrompt, AgentRuntime } from "@agents/core/agent-runtime";
 import { ImageAnalysisError, toImageAnalysisFailure } from "@agents/core/image-analysis";
 import type { SessionMode } from "@app/cli-options";
@@ -41,6 +41,11 @@ import {
   HANDOFF_SUMMARY_SYSTEM_PROMPT,
 } from "./handoff-summary";
 import { createPiEventPrompt } from "./pi-event-prompt";
+import {
+  createTurnContextExtension,
+  renderTurnContext,
+  TURN_CONTEXT_CUSTOM_TYPE,
+} from "./pi-turn-context";
 import { loadMcpConfig } from "./pi-internals";
 import { PiImageAnalyzer, type ImageAnalyzer } from "./pi-image-analyzer";
 import {
@@ -128,9 +133,9 @@ export class PiAgentRuntime implements AgentRuntime {
     trace?.attach(session);
   }
 
-  prompt(event: AgentEvent): Promise<void> {
-    const prompt = createPiEventPrompt(event);
-    const traceId = event.id;
+  prompt(turn: AgentTurn): Promise<void> {
+    const prompt = createPiEventPrompt(turn.event);
+    const traceId = turn.event.id;
     const queuedAt = performance.now();
     this.trace?.log("pi_prompt_enqueued", { traceId, textLength: prompt.text.length });
     return this.enqueue(async () => {
@@ -143,6 +148,7 @@ export class PiAgentRuntime implements AgentRuntime {
       });
       let failed = false;
       try {
+        this.recordTurnContext(turn.context);
         await this.runPrompt(prompt);
       } catch (error) {
         failed = true;
@@ -158,16 +164,16 @@ export class PiAgentRuntime implements AgentRuntime {
     });
   }
 
-  async steer(event: AgentEvent): Promise<void> {
-    const prompt = createPiEventPrompt(event);
+  async steer(turn: AgentTurn): Promise<void> {
+    const prompt = createPiEventPrompt(turn.event);
     this.ensureSessionAvailable();
     if (!this.session.isStreaming) {
       this.trace?.log("pi_steer_started_as_prompt", { traceId: prompt.traceId });
-      await this.prompt(event);
+      await this.prompt(turn);
       return;
     }
 
-    const traceId = event.id;
+    const traceId = turn.event.id;
     const startedAt = performance.now();
     this.trace?.registerInput(prompt.text, traceId);
     this.trace?.log("pi_steer_started", { traceId });
@@ -224,6 +230,12 @@ export class PiAgentRuntime implements AgentRuntime {
             }))
           : undefined,
       source: "rpc",
+    });
+  }
+
+  private recordTurnContext(context: AgentTurnContext): void {
+    this.session.sessionManager.appendCustomEntry(TURN_CONTEXT_CUSTOM_TYPE, {
+      content: renderTurnContext(context),
     });
   }
 
@@ -368,6 +380,7 @@ export function createResourceLoader(
       webAccessExtension,
       wrap(createCodemodeExtension({ mode: "on", models: false })),
       ...(options?.normalizeAssistantText === false ? [] : [createAssistantTextContextExtension()]),
+      createTurnContextExtension(),
       wrap(createToolSearchExtension()),
       wrap(
         createMcpExtension(

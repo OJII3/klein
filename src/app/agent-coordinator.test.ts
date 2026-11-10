@@ -6,6 +6,7 @@ import { DiscordAgent } from "@agents/discord/discord-agent";
 import type { AgentFactory } from "@agents/core/agent-factory";
 import type { AgentRuntime } from "@agents/core/agent-runtime";
 import type { AgentEvent } from "@agents/core/agent-event";
+import type { AgentTurn } from "@agents/core/agent-turn";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 
 import {
@@ -31,7 +32,7 @@ interface TestHarness {
   readonly agentCoordinator: AgentCoordinator;
   readonly channelLocationCalls: string[];
   readonly createdSessionKeys: string[];
-  readonly prompts: Map<string, AgentEvent[]>;
+  readonly prompts: Map<string, AgentTurn[]>;
   readonly ownerFeaturesAllowed: boolean[];
 }
 
@@ -50,7 +51,7 @@ function createHarness(
 ): TestHarness {
   const channelLocationCalls: string[] = [];
   const createdSessionKeys: string[] = [];
-  const prompts = new Map<string, AgentEvent[]>();
+  const prompts = new Map<string, AgentTurn[]>();
   const ownerFeaturesAllowed: boolean[] = [];
   const agentFactory: AgentFactory = {
     async create(_definition, _tools, options): Promise<AgentRuntime> {
@@ -59,12 +60,12 @@ function createHarness(
       if (createGate) await createGate;
 
       const channelId = options.sessionKey.slice("discord-channel:".length);
-      const channelPrompts: AgentEvent[] = [];
+      const channelPrompts: AgentTurn[] = [];
       prompts.set(channelId, channelPrompts);
 
       return {
-        async prompt(prompt) {
-          channelPrompts.push(prompt);
+        async prompt(turn) {
+          channelPrompts.push(turn);
         },
         async compactForHandoff() {
           return "previous conversation summary";
@@ -147,8 +148,8 @@ test("reuses one Pi session for messages in the same Discord channel", async () 
 
     assert.deepEqual(harness.createdSessionKeys, ["discord-channel:channel-a"]);
     assert.deepEqual(
-      harness.prompts.get("channel-a")?.map((prompt) =>
-        prompt.content
+      harness.prompts.get("channel-a")?.map((turn) =>
+        turn.event.content
           .filter((block) => block.type === "text")
           .map((block) => block.text)
           .join("\n\n"),
@@ -265,8 +266,8 @@ test("isolates Pi sessions between Discord channels", async () => {
       "discord-channel:channel-b",
     ]);
     assert.deepEqual(
-      harness.prompts.get("channel-a")?.map((prompt) =>
-        prompt.content
+      harness.prompts.get("channel-a")?.map((turn) =>
+        turn.event.content
           .filter((block) => block.type === "text")
           .map((block) => block.text)
           .join("\n\n"),
@@ -274,8 +275,8 @@ test("isolates Pi sessions between Discord channels", async () => {
       ["ユーザー (@user):\nA のメッセージ"],
     );
     assert.deepEqual(
-      harness.prompts.get("channel-b")?.map((prompt) =>
-        prompt.content
+      harness.prompts.get("channel-b")?.map((turn) =>
+        turn.event.content
           .filter((block) => block.type === "text")
           .map((block) => block.text)
           .join("\n\n"),
@@ -337,8 +338,8 @@ test("does not create duplicate agents while a channel agent is initializing", a
     await Promise.all([first, second]);
 
     assert.deepEqual(
-      harness.prompts.get("channel-a")?.map((prompt) =>
-        prompt.content
+      harness.prompts.get("channel-a")?.map((turn) =>
+        turn.event.content
           .filter((block) => block.type === "text")
           .map((block) => block.text)
           .join("\n\n"),
@@ -442,17 +443,17 @@ test("delivers reminders to the current rotated session and reuses it for conver
     assert.deepEqual(harness.createdSessionKeys, [sessionKey]);
     assert.equal(reminders.getStored(), undefined);
     const events = harness.prompts.get(sessionKey.slice("discord-channel:".length));
-    assert.equal(events?.[0].type, "reminder.due");
-    assert.equal(events?.[0].source, "reminder");
+    assert.equal(events?.[0]?.event.type, "reminder.due");
+    assert.equal(events?.[0]?.event.source, "reminder");
     assert.match(
-      events?.[0].content[0]?.type === "text" ? events[0].content[0].text : "",
+      events?.[0]?.event.content[0]?.type === "text" ? events[0]?.event.content[0].text : "",
       /定例会が始まります/u,
     );
     await harness.agentCoordinator.handleDiscordMessage(
       createMessage("test-channel", "reply", "ありがとう"),
     );
     assert.deepEqual(harness.createdSessionKeys, [sessionKey]);
-    assert.equal(events?.[1].type, "discord.message");
+    assert.equal(events?.[1]?.event.type, "discord.message");
   } finally {
     await harness.agentCoordinator.dispose();
   }
@@ -482,7 +483,7 @@ test("rotates an idle session before delivering a reminder into the new conversa
     assert.deepEqual(harness.createdSessionKeys, [oldKey, newKey]);
     assert.deepEqual(harness.prompts.get(oldKey.slice("discord-channel:".length)), []);
     assert.equal(
-      harness.prompts.get(newKey.slice("discord-channel:".length))?.[0].type,
+      harness.prompts.get(newKey.slice("discord-channel:".length))?.[0]?.event.type,
       "reminder.due",
     );
     assert.equal(reminders.getStored(), undefined);
@@ -507,7 +508,7 @@ test("delivers reminders through an already active channel agent", async () => {
     await harness.agentCoordinator.deliverDueTasks(Date.parse("2026-10-14T00:02:00.000Z"));
     assert.deepEqual(harness.createdSessionKeys, ["discord-channel:test-channel"]);
     assert.deepEqual(
-      harness.prompts.get("test-channel")?.map((event) => event.type),
+      harness.prompts.get("test-channel")?.map((turn) => turn.event.type),
       ["discord.message", "reminder.due"],
     );
     assert.equal(reminders.getStored(), undefined);
@@ -605,9 +606,9 @@ test("delivers a watch when the script calls wake()", async () => {
     assert.deepEqual(first.state, { runs: 1 });
     const events = harness.prompts.get("test-channel:owner:123");
     assert.equal(events?.length, 1);
-    assert.equal(events?.[0].type, "watch.triggered");
-    assert.equal(events?.[0].source, "watch");
-    assert.match(eventText(events?.[0]), /two/u);
+    assert.equal(events?.[0]?.event.type, "watch.triggered");
+    assert.equal(events?.[0]?.event.source, "watch");
+    assert.match(eventText(events?.[0]?.event), /two/u);
   } finally {
     await harness.agentCoordinator.dispose();
   }
@@ -654,8 +655,8 @@ test("delivers a public watch without an access policy", async () => {
   try {
     await harness.agentCoordinator.deliverDueTasks(Date.now());
     const events = harness.prompts.get("test-channel");
-    assert.equal(events?.[0].type, "watch.triggered");
-    assert.match(eventText(events?.[0]), /hello/u);
+    assert.equal(events?.[0]?.event.type, "watch.triggered");
+    assert.match(eventText(events?.[0]?.event), /hello/u);
   } finally {
     await harness.agentCoordinator.dispose();
   }

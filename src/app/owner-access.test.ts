@@ -3,7 +3,7 @@ import test from "node:test";
 import pino from "pino";
 
 import type { AgentCreationOptions, AgentFactory } from "@agents/core/agent-factory";
-import type { AgentEvent } from "@agents/core/agent-event";
+import type { AgentTurn } from "@agents/core/agent-turn";
 import { DiscordAgent } from "@agents/discord/discord-agent";
 
 import {
@@ -32,15 +32,15 @@ const message: DiscordMessage = {
 
 function createHarness(store: ChannelSessionStateStore, channelRule: { access: DiscordAccess }) {
   const creations: AgentCreationOptions[] = [];
-  const prompts: AgentEvent[] = [];
+  const prompts: AgentTurn[] = [];
   const remembered: DiscordMessage[] = [];
   let disposed = 0;
   const factory: AgentFactory = {
     async create(_definition, _tools, options) {
       creations.push(options);
       return {
-        async prompt(prompt) {
-          prompts.push(prompt);
+        async prompt(turn) {
+          prompts.push(turn);
         },
         async compactForHandoff() {
           return "private conversation summary";
@@ -152,7 +152,7 @@ test("changing owner access to allow drops private history and handoff on restar
     assert.equal(publicHarness.creations[0].sessionKey, "discord-channel:channel:public");
     assert.equal(publicHarness.creations[0].ownerFeaturesAllowed, false);
     assert.equal(publicHarness.creations[0].initialContext, undefined);
-    assert.doesNotMatch(JSON.stringify(publicHarness.prompts[0].content), /secret Obsidian/);
+    assert.doesNotMatch(JSON.stringify(publicHarness.prompts[0]?.event.content), /secret Obsidian/);
     assert.equal(publicHarness.remembered.length, 1);
   } finally {
     await publicHarness.coordinator.dispose();
