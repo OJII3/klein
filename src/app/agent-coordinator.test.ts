@@ -408,6 +408,7 @@ const dueWatch: WatchTask = {
   script: "text(args[0]); silent();",
   args: [],
   message: "在庫の変化を確認してください。",
+  enabled: true,
   consecutiveFailures: 0,
   createdAt: "2026-10-14T00:00:00.000Z",
   schedule: { type: "every", minutes: 5 },

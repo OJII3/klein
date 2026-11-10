@@ -80,17 +80,18 @@ export class ScheduledTaskDeliveryCoordinator {
   private async processTask(task: ScheduledTask, now: number): Promise<void> {
     const store = this.dependencies.scheduledTaskStore;
     if (!store || !this.dependencies.operatingState.isActive()) return;
-    const stillDue = (await store.listForScope(task.kind, task.channelId, task.accessScope)).some(
-      (current) => current.id === task.id && current.nextRunAt === task.nextRunAt,
+    const current = (await store.listForScope(task.kind, task.channelId, task.accessScope)).find(
+      (candidate) => candidate.id === task.id && candidate.nextRunAt === task.nextRunAt,
     );
-    if (!stillDue) return;
-    if (!(await this.isTaskAllowed(task))) {
-      await this.skipTask(task, now);
+    if (!current) return;
+    if (current.kind === "watch" && !current.enabled) return;
+    if (!(await this.isTaskAllowed(current))) {
+      await this.skipTask(current, now);
       return;
     }
 
-    if (task.kind === "watch") {
-      const triggered = await this.checkWatch(task, now);
+    if (current.kind === "watch") {
+      const triggered = await this.checkWatch(current, now);
       if (!triggered) return;
       // The watch may have been deleted while its check ran outside the conversation lock.
       if (!(await this.taskStillExists(triggered.watch))) return;
@@ -98,7 +99,7 @@ export class ScheduledTaskDeliveryCoordinator {
       return;
     }
 
-    await this.deliverReminder(task);
+    await this.deliverReminder(current);
   }
 
   private async isTaskAllowed(task: ScheduledTask): Promise<boolean> {
@@ -147,6 +148,23 @@ export class ScheduledTaskDeliveryCoordinator {
     return tasks.some((current) => current.id === task.id);
   }
 
+  /**
+   * Re-reads a watch before writing so a check that ran outside the conversation
+   * lock cannot overwrite edits such as disabling or deleting the watch.
+   */
+  private async updateWatch(
+    watch: WatchTask,
+    update: (current: WatchTask) => WatchTask,
+  ): Promise<void> {
+    const store = this.dependencies.scheduledTaskStore;
+    if (!store) return;
+    const current = (await store.listForScope("watch", watch.channelId, watch.accessScope)).find(
+      (candidate) => candidate.id === watch.id,
+    );
+    if (!current) return;
+    await store.update(update(current));
+  }
+
   private async isAllowed(task: ScheduledTask): Promise<boolean> {
     const accessPolicy = this.dependencies.accessPolicy;
     if (!accessPolicy) {
@@ -193,21 +211,19 @@ export class ScheduledTaskDeliveryCoordinator {
   }
 
   private async checkWatch(task: WatchTask, now: number): Promise<TriggeredWatch | undefined> {
-    const store = this.dependencies.scheduledTaskStore;
-    if (!store) return undefined;
     const checkedAt = new Date(now).toISOString();
     let result;
     try {
       result = await this.dependencies.watchCheckRunner.run(task);
     } catch (error) {
-      await store.update({
-        ...task,
+      await this.updateWatch(task, (current) => ({
+        ...current,
         lastCheckedAt: checkedAt,
         lastStatus: "error",
         lastError: error instanceof Error ? error.message : String(error),
-        consecutiveFailures: task.consecutiveFailures + 1,
-        nextRunAt: requireNextRunAt(task.schedule, now),
-      });
+        consecutiveFailures: current.consecutiveFailures + 1,
+        nextRunAt: requireNextRunAt(current.schedule, now),
+      }));
       this.dependencies.logger.warn(
         { err: error, event: "watch_check_failed", taskId: task.id },
         "Watch check failed",
@@ -226,7 +242,16 @@ export class ScheduledTaskDeliveryCoordinator {
     const withoutError = clearWatchError(checkedTask);
 
     if (result.decision === "silent") {
-      await store.update(withoutError);
+      await this.updateWatch(task, (current) =>
+        clearWatchError({
+          ...current,
+          state: result.state,
+          lastCheckedAt: checkedAt,
+          lastStatus: "ok",
+          consecutiveFailures: 0,
+          nextRunAt: requireNextRunAt(current.schedule, now),
+        }),
+      );
       return undefined;
     }
 
@@ -323,12 +348,12 @@ export class ScheduledTaskDeliveryCoordinator {
   }
 
   private async completeWatch(task: WatchTask): Promise<void> {
-    const store = this.dependencies.scheduledTaskStore;
-    if (!store) return;
-    if (!(await this.taskStillExists(task))) return;
-    await store.update(
+    await this.updateWatch(task, (current) =>
       clearWatchError({
-        ...task,
+        ...current,
+        state: task.state,
+        lastCheckedAt: task.lastCheckedAt,
+        nextRunAt: task.nextRunAt,
         lastTriggeredAt: new Date().toISOString(),
         lastStatus: "ok",
         consecutiveFailures: 0,
@@ -337,15 +362,15 @@ export class ScheduledTaskDeliveryCoordinator {
   }
 
   private async failWatchDelivery(task: WatchTask, error: unknown): Promise<void> {
-    const store = this.dependencies.scheduledTaskStore;
-    if (!store) return;
-    if (!(await this.taskStillExists(task))) return;
-    await store.update({
-      ...task,
+    await this.updateWatch(task, (current) => ({
+      ...current,
+      state: task.state,
+      lastCheckedAt: task.lastCheckedAt,
+      nextRunAt: task.nextRunAt,
       lastStatus: "error",
       lastError: error instanceof Error ? error.message : String(error),
-      consecutiveFailures: task.consecutiveFailures + 1,
-    });
+      consecutiveFailures: current.consecutiveFailures + 1,
+    }));
   }
 }
 

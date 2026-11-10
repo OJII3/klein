@@ -5,10 +5,12 @@ import { Type } from "typebox";
 import {
   formatJapanDateTime,
   formatSchedule,
+  getNextRunAt,
   MAX_SCHEDULE_INTERVAL_MINUTES,
   resolveSchedule,
   SCHEDULE_WEEKDAYS,
   type ScheduleInput,
+  type StoredSchedule,
 } from "@modules/scheduling/domain/schedule";
 import type {
   ScheduledTaskAccessScope,
@@ -17,6 +19,14 @@ import type {
 import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
 
 const weekdaySchema = Type.Union(SCHEDULE_WEEKDAYS.map((weekday) => Type.Literal(weekday)));
+
+interface WatchUpdateDetails {
+  readonly id: string;
+  readonly updated: boolean;
+  readonly enabled: boolean;
+  readonly nextRunAt?: string;
+}
+
 const recurringScheduleSchema = Type.Union([
   Type.Object({
     type: Type.Literal("daily"),
@@ -70,6 +80,7 @@ export function createWatchTools(
           script: params.script.trim(),
           args: params.args ?? [],
           message: params.message.trim(),
+          enabled: true,
           consecutiveFailures: 0,
           schedule: resolved.schedule,
           nextRunAt: resolved.nextRunAt,
@@ -86,6 +97,80 @@ export function createWatchTools(
             },
           ],
           details: { id: watch.id, nextRunAt: watch.nextRunAt },
+        };
+      },
+    }),
+    defineTool({
+      name: "watch_update",
+      label: "Update Watch",
+      description:
+        "Update one watch in the current conversation by its ID. Use it to edit the name, schedule, script, args, or notification message, and to disable or re-enable the watch with `enabled`. " +
+        "Changing the schedule or enabling a disabled watch schedules the next check from now. " +
+        "Use watch_list to find the ID.",
+      parameters: Type.Object({
+        id: Type.String({ minLength: 1 }),
+        name: Type.Optional(Type.String({ minLength: 1, maxLength: 100 })),
+        schedule: Type.Optional(recurringScheduleSchema),
+        script: Type.Optional(Type.String({ minLength: 1, maxLength: 20_000 })),
+        args: Type.Optional(Type.Array(Type.String({ maxLength: 1_000 }), { maxItems: 100 })),
+        message: Type.Optional(Type.String({ minLength: 1, maxLength: 2_000 })),
+        enabled: Type.Optional(Type.Boolean()),
+      }),
+      exposure: "deferred",
+      async execute(_toolCallId, params) {
+        const watches = await store.listForScope("watch", channelId, accessScope);
+        const current = watches.find((watch) => watch.id === params.id);
+        if (!current) {
+          const details: WatchUpdateDetails = { id: params.id, updated: false, enabled: false };
+          return {
+            content: [
+              {
+                type: "text",
+                text: `この会話にID ${params.id} の監視はありません。`,
+              },
+            ],
+            details,
+          };
+        }
+
+        const now = Date.now();
+        const resolvedSchedule = params.schedule
+          ? resolveSchedule(params.schedule as ScheduleInput, now)
+          : undefined;
+        const enabled = params.enabled ?? current.enabled;
+        const nextRunAt = resolvedSchedule
+          ? resolvedSchedule.nextRunAt
+          : enabled && !current.enabled
+            ? requireNextRunAt(current.schedule, now)
+            : current.nextRunAt;
+        const updated: WatchTask = {
+          ...current,
+          name: params.name?.trim() ?? current.name,
+          schedule: resolvedSchedule?.schedule ?? current.schedule,
+          script: params.script?.trim() ?? current.script,
+          args: params.args ?? current.args,
+          message: params.message?.trim() ?? current.message,
+          enabled,
+          nextRunAt,
+        };
+        if (!updated.name || !updated.script || !updated.message) {
+          throw new Error("監視名・スクリプト・通知内容を入力してください。");
+        }
+        await store.update(updated);
+        const details: WatchUpdateDetails = {
+          id: updated.id,
+          updated: true,
+          enabled: updated.enabled,
+          nextRunAt: updated.nextRunAt,
+        };
+        return {
+          content: [
+            {
+              type: "text",
+              text: `監視を更新しました。\n${formatWatch(updated)}`,
+            },
+          ],
+          details,
         };
       },
     }),
@@ -118,6 +203,7 @@ export function createWatchTools(
                 script,
                 args,
                 message,
+                enabled,
                 lastCheckedAt,
                 lastTriggeredAt,
                 lastStatus,
@@ -131,6 +217,7 @@ export function createWatchTools(
                 script,
                 args,
                 message,
+                enabled,
                 consecutiveFailures,
                 ...(lastCheckedAt ? { lastCheckedAt } : {}),
                 ...(lastTriggeredAt ? { lastTriggeredAt } : {}),
@@ -173,5 +260,12 @@ function formatWatch(watch: WatchTask): string {
   const lastTriggeredAt = watch.lastTriggeredAt
     ? ` / 最終通知: ${formatJapanDateTime(watch.lastTriggeredAt)}`
     : "";
-  return `- ${watch.id}: ${watch.name} — ${formatSchedule(watch.schedule)} / 次回: ${formatJapanDateTime(watch.nextRunAt)}${status}${lastTriggeredAt}${error}`;
+  const nextRun = watch.enabled ? `次回: ${formatJapanDateTime(watch.nextRunAt)}` : "停止中";
+  return `- ${watch.id}: ${watch.name} — ${formatSchedule(watch.schedule)} / ${nextRun}${status}${lastTriggeredAt}${error}`;
+}
+
+function requireNextRunAt(schedule: StoredSchedule, now: number): string {
+  const nextRunAt = getNextRunAt(schedule, now);
+  if (!nextRunAt) throw new Error("監視の次回実行時刻を計算できませんでした。");
+  return nextRunAt;
 }

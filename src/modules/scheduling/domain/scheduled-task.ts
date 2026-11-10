@@ -24,6 +24,8 @@ export interface WatchTask extends ScheduledTaskBase {
   readonly script: string;
   readonly args: readonly string[];
   readonly message: string;
+  /** Disabled watches keep their settings but are not checked. */
+  readonly enabled: boolean;
   /** Values the script kept with `store()`. */
   readonly state?: Readonly<Record<string, unknown>>;
   readonly lastCheckedAt?: string;
@@ -90,6 +92,7 @@ export function parseScheduledTask(value: unknown): ScheduledTask {
       !record.args.every((arg) => typeof arg === "string") ||
       typeof record.message !== "string" ||
       record.message.length === 0 ||
+      (record.enabled !== undefined && typeof record.enabled !== "boolean") ||
       (record.state !== undefined && !isJsonObject(record.state)) ||
       !isRecurringSchedule(schedule) ||
       (record.lastCheckedAt !== undefined &&
@@ -119,6 +122,7 @@ export function parseScheduledTask(value: unknown): ScheduledTask {
       script: record.script,
       args: record.args as string[],
       message: record.message,
+      enabled: record.enabled !== false,
       ...(record.state !== undefined ? { state: record.state as Record<string, unknown> } : {}),
       ...(record.lastCheckedAt !== undefined
         ? { lastCheckedAt: record.lastCheckedAt as string }
