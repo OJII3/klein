@@ -19,12 +19,6 @@ export const USER_MEMORY_DEFAULT_SECTION_CONTENT: Readonly<Record<UserMemorySect
 export const USER_MEMORY_IMPRESSION_MIN = -100;
 export const USER_MEMORY_IMPRESSION_MAX = 100;
 
-export const USER_MEMORY_FACTS_FORMAT_GUIDE =
-  "Write only facts that can be confirmed from the conversation. When a value is unknown, write " +
-  '"不明". Write dates such as birthdays and anniversaries one per line in the fixed form ' +
-  "`- <key>: YYYY-MM-DD`, for example `- birthday: 2000-01-02` or " +
-  "`- anniversary: 2024-04-01`.";
-
 export interface UserMemory {
   /** User-set Discord username (the part after @), not the numeric snowflake ID. */
   readonly discordId: string;

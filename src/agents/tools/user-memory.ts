@@ -3,7 +3,6 @@ import { Type } from "typebox";
 
 import type { DiscordUserResolver } from "@modules/discord/domain/discord-user";
 import {
-  USER_MEMORY_FACTS_FORMAT_GUIDE,
   USER_MEMORY_IMPRESSION_MAX,
   USER_MEMORY_IMPRESSION_MIN,
   type UserMemoryPatch,
@@ -65,14 +64,7 @@ export function createUserMemoryTools(store: UserMemoryStore, users: DiscordUser
     defineTool<typeof userMemoryGetParameters, UserMemoryGetDetails>({
       name: "user_memory_get",
       label: "Get User Memory",
-      description:
-        "Read the per-user memory for a Discord user. Pass the user-set Discord username shown " +
-        "as @username in messages, without the @, as discord_id. This is not the numeric " +
-        "snowflake ID. The username is resolved to the numeric user ID through the shared user " +
-        "directory, so only users the bot has seen in messages can be resolved. The memory is " +
-        "a Markdown document with front matter (display_name, summary, impression, updated_at) " +
-        "and the sections Facts, History, In common, and Strengthening. This tool does not " +
-        "search by display name.",
+      description: "Read a Discord user's memory by @username (not the numeric user ID).",
       parameters: userMemoryGetParameters,
       exposure: "deferred",
       async execute(_toolCallId, params) {
@@ -123,17 +115,10 @@ export function createUserMemoryTools(store: UserMemoryStore, users: DiscordUser
       name: "user_memory_update",
       label: "Update User Memory",
       description:
-        "Create or update the per-user memory for a Discord user. Pass the user-set Discord " +
-        "username shown as @username in messages, without the @, as discord_id. This is not " +
-        "the numeric snowflake ID. The username is resolved to the numeric user ID through " +
-        "the shared user directory, so only users the bot has seen in messages can be " +
-        "resolved. Only the fields you pass are changed. The section fields replace the whole " +
-        "section, so call user_memory_get first. " +
-        `${USER_MEMORY_FACTS_FORMAT_GUIDE} ` +
-        "impression is an integer from -100 (strong dislike) to 100 (strong affinity), with 0 " +
-        "neutral; impression_delta adds to the current value and is clamped to that range. " +
-        "Pass null for nickname, first_name, or last_name to clear it. display_name is required " +
-        "when the user has no memory file yet.",
+        "Create or update a Discord user's memory by @username (not the numeric user ID). " +
+        "Only passed fields change; sections replace wholesale. display_name is required on " +
+        "first create. impression: -100..100 (0 neutral) or impression_delta. Facts: confirmed " +
+        "only, `不明` if unknown, dates as `- key: YYYY-MM-DD`. null clears optional names.",
       parameters: userMemoryUpdateParameters,
       exposure: "deferred",
       async execute(_toolCallId, params) {
