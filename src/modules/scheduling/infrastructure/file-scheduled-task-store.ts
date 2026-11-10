@@ -21,6 +21,7 @@ export class FileScheduledTaskStore implements ScheduledTaskStore {
   async listDue(now: number): Promise<readonly ScheduledTask[]> {
     const tasks = await this.readAll();
     return tasks
+      .filter((task) => task.kind !== "watch" || task.enabled)
       .filter((task) => Date.parse(task.nextRunAt) <= now)
       .sort((left, right) => left.nextRunAt.localeCompare(right.nextRunAt));
   }

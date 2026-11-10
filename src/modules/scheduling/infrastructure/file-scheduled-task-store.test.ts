@@ -27,6 +27,7 @@ const watch: WatchTask = {
   script: "text(args[0]); silent();",
   args: ["--json"],
   message: "在庫の変化を確認してください。",
+  enabled: true,
   state: { cursor: "abc" },
   consecutiveFailures: 0,
   createdAt: "2026-10-14T00:00:00.000Z",
@@ -90,4 +91,23 @@ test("accepts public watch records", async () => {
   await writeFile(join(directory, "public-watch.json"), JSON.stringify(publicWatch));
   assert.deepEqual(await store.listDue(Date.parse("2026-10-14T00:05:00.000Z")), [publicWatch]);
   assert.deepEqual(await store.listForScope("watch", "channel-a", "public"), [publicWatch]);
+});
+
+test("treats a watch without the enabled field as enabled", async () => {
+  await using temp = await createTempDir("klein-schedules-");
+  const directory = temp.path;
+  const store = new FileScheduledTaskStore(directory);
+  const { enabled: _enabled, ...legacyWatch } = watch;
+  await writeFile(join(directory, "legacy-watch.json"), JSON.stringify(legacyWatch));
+  assert.deepEqual(await store.listDue(Date.parse("2026-10-14T00:05:00.000Z")), [watch]);
+});
+
+test("keeps disabled watches out of the due list", async () => {
+  await using temp = await createTempDir("klein-schedules-");
+  const directory = temp.path;
+  const store = new FileScheduledTaskStore(directory);
+  const disabledWatch: WatchTask = { ...watch, enabled: false };
+  await store.create(disabledWatch);
+  assert.deepEqual(await store.listDue(Date.parse("2026-10-14T00:05:00.000Z")), []);
+  assert.deepEqual(await store.listForScope("watch", "channel-a", "owner:123"), [disabledWatch]);
 });
