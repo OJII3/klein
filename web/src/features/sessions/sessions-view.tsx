@@ -110,17 +110,12 @@ export function SessionsView({
                         type="button"
                       >
                         <span className="flex w-full min-w-0 flex-col items-stretch gap-0.5">
-                          <span className="truncate text-[0.8rem] font-medium text-ink">
-                            {session.firstMessage || channelLabel(session)}
+                          <span
+                            className="truncate text-[0.8rem] font-medium text-ink"
+                            title={session.channelKey}
+                          >
+                            {truncateMiddle(channelLabel(session), 40)}
                           </span>
-                          {session.firstMessage && (
-                            <span
-                              className="truncate font-mono text-[0.62rem] text-ink-faint"
-                              title={session.channelKey}
-                            >
-                              {truncateMiddle(channelLabel(session), 40)}
-                            </span>
-                          )}
                           <span className="flex items-baseline justify-between gap-2 font-mono text-[0.62rem] text-ink-faint">
                             <span>{session.messageCount} メッセージ</span>
                             <span>{formatCompactTimestamp(session.modified)}</span>
