@@ -15,6 +15,7 @@ import {
 } from "@modules/discord/domain/discord-access-policy";
 import { DiscordOperatingState } from "@modules/discord/domain/discord-operating-state";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
+import type { UserMemoryCoordinator } from "@modules/user-memory/application/user-memory-coordinator";
 
 import type {
   ReminderTask,
@@ -41,7 +42,7 @@ function createHarness(
   scheduledTaskStore?: ScheduledTaskStore,
   options: Pick<
     AgentCoordinatorDependencies,
-    "channelSessionStateStore" | "accessPolicy" | "ownerUserId"
+    "channelSessionStateStore" | "accessPolicy" | "ownerUserId" | "userMemoryCoordinator"
   > = {},
   watchCheckRunner: WatchCheckRunner = {
     async run() {
@@ -156,6 +157,27 @@ test("reuses one Pi session for messages in the same Discord channel", async () 
       ),
       ["ユーザー (@user):\n最初のメッセージ", "ユーザー (@user):\n次のメッセージ"],
     );
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+test("asks user memory to observe each handled message", async () => {
+  const observed: string[] = [];
+  const harness = createHarness(undefined, undefined, {
+    userMemoryCoordinator: {
+      async observe(message: DiscordMessage) {
+        observed.push(message.id);
+      },
+    } as unknown as UserMemoryCoordinator,
+  });
+
+  try {
+    await harness.agentCoordinator.handleDiscordMessage(
+      createMessage("channel-a", "message-a", "覚えておいて"),
+    );
+
+    assert.deepEqual(observed, ["message-a"]);
   } finally {
     await harness.agentCoordinator.dispose();
   }

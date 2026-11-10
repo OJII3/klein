@@ -19,7 +19,7 @@ function describeModels(models: ReturnType<typeof collectModelsInUse>): string[]
   return models.map((model) => `${model.provider}/${model.model}`);
 }
 
-test("collects the models used by the main agent, image, voice chat, and memory", () => {
+test("collects the models used by the main agent, image, voice chat, memory, and user memory", () => {
   const config = createConfig({
     llm: {
       provider: "opencode-go",
@@ -29,6 +29,7 @@ test("collects the models used by the main agent, image, voice chat, and memory"
     features: {
       memory: { enabled: true, llm: { provider: "mistral", model: "memory-model" } },
       minecraft: { enabled: false },
+      userMemory: { enabled: true, llm: { provider: "mistral", model: "user-memory-model" } },
       voiceChat: {
         enabled: true,
         asrServerUrl: "ws://asr.local",
@@ -42,6 +43,7 @@ test("collects the models used by the main agent, image, voice chat, and memory"
     "google/image-model",
     "google/voice-model",
     "mistral/memory-model",
+    "mistral/user-memory-model",
   ]);
 });
 
@@ -50,6 +52,7 @@ test("leaves out models that disabled features would not use", () => {
     features: {
       memory: { enabled: false, llm: { provider: "mistral", model: "memory-model" } },
       minecraft: { enabled: false },
+      userMemory: { enabled: false, llm: { provider: "mistral", model: "user-memory-model" } },
       voiceChat: {
         enabled: false,
         asrServerUrl: "ws://asr.local",

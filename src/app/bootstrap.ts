@@ -25,6 +25,7 @@ import { migratePiDurableStorage } from "@runtime/pi/pi-durable-migration";
 import { createPiUsageReporterFromEnv } from "@runtime/pi/pi-usage-reporter";
 import { createWatchFetchTool } from "@runtime/pi/watch-fetch-tool";
 import { PiMemoryProcessor } from "@runtime/pi/pi-memory-processor";
+import { PiUserMemoryAgent } from "@runtime/pi/pi-user-memory-agent";
 import { PiVoiceReactionSelector } from "@runtime/pi/pi-voice-reaction-selector";
 import { PiVoiceTranscriptQueueSelector } from "@runtime/pi/pi-voice-transcript-queue-selector";
 import { createDiscordAccessPolicy } from "@modules/discord/domain/discord-access-policy";
@@ -44,6 +45,8 @@ import {
   OwnerMemoryStore,
 } from "@modules/memory/application/owner-memory-store";
 import { MarkdownUserMemoryStore } from "@modules/user-memory/infrastructure/markdown-user-memory-store";
+import { UserMemoryCoordinator } from "@modules/user-memory/application/user-memory-coordinator";
+import { resolveUserMemoryConfig } from "@modules/user-memory/application/user-memory-config";
 import { createGetMonthlyUsageLimit } from "@modules/usage/application/get-monthly-usage-limit";
 import { formatMonthlyUsageStatus } from "@modules/usage/application/format-monthly-usage-status";
 import { resolveUsageProvider } from "@modules/usage/application/resolve-usage-provider";
@@ -121,13 +124,15 @@ export async function bootstrap(): Promise<void> {
         ),
       )
     : undefined;
-  const userMemoryConfig = config.features.userMemory;
-  const userMemoryStore = userMemoryConfig?.enabled
-    ? new MarkdownUserMemoryStore(
-        userMemoryConfig.directory
-          ? resolve(userMemoryConfig.directory)
-          : resolve(agentDir, "user-memory"),
-      )
+  const userMemoryConfig = resolveUserMemoryConfig(config);
+  const userMemoryDirectory =
+    userMemoryConfig?.enabled === true
+      ? userMemoryConfig.directory
+        ? resolve(userMemoryConfig.directory)
+        : resolve(agentDir, "user-memory")
+      : undefined;
+  const userMemoryStore = userMemoryDirectory
+    ? new MarkdownUserMemoryStore(userMemoryDirectory)
     : undefined;
   const modelRuntime = await createPiModelRuntime(agentDir);
   const providersInUse = new Set(modelsInUse.map((model) => model.provider));
@@ -212,6 +217,28 @@ export async function bootstrap(): Promise<void> {
           analyzeImage,
         ),
     });
+  const userMemoryCoordinator =
+    userMemoryConfig?.enabled === true && userMemoryStore && userMemoryDirectory
+      ? new UserMemoryCoordinator({
+          store: userMemoryStore,
+          processor: new PiUserMemoryAgent({
+            agentDir,
+            directory: userMemoryDirectory,
+            model: withOpenCodeSessionHeader(
+              resolveConfiguredModel(
+                userMemoryConfig.llm.provider,
+                userMemoryConfig.llm.model,
+                modelRuntime,
+              ),
+              `user-memory-${randomUUID()}`,
+            ),
+            modelRuntime,
+            thinkingLevel: userMemoryConfig.llm.thinkingLevel,
+          }),
+          logger,
+          taskCoordinator,
+        })
+      : undefined;
   const voiceChatCoordinator =
     voiceSystemPrompt === undefined
       ? undefined
@@ -237,6 +264,7 @@ export async function bootstrap(): Promise<void> {
           discordUserDirectory,
           reactionSelector,
           transcriptQueueSelector,
+          userMemoryCoordinator,
         });
   discordService = new DiscordJsService(
     credentials.discordBotToken,
@@ -288,6 +316,7 @@ export async function bootstrap(): Promise<void> {
     ownerMemoryStore,
     operatingState: discordOperatingState,
     scheduledTaskStore,
+    userMemoryCoordinator,
     watchCheckRunner,
     taskCoordinator,
   });
@@ -358,6 +387,7 @@ export async function bootstrap(): Promise<void> {
     await webUi?.stop();
     discordService.stopAccepting();
     memoryCoordinator?.dispose();
+    userMemoryCoordinator?.dispose();
     await taskCoordinator.waitForCompletion();
     await discordService.stop();
     await agentCoordinator.dispose();

@@ -46,7 +46,25 @@ export class MarkdownUserMemoryStore implements UserMemoryStore {
     }
   }
 
+  async ensure(userId: string, identity: UserMemoryIdentity): Promise<UserMemory> {
+    const existing = await this.read(userId);
+    if (existing) return existing;
+
+    return this.runWrite(async () => {
+      const current = await this.read(userId);
+      return current ?? this.writeMemory(userId, identity, {});
+    });
+  }
+
   async update(
+    userId: string,
+    identity: UserMemoryIdentity,
+    patch: UserMemoryPatch,
+  ): Promise<UserMemory> {
+    return this.runWrite(() => this.writeMemory(userId, identity, patch));
+  }
+
+  private async writeMemory(
     userId: string,
     identity: UserMemoryIdentity,
     patch: UserMemoryPatch,
@@ -58,41 +76,35 @@ export class MarkdownUserMemoryStore implements UserMemoryStore {
     const fallbackDisplayName =
       normalizeFrontmatterText(identity.displayName) || normalizedUsername;
     const filePath = this.filePath(userId);
-    return this.runWrite(async () => {
-      const existing = await this.read(userId);
-      const requestedDisplayName =
-        patch.displayName !== undefined ? normalizeFrontmatterText(patch.displayName) : undefined;
-      const displayName = requestedDisplayName || existing?.displayName || fallbackDisplayName;
+    const existing = await this.read(userId);
+    const requestedDisplayName =
+      patch.displayName !== undefined ? normalizeFrontmatterText(patch.displayName) : undefined;
+    const displayName = requestedDisplayName || existing?.displayName || fallbackDisplayName;
 
-      const impression = resolveImpression(existing?.impression ?? 0, patch);
-      const nickname = resolveOptionalText(patch.nickname, existing?.nickname);
-      const firstName = resolveOptionalText(patch.firstName, existing?.firstName);
-      const lastName = resolveOptionalText(patch.lastName, existing?.lastName);
-      const memory: UserMemory = {
-        discordId: normalizedUsername,
-        displayName,
-        ...(nickname !== undefined ? { nickname } : {}),
-        ...(firstName !== undefined ? { firstName } : {}),
-        ...(lastName !== undefined ? { lastName } : {}),
-        summary: normalizeFrontmatterText(patch.summary ?? existing?.summary ?? ""),
-        impression,
-        updatedAt: new Date().toISOString(),
-        facts: resolveSection(patch.facts, existing?.facts, "facts"),
-        history: resolveSection(patch.history, existing?.history, "history"),
-        inCommon: resolveSection(patch.inCommon, existing?.inCommon, "inCommon"),
-        strengthening: resolveSection(
-          patch.strengthening,
-          existing?.strengthening,
-          "strengthening",
-        ),
-      };
+    const impression = resolveImpression(existing?.impression ?? 0, patch);
+    const nickname = resolveOptionalText(patch.nickname, existing?.nickname);
+    const firstName = resolveOptionalText(patch.firstName, existing?.firstName);
+    const lastName = resolveOptionalText(patch.lastName, existing?.lastName);
+    const memory: UserMemory = {
+      discordId: normalizedUsername,
+      displayName,
+      ...(nickname !== undefined ? { nickname } : {}),
+      ...(firstName !== undefined ? { firstName } : {}),
+      ...(lastName !== undefined ? { lastName } : {}),
+      summary: normalizeFrontmatterText(patch.summary ?? existing?.summary ?? ""),
+      impression,
+      updatedAt: new Date().toISOString(),
+      facts: resolveSection(patch.facts, existing?.facts, "facts"),
+      history: resolveSection(patch.history, existing?.history, "history"),
+      inCommon: resolveSection(patch.inCommon, existing?.inCommon, "inCommon"),
+      strengthening: resolveSection(patch.strengthening, existing?.strengthening, "strengthening"),
+    };
 
-      await mkdir(dirname(filePath), { recursive: true });
-      const temporaryPath = `${filePath}.${randomUUID()}.tmp`;
-      await writeFile(temporaryPath, renderUserMemory(memory), "utf8");
-      await rename(temporaryPath, filePath);
-      return memory;
-    });
+    await mkdir(dirname(filePath), { recursive: true });
+    const temporaryPath = `${filePath}.${randomUUID()}.tmp`;
+    await writeFile(temporaryPath, renderUserMemory(memory), "utf8");
+    await rename(temporaryPath, filePath);
+    return memory;
   }
 
   private filePath(userId: string): string {
@@ -134,7 +146,7 @@ export function renderUserMemory(memory: UserMemory): string {
   return lines.join("\n");
 }
 
-function parseUserMemory(content: string): UserMemory {
+export function parseUserMemory(content: string): UserMemory {
   const normalized = content.replace(/\r\n?/g, "\n");
   const lines = normalized.split("\n");
   if (lines[0]?.trim() !== FRONTMATTER_DELIMITER) {

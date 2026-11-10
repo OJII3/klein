@@ -56,7 +56,24 @@ export interface UserMemoryIdentity {
 
 export interface UserMemoryStore {
   read(userId: string): Promise<UserMemory | undefined>;
+  ensure(userId: string, identity: UserMemoryIdentity): Promise<UserMemory>;
   update(userId: string, identity: UserMemoryIdentity, patch: UserMemoryPatch): Promise<UserMemory>;
+}
+
+export interface UserMemoryMessage {
+  readonly id: string;
+  readonly channelId: string;
+  readonly channelName?: string;
+  readonly occurredAt: string;
+  readonly content: string;
+}
+
+export interface UserMemoryProcessor {
+  process(
+    userId: string,
+    memory: UserMemory,
+    messages: readonly UserMemoryMessage[],
+  ): Promise<UserMemory | undefined>;
 }
 
 export function clampImpression(value: number): number {

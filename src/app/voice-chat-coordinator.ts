@@ -11,6 +11,7 @@ import type {
 } from "@modules/discord/ports/voice-chat-conversation";
 import type { VoiceReactionSelector } from "@modules/discord/ports/voice-reaction-selector";
 import type { VoiceTranscriptQueueSelector } from "@modules/discord/ports/voice-transcript-queue-selector";
+import type { UserMemoryCoordinator } from "@modules/user-memory/application/user-memory-coordinator";
 import { VoiceTranscriptQueue } from "./voice-transcript-queue";
 
 export interface VoiceChatCoordinatorDependencies {
@@ -23,6 +24,7 @@ export interface VoiceChatCoordinatorDependencies {
   readonly discordUserDirectory?: DiscordUserDirectory;
   readonly reactionSelector?: VoiceReactionSelector;
   readonly transcriptQueueSelector?: VoiceTranscriptQueueSelector;
+  readonly userMemoryCoordinator?: UserMemoryCoordinator;
 }
 
 export class VoiceChatCoordinator implements VoiceChatConversationFactory {
@@ -232,8 +234,8 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
       : undefined;
 
     return {
-      handleTranscript: (text, requestId) => {
-        if (stopped) return Promise.resolve();
+      handleTranscript: async (text, requestId) => {
+        if (stopped) return;
         this.dependencies.discordUserDirectory?.remember(context.user);
         const message: DiscordMessage = {
           occurredAt: new Date().toISOString(),
@@ -246,6 +248,7 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
           parentChannelId: context.parentChannelId,
           threadId: context.threadId,
         };
+        await this.dependencies.userMemoryCoordinator?.observe(message);
         logger.info(
           {
             event: "voice_chat_transcript_received",
