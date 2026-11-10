@@ -1,5 +1,6 @@
 import type { SessionEntry, SessionInfo } from "@earendil-works/pi-coding-agent";
 
+import { parseDiscordChannelId } from "@shared/discord-channel-session-key";
 import type {
   PiViewerEvent,
   PiViewerEventKind,
@@ -12,10 +13,15 @@ const EVENT_SUMMARY_MAX_LENGTH = 500;
 export function toViewerSessionSummary(
   info: SessionInfo,
   channelKey: string,
+  channelNames?: ReadonlyMap<string, string>,
 ): ViewerSessionSummary {
+  const channelId = parseDiscordChannelId(channelKey);
+  const channelName = channelId ? channelNames?.get(channelId) : undefined;
   return {
     id: info.id,
     channelKey,
+    ...(channelId ? { channelId } : {}),
+    ...(channelName ? { channelName } : {}),
     created: info.created.toISOString(),
     modified: info.modified.toISOString(),
     messageCount: info.messageCount,

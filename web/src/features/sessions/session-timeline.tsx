@@ -2,10 +2,10 @@ import type { PiSessionEvent, SessionSummary } from "../../api";
 import { EmptyState } from "../../components/feedback";
 import { JsonValue } from "../../components/json-value";
 import {
+  channelLabel,
   formatClockSeconds,
   formatCompactTimestamp,
   formatTimestamp,
-  truncateMiddle,
 } from "../../lib/format";
 
 interface SessionTimelineProps {
@@ -55,15 +55,12 @@ export function SessionTimeline({
   return (
     <div className="flex min-w-0 flex-col">
       <header className="border-b border-line px-4 py-4">
-        <h2 className="text-[1.05rem] leading-snug font-semibold text-ink">
-          {session.firstMessage || truncateMiddle(session.channelKey, 48)}
-        </h2>
-        <p
-          className="mt-1 truncate font-mono text-[0.64rem] text-ink-faint"
+        <h2
+          className="truncate text-[1.05rem] leading-snug font-semibold text-ink"
           title={session.channelKey}
         >
-          {session.channelKey}
-        </p>
+          {channelLabel(session)}
+        </h2>
         <dl className="mt-2.5 flex flex-wrap gap-x-5 gap-y-1 text-[0.68rem]">
           <div className="flex gap-1.5">
             <dt className="text-ink-faint">メッセージ</dt>

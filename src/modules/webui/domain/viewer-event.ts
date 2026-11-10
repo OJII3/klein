@@ -45,6 +45,8 @@ export type ViewerEvent = PinoViewerEvent | PiViewerEvent;
 export interface ViewerSessionSummary {
   readonly id: string;
   readonly channelKey: string;
+  readonly channelId?: string;
+  readonly channelName?: string;
   readonly created: string;
   readonly modified: string;
   readonly messageCount: number;

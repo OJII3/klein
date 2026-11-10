@@ -1,6 +1,7 @@
 import { useCallback, useState } from "preact/hooks";
 
 import { AppShell } from "./components/app-shell";
+import { useChannels } from "./hooks/use-channels";
 import { useLogs } from "./hooks/use-logs";
 import { useSessions } from "./hooks/use-sessions";
 import { useMemory } from "./hooks/use-memory";
@@ -29,6 +30,7 @@ export default function App() {
     selectedScopeKey: route.view === "memory" ? route.scopeKey : null,
   });
   const toolUsage = useToolUsage({ active: route.view === "tools", onUpdated });
+  const channelNames = useChannels(route.view === "memory");
 
   const selectSession = useCallback((sessionId: string) => {
     navigate(`/sessions?session=${encodeURIComponent(sessionId)}`);
@@ -86,6 +88,7 @@ export default function App() {
         />
       ) : (
         <MemoryView
+          channelNames={channelNames}
           detailError={memory.detailError}
           deleteError={memory.deleteError}
           deletingEntryId={memory.deletingEntryId}

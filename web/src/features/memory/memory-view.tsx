@@ -14,6 +14,7 @@ import { ViewHeader } from "../../components/view-header";
 import { formatCompactTimestamp, formatDate } from "../../lib/format";
 
 interface MemoryViewProps {
+  channelNames: ReadonlyMap<string, string>;
   enabled: boolean;
   scopes: MemoryScopeSummary[];
   selectedScope: MemoryScope | null;
@@ -52,6 +53,7 @@ const KIND_TONES: Record<MemoryKind, string> = {
 
 export function MemoryView(props: MemoryViewProps) {
   const {
+    channelNames,
     enabled,
     scopes,
     selectedScope,
@@ -186,6 +188,7 @@ export function MemoryView(props: MemoryViewProps) {
                 <MemoryEntries
                   addingRule={addingRule}
                   addRuleError={addRuleError}
+                  channelNames={channelNames}
                   deletingEntryId={deletingEntryId}
                   entries={entries}
                   onAddRule={onAddRule}
@@ -204,6 +207,7 @@ export function MemoryView(props: MemoryViewProps) {
 }
 
 function MemoryEntries({
+  channelNames,
   deletingEntryId,
   entries,
   scope,
@@ -212,6 +216,7 @@ function MemoryEntries({
   addRuleError,
   onAddRule,
 }: {
+  channelNames: ReadonlyMap<string, string>;
   deletingEntryId: string | null;
   entries: MemoryEntry[];
   scope: MemoryScope;
@@ -327,7 +332,9 @@ function MemoryEntries({
                 <span>作成 {formatDate(entry.createdAt)}</span>
                 <span>参照 {entry.sourceMessageIds.length.toLocaleString("ja-JP")} 件</span>
                 {(entry.scope.type === "channel" || entry.scope.type === "thread") && (
-                  <span title={entryScopeDetail(entry.scope)}>{entryScopeDetail(entry.scope)}</span>
+                  <span title={entryScopeDetail(entry.scope, channelNames)}>
+                    {entryScopeDetail(entry.scope, channelNames)}
+                  </span>
                 )}
               </footer>
             </article>
@@ -342,9 +349,13 @@ function scopeTypeLabel(scope: MemoryScope): string {
   return scope.type === "owner" ? "オーナー" : "ギルド";
 }
 
-function entryScopeDetail(scope: MemoryEntryScope): string {
-  if (scope.type === "channel") return `チャンネル: ${scope.channelId}`;
+function entryScopeDetail(
+  scope: MemoryEntryScope,
+  channelNames: ReadonlyMap<string, string>,
+): string {
+  const label = (channelId: string): string => channelNames.get(channelId) ?? channelId;
+  if (scope.type === "channel") return `チャンネル: ${label(scope.channelId)}`;
   if (scope.type === "thread")
-    return `スレッド: ${scope.threadId} (チャンネル: ${scope.channelId})`;
+    return `スレッド: ${label(scope.threadId)} (チャンネル: ${label(scope.channelId)})`;
   return scope.type === "owner" ? "オーナー" : "ギルド全体";
 }

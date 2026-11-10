@@ -81,11 +81,16 @@ export class DiscordJsMessageAdapter {
 
   toDiscordMessage(message: Message): DiscordMessage {
     const thread = message.channel.isThread() ? message.channel : undefined;
+    const channelName =
+      "name" in message.channel && typeof message.channel.name === "string"
+        ? message.channel.name
+        : "";
 
     return {
       occurredAt: message.createdAt.toISOString(),
       author: toDiscordUser(message),
       channelId: message.channelId,
+      ...(channelName ? { channelName } : {}),
       content: this.normalizeMessageContent(message),
       guildId: message.guildId ?? undefined,
       id: message.id,

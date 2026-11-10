@@ -385,6 +385,7 @@ test("resolves current channel locations, including thread parents and direct me
     return {
       id,
       ...(id !== "dm" ? { guildId: "guild-123" } : {}),
+      name: `${id}-name`,
       parentId: id === "thread" ? "parent-channel" : null,
       isTextBased: () => true,
       isThread: () => id === "thread",
@@ -395,16 +396,19 @@ test("resolves current channel locations, including thread parents and direct me
       guildId: "guild-123",
       channelId: "channel",
       threadId: undefined,
+      channelName: "channel-name",
     });
     assert.deepEqual(await service.getChannelLocation("thread"), {
       guildId: "guild-123",
       channelId: "parent-channel",
       threadId: "thread",
+      channelName: "thread-name",
     });
     assert.deepEqual(await service.getChannelLocation("dm"), {
       guildId: undefined,
       channelId: "dm",
       threadId: undefined,
+      channelName: "dm-name",
     });
     await assert.rejects(service.getChannelLocation("missing"), /cannot contain messages/);
     await assert.rejects(service.getChannelLocation("voice"), /cannot contain messages/);

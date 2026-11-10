@@ -280,7 +280,12 @@ export async function bootstrap(): Promise<void> {
         logger,
         memory: webUiMemory,
         memoryEditor: webUiMemory,
-        piSessions: new PiSessionReader(agentDir),
+        channelNames: {
+          read: () => channelSessionStateStore.listChannelNames(),
+        },
+        piSessions: new PiSessionReader(agentDir, {
+          read: () => channelSessionStateStore.listChannelNames(),
+        }),
         pinoLogs: new PinoJsonlReader(logDirectory),
         toolUsage: new PiToolUsageReader(agentDir),
         port: webUiConfig.port,

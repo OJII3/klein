@@ -47,6 +47,7 @@ export class ChannelSessionManager {
     const states = await this.dependencies.channelSessionStateStore?.list();
     for (const state of states ?? []) {
       const { conversationKey } = state;
+      let channelName: string | undefined;
       if (this.dependencies.accessPolicy) {
         let location: Awaited<ReturnType<DiscordChannelApi["getChannelLocation"]>>;
         try {
@@ -76,8 +77,11 @@ export class ChannelSessionManager {
             ? ownerAccessScope(this.dependencies.ownerUserId)
             : PUBLIC_ACCESS_SCOPE;
         if (state.accessScope !== currentScope) continue;
+        channelName = location.channelName;
       }
-      await this.getAgent(conversationKey, state);
+      const restored = channelName ? { ...state, channelName } : state;
+      if (restored !== state) await this.saveConversationState(restored);
+      await this.getAgent(conversationKey, restored);
     }
   }
 
@@ -105,6 +109,7 @@ export class ChannelSessionManager {
     conversationKey: ConversationKey,
     accessScope: string,
     turn: (agent: ChannelAgent, state: ChannelSessionState) => Promise<void>,
+    details: { readonly channelName?: string } = {},
   ): Promise<void> {
     const now = Date.now();
     let state: ChannelSessionState | undefined;
@@ -115,6 +120,7 @@ export class ChannelSessionManager {
       const agent = await this.getAgent(conversationKey, state);
       state = {
         ...state,
+        ...(details.channelName ? { channelName: details.channelName } : {}),
         handoffContext: undefined,
         hasActivitySinceRotation: true,
         lastActivityAt: now,
@@ -189,6 +195,7 @@ export class ChannelSessionManager {
     const created: ChannelSessionState = {
       conversationKey,
       accessScope,
+      ...(existing?.channelName ? { channelName: existing.channelName } : {}),
       sessionKey: createConversationSessionKey(conversationKey, {
         accessScope,
         useAccessScope: !!this.dependencies.accessPolicy,

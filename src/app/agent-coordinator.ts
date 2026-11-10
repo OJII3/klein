@@ -129,44 +129,49 @@ export class AgentCoordinator {
     const startedAt = Date.now();
     logger.debug({ event: "discord_message_processing_started" }, "Processing Discord message");
     try {
-      await this.sessionManager.runTurn(conversationKey, accessScope, async (agent) => {
-        const query = buildMemoryQuery(message);
-        const guildMemory = message.guildId
-          ? await this.dependencies.memoryCoordinator?.getContext(
-              {
-                channelId: message.parentChannelId ?? message.channelId,
-                guildId: message.guildId,
-                ...(message.threadId ? { threadId: message.threadId } : {}),
-              },
-              query,
-            )
-          : undefined;
-        const channelRule = message.guildId
-          ? await this.dependencies.channelRuleStore?.get(message.guildId, message.channelId)
-          : undefined;
-        const ownerMemory = ownerFeaturesAllowed
-          ? await this.dependencies.ownerMemoryStore?.getContext(query)
-          : undefined;
-        const turn = createDiscordMessageAgentTurn(
-          message,
-          { ownerMemory, guildMemory, channelRule },
-          {
-            botMessageGuidance: BOT_MESSAGE_GUIDANCE,
-            ownerValidation:
-              ownerFeaturesAllowed && this.dependencies.ownerUserId
-                ? { userId: this.dependencies.ownerUserId, channelId: message.channelId }
-                : undefined,
-          },
-        );
-        await agent.prompt(turn);
-        logger.debug(
-          {
-            durationMs: Date.now() - startedAt,
-            event: "discord_message_processed",
-          },
-          "Processed Discord message",
-        );
-      });
+      await this.sessionManager.runTurn(
+        conversationKey,
+        accessScope,
+        async (agent) => {
+          const query = buildMemoryQuery(message);
+          const guildMemory = message.guildId
+            ? await this.dependencies.memoryCoordinator?.getContext(
+                {
+                  channelId: message.parentChannelId ?? message.channelId,
+                  guildId: message.guildId,
+                  ...(message.threadId ? { threadId: message.threadId } : {}),
+                },
+                query,
+              )
+            : undefined;
+          const channelRule = message.guildId
+            ? await this.dependencies.channelRuleStore?.get(message.guildId, message.channelId)
+            : undefined;
+          const ownerMemory = ownerFeaturesAllowed
+            ? await this.dependencies.ownerMemoryStore?.getContext(query)
+            : undefined;
+          const turn = createDiscordMessageAgentTurn(
+            message,
+            { ownerMemory, guildMemory, channelRule },
+            {
+              botMessageGuidance: BOT_MESSAGE_GUIDANCE,
+              ownerValidation:
+                ownerFeaturesAllowed && this.dependencies.ownerUserId
+                  ? { userId: this.dependencies.ownerUserId, channelId: message.channelId }
+                  : undefined,
+            },
+          );
+          await agent.prompt(turn);
+          logger.debug(
+            {
+              durationMs: Date.now() - startedAt,
+              event: "discord_message_processed",
+            },
+            "Processed Discord message",
+          );
+        },
+        { channelName: message.channelName },
+      );
     } catch (error) {
       logger.error(
         {

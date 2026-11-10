@@ -113,6 +113,8 @@ An optional dashboard for Pino logs, Pi sessions, guild memories, and tool usage
 
 Open `http://127.0.0.1:4310` after starting Klein.
 
+Pi sessions are labeled with their Discord channel name. Klein records the name in each channel's session state when it handles a message and refreshes known channels at startup, so the dashboard does not call the Discord API per request. The mapping is also available from `GET /api/channels`.
+
 The **ツール** view counts every tool execution stored in Pi session history, both per tool and per MCP server. Counts include calls made from codemode scripts and do not reset when Klein restarts.
 
 For frontend development, run the bot as usual and start Vite separately:

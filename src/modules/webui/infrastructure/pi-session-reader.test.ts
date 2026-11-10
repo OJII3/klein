@@ -81,8 +81,19 @@ test("lists and reads Pi sessions without exposing image data", async () => {
   );
   const sessionSummary = sessions.items.find((item) => item.id === sessionManager.getSessionId());
   assert.equal(sessionSummary?.channelKey, "discord-channel:123");
+  assert.equal(sessionSummary?.channelId, "123");
+  assert.equal(sessionSummary?.channelName, undefined);
   assert.equal(sessionSummary?.messageCount, 3);
   assert.equal(sessionSummary?.firstMessage, "hello");
+
+  const namedReader = new PiSessionReader(agentDirectory, {
+    read: async () => new Map([["123", "general"]]),
+  });
+  const namedSessions = await namedReader.list();
+  assert.equal(
+    namedSessions.items.find((item) => item.id === sessionManager.getSessionId())?.channelName,
+    "general",
+  );
 
   const firstSessionPage = await reader.list({ limit: 1 });
   assert.equal(firstSessionPage.items.length, 1);

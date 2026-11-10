@@ -29,6 +29,8 @@ export interface LogsQuery {
 export interface SessionSummary {
   id: string;
   channelKey: string;
+  channelId?: string;
+  channelName?: string;
   created: string;
   modified: string;
   messageCount: number;
@@ -38,6 +40,15 @@ export interface SessionSummary {
 export interface SessionsResponse {
   items: SessionSummary[];
   nextCursor: string | null;
+}
+
+export interface ChannelSummary {
+  channelId: string;
+  name: string;
+}
+
+export interface ChannelsResponse {
+  items: ChannelSummary[];
 }
 
 export interface PiSessionEvent {
@@ -166,6 +177,10 @@ export function listSessions(query: SessionQuery = {}): Promise<SessionsResponse
   return unwrap<SessionsResponse>(
     client.api.sessions.get({ query: withoutEmptyValues({ limit: 100, ...query }) }),
   );
+}
+
+export function listChannels(): Promise<ChannelsResponse> {
+  return unwrap<ChannelsResponse>(client.api.channels.get());
 }
 
 export function getSession(

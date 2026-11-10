@@ -9,13 +9,17 @@ import {
 } from "discord.js";
 import type { Logger } from "pino";
 
-import type { DiscordAccessPolicy, DiscordAccessTarget } from "../domain/discord-access-policy";
+import type { DiscordAccessPolicy } from "../domain/discord-access-policy";
 import {
   DiscordOperatingState,
   type DiscordOperatingMode,
 } from "../domain/discord-operating-state";
 import { type DiscordMessage, type DiscordMessageLocator } from "../domain/discord-message";
-import type { DiscordChannelApi, DiscordMessageRequester } from "../ports/discord-channel-api";
+import type {
+  DiscordChannelApi,
+  DiscordChannelLocation,
+  DiscordMessageRequester,
+} from "../ports/discord-channel-api";
 import type { DiscordGateway, DiscordMessageHandler } from "../ports/discord-gateway";
 import type { DiscordChannelRuleStore } from "../ports/discord-channel-rule-store";
 import {
@@ -157,18 +161,18 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
     );
   }
 
-  async getChannelLocation(
-    channelId: string,
-  ): Promise<Pick<DiscordAccessTarget, "guildId" | "channelId" | "threadId">> {
+  async getChannelLocation(channelId: string): Promise<DiscordChannelLocation> {
     const channel = await this.client.channels.fetch(channelId);
     if (!channel?.isTextBased()) {
       throw new Error(`Discord channel cannot contain messages: ${channelId}`);
     }
     const thread = channel.isThread() ? channel : undefined;
+    const channelName = "name" in channel && typeof channel.name === "string" ? channel.name : "";
     return {
       guildId: "guildId" in channel ? channel.guildId : undefined,
       channelId: thread?.parentId ?? channel.id,
       threadId: thread?.id,
+      ...(channelName ? { channelName } : {}),
     };
   }
 
