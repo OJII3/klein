@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { truncateWatchOutput } from "./watch-output";
 
-test("keeps runner-sized output intact so the hash and notification agree", () => {
+test("keeps runner-sized output intact", () => {
   const output = "a".repeat(64 * 1024);
   assert.equal(truncateWatchOutput(output), output);
 });

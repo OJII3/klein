@@ -52,7 +52,17 @@ export class QuickJsWatchCheckRunner implements WatchCheckRunner {
     try {
       const state = { ...watch.state };
       const result = await sandbox.execute(
-        [`const args = ${JSON.stringify(watch.args)};`, watch.script].join("\n"),
+        [
+          `const args = ${JSON.stringify(watch.args)};`,
+          "let __watchDecision = null;",
+          'const wake = () => { __watchDecision = "wake"; };',
+          'const silent = () => { __watchDecision = "silent"; };',
+          "await (async () => {",
+          watch.script,
+          "})();",
+          'if (__watchDecision === null) throw new Error("監視スクリプトは最後に wake() か silent() を呼んでください。");',
+          "return __watchDecision;",
+        ].join("\n"),
         { store: state },
       );
       if (!result.ok) {
@@ -62,7 +72,11 @@ export class QuickJsWatchCheckRunner implements WatchCheckRunner {
             : `監視スクリプトが失敗しました: ${result.error.message}`,
         );
       }
-      const output = collectOutput(result.output, result.value);
+      const decision = result.value;
+      if (decision !== "wake" && decision !== "silent") {
+        throw new WatchCheckError("監視スクリプトの判断を読み取れませんでした。");
+      }
+      const output = collectOutput(result.output);
       if (Buffer.byteLength(output, "utf8") > this.maxOutputBytes) {
         throw new WatchCheckError(
           `監視スクリプトの出力が上限（${this.maxOutputBytes}バイト）を超えました。`,
@@ -70,17 +84,13 @@ export class QuickJsWatchCheckRunner implements WatchCheckRunner {
       }
       for (const key of result.storeWrites.delete) delete state[key];
       Object.assign(state, result.storeWrites.set);
-      return { output, exitCode: 0, durationMs: Date.now() - startedAt, state };
+      return { output, decision, exitCode: 0, durationMs: Date.now() - startedAt, state };
     } finally {
       await sandbox.close();
     }
   }
 }
 
-function collectOutput(output: readonly CodemodeOutputItem[], value: unknown): string {
-  const parts = output.flatMap((item) => (item.type === "text" ? [item.text] : []));
-  if (value !== undefined) {
-    parts.push(typeof value === "string" ? value : JSON.stringify(value));
-  }
-  return parts.join("\n");
+function collectOutput(output: readonly CodemodeOutputItem[]): string {
+  return output.flatMap((item) => (item.type === "text" ? [item.text] : [])).join("\n");
 }

@@ -1,11 +1,5 @@
-import { createHash } from "node:crypto";
-
 export function normalizeWatchOutput(output: string): string {
   return output.replaceAll(/\r\n?/gu, "\n").trimEnd();
-}
-
-export function hashWatchOutput(output: string): string {
-  return createHash("sha256").update(normalizeWatchOutput(output)).digest("hex");
 }
 
 export function truncateWatchOutput(output: string, maxCharacters = 64 * 1_024): string {

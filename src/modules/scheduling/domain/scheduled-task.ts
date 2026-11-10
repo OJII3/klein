@@ -2,7 +2,6 @@ import type { AccessScope } from "@shared/access";
 import { isRecurringSchedule, parseStoredSchedule, type StoredSchedule } from "./schedule";
 
 export type ScheduledTaskAccessScope = AccessScope;
-export type WatchCondition = "change" | "output";
 export type WatchStatus = "ok" | "error";
 
 interface ScheduledTaskBase {
@@ -24,14 +23,11 @@ export interface WatchTask extends ScheduledTaskBase {
   readonly name: string;
   readonly script: string;
   readonly args: readonly string[];
-  readonly condition: WatchCondition;
   readonly message: string;
-  readonly cooldownMinutes: number;
   /** Values the script kept with `store()`. */
   readonly state?: Readonly<Record<string, unknown>>;
   readonly lastCheckedAt?: string;
   readonly lastTriggeredAt?: string;
-  readonly lastOutputHash?: string;
   readonly lastStatus?: WatchStatus;
   readonly lastError?: string;
   readonly consecutiveFailures: number;
@@ -92,11 +88,8 @@ export function parseScheduledTask(value: unknown): ScheduledTask {
       record.script.length === 0 ||
       !Array.isArray(record.args) ||
       !record.args.every((arg) => typeof arg === "string") ||
-      (record.condition !== "change" && record.condition !== "output") ||
       typeof record.message !== "string" ||
       record.message.length === 0 ||
-      !Number.isInteger(record.cooldownMinutes) ||
-      (record.cooldownMinutes as number) < 0 ||
       (record.state !== undefined && !isJsonObject(record.state)) ||
       !isRecurringSchedule(schedule) ||
       (record.lastCheckedAt !== undefined &&
@@ -105,7 +98,6 @@ export function parseScheduledTask(value: unknown): ScheduledTask {
       (record.lastTriggeredAt !== undefined &&
         (typeof record.lastTriggeredAt !== "string" ||
           !Number.isFinite(Date.parse(record.lastTriggeredAt)))) ||
-      (record.lastOutputHash !== undefined && typeof record.lastOutputHash !== "string") ||
       (record.lastStatus !== undefined &&
         record.lastStatus !== "ok" &&
         record.lastStatus !== "error") ||
@@ -126,18 +118,13 @@ export function parseScheduledTask(value: unknown): ScheduledTask {
       name: record.name,
       script: record.script,
       args: record.args as string[],
-      condition: record.condition,
       message: record.message,
-      cooldownMinutes: record.cooldownMinutes as number,
       ...(record.state !== undefined ? { state: record.state as Record<string, unknown> } : {}),
       ...(record.lastCheckedAt !== undefined
         ? { lastCheckedAt: record.lastCheckedAt as string }
         : {}),
       ...(record.lastTriggeredAt !== undefined
         ? { lastTriggeredAt: record.lastTriggeredAt as string }
-        : {}),
-      ...(record.lastOutputHash !== undefined
-        ? { lastOutputHash: record.lastOutputHash as string }
         : {}),
       ...(record.lastStatus !== undefined ? { lastStatus: record.lastStatus as WatchStatus } : {}),
       ...(record.lastError !== undefined ? { lastError: record.lastError as string } : {}),

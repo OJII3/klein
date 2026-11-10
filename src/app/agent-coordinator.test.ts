@@ -405,11 +405,9 @@ const dueWatch: WatchTask = {
   channelId: "test-channel",
   accessScope: "owner:123",
   name: "在庫監視",
-  script: "return args[0];",
+  script: "text(args[0]); silent();",
   args: [],
-  condition: "change",
   message: "在庫の変化を確認してください。",
-  cooldownMinutes: 0,
   consecutiveFailures: 0,
   createdAt: "2026-10-14T00:00:00.000Z",
   schedule: { type: "every", minutes: 5 },
@@ -571,11 +569,11 @@ test("advances a recurring reminder without changing its stable ownership", asyn
   }
 });
 
-test("delivers a watch only when its output changes", async () => {
-  let output = "one";
+test("delivers a watch when the script calls wake()", async () => {
+  let decision: "wake" | "silent" = "silent";
   const runner: WatchCheckRunner = {
     async run() {
-      return { output, exitCode: 0, durationMs: 1, state: { runs: 1 } };
+      return { output: "two", decision, exitCode: 0, durationMs: 1, state: { runs: 1 } };
     },
   };
   const watches = createScheduledTaskStore({ ...dueWatch });
@@ -590,13 +588,13 @@ test("delivers a watch only when its output changes", async () => {
   );
   try {
     await harness.agentCoordinator.deliverDueTasks(Date.now());
-    const baseline = watches.getStored();
-    assert.ok(baseline?.kind === "watch");
-    assert.ok(baseline.lastOutputHash);
+    const silent = watches.getStored();
+    assert.ok(silent?.kind === "watch");
+    assert.deepEqual(silent.state, { runs: 1 });
     assert.equal(harness.prompts.size, 0);
 
-    output = "two";
-    await harness.agentCoordinator.deliverDueTasks(Date.parse(baseline.nextRunAt));
+    decision = "wake";
+    await harness.agentCoordinator.deliverDueTasks(Date.parse(silent.nextRunAt));
     const first = watches.getStored();
     assert.ok(first?.kind === "watch");
     assert.ok(first.lastTriggeredAt);
@@ -606,9 +604,6 @@ test("delivers a watch only when its output changes", async () => {
     assert.equal(events?.[0].type, "watch.triggered");
     assert.equal(events?.[0].source, "watch");
     assert.match(eventText(events?.[0]), /two/u);
-
-    await harness.agentCoordinator.deliverDueTasks(Date.parse(first.nextRunAt));
-    assert.equal(harness.prompts.get("test-channel:owner:123")?.length, 1);
   } finally {
     await harness.agentCoordinator.dispose();
   }
@@ -617,10 +612,10 @@ test("delivers a watch only when its output changes", async () => {
 test("persists watch state even when the check does not notify", async () => {
   const runner: WatchCheckRunner = {
     async run() {
-      return { output: "", exitCode: 0, durationMs: 1, state: { runs: 3 } };
+      return { output: "", decision: "silent", exitCode: 0, durationMs: 1, state: { runs: 3 } };
     },
   };
-  const watches = createScheduledTaskStore({ ...dueWatch, condition: "output" });
+  const watches = createScheduledTaskStore({ ...dueWatch });
   const harness = createHarness(
     undefined,
     watches.store,
@@ -644,13 +639,12 @@ test("persists watch state even when the check does not notify", async () => {
 test("delivers a public watch without an access policy", async () => {
   const runner: WatchCheckRunner = {
     async run() {
-      return { output: "hello", exitCode: 0, durationMs: 1, state: {} };
+      return { output: "hello", decision: "wake", exitCode: 0, durationMs: 1, state: {} };
     },
   };
   const watches = createScheduledTaskStore({
     ...dueWatch,
     accessScope: "public",
-    condition: "output",
   });
   const harness = createHarness(undefined, watches.store, {}, runner);
   try {
@@ -658,46 +652,6 @@ test("delivers a public watch without an access policy", async () => {
     const events = harness.prompts.get("test-channel");
     assert.equal(events?.[0].type, "watch.triggered");
     assert.match(eventText(events?.[0]), /hello/u);
-  } finally {
-    await harness.agentCoordinator.dispose();
-  }
-});
-
-test("suppresses watch events during cooldown and retries after it expires", async () => {
-  const lastTriggeredAt = new Date(Date.now() - 30 * 60_000).toISOString();
-  const runner: WatchCheckRunner = {
-    async run() {
-      return { output: "new", exitCode: 0, durationMs: 1, state: {} };
-    },
-  };
-  const watches = createScheduledTaskStore({
-    ...dueWatch,
-    cooldownMinutes: 60,
-    lastOutputHash: "old-hash",
-    lastTriggeredAt,
-  });
-  const harness = createHarness(
-    undefined,
-    watches.store,
-    {
-      accessPolicy: createDiscordAccessPolicy({ default: "owner", directMessages: "deny" }, "123"),
-      ownerUserId: "123",
-    },
-    runner,
-  );
-  try {
-    await harness.agentCoordinator.deliverDueTasks(Date.now());
-    const suppressed = watches.getStored();
-    assert.ok(suppressed?.kind === "watch");
-    assert.equal(suppressed.lastOutputHash, "old-hash");
-    assert.equal(suppressed.lastTriggeredAt, lastTriggeredAt);
-    assert.equal(harness.prompts.size, 0);
-
-    await harness.agentCoordinator.deliverDueTasks(Date.now() + 31 * 60_000);
-    assert.equal(harness.prompts.get("test-channel:owner:123")?.length, 1);
-    const delivered = watches.getStored();
-    assert.ok(delivered?.kind === "watch");
-    assert.notEqual(delivered.lastOutputHash, "old-hash");
   } finally {
     await harness.agentCoordinator.dispose();
   }
@@ -743,11 +697,11 @@ test("skips a disallowed one-time reminder without rechecking it every tick", as
 });
 
 test("does not deliver or recreate a watch deleted while its check runs", async () => {
-  const watches = createScheduledTaskStore({ ...dueWatch, lastOutputHash: "old-hash" });
+  const watches = createScheduledTaskStore({ ...dueWatch });
   const runner: WatchCheckRunner = {
     async run() {
       await watches.store.delete("watch", "test-channel", "owner:123", "watch-1");
-      return { output: "changed", exitCode: 0, durationMs: 1, state: {} };
+      return { output: "changed", decision: "wake", exitCode: 0, durationMs: 1, state: {} };
     },
   };
   const harness = createHarness(
@@ -771,10 +725,10 @@ test("does not deliver or recreate a watch deleted while its check runs", async 
 test("uses the check time for the next interval run", async () => {
   const runner: WatchCheckRunner = {
     async run() {
-      return { output: "changed", exitCode: 0, durationMs: 1, state: {} };
+      return { output: "changed", decision: "wake", exitCode: 0, durationMs: 1, state: {} };
     },
   };
-  const watches = createScheduledTaskStore({ ...dueWatch, lastOutputHash: "old-hash" });
+  const watches = createScheduledTaskStore({ ...dueWatch });
   const harness = createHarness(
     undefined,
     watches.store,

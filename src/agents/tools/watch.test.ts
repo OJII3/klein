@@ -35,10 +35,9 @@ test("provides watch add, list, and delete tools in the given scope", async () =
     {
       name: "在庫監視",
       schedule: { type: "every", minutes: 15 },
-      script: "return { stock: args[0] };",
+      script: "text(args[0]); silent();",
       args: ["--json"],
       message: "在庫の変化を確認してください。",
-      cooldownMinutes: 60,
     } as never,
     undefined,
     undefined,
@@ -46,10 +45,8 @@ test("provides watch add, list, and delete tools in the given scope", async () =
   );
   assert.equal(created?.kind, "watch");
   assert.equal(created?.accessScope, "public");
-  assert.equal(created?.condition, "change");
-  assert.equal(created?.cooldownMinutes, 60);
   assert.deepEqual(created?.args, ["--json"]);
-  assert.equal(created?.script, "return { stock: args[0] };");
+  assert.equal(created?.script, "text(args[0]); silent();");
   assert.match(
     addResult.content[0]?.type === "text" ? addResult.content[0].text : "",
     /登録しました/u,
@@ -64,8 +61,7 @@ test("provides watch add, list, and delete tools in the given scope", async () =
   );
   const listed = (listResult.details as unknown as { watches: Record<string, unknown>[] }).watches;
   assert.equal(listed instanceof Array, true);
-  assert.equal(listed[0]?.script, "return { stock: args[0] };");
-  assert.equal(listed[0]?.cooldownMinutes, 60);
+  assert.equal(listed[0]?.script, "text(args[0]); silent();");
   assert.equal(listed[0]?.consecutiveFailures, 0);
 
   await deleteTool.execute(
