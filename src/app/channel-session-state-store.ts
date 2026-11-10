@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
+import { DISCORD_CHANNEL_SESSION_KEY_PREFIX } from "@shared/discord-channel-session-key";
+
 export type ConversationKey = { readonly kind: "discord"; readonly channelId: string };
 
 export function serializeConversationKey(key: ConversationKey): string {
@@ -16,13 +18,15 @@ export function createConversationSessionKey(
     readonly rotationBucket?: string;
   } = {},
 ): string {
-  const sessionKey = `discord-channel:${key.channelId}${options.useAccessScope ? `:${options.accessScope ?? "public"}` : ""}`;
+  const sessionKey = `${DISCORD_CHANNEL_SESSION_KEY_PREFIX}${key.channelId}${options.useAccessScope ? `:${options.accessScope ?? "public"}` : ""}`;
   return options.rotationBucket ? `${sessionKey}:rotation:${options.rotationBucket}` : sessionKey;
 }
 
 export interface ChannelSessionState {
   readonly conversationKey: ConversationKey;
   readonly accessScope?: string;
+  /** Last known Discord channel name, persisted so the web UI can label sessions without calling Discord. */
+  readonly channelName?: string;
   readonly sessionKey: string;
   readonly lastActivityAt: number | null;
   /** Last rotation bucket the session was rotated into. Persisted under the legacy `lastRotationDate` key. */
@@ -71,6 +75,7 @@ export class ChannelSessionStateStore {
     rotationBucket: string,
   ) => Promise<ChannelSessionState>;
   readonly list: () => Promise<readonly ChannelSessionState[]>;
+  readonly listChannelNames: () => Promise<ReadonlyMap<string, string>>;
   readonly save: (state: ChannelSessionState) => Promise<void>;
 
   constructor(directory: string) {
@@ -133,6 +138,15 @@ export class ChannelSessionStateStore {
       return states.filter(isChannelSessionState);
     };
 
+    this.listChannelNames = async (): Promise<ReadonlyMap<string, string>> => {
+      const states = await this.list();
+      return new Map(
+        states.flatMap((state) =>
+          state.channelName ? [[state.conversationKey.channelId, state.channelName] as const] : [],
+        ),
+      );
+    };
+
     this.save = async (state: ChannelSessionState): Promise<void> => {
       await mkdir(directory, { recursive: true });
       const filePath = getFilePath(state.conversationKey);
@@ -154,6 +168,7 @@ function isChannelSessionState(value: unknown): value is ChannelSessionState {
     state.conversationKey.channelId.length > 0 &&
     typeof state.sessionKey === "string" &&
     state.sessionKey.length > 0 &&
+    (state.channelName === undefined || typeof state.channelName === "string") &&
     (state.lastActivityAt === null || typeof state.lastActivityAt === "number") &&
     typeof state.lastRotationDate === "string" &&
     typeof state.hasActivitySinceRotation === "boolean"

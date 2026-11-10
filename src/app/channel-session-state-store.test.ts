@@ -72,6 +72,7 @@ test("persists and reloads channel session state from disk", async () => {
   const saved: ChannelSessionState = {
     ...initial,
     accessScope: "owner:123",
+    channelName: "general",
     handoffContext: "A conversation to continue",
     lastActivityAt: 123,
     hasActivitySinceRotation: false,
@@ -81,6 +82,7 @@ test("persists and reloads channel session state from disk", async () => {
   const reopened = new ChannelSessionStateStore(directory);
   assert.deepEqual(await reopened.getOrCreate(key, "2099-01-01T00"), saved);
   assert.deepEqual(await reopened.list(), [saved]);
+  assert.deepEqual(await reopened.listChannelNames(), new Map([["42", "general"]]));
 });
 
 test("ignores legacy and malformed state files when listing", async () => {

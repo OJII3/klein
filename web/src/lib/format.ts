@@ -109,6 +109,10 @@ export function truncateMiddle(value: string, maxLength: number): string {
   return `${value.slice(0, startLength)}…${value.slice(-endLength)}`;
 }
 
+export function channelLabel(session: { channelName?: string; channelKey: string }): string {
+  return session.channelName ? `#${session.channelName}` : session.channelKey;
+}
+
 export function levelLabel(level: number | string): string {
   if (typeof level === "number") return LEVEL_LABELS[level] ?? String(level);
   return level;

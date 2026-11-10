@@ -19,6 +19,17 @@ const LOG_LEVELS = new Set(["trace", "debug", "info", "warn", "error", "fatal"])
 export function createWebUiApp(dependencies: WebUiDependencies) {
   return new Elysia({ name: "klein-webui" })
     .get("/api/health", () => ({ ok: true }))
+    .get("/api/channels", async ({ set }) => {
+      try {
+        if (!dependencies.channelNames) return { items: [] };
+        const names = await dependencies.channelNames.read();
+        return {
+          items: [...names].map(([channelId, name]) => ({ channelId, name })),
+        };
+      } catch (error) {
+        return handleRouteError(set, dependencies.logger, error, "Failed to list Discord channels");
+      }
+    })
     .get("/api/tools", async ({ set }) => {
       try {
         return await dependencies.toolUsage.read();

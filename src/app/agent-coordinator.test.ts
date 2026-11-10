@@ -175,6 +175,9 @@ test("initializes every saved channel agent during startup", async () => {
     async list() {
       return states;
     },
+    async listChannelNames() {
+      return new Map();
+    },
     async save() {},
   };
   const harness = createHarness(undefined, undefined, { channelSessionStateStore });
@@ -206,6 +209,9 @@ test("does not resume saved channel sessions after their access scope changes", 
     },
     async list() {
       return states;
+    },
+    async listChannelNames() {
+      return new Map();
     },
     async save() {},
   };

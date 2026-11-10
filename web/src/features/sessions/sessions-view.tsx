@@ -2,7 +2,7 @@ import type { PiSessionEvent, SessionSummary } from "../../api";
 import { EmptyState, ErrorNotice, LoadingState } from "../../components/feedback";
 import { Stat, StatStrip } from "../../components/stats";
 import { ViewHeader } from "../../components/view-header";
-import { formatCompactTimestamp, truncateMiddle } from "../../lib/format";
+import { channelLabel, formatCompactTimestamp, truncateMiddle } from "../../lib/format";
 import { SessionTimeline } from "./session-timeline";
 
 interface SessionsViewProps {
@@ -84,7 +84,7 @@ export function SessionsView({
                   </option>
                   {selectableSessions.map((session) => (
                     <option key={session.id} value={session.id}>
-                      {truncateMiddle(session.firstMessage || session.channelKey, 32)}（
+                      {truncateMiddle(session.firstMessage || channelLabel(session), 32)}（
                       {formatCompactTimestamp(session.modified)}）
                     </option>
                   ))}
@@ -117,7 +117,7 @@ export function SessionsView({
                             className="truncate font-mono text-[0.62rem] text-ink-faint"
                             title={session.channelKey}
                           >
-                            {truncateMiddle(session.channelKey, 40)}
+                            {truncateMiddle(channelLabel(session), 40)}
                           </span>
                           <span className="flex items-baseline justify-between gap-2 font-mono text-[0.62rem] text-ink-faint">
                             <span>{session.messageCount} メッセージ</span>

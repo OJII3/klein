@@ -26,6 +26,9 @@ function createHarness(initialState: ChannelSessionState) {
     async list() {
       return [storedState];
     },
+    async listChannelNames() {
+      return new Map();
+    },
     async save(state) {
       savedStates.push(state);
       storedState = state;
@@ -131,6 +134,25 @@ test("runTurn rotates, clears handoff, and saves state around the turn in order"
     assert.equal(harness.savedStates[0]?.handoffContext, "handoff summary");
     assert.equal(harness.savedStates[1]?.handoffContext, undefined);
     assert.equal(harness.savedStates[2]?.sessionKey, expectedSessionKey);
+  } finally {
+    await harness.manager.dispose();
+  }
+});
+
+test("runTurn persists the Discord channel name", async () => {
+  const harness = createHarness(createState());
+
+  try {
+    await harness.manager.runTurn(
+      { kind: "discord", channelId: "channel-a" },
+      "public",
+      async () => {
+        harness.completeTurn();
+      },
+      { channelName: "general" },
+    );
+
+    assert.equal(harness.savedStates.at(-1)?.channelName, "general");
   } finally {
     await harness.manager.dispose();
   }

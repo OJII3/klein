@@ -9,7 +9,11 @@ import {
 } from "@earendil-works/pi-coding-agent";
 
 import type { ViewerPage, ViewerSessionDetail, ViewerSessionSummary } from "../domain/viewer-event";
-import type { ViewerSessionQuery, ViewerSessionReader } from "../ports/viewer-readers";
+import type {
+  ChannelNameReader,
+  ViewerSessionQuery,
+  ViewerSessionReader,
+} from "../ports/viewer-readers";
 import {
   decodeSessionCursor,
   decodeSessionListCursor,
@@ -21,15 +25,21 @@ import { toViewerEvent, toViewerSessionSummary } from "./pi-session-event-mapper
 import { listPiSessionDirectories } from "./pi-session-files";
 
 export class PiSessionReader implements ViewerSessionReader {
-  constructor(private readonly agentDirectory: string) {}
+  constructor(
+    private readonly agentDirectory: string,
+    private readonly channelNames?: ChannelNameReader,
+  ) {}
 
   async list(query: ViewerSessionQuery = {}): Promise<ViewerPage<ViewerSessionSummary>> {
-    const sessionDirectories = await listPiSessionDirectories(this.agentDirectory);
+    const [sessionDirectories, channelNames] = await Promise.all([
+      listPiSessionDirectories(this.agentDirectory),
+      this.channelNames?.read(),
+    ]);
     const sessions: ViewerSessionSummary[] = [];
 
     for (const { channelKey, directory } of sessionDirectories) {
       const infos = await SessionManager.listAll(directory);
-      sessions.push(...infos.map((info) => toViewerSessionSummary(info, channelKey)));
+      sessions.push(...infos.map((info) => toViewerSessionSummary(info, channelKey, channelNames)));
     }
 
     sessions.sort(
@@ -60,7 +70,10 @@ export class PiSessionReader implements ViewerSessionReader {
     sessionId: string,
     query: ViewerSessionQuery = {},
   ): Promise<ViewerSessionDetail | undefined> {
-    const session = await this.findSession(sessionId);
+    const [session, channelNames] = await Promise.all([
+      this.findSession(sessionId),
+      this.channelNames?.read(),
+    ]);
     if (!session) return undefined;
 
     const entries = parseSessionEntries(await readFile(session.info.path, "utf8"));
@@ -84,7 +97,7 @@ export class PiSessionReader implements ViewerSessionReader {
     const pageEntries = sessionEntries.slice(pageStart, pageEnd);
 
     return {
-      session: toViewerSessionSummary(session.info, session.channelKey),
+      session: toViewerSessionSummary(session.info, session.channelKey, channelNames),
       items: pageEntries.map((entry) => toViewerEvent(entry, sessionId)),
       nextCursor:
         pageStart > 0

@@ -48,7 +48,11 @@ test("serves health, logs, Pi sessions, and scoped memory through Elysia", async
   } as never);
   const sessionId = sessionManager.getSessionId();
 
+  const channelNames = {
+    read: async () => new Map([["123", "general"]]),
+  };
   const app = createWebUiApp({
+    channelNames,
     memory: {
       listScopes: async () => [
         {
@@ -86,7 +90,7 @@ test("serves health, logs, Pi sessions, and scoped memory through Elysia", async
         assert.equal(entryId, "mem-1");
       },
     },
-    piSessions: new PiSessionReader(agentDirectory),
+    piSessions: new PiSessionReader(agentDirectory, channelNames),
     pinoLogs: new PinoJsonlReader(logDirectory),
     toolUsage: new PiToolUsageReader(agentDirectory),
   });
@@ -94,6 +98,12 @@ test("serves health, logs, Pi sessions, and scoped memory through Elysia", async
   const health = await app.handle(new Request("http://localhost/api/health"));
   assert.equal(health.status, 200);
   assert.deepEqual(await health.json(), { ok: true });
+
+  const channels = await app.handle(new Request("http://localhost/api/channels"));
+  assert.equal(channels.status, 200);
+  assert.deepEqual(await channels.json(), {
+    items: [{ channelId: "123", name: "general" }],
+  });
 
   const logs = await app.handle(new Request("http://localhost/api/logs?limit=1"));
   assert.equal(logs.status, 200);
@@ -112,12 +122,13 @@ test("serves health, logs, Pi sessions, and scoped memory through Elysia", async
   const sessions = await app.handle(new Request("http://localhost/api/sessions"));
   assert.equal(sessions.status, 200);
   const sessionList = (await sessions.json()) as {
-    items: { id: string; firstMessage: string }[];
+    items: { id: string; firstMessage: string; channelName?: string }[];
     nextCursor: string | null;
   };
   assert.equal(sessionList.items.length, 1);
   assert.equal(sessionList.items[0]?.id, sessionId);
   assert.equal(sessionList.items[0]?.firstMessage, "hello");
+  assert.equal(sessionList.items[0]?.channelName, "general");
   assert.equal(sessionList.nextCursor, null);
 
   const detail = await app.handle(new Request(`http://localhost/api/sessions/${sessionId}`));
