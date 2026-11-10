@@ -11,12 +11,14 @@ import {
   type ApplicationCommandDataResolvable,
   type Channel,
   type ChatInputCommandInteraction,
+  type Client,
   type Interaction,
   type ModalSubmitInteraction,
 } from "discord.js";
 
 import type { DiscordOperatingMode } from "../domain/discord-operating-state";
-import type { DiscordAccessPolicy } from "../domain/discord-access-policy";
+import type { DiscordAccess, DiscordAccessPolicy } from "../domain/discord-access-policy";
+import type { DiscordAccessRuleStore } from "../ports/discord-access-rule-store";
 import type { DiscordChannelRuleStore } from "../ports/discord-channel-rule-store";
 import { DiscordVoiceChatController, VOICE_COMMAND } from "./discord-voice-chat-controller";
 
@@ -32,8 +34,19 @@ const CHANNEL_RULE_COMMAND = new SlashCommandBuilder()
   .setDescription("このチャンネルまたはスレッドのルールを編集します")
   .setDefaultMemberPermissions(PermissionFlagsBits.UseApplicationCommands)
   .setDMPermission(false);
+const ALLOWED_CHANNELS_COMMAND = new SlashCommandBuilder()
+  .setName("channels")
+  .setDescription("このサーバーで明示的に許可されたチャンネルとスレッドを表示します")
+  .setDefaultMemberPermissions(PermissionFlagsBits.UseApplicationCommands)
+  .setDMPermission(false);
 const CHANNEL_RULE_MODAL_ID = "channel-rule-edit";
 const CHANNEL_RULE_INPUT_ID = "channel-rule";
+const CONTAINER_TEXT_LIMIT = 4_000;
+const ACCESS_LABELS: Readonly<Record<DiscordAccess, string>> = {
+  allow: "許可",
+  deny: "拒否",
+  owner: "オーナーのみ",
+};
 
 /**
  * Discord clients cache modal input values per custom id, even across channels and bots, until the
@@ -47,6 +60,29 @@ function createChannelRuleComponentIds(nonce: string): { modalId: string; inputI
   };
 }
 
+async function fetchChannelName(client: Client, channelId: string): Promise<string | undefined> {
+  const cached = client.channels.cache.get(channelId);
+  const channel = cached ?? (await client.channels.fetch(channelId).catch(() => null));
+  if (!channel) return undefined;
+  return "name" in channel && typeof channel.name === "string" && channel.name
+    ? channel.name
+    : undefined;
+}
+
+function truncateText(lines: readonly string[], limit: number): string {
+  let text = "";
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+    const candidate = text ? `${text}\n${line}` : line;
+    if (candidate.length > limit) {
+      const remaining = lines.length - index;
+      return `${text}\n…ほか ${remaining} 件`;
+    }
+    text = candidate;
+  }
+  return text;
+}
+
 export class DiscordJsInteractionHandler {
   readonly commands: readonly ApplicationCommandDataResolvable[];
 
@@ -55,10 +91,12 @@ export class DiscordJsInteractionHandler {
     private readonly setOperatingMode: (mode: DiscordOperatingMode) => void,
     private readonly voiceChatController?: DiscordVoiceChatController,
     private readonly channelRuleStore?: DiscordChannelRuleStore,
+    private readonly accessRuleStore?: DiscordAccessRuleStore,
   ) {
     this.commands = [
       OPERATING_MODE_COMMAND,
       CHANNEL_RULE_COMMAND,
+      ALLOWED_CHANNELS_COMMAND,
       ...(voiceChatController ? [VOICE_COMMAND] : []),
     ];
   }
@@ -87,6 +125,11 @@ export class DiscordJsInteractionHandler {
 
     if (interaction.commandName === "rule") {
       await this.openChannelRuleEditor(interaction);
+      return;
+    }
+
+    if (interaction.commandName === "channels") {
+      await this.listAllowedChannels(interaction);
       return;
     }
 
@@ -162,6 +205,73 @@ export class DiscordJsInteractionHandler {
       threadId: thread?.id,
       userId: interaction.user.id,
       userIsBot: interaction.user.bot,
+    });
+  }
+
+  private async listAllowedChannels(interaction: ChatInputCommandInteraction): Promise<void> {
+    if (!interaction.inGuild() || !interaction.guildId) {
+      await interaction.reply({
+        content: "このコマンドはサーバー内でのみ使用できます。",
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+
+    const guildId = interaction.guildId;
+    const guildRule = this.accessRuleStore?.getGuildRule(guildId);
+    const resolve = (target: { channelId: string; threadId?: string }): DiscordAccess =>
+      this.accessPolicy.resolveAccess({
+        guildId,
+        userId: interaction.user.id,
+        userIsBot: interaction.user.bot,
+        ...target,
+      });
+
+    const lines: string[] = ["### 許可されたチャンネルとスレッド"];
+    if (guildRule?.access) {
+      lines.push(`ギルド全体: ${ACCESS_LABELS[guildRule.access]}`);
+    }
+
+    let listed = 0;
+    for (const [channelId, channelRule] of Object.entries(guildRule?.channels ?? {})) {
+      const channelAccess = resolve({ channelId });
+      const channelAllowed = channelAccess !== "deny";
+      const channelName = await fetchChannelName(interaction.client, channelId);
+      const channelReference = channelName ? `#${channelName}` : channelId;
+      if (channelAllowed) {
+        lines.push(`・${channelReference}（${ACCESS_LABELS[channelAccess]}）`);
+        listed += 1;
+      }
+
+      for (const threadId of Object.keys(channelRule.threads ?? {})) {
+        const threadAccess = resolve({ channelId, threadId });
+        if (threadAccess === "deny") continue;
+        const threadName = await fetchChannelName(interaction.client, threadId);
+        const threadReference = threadName ? `#${threadName}` : threadId;
+        lines.push(
+          channelAllowed
+            ? `　└ ${threadReference}（${ACCESS_LABELS[threadAccess]}）`
+            : `・${channelReference} / ${threadReference}（${ACCESS_LABELS[threadAccess]}）`,
+        );
+        listed += 1;
+      }
+    }
+
+    if (listed === 0) {
+      lines.push(
+        guildRule?.access === "deny" || !guildRule
+          ? "明示的に許可されたチャンネルやスレッドはありません。"
+          : "個別に許可されたチャンネルやスレッドはありません。",
+      );
+    }
+
+    await interaction.reply({
+      components: [
+        new ContainerBuilder().addTextDisplayComponents(
+          new TextDisplayBuilder().setContent(truncateText(lines, CONTAINER_TEXT_LIMIT)),
+        ),
+      ],
+      flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
     });
   }
 

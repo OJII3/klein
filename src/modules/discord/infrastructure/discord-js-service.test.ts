@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { Interaction, Message, ModalBuilder } from "discord.js";
+import { MessageFlags } from "discord.js";
 
 import { createDiscordAccessPolicy } from "../domain/discord-access-policy";
 import type { DiscordMessage } from "../domain/discord-message";
@@ -288,6 +289,93 @@ test("handles status slash subcommands for members with Manage Server", async ()
       { content: "Botを一時停止しました。", flags: 32768 },
       { content: "Botを再開しました。", flags: 32768 },
     ]);
+  } finally {
+    await service.stop();
+  }
+});
+
+test("lists explicitly allowed channels and threads with their access levels", async () => {
+  const accessRuleStore = {
+    async load() {},
+    getGuildRule(guildId: string) {
+      return guildId === "guild-123"
+        ? {
+            access: "deny" as const,
+            channels: {
+              "channel-allow": {
+                access: "allow" as const,
+                threads: {
+                  "thread-allow": {},
+                  "thread-deny": { access: "deny" as const },
+                },
+              },
+              "channel-owner": { access: "owner" as const },
+              "channel-deny": { access: "deny" as const },
+            },
+          }
+        : undefined;
+    },
+  };
+  const service = new DiscordJsService(
+    "token",
+    createDiscordAccessPolicy(
+      { default: "deny", directMessages: "allow" },
+      undefined,
+      accessRuleStore,
+    ),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    accessRuleStore,
+  );
+  const testableService = service as unknown as TestableDiscordJsService;
+  const names: Record<string, string> = {
+    "channel-allow": "allow-name",
+    "thread-allow": "thread-name",
+    "channel-owner": "owner-name",
+  };
+  let content: string | undefined;
+  let flags: number | undefined;
+  const interaction = {
+    commandName: "channels",
+    inGuild: () => true,
+    guildId: "guild-123",
+    channelId: "channel-allow",
+    channel: { isThread: () => false },
+    client: {
+      channels: {
+        cache: new Map(),
+        fetch: async (id: string) => ({ id, name: names[id], isThread: () => false }),
+      },
+    },
+    user: { id: "user-123", bot: false },
+    isChatInputCommand: () => true,
+    isModalSubmit: () => false,
+    memberPermissions: { has: () => true },
+    reply: async (response: {
+      components: Array<{ toJSON: () => { components: Array<{ content?: string }> } }>;
+      flags?: number;
+    }) => {
+      content = response.components[0]?.toJSON().components[0]?.content;
+      flags = response.flags;
+    },
+  } as unknown as Interaction;
+
+  try {
+    await testableService.handleInteraction(interaction);
+
+    assert.equal(
+      content,
+      [
+        "### 許可されたチャンネルとスレッド",
+        "ギルド全体: 拒否",
+        "・#allow-name（許可）",
+        "　└ #thread-name（許可）",
+        "・#owner-name（オーナーのみ）",
+      ].join("\n"),
+    );
+    assert.equal(flags, MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral);
   } finally {
     await service.stop();
   }
