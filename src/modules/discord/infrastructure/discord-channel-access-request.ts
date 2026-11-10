@@ -13,6 +13,7 @@ import {
 import type { Logger } from "pino";
 
 import type { DiscordAccess } from "../domain/discord-access-policy";
+import type { DiscordAccessRequestStore } from "../ports/discord-access-request-store";
 import type { DiscordAccessRuleStore } from "../ports/discord-access-rule-store";
 
 const REQUEST_BUTTON_PREFIX = "channel-access";
@@ -115,9 +116,16 @@ export class DiscordChannelAccessRequester {
   constructor(
     private readonly client: Client,
     private readonly accessRuleStore: DiscordAccessRuleStore,
+    private readonly accessRequestStore: DiscordAccessRequestStore,
     private readonly ownerUserId: string | undefined,
     private readonly logger?: Logger,
-  ) {}
+  ) {
+    for (const request of accessRequestStore.list()) {
+      const pending: PendingAccessRequest = { ...request };
+      this.pendingByLocation.set(locationKey(pending), pending);
+      this.pendingByRequestId.set(pending.requestId, pending);
+    }
+  }
 
   async request(request: DiscordChannelAccessRequest): Promise<void> {
     if (!this.ownerUserId) return;
@@ -150,7 +158,7 @@ export class DiscordChannelAccessRequester {
     try {
       await this.sendOwnerMessage(pending);
     } catch (error) {
-      this.forget(pending);
+      await this.remove(pending);
       this.logger?.warn(
         {
           err: error,
@@ -166,7 +174,10 @@ export class DiscordChannelAccessRequester {
         "### 確認できませんでした\nオーナーに確認できなかったため、このチャンネルでは返信できません。",
         DENY_ACCENT_COLOR,
       );
+      return;
     }
+
+    await this.save(pending);
   }
 
   /** Returns true when the interaction was one of this requester's buttons. */
@@ -219,7 +230,7 @@ export class DiscordChannelAccessRequester {
       return true;
     }
 
-    this.forget(pending);
+    await this.remove(pending);
 
     const allowed = access === "allow";
     await interaction.update({
@@ -322,6 +333,37 @@ export class DiscordChannelAccessRequester {
           messageId: pending.pendingMessageId,
         },
         "Failed to update the pending Discord channel access message",
+      );
+    }
+  }
+
+  private async save(pending: PendingAccessRequest): Promise<void> {
+    try {
+      await this.accessRequestStore.save(pending);
+    } catch (error) {
+      this.logger?.warn(
+        {
+          err: error,
+          event: "discord_channel_access_request_persist_failed",
+          requestId: pending.requestId,
+        },
+        "Failed to persist a Discord channel access request",
+      );
+    }
+  }
+
+  private async remove(pending: PendingAccessRequest): Promise<void> {
+    this.forget(pending);
+    try {
+      await this.accessRequestStore.remove(pending.requestId);
+    } catch (error) {
+      this.logger?.warn(
+        {
+          err: error,
+          event: "discord_channel_access_request_remove_failed",
+          requestId: pending.requestId,
+        },
+        "Failed to remove a persisted Discord channel access request",
       );
     }
   }

@@ -3,6 +3,7 @@ import test from "node:test";
 import type { ButtonInteraction, Client } from "discord.js";
 
 import type { DiscordAccess } from "../domain/discord-access-policy";
+import type { PendingDiscordAccessRequest } from "../ports/discord-access-request-store";
 import type { DiscordAccessRuleTarget } from "../ports/discord-access-rule-store";
 import { DiscordChannelAccessRequester } from "./discord-channel-access-request";
 
@@ -55,8 +56,29 @@ function createHarness() {
       updates.push({ target, access });
     },
   };
+  const persistedRequests = new Map<string, PendingDiscordAccessRequest>();
+  const requestStore = {
+    async load() {},
+    list: () => [...persistedRequests.values()],
+    async save(request: PendingDiscordAccessRequest) {
+      persistedRequests.set(request.requestId, request);
+    },
+    async remove(requestId: string) {
+      persistedRequests.delete(requestId);
+    },
+  };
 
-  return { channel, client, edits, ownerMessages, sent, store, updates };
+  return {
+    channel,
+    client,
+    edits,
+    ownerMessages,
+    persistedRequests,
+    requestStore,
+    sent,
+    store,
+    updates,
+  };
 }
 
 const request = {
@@ -70,7 +92,12 @@ const request = {
 
 test("posts a pending notice and asks the owner with allow and deny buttons", async () => {
   const harness = createHarness();
-  const requester = new DiscordChannelAccessRequester(harness.client, harness.store, "owner-123");
+  const requester = new DiscordChannelAccessRequester(
+    harness.client,
+    harness.store,
+    harness.requestStore,
+    "owner-123",
+  );
 
   await requester.request(request);
 
@@ -92,18 +119,69 @@ test("posts a pending notice and asks the owner with allow and deny buttons", as
 
 test("does not ask twice for the same channel while a request is pending", async () => {
   const harness = createHarness();
-  const requester = new DiscordChannelAccessRequester(harness.client, harness.store, "owner-123");
+  const requester = new DiscordChannelAccessRequester(
+    harness.client,
+    harness.store,
+    harness.requestStore,
+    "owner-123",
+  );
 
   await requester.request(request);
   await requester.request(request);
 
   assert.equal(harness.sent.length, 1);
   assert.equal(harness.ownerMessages.length, 1);
+  assert.equal(harness.persistedRequests.size, 1);
+});
+
+test("keeps a pending request usable after a restart", async () => {
+  const harness = createHarness();
+  const beforeRestart = new DiscordChannelAccessRequester(
+    harness.client,
+    harness.store,
+    harness.requestStore,
+    "owner-123",
+  );
+  await beforeRestart.request(request);
+  assert.equal(harness.persistedRequests.size, 1);
+
+  const afterRestart = new DiscordChannelAccessRequester(
+    harness.client,
+    harness.store,
+    harness.requestStore,
+    "owner-123",
+  );
+  await afterRestart.request(request);
+  assert.equal(harness.sent.length, 1);
+  assert.equal(harness.ownerMessages.length, 1);
+
+  const customId = toJson(harness.ownerMessages[0]!)[0]?.components[1]?.components?.[0]?.custom_id;
+  assert.ok(customId);
+  const interaction = {
+    customId,
+    user: { id: "owner-123" },
+    reply: async () => undefined,
+    update: async () => undefined,
+  } as unknown as ButtonInteraction;
+
+  assert.equal(await afterRestart.handleButton(interaction), true);
+  assert.deepEqual(harness.updates, [
+    {
+      target: { guildId: "guild-123", channelId: "parent-channel", threadId: "thread-123" },
+      access: "allow",
+    },
+  ]);
+  assert.equal(harness.persistedRequests.size, 0);
 });
 
 test("allows the channel and updates both messages when the owner accepts", async () => {
   const harness = createHarness();
-  const requester = new DiscordChannelAccessRequester(harness.client, harness.store, "owner-123");
+  const requester = new DiscordChannelAccessRequester(
+    harness.client,
+    harness.store,
+    harness.requestStore,
+    "owner-123",
+  );
   await requester.request(request);
 
   const customId = toJson(harness.ownerMessages[0]!)[0]?.components[1]?.components?.[0]?.custom_id;
@@ -128,11 +206,17 @@ test("allows the channel and updates both messages when the owner accepts", asyn
   ]);
   assert.match(toJson(updated[0]!)[0]?.components[0]?.content ?? "", /許可しました/u);
   assert.match(toJson(harness.edits[0]!)[0]?.components[0]?.content ?? "", /許可されました/u);
+  assert.equal(harness.persistedRequests.size, 0);
 });
 
 test("rejects the channel when the owner denies", async () => {
   const harness = createHarness();
-  const requester = new DiscordChannelAccessRequester(harness.client, harness.store, "owner-123");
+  const requester = new DiscordChannelAccessRequester(
+    harness.client,
+    harness.store,
+    harness.requestStore,
+    "owner-123",
+  );
   await requester.request(request);
 
   const customId = toJson(harness.ownerMessages[0]!)[0]?.components[1]?.components?.[1]?.custom_id;
@@ -158,7 +242,12 @@ test("rejects the channel when the owner denies", async () => {
 
 test("ignores button presses from anyone other than the owner", async () => {
   const harness = createHarness();
-  const requester = new DiscordChannelAccessRequester(harness.client, harness.store, "owner-123");
+  const requester = new DiscordChannelAccessRequester(
+    harness.client,
+    harness.store,
+    harness.requestStore,
+    "owner-123",
+  );
   await requester.request(request);
 
   const customId = toJson(harness.ownerMessages[0]!)[0]?.components[1]?.components?.[0]?.custom_id;

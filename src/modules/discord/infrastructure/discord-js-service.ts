@@ -22,6 +22,7 @@ import type {
 } from "../ports/discord-channel-api";
 import type { DiscordGateway, DiscordMessageHandler } from "../ports/discord-gateway";
 import type { DiscordAccessRuleStore } from "../ports/discord-access-rule-store";
+import type { DiscordAccessRequestStore } from "../ports/discord-access-request-store";
 import type { DiscordChannelRuleStore } from "../ports/discord-channel-rule-store";
 
 import { DiscordChannelAccessRequester } from "./discord-channel-access-request";
@@ -79,6 +80,7 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
     channelRuleStore?: DiscordChannelRuleStore,
     accessRuleStore?: DiscordAccessRuleStore,
     ownerUserId?: string,
+    accessRequestStore?: DiscordAccessRequestStore,
   ) {
     this.logger = logger?.child({ component: "discord-service" });
     this.messageAdapter = new DiscordJsMessageAdapter(this.logger);
@@ -102,9 +104,16 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
       ],
       partials: [Partials.Channel],
     });
-    this.channelAccessRequester = accessRuleStore
-      ? new DiscordChannelAccessRequester(this.client, accessRuleStore, ownerUserId, this.logger)
-      : undefined;
+    this.channelAccessRequester =
+      accessRuleStore && accessRequestStore
+        ? new DiscordChannelAccessRequester(
+            this.client,
+            accessRuleStore,
+            accessRequestStore,
+            ownerUserId,
+            this.logger,
+          )
+        : undefined;
   }
 
   async start(onMessage: DiscordMessageHandler): Promise<void> {

@@ -646,6 +646,12 @@ test("asks the owner when mentioned in a channel that is not allowed and shows a
     async setAccess() {},
     getGuildRule: () => undefined,
   };
+  const accessRequestStore = {
+    async load() {},
+    list: () => [],
+    async save() {},
+    async remove() {},
+  };
   const service = new DiscordJsService(
     "token",
     createDiscordAccessPolicy({ default: "deny", directMessages: "allow" }),
@@ -655,6 +661,7 @@ test("asks the owner when mentioned in a channel that is not allowed and shows a
     undefined,
     accessRuleStore,
     "owner-123",
+    accessRequestStore,
   );
   const testableService = service as unknown as TestableDiscordJsService;
   testableService.client.user = { id: "bot-123" };
@@ -703,6 +710,12 @@ test("does not ask the owner when a denied channel message does not mention the 
     async setAccess() {},
     getGuildRule: () => undefined,
   };
+  const accessRequestStore = {
+    async load() {},
+    list: () => [],
+    async save() {},
+    async remove() {},
+  };
   const service = new DiscordJsService(
     "token",
     createDiscordAccessPolicy({ default: "deny", directMessages: "allow" }),
@@ -712,6 +725,7 @@ test("does not ask the owner when a denied channel message does not mention the 
     undefined,
     accessRuleStore,
     "owner-123",
+    accessRequestStore,
   );
   const testableService = service as unknown as TestableDiscordJsService;
   testableService.client.user = { id: "bot-123" };
