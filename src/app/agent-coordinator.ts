@@ -6,6 +6,7 @@ import { BOT_MESSAGE_GUIDANCE } from "@agents/discord/prompt-policy";
 import type { DiscordAccessPolicy } from "@modules/discord/domain/discord-access-policy";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import type { DiscordOperatingState } from "@modules/discord/domain/discord-operating-state";
+import type { DiscordUserDirectory } from "@modules/discord/application/discord-user-directory";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
 import type { MemoryCoordinator } from "@modules/memory/application/memory-coordinator";
 import type { OwnerMemoryStore } from "@modules/memory/application/owner-memory-store";
@@ -28,6 +29,7 @@ export interface AgentCoordinatorDependencies {
     handoffContext?: string,
     ownerFeaturesAllowed?: boolean,
   ) => Promise<ChannelAgent>;
+  readonly discordUserDirectory?: DiscordUserDirectory;
   readonly channelSessionStateStore?: ChannelSessionStateStore;
   readonly channelRuleStore?: DiscordChannelRuleStore;
   readonly logger: Logger;
@@ -113,6 +115,11 @@ export class AgentCoordinator {
     };
     if (this.dependencies.accessPolicy && !this.dependencies.accessPolicy.canReceive(target)) {
       return;
+    }
+
+    this.dependencies.discordUserDirectory?.remember(message.author);
+    if (message.replyTo?.author) {
+      this.dependencies.discordUserDirectory?.remember(message.replyTo.author);
     }
 
     const ownerFeaturesAllowed =

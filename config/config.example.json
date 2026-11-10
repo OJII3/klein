@@ -53,6 +53,10 @@
       "maxBatchAgeSeconds": 1800,
       "maxBatchMessages": 32
     },
+    "userMemory": {
+      "enabled": false,
+      "directory": ".runtime/pi/user-memory"
+    },
     "minecraft": {
       "enabled": false
     },

@@ -421,6 +421,20 @@
           },
           "additionalProperties": false
         },
+        "userMemory": {
+          "type": "object",
+          "required": ["enabled"],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "directory": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        },
         "minecraft": {
           "type": "object",
           "required": ["enabled"],
