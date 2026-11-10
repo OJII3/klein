@@ -2,11 +2,14 @@ import type { WatchTask } from "../domain/scheduled-task";
 
 export interface WatchCheckResult {
   readonly output: string;
+  readonly decision: WatchDecision;
   readonly exitCode: number;
   readonly durationMs: number;
   /** State after applying the script's `store()` writes. */
   readonly state: Readonly<Record<string, unknown>>;
 }
+
+export type WatchDecision = "wake" | "silent";
 
 export interface WatchCheckRunner {
   run(watch: WatchTask): Promise<WatchCheckResult>;

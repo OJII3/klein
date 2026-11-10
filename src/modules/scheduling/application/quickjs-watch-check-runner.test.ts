@@ -26,11 +26,26 @@ const fetchTool: WatchTool = {
 test("runs a JS watch script with args and collects text output", async () => {
   const runner = new QuickJsWatchCheckRunner({ tools: [], timeoutMs: 5_000 });
   const result = await runner.run({
-    script: 'text("status: " + args[0]); return { changed: true };',
+    script: 'text("status: " + args[0]); wake();',
     args: ["green"],
   });
-  assert.equal(result.output, 'status: green\n{"changed":true}');
+  assert.equal(result.output, "status: green");
+  assert.equal(result.decision, "wake");
   assert.equal(result.exitCode, 0);
+});
+
+test("reports a silent decision", async () => {
+  const runner = new QuickJsWatchCheckRunner({ tools: [], timeoutMs: 5_000 });
+  const result = await runner.run({ script: 'text("ignored"); silent();', args: [] });
+  assert.equal(result.decision, "silent");
+});
+
+test("rejects a check that does not decide", async () => {
+  const runner = new QuickJsWatchCheckRunner({ tools: [], timeoutMs: 5_000 });
+  await assert.rejects(
+    runner.run({ script: 'text("no decision");', args: [] }),
+    /wake\(\).*silent\(\)/u,
+  );
 });
 
 test("exposes only the catalog tools as tools.<name>", async () => {
@@ -39,13 +54,10 @@ test("exposes only the catalog tools as tools.<name>", async () => {
     script:
       'const result = await tools.fetch_content({ url: "https://example.com" });\n' +
       "text(result.body);\n" +
-      "return result;",
+      "await silent();",
     args: [],
   });
-  assert.equal(
-    result.output,
-    'fetched https://example.com\n{"body":"fetched https://example.com"}',
-  );
+  assert.equal(result.output, "fetched https://example.com");
 });
 
 test("does not expose fetch as a global", async () => {
@@ -83,7 +95,7 @@ test("limits the memory a watch script may allocate", async () => {
 
 test("keeps store values between checks", async () => {
   const runner = new QuickJsWatchCheckRunner({ tools: [], timeoutMs: 5_000 });
-  const script = 'store("runs", (load("runs") ?? 0) + 1); return load("runs");';
+  const script = 'store("runs", (load("runs") ?? 0) + 1); silent();';
   const first = await runner.run({ script, args: [] });
   assert.deepEqual(first.state, { runs: 1 });
   const second = await runner.run({ script, args: [], state: first.state });
@@ -93,7 +105,7 @@ test("keeps store values between checks", async () => {
 test("deletes state keys stored as undefined", async () => {
   const runner = new QuickJsWatchCheckRunner({ tools: [], timeoutMs: 5_000 });
   const result = await runner.run({
-    script: 'store("kept", load("kept")); store("gone", undefined);',
+    script: 'store("kept", load("kept")); store("gone", undefined); silent();',
     args: [],
     state: { kept: 1, gone: 2 },
   });
@@ -102,5 +114,5 @@ test("deletes state keys stored as undefined", async () => {
 
 test("rejects output over the byte limit", async () => {
   const runner = new QuickJsWatchCheckRunner({ tools: [], timeoutMs: 5_000, maxOutputBytes: 10 });
-  await assert.rejects(runner.run({ script: 'text("01234567890");', args: [] }), /上限/u);
+  await assert.rejects(runner.run({ script: 'text("01234567890"); wake();', args: [] }), /上限/u);
 });

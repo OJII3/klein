@@ -39,6 +39,7 @@ export function renderWatchToolSection(catalog: WatchToolCatalog): string | unde
   }));
   return [
     "Inside a watch script, call these tools with `await tools.<name>({ ...args })`. Only these tools are available; normal session tools, timers, files, and process APIs are not.",
+    "End every check with `wake()` to notify the agent or `silent()` to do nothing; ending without either is an error.",
     "`store(key, value)` and `load(key)` keep JSON values between checks of the same watch; the state is deleted with the watch.",
     ["```ts", renderDeclarations({ tools: declarations }).trim(), "```"].join("\n"),
   ].join("\n\n");
