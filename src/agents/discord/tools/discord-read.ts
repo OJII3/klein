@@ -5,7 +5,10 @@ import { toImageAnalysisFailure, type ImageAnalysisFailure } from "@agents/core/
 import { formatDiscordMessage, type DiscordMessage } from "@modules/discord/domain/discord-message";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
 
-export type DiscordImageAnalysis = (message: DiscordMessage) => Promise<string | undefined>;
+export type DiscordImageAnalysis = (
+  message: DiscordMessage,
+  focus?: string,
+) => Promise<string | undefined>;
 
 export function createDiscordReadTool(
   channelApi: Pick<DiscordChannelApi, "readMessage">,
@@ -17,10 +20,18 @@ export function createDiscordReadTool(
     name: "discord_read",
     label: "Read Discord Message",
     description:
-      "Read a Discord message by ID, including image attachments. Use the current channel when channelId is omitted.",
+      "Read a Discord message by ID, including image attachments. Use the current channel when channelId is omitted. " +
+      "Image analysis is kept short; pass focus to say what you need from the images.",
     parameters: Type.Object({
       messageId: Type.String({ minLength: 1 }),
       channelId: Type.Optional(Type.String({ minLength: 1 })),
+      focus: Type.Optional(
+        Type.String({
+          maxLength: 400,
+          description:
+            "What you need to know about the attached images, in one short sentence. The analysis stays brief and targeted.",
+        }),
+      ),
     }),
     async execute(_toolCallId, params) {
       const message = await channelApi.readMessage(
@@ -35,7 +46,7 @@ export function createDiscordReadTool(
       let imageAnalysisFailure: ImageAnalysisFailure | undefined;
       if (message.images.length > 0 && analyzeImages) {
         try {
-          imageAnalysis = await analyzeImages(message);
+          imageAnalysis = await analyzeImages(message, params.focus);
         } catch (error) {
           imageAnalysisFailure = toImageAnalysisFailure(error);
         }

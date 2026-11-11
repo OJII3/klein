@@ -85,6 +85,7 @@ test("returns image attachments as tool result content", async () => {
 
 test("returns image analysis instead of image content when an analyzer is available", async () => {
   let analyzedMessage: DiscordMessage | undefined;
+  let analyzedFocus: string | undefined;
   const tool = createDiscordReadTool(
     {
       async readMessage() {
@@ -102,15 +103,16 @@ test("returns image analysis instead of image content when an analyzer is availa
       },
     },
     "current-channel",
-    async (message) => {
+    async (message, focus) => {
       analyzedMessage = message;
+      analyzedFocus = focus;
       return "画像にはテスト用の内容があります。";
     },
   );
 
   const result = await tool.execute(
     "tool-call",
-    { messageId: "message-456" },
+    { messageId: "message-456", focus: "テスト用の内容だけ" },
     undefined,
     undefined,
     {} as never,
@@ -127,6 +129,7 @@ test("returns image analysis instead of image content when an analyzer is availa
       },
     ],
   });
+  assert.equal(analyzedFocus, "テスト用の内容だけ");
   assert.deepEqual(result.content, [
     {
       type: "text",

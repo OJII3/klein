@@ -33,12 +33,13 @@ export class DiscordAgent implements ChannelAgent {
     options: DiscordAgentCreateOptions = {},
   ): Promise<DiscordAgent> {
     let runtime: AgentRuntime | undefined;
-    const analyzeImage: DiscordImageAnalysis = async (message) => {
+    const analyzeImage: DiscordImageAnalysis = async (message, focus) => {
       if (!runtime?.analyzeImage) return undefined;
 
       return runtime.analyzeImage({
         text: formatDiscordMessage(message),
         images: message.images.map(({ data, mimeType }) => ({ data, mimeType })),
+        ...(focus ? { focus } : {}),
       });
     };
 
