@@ -1,11 +1,4 @@
-import { completeSimple } from "@earendil-works/pi-ai/compat";
-import type {
-  Api,
-  AssistantMessage,
-  Context,
-  Model,
-  SimpleStreamOptions,
-} from "@earendil-works/pi-ai";
+import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
 import type { CreateAgentSessionOptions } from "@earendil-works/pi-coding-agent";
 
 import { renderMemoryContext } from "@modules/memory/infrastructure/memory-context-renderer";
@@ -16,13 +9,9 @@ import type {
   MemoryOperation,
   MemoryProcessor,
 } from "@modules/memory/domain/memory";
+import type { CompleteSimple } from "./pi-background-runner";
 
 type ThinkingLevel = NonNullable<CreateAgentSessionOptions["thinkingLevel"]>;
-type CompleteSimple = (
-  model: Model<Api>,
-  context: Context,
-  options?: SimpleStreamOptions,
-) => Promise<AssistantMessage>;
 
 export const MEMORY_PROCESSING_SYSTEM_PROMPT = `You are Klein's background guild-memory curator.
 Review a batch of Discord messages and the current guild memory, then return only a JSON object.
@@ -59,8 +48,8 @@ Return no Markdown fences, explanation, or other text outside the JSON object.`;
 export class PiMemoryProcessor implements MemoryProcessor {
   constructor(
     private readonly model: Model<Api>,
-    private readonly thinkingLevel?: ThinkingLevel,
-    private readonly complete: CompleteSimple = completeSimple,
+    private readonly thinkingLevel: ThinkingLevel | undefined,
+    private readonly complete: CompleteSimple,
   ) {}
 
   async process(

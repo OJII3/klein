@@ -1,18 +1,14 @@
+import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 import type { Api, Model } from "@earendil-works/pi-ai";
 import {
-  createAgentSession,
   createEditToolDefinition,
   createReadToolDefinition,
   createWriteToolDefinition,
-  DefaultResourceLoader,
-  SessionManager,
-  SettingsManager,
   type CreateAgentSessionOptions,
-  type ModelRuntime,
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 
@@ -25,6 +21,7 @@ import {
   parseUserMemory,
   renderUserMemory,
 } from "@modules/user-memory/infrastructure/markdown-user-memory-store";
+import type { PiBackgroundRunner } from "./pi-background-runner";
 
 type ThinkingLevel = NonNullable<CreateAgentSessionOptions["thinkingLevel"]>;
 
@@ -64,11 +61,9 @@ export interface UserMemoryAgentSession {
 }
 
 export interface UserMemoryAgentSessionOptions {
-  readonly agentDir: string;
   readonly directory: string;
   readonly fileName: string;
   readonly model: Model<Api>;
-  readonly modelRuntime: ModelRuntime;
   readonly thinkingLevel?: ThinkingLevel;
 }
 
@@ -77,11 +72,11 @@ export type UserMemoryAgentSessionFactory = (
 ) => Promise<UserMemoryAgentSession>;
 
 export interface PiUserMemoryAgentOptions {
-  readonly agentDir: string;
   readonly directory: string;
   readonly model: Model<Api>;
-  readonly modelRuntime: ModelRuntime;
+  readonly sessionId?: string;
   readonly thinkingLevel?: ThinkingLevel;
+  readonly runner?: PiBackgroundRunner;
   readonly sessionFactory?: UserMemoryAgentSessionFactory;
 }
 
@@ -93,7 +88,23 @@ export class PiUserMemoryAgent implements UserMemoryProcessor {
   private readonly sessionFactory: UserMemoryAgentSessionFactory;
 
   constructor(private readonly options: PiUserMemoryAgentOptions) {
-    this.sessionFactory = options.sessionFactory ?? createPiUserMemorySession;
+    const sessionId = options.sessionId ?? `user-memory-${randomUUID()}`;
+    this.sessionFactory =
+      options.sessionFactory ??
+      ((sessionOptions) => {
+        if (!options.runner) {
+          throw new Error("PiUserMemoryAgent requires a runner or a sessionFactory");
+        }
+        return options.runner.createSession({
+          cwd: sessionOptions.directory,
+          model: sessionOptions.model,
+          sessionId,
+          systemPrompt: USER_MEMORY_AGENT_SYSTEM_PROMPT,
+          thinkingLevel: sessionOptions.thinkingLevel,
+          toolNames: ["read", "write", "edit"],
+          tools: createSandboxedTools(sessionOptions.directory, sessionOptions.fileName),
+        });
+      });
   }
 
   async process(
@@ -107,11 +118,9 @@ export class PiUserMemoryAgent implements UserMemoryProcessor {
 
     try {
       const session = await this.sessionFactory({
-        agentDir: this.options.agentDir,
         directory: this.options.directory,
         fileName,
         model: this.options.model,
-        modelRuntime: this.options.modelRuntime,
         thinkingLevel: this.options.thinkingLevel,
       });
       try {
@@ -129,41 +138,6 @@ export class PiUserMemoryAgent implements UserMemoryProcessor {
     }
   }
 }
-
-export const createPiUserMemorySession: UserMemoryAgentSessionFactory = async (options) => {
-  const settingsManager = SettingsManager.create(options.directory, options.agentDir);
-  const resourceLoader = new DefaultResourceLoader({
-    cwd: options.directory,
-    agentDir: options.agentDir,
-    settingsManager,
-    noExtensions: true,
-    noSkills: true,
-    noPromptTemplates: true,
-    noThemes: true,
-    noContextFiles: true,
-    systemPrompt: USER_MEMORY_AGENT_SYSTEM_PROMPT,
-  });
-  await resourceLoader.reload();
-
-  const sessionManager = SessionManager.inMemory(options.directory);
-  const { session } = await createAgentSession({
-    cwd: options.directory,
-    agentDir: options.agentDir,
-    customTools: createSandboxedTools(options.directory, options.fileName),
-    model: options.model,
-    modelRuntime: options.modelRuntime,
-    resourceLoader,
-    sessionManager,
-    settingsManager,
-    thinkingLevel: options.thinkingLevel,
-    tools: ["read", "write", "edit"],
-  });
-
-  return {
-    prompt: (text) => session.prompt(text, { expandPromptTemplates: false }),
-    dispose: () => session.dispose(),
-  };
-};
 
 function createSandboxedTools(directory: string, fileName: string): ToolDefinition[] {
   const root = resolve(directory);

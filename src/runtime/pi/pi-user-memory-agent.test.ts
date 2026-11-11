@@ -3,8 +3,6 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 
-import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
-
 import type { UserMemory } from "@modules/user-memory/domain/user-memory";
 import {
   MarkdownUserMemoryStore,
@@ -33,10 +31,8 @@ function createAgent(
   sessionFactory: UserMemoryAgentSessionFactory,
 ): PiUserMemoryAgent {
   return new PiUserMemoryAgent({
-    agentDir: directory,
     directory,
     model: resolveConfiguredModel("opencode-go", "deepseek-v4.1-flash"),
-    modelRuntime: {} as unknown as ModelRuntime,
     sessionFactory,
   });
 }

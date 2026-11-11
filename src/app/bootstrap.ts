@@ -19,8 +19,8 @@ import {
   createPiAgentFactory,
   createPiModelRuntime,
   resolveConfiguredModel,
-  withOpenCodeSessionHeader,
 } from "@runtime/pi/pi-agent-runtime";
+import { PiBackgroundRunner } from "@runtime/pi/pi-background-runner";
 import { migratePiDurableStorage } from "@runtime/pi/pi-durable-migration";
 import { createPiUsageReporterFromEnv } from "@runtime/pi/pi-usage-reporter";
 import { createWatchFetchTool } from "@runtime/pi/watch-fetch-tool";
@@ -142,6 +142,12 @@ export async function bootstrap(): Promise<void> {
   if (providersInUse.has("google") && !(await modelRuntime.checkAuth("google"))) {
     throw new Error("GEMINI_API_KEY is required");
   }
+  const backgroundRunner = new PiBackgroundRunner({
+    agentDir,
+    logger,
+    modelRuntime,
+    usageReporter: piUsageReporter,
+  });
   const reactionConfiguration = voiceChatConfig?.reactions;
   const reactionPresets = reactionConfiguration
     ? await loadVoiceReactionPresets(reactionConfiguration.presetsFile)
@@ -222,17 +228,13 @@ export async function bootstrap(): Promise<void> {
       ? new UserMemoryCoordinator({
           store: userMemoryStore,
           processor: new PiUserMemoryAgent({
-            agentDir,
             directory: userMemoryDirectory,
-            model: withOpenCodeSessionHeader(
-              resolveConfiguredModel(
-                userMemoryConfig.llm.provider,
-                userMemoryConfig.llm.model,
-                modelRuntime,
-              ),
-              `user-memory-${randomUUID()}`,
+            model: resolveConfiguredModel(
+              userMemoryConfig.llm.provider,
+              userMemoryConfig.llm.model,
+              modelRuntime,
             ),
-            modelRuntime,
+            runner: backgroundRunner,
             thinkingLevel: userMemoryConfig.llm.thinkingLevel,
           }),
           logger,
@@ -294,11 +296,9 @@ export async function bootstrap(): Promise<void> {
         maxBatchAgeSeconds: memoryConfig.maxBatchAgeSeconds,
         maxBatchMessages: memoryConfig.maxBatchMessages,
         processor: new PiMemoryProcessor(
-          withOpenCodeSessionHeader(
-            resolveConfiguredModel(memoryConfig.llm.provider, memoryConfig.llm.model, modelRuntime),
-            memorySessionId,
-          ),
+          resolveConfiguredModel(memoryConfig.llm.provider, memoryConfig.llm.model, modelRuntime),
           memoryConfig.llm.thinkingLevel,
+          backgroundRunner.createCompleter(memorySessionId),
         ),
         taskCoordinator,
       })

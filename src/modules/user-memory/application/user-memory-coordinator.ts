@@ -1,5 +1,6 @@
 import type { Logger } from "pino";
 
+import { IdleBatchQueue } from "@app/idle-batch-queue";
 import type { TaskCoordinator } from "@app/task-coordinator";
 import {
   formatDiscordMessage,
@@ -17,13 +18,6 @@ const DEFAULT_IDLE_SECONDS = 180;
 const DEFAULT_MAX_BATCH_AGE_SECONDS = 1_800;
 const DEFAULT_MAX_BATCH_MESSAGES = 32;
 
-interface UserMemoryQueue {
-  readonly messages: DiscordMessage[];
-  processing: boolean;
-  idleTimer?: ReturnType<typeof setTimeout>;
-  maxAgeTimer?: ReturnType<typeof setTimeout>;
-}
-
 export interface UserMemoryCoordinatorOptions {
   readonly store: UserMemoryStore;
   readonly processor: UserMemoryProcessor;
@@ -40,17 +34,31 @@ export interface UserMemoryCoordinatorOptions {
  */
 export class UserMemoryCoordinator {
   private readonly logger: Logger;
-  private readonly idleSeconds: number;
-  private readonly maxBatchAgeSeconds: number;
-  private readonly maxBatchMessages: number;
-  private readonly queues = new Map<string, UserMemoryQueue>();
+  private readonly queue: IdleBatchQueue<string, DiscordMessage>;
   private disposed = false;
 
   constructor(private readonly options: UserMemoryCoordinatorOptions) {
     this.logger = options.logger.child({ component: "user-memory-coordinator" });
-    this.idleSeconds = options.idleSeconds ?? DEFAULT_IDLE_SECONDS;
-    this.maxBatchAgeSeconds = options.maxBatchAgeSeconds ?? DEFAULT_MAX_BATCH_AGE_SECONDS;
-    this.maxBatchMessages = options.maxBatchMessages ?? DEFAULT_MAX_BATCH_MESSAGES;
+    this.queue = new IdleBatchQueue({
+      idleSeconds: options.idleSeconds ?? DEFAULT_IDLE_SECONDS,
+      maxBatchAgeSeconds: options.maxBatchAgeSeconds ?? DEFAULT_MAX_BATCH_AGE_SECONDS,
+      maxBatchMessages: options.maxBatchMessages ?? DEFAULT_MAX_BATCH_MESSAGES,
+      keyOf: (message) => (message.author.bot ? undefined : message.author.id),
+      onError: ({ key: userId, batch, error, durationMs }) => {
+        this.logger.warn(
+          {
+            durationMs,
+            err: error,
+            event: "user_memory_processing_failed",
+            messageCount: batch.length,
+            userId,
+          },
+          "Failed to process user memory",
+        );
+      },
+      run: (userId, messages) => this.processUser(userId, messages),
+      taskCoordinator: options.taskCoordinator,
+    });
   }
 
   async observe(message: DiscordMessage): Promise<void> {
@@ -66,143 +74,55 @@ export class UserMemoryCoordinator {
       return;
     }
 
-    this.enqueue(message);
+    this.queue.enqueue(message);
   }
 
   dispose(): void {
     this.disposed = true;
-    for (const queue of this.queues.values()) {
-      if (queue.idleTimer) clearTimeout(queue.idleTimer);
-      if (queue.maxAgeTimer) clearTimeout(queue.maxAgeTimer);
-    }
-    this.queues.clear();
+    this.queue.dispose();
   }
 
-  private enqueue(message: DiscordMessage): void {
-    if (this.disposed) return;
-
-    const userId = message.author.id;
-    let queue = this.queues.get(userId);
-    if (!queue) {
-      queue = {
-        messages: [],
-        processing: false,
-      };
-      this.queues.set(userId, queue);
-    }
-
-    queue.messages.push(message);
-    if (queue.messages.length >= this.maxBatchMessages) {
-      this.scheduleProcessing(userId);
+  private async processUser(userId: string, messages: readonly DiscordMessage[]): Promise<void> {
+    const startedAt = Date.now();
+    const before = await this.options.store.read(userId);
+    if (!before) {
+      this.logger.warn(
+        { event: "user_memory_processing_missing", userId },
+        "User memory disappeared before processing",
+      );
       return;
     }
 
-    this.resetIdleTimer(userId, queue);
-    if (!queue.maxAgeTimer) {
-      queue.maxAgeTimer = setTimeout(
-        () => this.scheduleProcessing(userId),
-        this.maxBatchAgeSeconds * 1_000,
-      );
-    }
-  }
+    const updated = await this.options.processor.process(
+      userId,
+      before,
+      messages.map(toUserMemoryMessage),
+    );
+    if (!updated) return;
 
-  private scheduleProcessing(userId: string): void {
-    const queue = this.queues.get(userId);
-    if (!queue || this.disposed) return;
-
-    if (queue.idleTimer) {
-      clearTimeout(queue.idleTimer);
-      queue.idleTimer = undefined;
-    }
-    if (queue.maxAgeTimer) {
-      clearTimeout(queue.maxAgeTimer);
-      queue.maxAgeTimer = undefined;
-    }
-
-    void this.options.taskCoordinator.run(() => this.processUser(userId));
-  }
-
-  private async processUser(userId: string): Promise<void> {
-    const queue = this.queues.get(userId);
-    if (!queue || queue.processing || queue.messages.length === 0) return;
-
-    queue.processing = true;
-    const messages = queue.messages.splice(0, this.maxBatchMessages);
-    const startedAt = Date.now();
-    let failed = false;
-
-    try {
-      const before = await this.options.store.read(userId);
-      if (!before) {
-        this.logger.warn(
-          { event: "user_memory_processing_missing", userId },
-          "User memory disappeared before processing",
-        );
-        return;
-      }
-
-      const updated = await this.options.processor.process(
+    const lastMessage = messages.at(-1);
+    if (!lastMessage) return;
+    await this.options.store.update(userId, identityOf(lastMessage.author), {
+      displayName: before.displayName,
+      nickname: updated.nickname ?? null,
+      firstName: updated.firstName ?? null,
+      lastName: updated.lastName ?? null,
+      summary: updated.summary,
+      impression: before.impression,
+      facts: updated.facts,
+      history: updated.history,
+      inCommon: updated.inCommon,
+      strengthening: updated.strengthening,
+    });
+    this.logger.info(
+      {
+        durationMs: Date.now() - startedAt,
+        event: "user_memory_processed",
+        messageCount: messages.length,
         userId,
-        before,
-        messages.map(toUserMemoryMessage),
-      );
-      if (updated) {
-        const lastMessage = messages.at(-1);
-        if (!lastMessage) return;
-        await this.options.store.update(userId, identityOf(lastMessage.author), {
-          displayName: before.displayName,
-          nickname: updated.nickname ?? null,
-          firstName: updated.firstName ?? null,
-          lastName: updated.lastName ?? null,
-          summary: updated.summary,
-          impression: before.impression,
-          facts: updated.facts,
-          history: updated.history,
-          inCommon: updated.inCommon,
-          strengthening: updated.strengthening,
-        });
-        this.logger.info(
-          {
-            durationMs: Date.now() - startedAt,
-            event: "user_memory_processed",
-            messageCount: messages.length,
-            userId,
-          },
-          "Processed user memory",
-        );
-      }
-    } catch (error) {
-      failed = true;
-      queue.messages.unshift(...messages);
-      this.logger.warn(
-        {
-          durationMs: Date.now() - startedAt,
-          err: error,
-          event: "user_memory_processing_failed",
-          messageCount: messages.length,
-          userId,
-        },
-        "Failed to process user memory",
-      );
-    } finally {
-      queue.processing = false;
-      if (this.disposed || queue.messages.length === 0) {
-        this.queues.delete(userId);
-      } else if (failed) {
-        this.resetIdleTimer(userId, queue);
-        queue.maxAgeTimer = setTimeout(
-          () => this.scheduleProcessing(userId),
-          this.maxBatchAgeSeconds * 1_000,
-        );
-      } else {
-        this.scheduleProcessing(userId);
-      }
-    }
-  }
-
-  private resetIdleTimer(userId: string, queue: UserMemoryQueue): void {
-    if (queue.idleTimer) clearTimeout(queue.idleTimer);
-    queue.idleTimer = setTimeout(() => this.scheduleProcessing(userId), this.idleSeconds * 1_000);
+      },
+      "Processed user memory",
+    );
   }
 }
 
