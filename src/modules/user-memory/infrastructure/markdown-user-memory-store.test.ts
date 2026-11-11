@@ -209,6 +209,46 @@ test("parses a manually written memory file", async () => {
   assert.equal(memory.inCommon, "なし");
 });
 
+test("lists saved user memories and ignores unrelated files", async () => {
+  await using temp = await createTempDir("klein-user-memory-");
+  const store = new MarkdownUserMemoryStore(temp.path);
+
+  await store.update(
+    "111",
+    { username: "alice", displayName: "Alice" },
+    {
+      impression: 12,
+      summary: "ひとつ目",
+    },
+  );
+  await writeFile(join(temp.path, "notes.txt"), "ignored", "utf8");
+  await writeFile(join(temp.path, "not-a-user.md"), "ignored", "utf8");
+  await writeFile(
+    join(temp.path, "222.md"),
+    [
+      "---",
+      'discord_id: "bob"',
+      'display_name: "Bob"',
+      'updated_at: "2030-01-01T00:00:00.000Z"',
+      "---",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+
+  const summaries = await store.list();
+  assert.deepEqual(
+    summaries.map((summary) => summary.userId),
+    ["222", "111"],
+  );
+  assert.equal(summaries[0]?.displayName, "Bob");
+  assert.equal(summaries[1]?.summary, "ひとつ目");
+  assert.equal(summaries[1]?.impression, 12);
+
+  const missing = new MarkdownUserMemoryStore(join(temp.path, "missing"));
+  assert.deepEqual(await missing.list(), []);
+});
+
 test("renders the documented section headings and front matter order", async () => {
   await using temp = await createTempDir("klein-user-memory-");
   const store = new MarkdownUserMemoryStore(temp.path);
