@@ -28,6 +28,7 @@ export function createPiEventPrompt(event: AgentEvent): AgentPrompt {
 
   return {
     traceId: event.id,
+    ...(event.type === "discord.message" ? { messageId: event.id } : {}),
     text: `<event-metadata>\n${metadata}\n</event-metadata>\n\n${texts.join("\n\n")}`,
     images,
   };

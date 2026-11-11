@@ -18,6 +18,7 @@ test("formats event time to the minute and keeps trace IDs and image data intern
   });
 
   assert.equal(prompt.traceId, "event-1");
+  assert.equal(prompt.messageId, undefined);
   assert.deepEqual(prompt.images, [
     { data: "c2VjcmV0", mimeType: "image/png" },
     { data: "c2FtcGxl", mimeType: "image/jpeg" },
@@ -32,6 +33,19 @@ test("formats event time to the minute and keeps trace IDs and image data intern
   assert.ok(!prompt.text.includes("42.123"));
   assert.ok(!prompt.text.includes("c2VjcmV0"));
   assert.ok(!prompt.text.includes("c2FtcGxl"));
+});
+
+test("exposes the source message ID for Discord events without adding it to the text", () => {
+  const prompt = createPiEventPrompt({
+    id: "message-123",
+    occurredAt: "2026-10-14T09:30:42.123Z",
+    type: "discord.message",
+    source: "discord",
+    content: [{ type: "text", text: "本文" }],
+  });
+
+  assert.equal(prompt.messageId, "message-123");
+  assert.ok(!prompt.text.includes("message-123"));
 });
 
 test("escapes metadata delimiters without changing event content", () => {

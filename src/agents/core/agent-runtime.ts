@@ -11,6 +11,8 @@ export interface AgentPrompt {
   readonly images: readonly AgentImage[];
   /** What the caller needs from the image. Keeps a short analysis relevant. */
   readonly focus?: string;
+  /** Discord message ID when the prompt came from a Discord message. */
+  readonly messageId?: string;
 }
 
 export interface AgentRuntime {
