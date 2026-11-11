@@ -155,7 +155,7 @@ test("wires the runtime image analyzer into discord_read", async () => {
 
   const result = await readTool.execute(
     "tool-call",
-    { messageId: "message-456" } as never,
+    { messageId: "message-456", focus: "エラーの内容" } as never,
     undefined,
     undefined,
     {} as never,
@@ -164,6 +164,7 @@ test("wires the runtime image analyzer into discord_read", async () => {
   assert.deepEqual(analyzedPrompt, {
     text: "さつき (@satsuki):\n読み取った本文\n[添付画像: sample.png]",
     images: [{ data: "c2VjcmV0", mimeType: "image/png" }],
+    focus: "エラーの内容",
   });
   assert.deepEqual(result.content, [
     {

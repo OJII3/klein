@@ -4,7 +4,11 @@ import test from "node:test";
 import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
 
 import { ImageAnalysisError } from "@agents/core/image-analysis";
-import { IMAGE_ANALYSIS_SYSTEM_PROMPT, PiImageAnalyzer } from "./pi-image-analyzer";
+import {
+  IMAGE_ANALYSIS_MAX_TOKENS,
+  IMAGE_ANALYSIS_SYSTEM_PROMPT,
+  PiImageAnalyzer,
+} from "./pi-image-analyzer";
 import { resolveConfiguredImageModel, resolveConfiguredModel } from "./pi-model-runtime";
 
 test("sends image attachments to a one-shot analysis request", async () => {
@@ -13,6 +17,7 @@ test("sends image attachments to a one-shot analysis request", async () => {
         modelId: string;
         systemPrompt?: string;
         content: unknown;
+        maxTokens?: number;
         reasoning?: string;
       }
     | undefined;
@@ -21,6 +26,7 @@ test("sends image attachments to a one-shot analysis request", async () => {
       received = {
         content: context.messages[0]?.content,
         modelId: model.id,
+        maxTokens: options?.maxTokens,
         reasoning: options?.reasoning,
         systemPrompt: context.systemPrompt,
       };
@@ -45,11 +51,46 @@ test("sends image attachments to a one-shot analysis request", async () => {
   assert.equal(analysis, "画像の解析結果");
   assert.equal(received?.modelId, "kimi-k3");
   assert.equal(received?.systemPrompt, IMAGE_ANALYSIS_SYSTEM_PROMPT);
+  assert.equal(received?.maxTokens, IMAGE_ANALYSIS_MAX_TOKENS);
   assert.equal(received?.reasoning, "medium");
   assert.deepEqual(received?.content, [
     {
       type: "text",
       text: "Analyze the attached image(s) for this user request:\nこの画像を確認して",
+    },
+    { type: "image", data: "c2VjcmV0", mimeType: "image/png" },
+  ]);
+});
+
+test("adds the caller's focus to the analysis request", async () => {
+  let receivedContent: unknown;
+  const analyzer = new PiImageAnalyzer(
+    {
+      async completeSimple(_model, context) {
+        receivedContent = context.messages[0]?.content;
+        return {
+          role: "assistant",
+          content: [{ type: "text", text: "エラーは認証失敗です。" }],
+          stopReason: "stop",
+        } as never;
+      },
+    },
+    resolveConfiguredImageModel("opencode-go", "kimi-k3"),
+  );
+
+  const analysis = await analyzer.analyze({
+    text: "この画面のエラーを見て",
+    images: [{ data: "c2VjcmV0", mimeType: "image/png" }],
+    focus: "表示されているエラーメッセージだけ",
+  });
+
+  assert.equal(analysis, "エラーは認証失敗です。");
+  assert.deepEqual(receivedContent, [
+    {
+      type: "text",
+      text:
+        "Analyze the attached image(s) for this user request:\nこの画面のエラーを見て\n\n" +
+        "Focus only on what the caller needs:\n表示されているエラーメッセージだけ",
     },
     { type: "image", data: "c2VjcmV0", mimeType: "image/png" },
   ]);
