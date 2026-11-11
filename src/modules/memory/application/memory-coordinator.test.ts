@@ -93,6 +93,38 @@ test("batches recent guild messages and keeps guild memory files separate", asyn
   }
 });
 
+test("flushes pending guild memory when asked", async () => {
+  await using temp = await createTempDir("klein-memory-");
+  const processed: string[][] = [];
+  const processor: MemoryProcessor = {
+    async process(
+      _document,
+      messages: readonly MemoryMessage[],
+    ): Promise<readonly MemoryOperation[]> {
+      processed.push(messages.map((message) => message.id));
+      return [];
+    },
+  };
+  const taskCoordinator = new TaskCoordinator();
+  const coordinator = new MemoryCoordinator({
+    filePath: join(temp.path, "{guildId}", "MEMORY.json"),
+    idleSeconds: 60,
+    logger: pino({ level: "silent" }),
+    maxBatchAgeSeconds: 60,
+    maxBatchMessages: 10,
+    processor,
+    taskCoordinator,
+  });
+
+  try {
+    coordinator.enqueue(createMessage("guild-a", "message-a1", "A-1"));
+    await coordinator.flush();
+    assert.deepEqual(processed, [["message-a1"]]);
+  } finally {
+    coordinator.dispose();
+  }
+});
+
 test("deletes a persisted memory entry for a guild", async () => {
   await using temp = await createTempDir("klein-memory-");
   const directory = temp.path;

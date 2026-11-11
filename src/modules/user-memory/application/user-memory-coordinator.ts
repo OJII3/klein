@@ -82,6 +82,11 @@ export class UserMemoryCoordinator {
     this.queue.dispose();
   }
 
+  async flush(): Promise<void> {
+    if (this.disposed) return;
+    await this.queue.flush();
+  }
+
   private async processUser(userId: string, messages: readonly DiscordMessage[]): Promise<void> {
     const startedAt = Date.now();
     const before = await this.options.store.read(userId);

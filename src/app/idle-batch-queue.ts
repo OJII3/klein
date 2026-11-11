@@ -33,6 +33,7 @@ interface Batch<TItem> {
 export class IdleBatchQueue<TKey, TItem> {
   private readonly batches = new Map<TKey, Batch<TItem>>();
   private disposed = false;
+  private flushing = false;
 
   constructor(private readonly options: IdleBatchQueueOptions<TKey, TItem>) {}
 
@@ -72,6 +73,37 @@ export class IdleBatchQueue<TKey, TItem> {
     this.batches.clear();
   }
 
+  /**
+   * Processes every pending batch now and waits for the work to finish. A batch that
+   * fails during the flush is not put back, so shutdown does not wait for a retry.
+   */
+  async flush(): Promise<void> {
+    if (this.disposed) return;
+
+    this.flushing = true;
+    try {
+      for (;;) {
+        const pendingKeys = [...this.batches.entries()]
+          .filter(([, batch]) => batch.items.length > 0 && !batch.processing)
+          .map(([key]) => key);
+
+        if (pendingKeys.length === 0) {
+          await this.options.taskCoordinator.waitForCompletion();
+          const stillPending = [...this.batches.values()].some(
+            (batch) => batch.items.length > 0 || batch.processing,
+          );
+          if (!stillPending) return;
+          continue;
+        }
+
+        for (const key of pendingKeys) this.scheduleProcessing(key);
+        await this.options.taskCoordinator.waitForCompletion();
+      }
+    } finally {
+      this.flushing = false;
+    }
+  }
+
   private scheduleProcessing(key: TKey): void {
     const batch = this.batches.get(key);
     if (!batch || this.disposed) return;
@@ -101,7 +133,7 @@ export class IdleBatchQueue<TKey, TItem> {
       await this.options.run(key, items);
     } catch (error) {
       failed = true;
-      batch.items.unshift(...items);
+      if (!this.flushing) batch.items.unshift(...items);
       this.options.onError({
         batch: items,
         durationMs: Date.now() - startedAt,
@@ -112,7 +144,7 @@ export class IdleBatchQueue<TKey, TItem> {
       batch.processing = false;
       if (this.disposed || batch.items.length === 0) {
         this.batches.delete(key);
-      } else if (failed) {
+      } else if (failed && !this.flushing) {
         this.resetIdleTimer(key, batch);
         batch.maxAgeTimer = setTimeout(
           () => this.scheduleProcessing(key),

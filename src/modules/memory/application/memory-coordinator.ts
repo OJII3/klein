@@ -131,6 +131,11 @@ export class MemoryCoordinator implements GuildMemoryReader, GuildMemoryEditor {
     this.queue.dispose();
   }
 
+  async flush(): Promise<void> {
+    if (this.disposed) return;
+    await this.queue.flush();
+  }
+
   private processGuild(guildId: string, messages: readonly DiscordMessage[]): Promise<void> {
     const startedAt = Date.now();
     return this.runGuildOperation(guildId, async () => {
