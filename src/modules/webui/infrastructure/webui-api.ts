@@ -8,6 +8,7 @@ import {
   MemoryGuildParamsSchema,
   MemoryOwnerEntryParamsSchema,
   MemoryRuleBodySchema,
+  MemoryUserParamsSchema,
   SessionParamsSchema,
   SessionQuerySchema,
 } from "../domain/api-schema";
@@ -85,14 +86,40 @@ export function createWebUiApp(dependencies: WebUiDependencies) {
       { params: SessionParamsSchema, query: SessionQuerySchema },
     )
     .get("/api/memory", async ({ set }) => {
-      if (!dependencies.memory) return { enabled: false, items: [] };
-
       try {
-        return { enabled: true, items: await dependencies.memory.listScopes() };
+        const items = dependencies.memory ? await dependencies.memory.listScopes() : [];
+        const users = dependencies.userMemory ? await dependencies.userMemory.list() : [];
+        return {
+          enabled: dependencies.memory !== undefined,
+          items,
+          userMemoryEnabled: dependencies.userMemory !== undefined,
+          users,
+        };
       } catch (error) {
         return handleRouteError(set, dependencies.logger, error, "Failed to list memories");
       }
     })
+    .get(
+      "/api/memory/user/:userId",
+      async ({ params, set }) => {
+        if (!dependencies.userMemory) {
+          set.status = 404;
+          return { error: "User memory is disabled" };
+        }
+
+        try {
+          const memory = await dependencies.userMemory.read(params.userId);
+          if (!memory) {
+            set.status = 404;
+            return { error: "User memory not found" };
+          }
+          return { memory };
+        } catch (error) {
+          return handleRouteError(set, dependencies.logger, error, "Failed to read user memory");
+        }
+      },
+      { params: MemoryUserParamsSchema },
+    )
     .get("/api/memory/owner", async ({ set }) => {
       if (!dependencies.memory) {
         set.status = 404;

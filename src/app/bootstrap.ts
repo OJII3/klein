@@ -349,6 +349,7 @@ export async function bootstrap(): Promise<void> {
         logger,
         memory: webUiMemory,
         memoryEditor: webUiMemory,
+        userMemory: userMemoryStore,
         channelNames: {
           read: () => channelSessionStateStore.listChannelNames(),
         },

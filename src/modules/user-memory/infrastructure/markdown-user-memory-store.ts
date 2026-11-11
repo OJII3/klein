@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
 import {
@@ -15,13 +15,15 @@ import {
   type UserMemory,
   type UserMemoryIdentity,
   type UserMemoryPatch,
+  type UserMemoryReader,
   type UserMemorySectionKey,
   type UserMemoryStore,
+  type UserMemorySummary,
 } from "../domain/user-memory";
 
 const FRONTMATTER_DELIMITER = "---";
 
-export class MarkdownUserMemoryStore implements UserMemoryStore {
+export class MarkdownUserMemoryStore implements UserMemoryStore, UserMemoryReader {
   private readonly directory: string;
   private writeQueue: Promise<void> = Promise.resolve();
 
@@ -44,6 +46,42 @@ export class MarkdownUserMemoryStore implements UserMemoryStore {
     } catch (error) {
       throw new Error(`Failed to parse user memory file: ${filePath}`, { cause: error });
     }
+  }
+
+  async list(): Promise<readonly UserMemorySummary[]> {
+    let names: string[];
+    try {
+      names = await readdir(this.directory);
+    } catch (error) {
+      if (isNodeError(error) && error.code === "ENOENT") return [];
+      throw new Error(`Failed to list user memory directory: ${this.directory}`, { cause: error });
+    }
+
+    const summaries: UserMemorySummary[] = [];
+    for (const name of names) {
+      if (!name.endsWith(".md")) continue;
+      const userId = name.slice(0, -".md".length);
+      if (!isValidDiscordUserId(userId)) continue;
+
+      let memory: UserMemory | undefined;
+      try {
+        memory = await this.read(userId);
+      } catch {
+        // A malformed file is left out of the listing so it cannot hide every other user.
+        continue;
+      }
+      if (!memory) continue;
+      summaries.push({
+        userId,
+        discordId: memory.discordId,
+        displayName: memory.displayName,
+        summary: memory.summary,
+        impression: memory.impression,
+        updatedAt: memory.updatedAt,
+      });
+    }
+
+    return summaries.toSorted((left, right) => right.updatedAt.localeCompare(left.updatedAt));
   }
 
   async ensure(userId: string, identity: UserMemoryIdentity): Promise<UserMemory> {

@@ -54,10 +54,26 @@ export interface UserMemoryIdentity {
   readonly displayName: string;
 }
 
+export interface UserMemorySummary {
+  /** Numeric Discord user ID, which is also the file key. */
+  readonly userId: string;
+  /** User-set Discord username, not the numeric snowflake ID. */
+  readonly discordId: string;
+  readonly displayName: string;
+  readonly summary: string;
+  readonly impression: number;
+  readonly updatedAt: string;
+}
+
 export interface UserMemoryStore {
   read(userId: string): Promise<UserMemory | undefined>;
   ensure(userId: string, identity: UserMemoryIdentity): Promise<UserMemory>;
   update(userId: string, identity: UserMemoryIdentity, patch: UserMemoryPatch): Promise<UserMemory>;
+}
+
+export interface UserMemoryReader {
+  list(): Promise<readonly UserMemorySummary[]>;
+  read(userId: string): Promise<UserMemory | undefined>;
 }
 
 export interface UserMemoryMessage {

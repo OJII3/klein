@@ -47,6 +47,14 @@ export const MemoryOwnerEntryParamsSchema = t.Object({
   }),
 });
 
+export const MemoryUserParamsSchema = t.Object({
+  userId: t.String({
+    minLength: 1,
+    maxLength: 32,
+    pattern: "^[0-9]+$",
+  }),
+});
+
 export const MemoryRuleBodySchema = t.Object({
   title: t.String({ minLength: 1, maxLength: 200 }),
   content: t.String({ minLength: 1, maxLength: 10000 }),

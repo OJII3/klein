@@ -1,4 +1,5 @@
-import { useState } from "preact/hooks";
+import type { ComponentChildren } from "preact";
+import { useMemo, useState } from "preact/hooks";
 
 import {
   memoryScopeKey,
@@ -7,6 +8,10 @@ import {
   type MemoryKind,
   type MemoryScope,
   type MemoryScopeSummary,
+  type MemorySelection,
+  type UserMemory,
+  type UserMemorySectionKey,
+  type UserMemorySummary,
 } from "../../api";
 import { EmptyState, ErrorNotice, LoadingState } from "../../components/feedback";
 import { Stat, StatStrip } from "../../components/stats";
@@ -16,9 +21,12 @@ import { formatCompactTimestamp, formatDate } from "../../lib/format";
 interface MemoryViewProps {
   channelNames: ReadonlyMap<string, string>;
   enabled: boolean;
+  userMemoryEnabled: boolean;
   scopes: MemoryScopeSummary[];
-  selectedScope: MemoryScope | null;
+  users: UserMemorySummary[];
+  selectedScope: MemorySelection | null;
   entries: MemoryEntry[];
+  userMemory: UserMemory | null;
   loading: boolean;
   loadingDetail: boolean;
   error: string | null;
@@ -27,13 +35,15 @@ interface MemoryViewProps {
   deletingEntryId: string | null;
   addingRule: boolean;
   addRuleError: string | null;
-  onSelect: (scope: MemoryScope) => void;
+  onSelect: (scope: MemorySelection) => void;
   onDelete: (entryId: string) => void;
   onAddRule: (title: string, content: string) => void;
   onDismissDeleteError: () => void;
   onRetry: () => void;
   onRetryDetail: () => void;
 }
+
+const MEMORY_KINDS: readonly MemoryKind[] = ["fact", "rule", "decision", "procedure", "temporary"];
 
 const KIND_LABELS: Record<MemoryKind, string> = {
   fact: "事実",
@@ -51,13 +61,23 @@ const KIND_TONES: Record<MemoryKind, string> = {
   temporary: "badge-warning badge-soft",
 };
 
+const USER_SECTIONS: readonly { key: UserMemorySectionKey; label: string }[] = [
+  { key: "facts", label: "事実" },
+  { key: "history", label: "履歴" },
+  { key: "inCommon", label: "共通点" },
+  { key: "strengthening", label: "関係の強化" },
+];
+
 export function MemoryView(props: MemoryViewProps) {
   const {
     channelNames,
     enabled,
+    userMemoryEnabled,
     scopes,
+    users,
     selectedScope,
     entries,
+    userMemory,
     loading,
     loadingDetail,
     error,
@@ -73,102 +93,142 @@ export function MemoryView(props: MemoryViewProps) {
     onRetry,
     onRetryDetail,
   } = props;
-  const totalEntries = scopes.reduce((sum, summary) => sum + summary.entryCount, 0);
+  const [query, setQuery] = useState("");
+  const normalizedQuery = query.trim().toLowerCase();
+
+  const ownerSummary = scopes.find((summary) => summary.scope.type === "owner");
+  const guilds = useMemo(
+    () =>
+      scopes
+        .filter((summary) => summary.scope.type === "guild")
+        .filter(
+          (summary) =>
+            summary.scope.type === "guild" &&
+            (!normalizedQuery ||
+              `guild ${summary.scope.guildId} ギルド`.toLowerCase().includes(normalizedQuery)),
+        ),
+    [normalizedQuery, scopes],
+  );
+  const filteredUsers = useMemo(
+    () =>
+      normalizedQuery
+        ? users.filter((user) =>
+            `${user.displayName} ${user.discordId} ${user.userId} ${user.summary}`
+              .toLowerCase()
+              .includes(normalizedQuery),
+          )
+        : users,
+    [normalizedQuery, users],
+  );
+
+  const guildCount = scopes.filter((summary) => summary.scope.type === "guild").length;
+  const entryCount = scopes.reduce((sum, summary) => sum + summary.entryCount, 0);
+  const hasMemories = scopes.length > 0 || users.length > 0;
 
   return (
     <section className="flex flex-col gap-4" aria-labelledby="memory-heading">
       <ViewHeader headingId="memory-heading" title="メモリ">
         <StatStrip>
-          <Stat label="スコープ" value={scopes.length.toLocaleString("ja-JP")} />
-          <Stat label="エントリ" value={totalEntries.toLocaleString("ja-JP")} />
+          <Stat label="ギルド" value={guildCount.toLocaleString("ja-JP")} />
+          <Stat label="ユーザー" value={users.length.toLocaleString("ja-JP")} />
+          <Stat label="エントリ" value={entryCount.toLocaleString("ja-JP")} />
         </StatStrip>
       </ViewHeader>
 
       {error && <ErrorNotice message={error} onRetry={onRetry} />}
-      {!error && !enabled ? (
+      {!error && !enabled && !userMemoryEnabled ? (
         <div className="card border border-base-300 bg-base-100">
           <EmptyState>メモリ機能が無効です</EmptyState>
         </div>
-      ) : loading && scopes.length === 0 ? (
+      ) : loading && !hasMemories ? (
         <div className="card border border-base-300 bg-base-100">
           <LoadingState />
         </div>
-      ) : scopes.length === 0 ? (
+      ) : !hasMemories ? (
         <div className="card border border-base-300 bg-base-100">
           <EmptyState>保存されたメモリがまだありません</EmptyState>
         </div>
       ) : (
-        <div className="grid gap-4 lg:grid-cols-[17rem_minmax(0,1fr)] lg:items-start">
+        <div className="grid gap-4 lg:grid-cols-[19rem_minmax(0,1fr)] lg:items-start">
           <div className="card overflow-hidden border border-base-300 bg-base-100 lg:sticky lg:top-[4.25rem]">
-            <div className="border-b border-line p-3 lg:hidden">
-              <label className="flex flex-col gap-1">
-                <span className="text-[0.7rem] font-medium text-ink-soft">スコープ</span>
-                <select
-                  className="select select-sm w-full"
-                  onChange={(event) => {
-                    const key = (event.target as HTMLSelectElement).value;
-                    const summary = scopes.find((item) => memoryScopeKey(item.scope) === key);
-                    if (summary) onSelect(summary.scope);
-                  }}
-                  value={selectedScope ? memoryScopeKey(selectedScope) : ""}
-                >
-                  <option disabled value="">
-                    スコープを選択
-                  </option>
-                  {scopes.map((summary) => (
-                    <option
-                      key={memoryScopeKey(summary.scope)}
-                      value={memoryScopeKey(summary.scope)}
-                    >
-                      {scopeTypeLabel(summary.scope)}（{summary.entryCount} 件）
-                    </option>
-                  ))}
-                </select>
-              </label>
+            <div className="border-b border-line p-2.5">
+              <input
+                aria-label="メモリを検索"
+                className="input input-sm w-full"
+                onChange={(event) => setQuery((event.target as HTMLInputElement).value)}
+                placeholder="名前・ID で絞り込み"
+                type="search"
+                value={query}
+              />
             </div>
 
-            <div className="hidden items-center justify-between border-b border-line px-3 py-2 lg:flex">
-              <span className="text-[0.7rem] font-medium text-ink-faint">スコープ</span>
-              <span className="font-mono text-[0.62rem] text-ink-faint">{scopes.length} 件</span>
-            </div>
+            <div className="max-h-72 overflow-y-auto lg:max-h-[calc(100vh-12rem)]">
+              {ownerSummary && (
+                <ScopeGroup title="オーナー">
+                  <ScopeItem
+                    badge={`${ownerSummary.entryCount} 件`}
+                    meta={`更新 ${formatCompactTimestamp(ownerSummary.updatedAt ?? undefined)}`}
+                    onClick={() => onSelect(ownerSummary.scope)}
+                    selected={
+                      selectedScope !== null &&
+                      memoryScopeKey(selectedScope) === memoryScopeKey(ownerSummary.scope)
+                    }
+                    title="オーナーのメモリ"
+                  />
+                </ScopeGroup>
+              )}
 
-            <div className="hidden lg:block">
-              <ul className="menu menu-sm w-full flex-nowrap p-0 [--menu-active-bg:var(--color-green-soft)] [--menu-active-fg:var(--color-green-strong)]">
-                {scopes.map((summary) => {
-                  const selected =
-                    selectedScope !== null &&
-                    memoryScopeKey(selectedScope) === memoryScopeKey(summary.scope);
-                  return (
-                    <li key={memoryScopeKey(summary.scope)}>
-                      <button
-                        aria-current={selected ? "true" : undefined}
-                        className="w-full"
+              {guildCount > 0 && (
+                <ScopeGroup count={guilds.length} title="ギルド">
+                  {guilds.length === 0 ? (
+                    <p className="px-3 py-2 text-[0.68rem] text-ink-faint">該当なし</p>
+                  ) : (
+                    guilds.map((summary) => (
+                      <ScopeItem
+                        badge={`${summary.entryCount} 件`}
+                        key={memoryScopeKey(summary.scope)}
+                        meta={`更新 ${formatCompactTimestamp(summary.updatedAt ?? undefined)}`}
                         onClick={() => onSelect(summary.scope)}
-                        type="button"
-                      >
-                        <span className="flex w-full min-w-0 flex-col items-stretch gap-0.5">
-                          <span className="flex items-baseline justify-between gap-2">
-                            <span className="text-[0.8rem] font-medium text-ink">
-                              {scopeTypeLabel(summary.scope)}
-                            </span>
-                            <span className="font-mono text-[0.62rem] text-ink-faint">
-                              {summary.entryCount} 件
-                            </span>
-                          </span>
-                          {summary.scope.type === "guild" && (
-                            <span className="truncate font-mono text-[0.62rem] text-ink-faint">
-                              {summary.scope.guildId}
-                            </span>
-                          )}
-                          <span className="font-mono text-[0.62rem] text-ink-faint">
-                            更新 {formatCompactTimestamp(summary.updatedAt ?? undefined)}
-                          </span>
-                        </span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
+                        selected={
+                          selectedScope !== null &&
+                          memoryScopeKey(selectedScope) === memoryScopeKey(summary.scope)
+                        }
+                        subtitle={
+                          summary.scope.type === "guild" ? summary.scope.guildId : undefined
+                        }
+                        title="ギルドのメモリ"
+                      />
+                    ))
+                  )}
+                </ScopeGroup>
+              )}
+
+              <ScopeGroup count={filteredUsers.length} title="ユーザー">
+                {!userMemoryEnabled ? (
+                  <p className="px-3 py-2 text-[0.68rem] text-ink-faint">
+                    ユーザーメモリが無効です
+                  </p>
+                ) : filteredUsers.length === 0 ? (
+                  <p className="px-3 py-2 text-[0.68rem] text-ink-faint">
+                    {users.length === 0 ? "まだユーザーメモリがありません" : "該当なし"}
+                  </p>
+                ) : (
+                  filteredUsers.map((user) => (
+                    <ScopeItem
+                      badge={formatImpression(user.impression)}
+                      badgeTone={impressionTone(user.impression)}
+                      key={user.userId}
+                      meta={`更新 ${formatCompactTimestamp(user.updatedAt)}`}
+                      onClick={() => onSelect({ type: "user", userId: user.userId })}
+                      selected={
+                        selectedScope?.type === "user" && selectedScope.userId === user.userId
+                      }
+                      subtitle={`@${user.discordId}`}
+                      title={user.displayName}
+                    />
+                  ))
+                )}
+              </ScopeGroup>
             </div>
           </div>
 
@@ -184,6 +244,12 @@ export function MemoryView(props: MemoryViewProps) {
             <div className="card overflow-hidden border border-base-300 bg-base-100">
               {loadingDetail ? (
                 <LoadingState label="メモリを読み込み中…" />
+              ) : selectedScope?.type === "user" ? (
+                userMemory ? (
+                  <UserMemoryDetail memory={userMemory} />
+                ) : (
+                  <EmptyState>ユーザーメモリを読み込めませんでした</EmptyState>
+                )
               ) : selectedScope ? (
                 <MemoryEntries
                   addingRule={addingRule}
@@ -191,6 +257,7 @@ export function MemoryView(props: MemoryViewProps) {
                   channelNames={channelNames}
                   deletingEntryId={deletingEntryId}
                   entries={entries}
+                  key={memoryScopeKey(selectedScope)}
                   onAddRule={onAddRule}
                   onDelete={onDelete}
                   scope={selectedScope}
@@ -203,6 +270,72 @@ export function MemoryView(props: MemoryViewProps) {
         </div>
       )}
     </section>
+  );
+}
+
+function ScopeGroup({
+  title,
+  count,
+  children,
+}: {
+  title: string;
+  count?: number;
+  children: ComponentChildren;
+}) {
+  return (
+    <div className="border-b border-line last:border-b-0">
+      <div className="flex items-center justify-between px-3 py-1.5">
+        <span className="text-[0.66rem] font-medium tracking-wide text-ink-faint">{title}</span>
+        {count !== undefined && (
+          <span className="font-mono text-[0.6rem] text-ink-faint">{count}</span>
+        )}
+      </div>
+      <div className="pb-1">{children}</div>
+    </div>
+  );
+}
+
+function ScopeItem({
+  title,
+  subtitle,
+  badge,
+  badgeTone = "text-ink-faint",
+  meta,
+  selected,
+  onClick,
+}: {
+  title: string;
+  subtitle?: string;
+  badge: string;
+  badgeTone?: string;
+  meta: string;
+  selected: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      aria-current={selected ? "true" : undefined}
+      className={`flex w-full flex-col items-stretch gap-0.5 px-3 py-2 text-left transition-colors ${
+        selected ? "bg-green-soft" : "hover:bg-base-200"
+      }`}
+      onClick={onClick}
+      type="button"
+    >
+      <span className="flex items-baseline justify-between gap-2">
+        <span
+          className={`truncate text-[0.8rem] font-medium ${
+            selected ? "text-green-strong" : "text-ink"
+          }`}
+        >
+          {title}
+        </span>
+        <span className={`shrink-0 font-mono text-[0.62rem] ${badgeTone}`}>{badge}</span>
+      </span>
+      {subtitle && (
+        <span className="truncate font-mono text-[0.62rem] text-ink-faint">{subtitle}</span>
+      )}
+      <span className="font-mono text-[0.62rem] text-ink-faint">{meta}</span>
+    </button>
   );
 }
 
@@ -227,6 +360,21 @@ function MemoryEntries({
 }) {
   const [ruleTitle, setRuleTitle] = useState("");
   const [ruleContent, setRuleContent] = useState("");
+  const [kindFilter, setKindFilter] = useState<MemoryKind | "all">("all");
+
+  const sortedEntries = useMemo(
+    () => entries.toSorted((left, right) => right.updatedAt.localeCompare(left.updatedAt)),
+    [entries],
+  );
+  const kindCounts = useMemo(() => {
+    const counts = new Map<MemoryKind, number>();
+    for (const entry of entries) counts.set(entry.kind, (counts.get(entry.kind) ?? 0) + 1);
+    return counts;
+  }, [entries]);
+  const visibleEntries =
+    kindFilter === "all"
+      ? sortedEntries
+      : sortedEntries.filter((entry) => entry.kind === kindFilter);
 
   return (
     <div className="flex min-w-0 flex-col">
@@ -243,6 +391,28 @@ function MemoryEntries({
           {entries.length.toLocaleString("ja-JP")} 件
         </p>
       </header>
+
+      <div className="flex flex-wrap items-center gap-1.5 border-b border-line px-4 py-2">
+        <FilterChip
+          active={kindFilter === "all"}
+          count={entries.length}
+          label="すべて"
+          onClick={() => setKindFilter("all")}
+        />
+        {MEMORY_KINDS.map((kind) => {
+          const count = kindCounts.get(kind) ?? 0;
+          if (count === 0) return null;
+          return (
+            <FilterChip
+              active={kindFilter === kind}
+              count={count}
+              key={kind}
+              label={KIND_LABELS[kind]}
+              onClick={() => setKindFilter(kind)}
+            />
+          );
+        })}
+      </div>
 
       <details className="collapse collapse-arrow border-b border-base-300">
         <summary className="collapse-title text-sm text-ink-soft">ルールを追加</summary>
@@ -295,11 +465,13 @@ function MemoryEntries({
         </form>
       </details>
 
-      {entries.length === 0 ? (
-        <EmptyState>このスコープのメモリは空です</EmptyState>
+      {visibleEntries.length === 0 ? (
+        <EmptyState>
+          {entries.length === 0 ? "このスコープのメモリは空です" : "この種類のメモリはありません"}
+        </EmptyState>
       ) : (
         <div className="divide-y divide-line">
-          {entries.map((entry) => (
+          {visibleEntries.map((entry) => (
             <article className="px-4 py-4" key={entry.id}>
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -345,8 +517,121 @@ function MemoryEntries({
   );
 }
 
-function scopeTypeLabel(scope: MemoryScope): string {
-  return scope.type === "owner" ? "オーナー" : "ギルド";
+function FilterChip({
+  label,
+  count,
+  active,
+  onClick,
+}: {
+  label: string;
+  count: number;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      aria-pressed={active}
+      className={`btn btn-xs gap-1 ${active ? "btn-primary" : "btn-ghost border border-base-300"}`}
+      onClick={onClick}
+      type="button"
+    >
+      {label}
+      <span className="font-mono text-[0.6rem] opacity-70">{count}</span>
+    </button>
+  );
+}
+
+function UserMemoryDetail({ memory }: { memory: UserMemory }) {
+  const realName = [memory.lastName, memory.firstName].filter(Boolean).join(" ");
+
+  return (
+    <div className="flex min-w-0 flex-col">
+      <header className="flex flex-wrap items-start justify-between gap-4 border-b border-line px-4 py-4">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-[1.05rem] font-semibold text-ink">{memory.displayName}</h2>
+            {memory.nickname && (
+              <span className="badge badge-ghost badge-sm">{memory.nickname}</span>
+            )}
+          </div>
+          <p className="mt-1 truncate font-mono text-[0.64rem] text-ink-faint">
+            @{memory.discordId}
+          </p>
+          <p className="mt-0.5 truncate font-mono text-[0.62rem] text-ink-faint">
+            {realName || "本名は未登録"} · 更新 {formatCompactTimestamp(memory.updatedAt)}
+          </p>
+        </div>
+        <ImpressionMeter value={memory.impression} />
+      </header>
+
+      <section className="border-b border-line px-4 py-4">
+        <h3 className="text-[0.68rem] font-medium tracking-wide text-ink-faint">要約</h3>
+        <p className="mt-1.5 max-w-[60rem] text-[0.84rem] leading-6 break-words whitespace-pre-wrap text-ink-soft">
+          {memory.summary || "—"}
+        </p>
+      </section>
+
+      {USER_SECTIONS.map((section) => (
+        <section className="border-b border-line px-4 py-4" key={section.key}>
+          <h3 className="text-[0.68rem] font-medium tracking-wide text-ink-faint">
+            {section.label}
+          </h3>
+          <p className="mt-1.5 max-w-[60rem] text-[0.82rem] leading-6 break-words whitespace-pre-wrap text-ink-soft">
+            {memory[section.key]}
+          </p>
+        </section>
+      ))}
+
+      <p className="px-4 py-3 text-[0.66rem] text-ink-faint">
+        Klein が会話から自動で更新します。Web からは編集できません。
+      </p>
+    </div>
+  );
+}
+
+function ImpressionMeter({ value }: { value: number }) {
+  const width = Math.abs(value) / 2;
+  return (
+    <div className="flex w-40 shrink-0 flex-col gap-1">
+      <div className="flex items-baseline justify-between">
+        <span className="text-[0.62rem] text-ink-faint">印象</span>
+        <span className={`font-mono text-[0.72rem] font-medium ${impressionTone(value)}`}>
+          {formatImpression(value)}
+        </span>
+      </div>
+      <div
+        aria-label={`印象 ${value}`}
+        className="relative h-1.5 overflow-hidden rounded-full bg-base-300"
+        role="img"
+      >
+        <span aria-hidden="true" className="absolute inset-y-0 left-1/2 w-px bg-line-strong" />
+        <span
+          aria-hidden="true"
+          className={`absolute inset-y-0 ${value >= 0 ? "left-1/2 bg-green" : "right-1/2 bg-red"}`}
+          style={{ width: `${width}%` }}
+        />
+      </div>
+      <span className="text-[0.6rem] text-ink-faint">{impressionLabel(value)}</span>
+    </div>
+  );
+}
+
+function formatImpression(value: number): string {
+  return value > 0 ? `+${value}` : String(value);
+}
+
+function impressionTone(value: number): string {
+  if (value > 0) return "text-green-strong";
+  if (value < 0) return "text-red";
+  return "text-ink-faint";
+}
+
+function impressionLabel(value: number): string {
+  if (value >= 50) return "とても好意的";
+  if (value > 0) return "好意的";
+  if (value <= -50) return "とても否定的";
+  if (value < 0) return "否定的";
+  return "中立";
 }
 
 function entryScopeDetail(

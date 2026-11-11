@@ -10,7 +10,7 @@ import { LogsView } from "./features/logs/logs-view";
 import { MemoryView } from "./features/memory/memory-view";
 import { SessionsView } from "./features/sessions/sessions-view";
 import { ToolsView } from "./features/tools/tools-view";
-import { memoryScopeKey, type MemoryScope } from "./api";
+import { memoryScopeKey, type MemorySelection } from "./api";
 import { navigate, useRoute } from "./router";
 
 export default function App() {
@@ -35,7 +35,7 @@ export default function App() {
   const selectSession = useCallback((sessionId: string) => {
     navigate(`/sessions?session=${encodeURIComponent(sessionId)}`);
   }, []);
-  const selectScope = useCallback((scope: MemoryScope) => {
+  const selectScope = useCallback((scope: MemorySelection) => {
     navigate(`/memory?scope=${encodeURIComponent(memoryScopeKey(scope))}`);
   }, []);
 
@@ -98,6 +98,9 @@ export default function App() {
           entries={memory.entries}
           error={memory.scopesError}
           scopes={memory.scopes}
+          users={memory.users}
+          userMemory={memory.userMemory}
+          userMemoryEnabled={memory.userMemoryEnabled}
           loading={memory.scopesLoading}
           loadingDetail={memory.detailLoading}
           onDelete={memory.deleteEntry}

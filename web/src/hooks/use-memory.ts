@@ -4,11 +4,15 @@ import {
   deleteMemory,
   addMemoryRule,
   getMemory,
+  getUserMemory,
   listMemoryScopes,
   type MemoryEntry,
+  type MemorySelection,
   memoryScopeKey,
   parseMemoryScopeKey,
   type MemoryScopeSummary,
+  type UserMemory,
+  type UserMemorySummary,
 } from "../api";
 
 interface UseMemoryOptions {
@@ -19,19 +23,32 @@ interface UseMemoryOptions {
 
 export function useMemory({ active, onUpdated, selectedScopeKey }: UseMemoryOptions) {
   const [enabled, setEnabled] = useState(false);
+  const [userMemoryEnabled, setUserMemoryEnabled] = useState(false);
   const [scopes, setScopes] = useState<MemoryScopeSummary[]>([]);
+  const [users, setUsers] = useState<UserMemorySummary[]>([]);
   const [scopesLoading, setScopesLoading] = useState(false);
   const [scopesError, setScopesError] = useState<string | null>(null);
   const selectedScope = useMemo(() => parseMemoryScopeKey(selectedScopeKey), [selectedScopeKey]);
-  const effectiveScope = useMemo(() => {
+  const effectiveScope = useMemo<MemorySelection | null>(() => {
     if (selectedScope) {
-      if (scopes.length === 0) return selectedScope;
-      const key = memoryScopeKey(selectedScope);
-      if (scopes.some((item) => memoryScopeKey(item.scope) === key)) return selectedScope;
+      if (selectedScope.type === "user") {
+        if (users.length === 0) return selectedScope;
+        if (users.some((user) => user.userId === selectedScope.userId)) return selectedScope;
+      } else if (scopes.length === 0) {
+        return selectedScope;
+      } else if (
+        scopes.some((item) => memoryScopeKey(item.scope) === memoryScopeKey(selectedScope))
+      ) {
+        return selectedScope;
+      }
     }
-    return scopes[0]?.scope ?? null;
-  }, [scopes, selectedScope]);
+    const firstScope = scopes[0]?.scope;
+    if (firstScope) return firstScope;
+    const firstUser = users[0];
+    return firstUser ? { type: "user", userId: firstUser.userId } : null;
+  }, [scopes, selectedScope, users]);
   const [entries, setEntries] = useState<MemoryEntry[]>([]);
+  const [userMemory, setUserMemory] = useState<UserMemory | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [detailReloadKey, setDetailReloadKey] = useState(0);
@@ -49,8 +66,13 @@ export function useMemory({ active, onUpdated, selectedScopeKey }: UseMemoryOpti
     try {
       const response = await listMemoryScopes();
       setEnabled(response.enabled);
+      setUserMemoryEnabled(response.userMemoryEnabled);
       setScopes(response.items);
-      if (response.items.length === 0) setEntries([]);
+      setUsers(response.users);
+      if (response.items.length === 0 && response.users.length === 0) {
+        setEntries([]);
+        setUserMemory(null);
+      }
       onUpdated();
     } catch (requestError) {
       setScopesError(
@@ -82,21 +104,29 @@ export function useMemory({ active, onUpdated, selectedScopeKey }: UseMemoryOpti
     if (!silent) setDetailLoading(true);
     setDetailError(null);
 
-    void getMemory(effectiveScope)
-      .then((response) => {
-        if (!current) return;
+    void (async () => {
+      try {
+        if (effectiveScope.type === "user") {
+          const response = await getUserMemory(effectiveScope.userId);
+          if (!current) return;
+          setEntries([]);
+          setUserMemory(response.memory);
+        } else {
+          const response = await getMemory(effectiveScope);
+          if (!current) return;
+          setEntries(response.entries);
+          setUserMemory(null);
+        }
         detailScopeKeyRef.current = scopeKey;
-        setEntries(response.entries);
-      })
-      .catch((requestError: unknown) => {
+      } catch (requestError) {
         if (!current) return;
         setDetailError(
           requestError instanceof Error ? requestError.message : "メモリの取得に失敗しました",
         );
-      })
-      .finally(() => {
+      } finally {
         if (current && !silent) setDetailLoading(false);
-      });
+      }
+    })();
 
     return () => {
       current = false;
@@ -118,7 +148,7 @@ export function useMemory({ active, onUpdated, selectedScopeKey }: UseMemoryOpti
 
   const createRule = useCallback(
     async (title: string, content: string) => {
-      if (!effectiveScope || addingRule) return;
+      if (!effectiveScope || effectiveScope.type === "user" || addingRule) return;
       setAddingRule(true);
       setAddRuleError(null);
       try {
@@ -138,7 +168,7 @@ export function useMemory({ active, onUpdated, selectedScopeKey }: UseMemoryOpti
 
   const deleteEntry = useCallback(
     async (entryId: string) => {
-      if (!effectiveScope || deletingEntryId) return;
+      if (!effectiveScope || effectiveScope.type === "user" || deletingEntryId) return;
 
       setDeletingEntryId(entryId);
       setDeleteError(null);
@@ -164,11 +194,14 @@ export function useMemory({ active, onUpdated, selectedScopeKey }: UseMemoryOpti
 
   return {
     enabled,
+    userMemoryEnabled,
     scopes,
+    users,
     scopesLoading,
     scopesError,
     selectedScope: effectiveScope,
     entries,
+    userMemory,
     detailLoading,
     detailError,
     deleteEntry,

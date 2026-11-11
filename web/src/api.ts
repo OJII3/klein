@@ -95,15 +95,51 @@ export interface MemoryEntry {
 
 export type MemoryScope = { type: "owner" } | { type: "guild"; guildId: string };
 
+export type UserMemoryScope = { type: "user"; userId: string };
+
+export type MemorySelection = MemoryScope | UserMemoryScope;
+
 export interface MemoryScopeSummary {
   scope: MemoryScope;
   entryCount: number;
   updatedAt: string | null;
 }
 
+export type UserMemorySectionKey = "facts" | "history" | "inCommon" | "strengthening";
+
+export interface UserMemory {
+  discordId: string;
+  displayName: string;
+  nickname?: string;
+  firstName?: string;
+  lastName?: string;
+  summary: string;
+  impression: number;
+  updatedAt: string;
+  facts: string;
+  history: string;
+  inCommon: string;
+  strengthening: string;
+}
+
+export interface UserMemorySummary {
+  userId: string;
+  discordId: string;
+  displayName: string;
+  summary: string;
+  impression: number;
+  updatedAt: string;
+}
+
 export interface MemoryScopesResponse {
   enabled: boolean;
   items: MemoryScopeSummary[];
+  userMemoryEnabled: boolean;
+  users: UserMemorySummary[];
+}
+
+export interface UserMemoryResponse {
+  memory: UserMemory;
 }
 
 export interface MemoryDetailResponse {
@@ -207,6 +243,10 @@ export function getMemory(scope: MemoryScope): Promise<MemoryDetailResponse> {
   return unwrap<MemoryDetailResponse>(client.api.memory.guild({ guildId: scope.guildId }).get());
 }
 
+export function getUserMemory(userId: string): Promise<UserMemoryResponse> {
+  return unwrap<UserMemoryResponse>(client.api.memory.user({ userId }).get());
+}
+
 export function deleteMemory(scope: MemoryScope, entryId: string): Promise<{ deleted: boolean }> {
   if (scope.type === "owner") {
     return unwrap<{ deleted: boolean }>(client.api.memory.owner({ entryId }).delete());
@@ -228,14 +268,19 @@ export function addMemoryRule(
   );
 }
 
-export function memoryScopeKey(scope: MemoryScope): string {
-  return scope.type === "owner" ? "owner" : `guild:${scope.guildId}`;
+export function memoryScopeKey(scope: MemorySelection): string {
+  if (scope.type === "owner") return "owner";
+  if (scope.type === "user") return `user:${scope.userId}`;
+  return `guild:${scope.guildId}`;
 }
 
-export function parseMemoryScopeKey(key: string | null): MemoryScope | null {
+export function parseMemoryScopeKey(key: string | null): MemorySelection | null {
   if (key === "owner") return { type: "owner" };
   if (key?.startsWith("guild:") && key.length > "guild:".length) {
     return { guildId: key.slice("guild:".length), type: "guild" };
+  }
+  if (key?.startsWith("user:") && key.length > "user:".length) {
+    return { type: "user", userId: key.slice("user:".length) };
   }
   return null;
 }

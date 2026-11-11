@@ -99,7 +99,7 @@ Locations and tools can be restricted with `owner` in addition to `allow` and `d
 
 ### Web UI
 
-An optional dashboard for Pino logs, Pi sessions, guild memories, and tool usage. Enable it in `config/config.jsonc`:
+An optional dashboard for Pino logs, Pi sessions, memories, and tool usage. Enable it in `config/config.jsonc`:
 
 ```jsonc
 {
@@ -118,6 +118,8 @@ Open `http://127.0.0.1:4310` after starting Klein.
 Pi sessions are labeled with their Discord channel name. Klein records the name in each channel's session state when it handles a message and refreshes known channels at startup, so the dashboard does not call the Discord API per request. The mapping is also available from `GET /api/channels`.
 
 The **ツール** view counts every tool execution stored in Pi session history, both per tool and per MCP server. Counts include calls made from codemode scripts and do not reset when Klein restarts.
+
+The **メモリ** view lists owner, guild, and per-user Discord memories. Owner and guild memories accept new rules and entry deletions. User memories are shown read-only from the Markdown files Klein updates in the background, and the user list can be filtered by display name, username, numeric user ID, and summary.
 
 For frontend development, run the bot as usual and start Vite separately:
 
