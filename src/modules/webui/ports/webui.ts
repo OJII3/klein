@@ -10,6 +10,7 @@ import type {
 } from "./viewer-readers";
 
 export interface WebUiDependencies {
+  readonly displayName: string;
   readonly channelNames?: ChannelNameReader;
   readonly memory?: MemoryScopeReader;
   readonly memoryEditor?: MemoryScopeEditor;

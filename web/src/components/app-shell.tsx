@@ -5,6 +5,7 @@ import type { View } from "../router";
 import { Link } from "./link";
 
 interface AppShellProps {
+  displayName: string;
   view: View;
   lastUpdated: Date | null;
   onRefresh: () => void;
@@ -42,8 +43,9 @@ function NavLinks({ view, className }: NavLinksProps) {
   );
 }
 
-export function AppShell({ view, lastUpdated, onRefresh, children }: AppShellProps) {
+export function AppShell({ displayName, view, lastUpdated, onRefresh, children }: AppShellProps) {
   const updatedAt = lastUpdated?.toISOString();
+  const initial = displayName.charAt(0).toUpperCase();
 
   return (
     <div className="min-h-screen">
@@ -53,10 +55,14 @@ export function AppShell({ view, lastUpdated, onRefresh, children }: AppShellPro
             <Link className="flex items-center gap-2" href="/logs">
               <div className="avatar avatar-placeholder">
                 <div className="w-7 rounded bg-primary">
-                  <span className="text-[0.8rem] font-semibold text-primary-content">K</span>
+                  <span className="text-[0.8rem] font-semibold text-primary-content">
+                    {initial}
+                  </span>
                 </div>
               </div>
-              <span className="text-[0.95rem] font-semibold tracking-tight text-ink">Klein</span>
+              <span className="text-[0.95rem] font-semibold tracking-tight text-ink">
+                {displayName}
+              </span>
             </Link>
 
             <NavLinks className="ml-4 hidden items-center md:flex" view={view} />

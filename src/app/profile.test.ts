@@ -7,6 +7,7 @@ import { DEFAULT_PROFILE, resolveProfile } from "./profile";
 test("resolves the Klein profile by default", () => {
   assert.equal(DEFAULT_PROFILE, "klein");
   assert.deepEqual(resolveProfile(), {
+    displayName: "Klein",
     systemPromptFile: resolve("config/klein/SOUL.md"),
     voiceSystemPromptFile: resolve("config/klein/SOUL.voice.md"),
     skillsDirectory: resolve("config/klein/skills"),
@@ -15,10 +16,15 @@ test("resolves the Klein profile by default", () => {
 
 test("resolves a named profile", () => {
   assert.deepEqual(resolveProfile("elysia"), {
+    displayName: "Elysia",
     systemPromptFile: resolve("config/elysia/SOUL.md"),
     voiceSystemPromptFile: resolve("config/elysia/SOUL.voice.md"),
     skillsDirectory: resolve("config/elysia/skills"),
   });
+});
+
+test("turns hyphenated profile names into a display name", () => {
+  assert.equal(resolveProfile("moon-guide").displayName, "Moon Guide");
 });
 
 test("rejects unsafe profile names", () => {

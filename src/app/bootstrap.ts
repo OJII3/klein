@@ -345,6 +345,7 @@ export async function bootstrap(): Promise<void> {
   const webUiMemory = createWebUiMemoryAccessor(ownerMemoryStore, memoryCoordinator);
   const webUi = webUiConfig.enabled
     ? await startWebUi({
+        displayName: profile.displayName,
         host: webUiConfig.host,
         logger,
         memory: webUiMemory,

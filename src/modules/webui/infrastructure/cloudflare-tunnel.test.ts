@@ -117,6 +117,7 @@ test("serves local HTTP without a token and releases the listener when tunnel st
     await mkdir(join(directory, "assets"), { recursive: true });
     await writeFile(join(directory, "assets", "app.js"), "console.log('klein')");
     const options = {
+      displayName: "Klein",
       host: "127.0.0.1",
       port: address.port,
       staticDirectory: directory,

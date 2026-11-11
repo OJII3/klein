@@ -8,6 +8,7 @@ import type { WebUiDependencies } from "../ports/webui";
 import { createTempDir } from "../../../testing/temp-dir";
 
 const dependencies = {
+  displayName: "Klein",
   pinoLogs: {
     list: async () => ({ items: [], nextCursor: null }),
   },
