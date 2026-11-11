@@ -53,6 +53,7 @@ test("serves health, logs, Pi sessions, and scoped memory through Elysia", async
   };
   const app = createWebUiApp({
     channelNames,
+    displayName: "Klein",
     memory: {
       listScopes: async () => [
         {
@@ -124,6 +125,10 @@ test("serves health, logs, Pi sessions, and scoped memory through Elysia", async
   const health = await app.handle(new Request("http://localhost/api/health"));
   assert.equal(health.status, 200);
   assert.deepEqual(await health.json(), { ok: true });
+
+  const meta = await app.handle(new Request("http://localhost/api/meta"));
+  assert.equal(meta.status, 200);
+  assert.deepEqual(await meta.json(), { displayName: "Klein" });
 
   const channels = await app.handle(new Request("http://localhost/api/channels"));
   assert.equal(channels.status, 200);

@@ -51,6 +51,10 @@ export interface ChannelsResponse {
   items: ChannelSummary[];
 }
 
+export interface MetaResponse {
+  displayName: string;
+}
+
 export interface PiSessionEvent {
   source: "pi";
   id: string;
@@ -217,6 +221,10 @@ export function listSessions(query: SessionQuery = {}): Promise<SessionsResponse
 
 export function listChannels(): Promise<ChannelsResponse> {
   return unwrap<ChannelsResponse>(client.api.channels.get());
+}
+
+export function getMeta(): Promise<MetaResponse> {
+  return unwrap<MetaResponse>(client.api.meta.get());
 }
 
 export function getSession(

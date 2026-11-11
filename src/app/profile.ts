@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 export const DEFAULT_PROFILE = "klein";
 
 export interface ProfilePaths {
+  readonly displayName: string;
   readonly systemPromptFile: string;
   readonly voiceSystemPromptFile: string;
   readonly skillsDirectory: string;
@@ -15,6 +16,10 @@ export function resolveProfile(profile = DEFAULT_PROFILE): ProfilePaths {
 
   const profileDirectory = resolve(process.cwd(), "config", profile);
   return {
+    displayName: profile
+      .split("-")
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" "),
     systemPromptFile: resolve(profileDirectory, "SOUL.md"),
     voiceSystemPromptFile: resolve(profileDirectory, "SOUL.voice.md"),
     skillsDirectory: resolve(profileDirectory, "skills"),

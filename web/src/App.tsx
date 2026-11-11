@@ -2,6 +2,7 @@ import { useCallback, useState } from "preact/hooks";
 
 import { AppShell } from "./components/app-shell";
 import { useChannels } from "./hooks/use-channels";
+import { useDisplayName } from "./hooks/use-meta";
 import { useLogs } from "./hooks/use-logs";
 import { useSessions } from "./hooks/use-sessions";
 import { useMemory } from "./hooks/use-memory";
@@ -15,6 +16,7 @@ import { navigate, useRoute } from "./router";
 
 export default function App() {
   const route = useRoute();
+  const displayName = useDisplayName();
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const onUpdated = useCallback(() => setLastUpdated(new Date()), []);
 
@@ -47,7 +49,12 @@ export default function App() {
   }, [logs.reload, memory.reload, sessions.reload, toolUsage.reload, route.view]);
 
   return (
-    <AppShell lastUpdated={lastUpdated} onRefresh={refreshCurrentView} view={route.view}>
+    <AppShell
+      displayName={displayName}
+      lastUpdated={lastUpdated}
+      onRefresh={refreshCurrentView}
+      view={route.view}
+    >
       {route.view === "logs" ? (
         <LogsView
           error={logs.error}

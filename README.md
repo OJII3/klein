@@ -32,7 +32,7 @@ Profiles live in `config/<profile>/` and define the agent's personality and skil
 - `SOUL.voice.md` — voice chat prompt
 - `skills/` — profile-specific skills
 
-Select one with `"profile"` in `config/config.jsonc` (default: `klein`). The bundled `yachiyo` profile is based on [YacchoGPT](https://github.com/tsukumijima/YacchoGPT) (CC0-1.0).
+Select one with `"profile"` in `config/config.jsonc` (default: `klein`). The Web UI uses the profile directory name as its page title and header brand (`klein` becomes Klein, `yachiyo` becomes Yachiyo). The bundled `yachiyo` profile is based on [YacchoGPT](https://github.com/tsukumijima/YacchoGPT) (CC0-1.0).
 
 ## Features
 

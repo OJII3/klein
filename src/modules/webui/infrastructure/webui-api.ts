@@ -20,6 +20,7 @@ const LOG_LEVELS = new Set(["trace", "debug", "info", "warn", "error", "fatal"])
 export function createWebUiApp(dependencies: WebUiDependencies) {
   return new Elysia({ name: "klein-webui" })
     .get("/api/health", () => ({ ok: true }))
+    .get("/api/meta", () => ({ displayName: dependencies.displayName }))
     .get("/api/channels", async ({ set }) => {
       try {
         if (!dependencies.channelNames) return { items: [] };
