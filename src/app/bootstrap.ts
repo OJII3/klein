@@ -387,6 +387,7 @@ export async function bootstrap(): Promise<void> {
     }
     await webUi?.stop();
     discordService.stopAccepting();
+    await Promise.all([memoryCoordinator?.flush(), userMemoryCoordinator?.flush()]);
     memoryCoordinator?.dispose();
     userMemoryCoordinator?.dispose();
     await taskCoordinator.waitForCompletion();

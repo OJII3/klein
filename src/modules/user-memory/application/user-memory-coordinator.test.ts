@@ -99,6 +99,35 @@ test("batches messages per user and applies the generated patch", async () => {
   }
 });
 
+test("flushes pending user memory when asked", async () => {
+  await using temp = await createTempDir("klein-user-memory-");
+  const store = new MarkdownUserMemoryStore(join(temp.path, "memory"));
+  const processed: string[][] = [];
+  const processor: UserMemoryProcessor = {
+    async process(_userId: string, memory: UserMemory, messages: readonly UserMemoryMessage[]) {
+      processed.push(messages.map((message) => message.id));
+      return { ...memory, summary: "flushed" };
+    },
+  };
+  const coordinator = new UserMemoryCoordinator({
+    store,
+    processor,
+    logger: pino({ level: "silent" }),
+    taskCoordinator: new TaskCoordinator(),
+    idleSeconds: 60,
+    maxBatchAgeSeconds: 60,
+    maxBatchMessages: 10,
+  });
+
+  try {
+    await coordinator.observe(createMessage("100000000000000001", "message-a1", "こんにちは"));
+    await coordinator.flush();
+    assert.deepEqual(processed, [["message-a1"]]);
+  } finally {
+    coordinator.dispose();
+  }
+});
+
 function createMessage(
   userId: string,
   id: string,

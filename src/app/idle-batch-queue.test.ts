@@ -154,6 +154,43 @@ test("does not process the same key concurrently", async () => {
   }
 });
 
+test("flushes pending items when asked", async () => {
+  const processed: string[][] = [];
+  const { queue } = createQueue(
+    async (_key, items) => {
+      processed.push(items.map((item) => item.id));
+    },
+    { idleSeconds: 60, maxBatchAgeSeconds: 60 },
+  );
+
+  try {
+    queue.enqueue({ key: "a", id: "a1" });
+    await queue.flush();
+    assert.deepEqual(processed, [["a1"]]);
+  } finally {
+    queue.dispose();
+  }
+});
+
+test("does not retry a failed batch during flush", async () => {
+  let attempts = 0;
+  const { queue } = createQueue(
+    async () => {
+      attempts += 1;
+      throw new Error("temporary failure");
+    },
+    { idleSeconds: 60, maxBatchAgeSeconds: 60 },
+  );
+
+  try {
+    queue.enqueue({ key: "a", id: "a1" });
+    await queue.flush();
+    assert.equal(attempts, 1);
+  } finally {
+    queue.dispose();
+  }
+});
+
 test("drops pending items when disposed", async () => {
   const processed: string[][] = [];
   const { queue, taskCoordinator } = createQueue(async (_key, items) => {
