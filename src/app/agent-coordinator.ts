@@ -11,14 +11,20 @@ import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-a
 import type { MemoryCoordinator } from "@modules/memory/application/memory-coordinator";
 import type { OwnerMemoryStore } from "@modules/memory/application/owner-memory-store";
 import type { UserMemoryCoordinator } from "@modules/user-memory/application/user-memory-coordinator";
+import type { UserMemoryStore } from "@modules/user-memory/domain/user-memory";
+import { renderFirstSpeakerUserMemory } from "@modules/user-memory/infrastructure/user-memory-context-renderer";
 import type { DiscordChannelRuleStore } from "@modules/discord/ports/discord-channel-rule-store";
 import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
 import type { WatchCheckRunner } from "@modules/scheduling/application/watch-check-runner";
 import { ownerAccessScope, PUBLIC_ACCESS_SCOPE } from "@shared/access";
 import type { TaskCoordinator } from "./task-coordinator";
-import type { ChannelSessionStateStore } from "./channel-session-state-store";
+import {
+  serializeConversationKey,
+  type ChannelSessionStateStore,
+} from "./channel-session-state-store";
 import { ChannelSessionManager } from "./channel-session-manager";
 import { ScheduledTaskDeliveryCoordinator } from "./scheduled-task-delivery-coordinator";
+import { SessionSpeakerTracker } from "./session-speaker-tracker";
 
 export interface AgentCoordinatorDependencies {
   readonly channelApi: DiscordChannelApi;
@@ -39,6 +45,7 @@ export interface AgentCoordinatorDependencies {
   readonly operatingState: DiscordOperatingState;
   readonly scheduledTaskStore?: ScheduledTaskStore;
   readonly userMemoryCoordinator?: UserMemoryCoordinator;
+  readonly userMemoryStore?: Pick<UserMemoryStore, "read">;
   readonly watchCheckRunner: WatchCheckRunner;
   readonly taskCoordinator: TaskCoordinator;
 }
@@ -46,6 +53,7 @@ export interface AgentCoordinatorDependencies {
 export class AgentCoordinator {
   private readonly logger: Logger;
   private readonly sessionManager: ChannelSessionManager;
+  private readonly sessionSpeakers = new SessionSpeakerTracker();
   private readonly scheduledTaskDeliveryCoordinator: ScheduledTaskDeliveryCoordinator;
 
   constructor(private readonly dependencies: AgentCoordinatorDependencies) {
@@ -102,6 +110,7 @@ export class AgentCoordinator {
   }
 
   async dispose(): Promise<void> {
+    this.sessionSpeakers.clear();
     await this.sessionManager.dispose();
   }
 
@@ -142,8 +151,9 @@ export class AgentCoordinator {
       await this.sessionManager.runTurn(
         conversationKey,
         accessScope,
-        async (agent) => {
+        async (agent, state) => {
           const query = buildMemoryQuery(message);
+          const userMemory = await this.resolveFirstSpeakerMemory(message, state.sessionKey);
           const guildMemory = message.guildId
             ? await this.dependencies.memoryCoordinator?.getContext(
                 {
@@ -162,7 +172,7 @@ export class AgentCoordinator {
             : undefined;
           const turn = createDiscordMessageAgentTurn(
             message,
-            { ownerMemory, guildMemory, channelRule },
+            { ownerMemory, userMemory, guildMemory, channelRule },
             {
               botMessageGuidance: BOT_MESSAGE_GUIDANCE,
               ownerValidation:
@@ -197,6 +207,40 @@ export class AgentCoordinator {
       );
     } finally {
       if (!ownerFeaturesAllowed) this.dependencies.memoryCoordinator?.enqueue(message);
+    }
+  }
+
+  private async resolveFirstSpeakerMemory(
+    message: DiscordMessage,
+    sessionKey: string,
+  ): Promise<string | undefined> {
+    const store = this.dependencies.userMemoryStore;
+    if (!store || message.author.bot) return undefined;
+
+    const conversation = serializeConversationKey({
+      kind: "discord",
+      channelId: message.channelId,
+    });
+    if (!this.sessionSpeakers.observe(conversation, sessionKey, message.author.id)) {
+      return undefined;
+    }
+
+    try {
+      const memory = await store.read(message.author.id);
+      return renderFirstSpeakerUserMemory(
+        { username: message.author.username, displayName: message.author.displayName },
+        memory,
+      );
+    } catch (error) {
+      this.logger.warn(
+        {
+          err: error,
+          event: "user_memory_context_read_failed",
+          userId: message.author.id,
+        },
+        "Failed to read user memory for a first message in a conversation",
+      );
+      return undefined;
     }
   }
 }

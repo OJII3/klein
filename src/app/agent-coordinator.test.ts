@@ -16,6 +16,7 @@ import {
 import { DiscordOperatingState } from "@modules/discord/domain/discord-operating-state";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
 import type { UserMemoryCoordinator } from "@modules/user-memory/application/user-memory-coordinator";
+import type { UserMemory } from "@modules/user-memory/domain/user-memory";
 
 import type {
   ReminderTask,
@@ -42,7 +43,11 @@ function createHarness(
   scheduledTaskStore?: ScheduledTaskStore,
   options: Pick<
     AgentCoordinatorDependencies,
-    "channelSessionStateStore" | "accessPolicy" | "ownerUserId" | "userMemoryCoordinator"
+    | "channelSessionStateStore"
+    | "accessPolicy"
+    | "ownerUserId"
+    | "userMemoryCoordinator"
+    | "userMemoryStore"
   > = {},
   watchCheckRunner: WatchCheckRunner = {
     async run() {
@@ -118,7 +123,9 @@ function createMessage(
   channelId: string,
   id: string,
   content: string,
-  options: Pick<DiscordMessage, "guildId" | "parentChannelId" | "threadId"> = {},
+  options: Pick<DiscordMessage, "guildId" | "parentChannelId" | "threadId"> & {
+    readonly author?: DiscordMessage["author"];
+  } = {},
 ): DiscordMessage {
   return {
     author: {
@@ -178,6 +185,58 @@ test("asks user memory to observe each handled message", async () => {
     );
 
     assert.deepEqual(observed, ["message-a"]);
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+test("injects user memory only when a user first speaks in a session", async () => {
+  const memories = new Map<string, UserMemory>([
+    [
+      "user-123",
+      {
+        discordId: "user",
+        displayName: "ユーザー",
+        summary: "TypeScriptが好きなユーザー",
+        impression: 0,
+        updatedAt: "2026-11-01T00:00:00.000Z",
+        facts: "- 好きなもの: Bun",
+        history: "なし",
+        inCommon: "なし",
+        strengthening: "なし",
+      },
+    ],
+  ]);
+  const harness = createHarness(undefined, undefined, {
+    userMemoryStore: {
+      async read(userId) {
+        return memories.get(userId);
+      },
+    },
+  });
+
+  try {
+    await harness.agentCoordinator.handleDiscordMessage(
+      createMessage("channel-a", "message-a", "最初のメッセージ"),
+    );
+    await harness.agentCoordinator.handleDiscordMessage(
+      createMessage("channel-a", "message-b", "次のメッセージ"),
+    );
+    await harness.agentCoordinator.handleDiscordMessage(
+      createMessage("channel-a", "message-c", "別の人のメッセージ", {
+        author: {
+          bot: false,
+          id: "user-456",
+          username: "newcomer",
+          displayName: "新入り",
+        },
+      }),
+    );
+
+    const turns = harness.prompts.get("channel-a");
+    assert.match(turns?.[0]?.context.userMemory ?? "", /TypeScriptが好きなユーザー/u);
+    assert.equal(turns?.[1]?.context.userMemory, undefined);
+    assert.match(turns?.[2]?.context.userMemory ?? "", /first meeting/u);
   } finally {
     await harness.agentCoordinator.dispose();
   }

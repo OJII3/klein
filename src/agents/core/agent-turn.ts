@@ -6,6 +6,7 @@ import type { AgentEvent } from "./agent-event";
  */
 export interface AgentTurnContext {
   readonly ownerMemory?: string;
+  readonly userMemory?: string;
   readonly guildMemory?: string;
   readonly channelRule?: string;
 }

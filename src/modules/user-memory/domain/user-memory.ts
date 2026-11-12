@@ -92,6 +92,19 @@ export interface UserMemoryProcessor {
   ): Promise<UserMemory | undefined>;
 }
 
+/** Whether the memory holds anything beyond the defaults written for a newly seen user. */
+export function hasUserMemoryContent(memory: UserMemory): boolean {
+  return (
+    memory.summary.trim().length > 0 ||
+    memory.nickname !== undefined ||
+    memory.firstName !== undefined ||
+    memory.lastName !== undefined ||
+    USER_MEMORY_SECTION_KEYS.some(
+      (key) => memory[key].trim() !== USER_MEMORY_DEFAULT_SECTION_CONTENT[key],
+    )
+  );
+}
+
 export function clampImpression(value: number): number {
   if (!Number.isFinite(value)) return 0;
   return Math.max(
