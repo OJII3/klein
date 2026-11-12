@@ -11,6 +11,7 @@ interface TurnContextEntryData {
 export function renderTurnContext(context: AgentTurnContext): string | undefined {
   const formatted = [
     context.ownerMemory ? `<owner-memory>\n${context.ownerMemory}\n</owner-memory>` : undefined,
+    context.userMemory ? `<user-memory>\n${context.userMemory}\n</user-memory>` : undefined,
     context.guildMemory ? `<guild-memory>\n${context.guildMemory}\n</guild-memory>` : undefined,
     context.channelRule ? `<channel-rule>\n${context.channelRule}\n</channel-rule>` : undefined,
   ]

@@ -317,6 +317,7 @@ export async function bootstrap(): Promise<void> {
     operatingState: discordOperatingState,
     scheduledTaskStore,
     userMemoryCoordinator,
+    userMemoryStore,
     watchCheckRunner,
     taskCoordinator,
   });
