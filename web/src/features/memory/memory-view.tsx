@@ -581,10 +581,6 @@ function UserMemoryDetail({ memory }: { memory: UserMemory }) {
           </p>
         </section>
       ))}
-
-      <p className="px-4 py-3 text-[0.66rem] text-ink-faint">
-        Klein が会話から自動で更新します。Web からは編集できません。
-      </p>
     </div>
   );
 }
