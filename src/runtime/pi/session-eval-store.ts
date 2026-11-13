@@ -1,14 +1,19 @@
 import { appendFile, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 
+import type { Message } from "@earendil-works/pi-ai";
 import {
   parseSessionEntries,
+  type AgentSession,
   type FileEntry,
   type SessionEntry,
   type SessionHeader,
 } from "@earendil-works/pi-coding-agent";
+import type { Logger } from "pino";
 
+import type { DiscordAccessPolicy } from "@modules/discord/domain/discord-access-policy";
 import type { DiscordReactionEvent } from "@modules/discord/domain/discord-reaction";
+import { parseDiscordChannelId } from "@shared/discord-channel-session-key";
 import { TURN_CONTEXT_CUSTOM_TYPE } from "./pi-turn-context";
 
 export const DEFAULT_NEGATIVE_FEEDBACK_EMOJIS = ["👎"] as const;
@@ -519,4 +524,221 @@ export class SessionEvalCaseStore {
 
     return undefined;
   }
+}
+
+export interface SessionSentMessageObserverContext {
+  readonly sessionKey: string;
+  readonly ownerFeaturesAllowed?: boolean;
+  readonly logger?: Logger;
+}
+
+export function observeSessionSentMessages(
+  index: SentMessageSessionIndex,
+  session: AgentSession,
+  context: SessionSentMessageObserverContext,
+): () => void {
+  return session.subscribe((event) => {
+    if (event.type !== "turn_end") return;
+    recordTurnEndDiscordMessages(index, session, event.toolResults, context);
+  });
+}
+
+function recordTurnEndDiscordMessages(
+  index: SentMessageSessionIndex,
+  session: AgentSession,
+  toolResults: readonly Message[],
+  context: SessionSentMessageObserverContext,
+): void {
+  const sentToolResults = toolResults.filter((message) => {
+    if (message.role !== "toolResult" || message.toolName !== "discord_send" || message.isError) {
+      return false;
+    }
+    const details = message.details as { messageIds?: unknown } | undefined;
+    return (
+      Array.isArray(details?.messageIds) &&
+      details.messageIds.some((id): id is string => typeof id === "string" && id.length > 0)
+    );
+  });
+  if (sentToolResults.length === 0) return;
+
+  const branch = session.sessionManager.getBranch();
+  const byId = new Map(branch.map((entry) => [entry.id, entry]));
+  const sessionId = session.sessionManager.getSessionId();
+  const sessionFile = session.sessionManager.getSessionFile();
+  const channelId = parseDiscordChannelId(context.sessionKey) ?? context.sessionKey;
+
+  const records: SentDiscordMessageRecord[] = [];
+  for (const toolResult of sentToolResults) {
+    if (toolResult.role !== "toolResult") continue;
+    const details = toolResult.details as { messageIds?: unknown } | undefined;
+    const messageIds = Array.isArray(details?.messageIds)
+      ? details.messageIds.filter((id): id is string => typeof id === "string" && id.length > 0)
+      : [];
+    if (messageIds.length === 0) continue;
+
+    const toolResultEntry = [...branch]
+      .reverse()
+      .find(
+        (entry) =>
+          entry.type === "message" &&
+          entry.message.role === "toolResult" &&
+          entry.message.toolCallId === toolResult.toolCallId,
+      );
+    if (!toolResultEntry) continue;
+
+    let cursorId = toolResultEntry.parentId;
+    let assistantEntryId: string | undefined;
+    let sentContent = "";
+    while (cursorId) {
+      const candidate = byId.get(cursorId);
+      if (!candidate) break;
+      if (candidate.type === "message" && candidate.message.role === "assistant") {
+        const call = candidate.message.content.find(
+          (block) => block.type === "toolCall" && block.id === toolResult.toolCallId,
+        );
+        if (call && call.type === "toolCall") {
+          assistantEntryId = candidate.id;
+          if (typeof call.arguments?.content === "string") {
+            sentContent = call.arguments.content;
+          }
+          break;
+        }
+      }
+      cursorId = candidate.parentId;
+    }
+    if (!assistantEntryId) continue;
+
+    for (const discordMessageId of messageIds) {
+      records.push({
+        discordMessageId,
+        channelId,
+        sessionKey: context.sessionKey,
+        sessionId,
+        ...(sessionFile ? { sessionFile } : {}),
+        assistantEntryId,
+        toolResultEntryId: toolResultEntry.id,
+        toolCallId: toolResult.toolCallId,
+        sentAt: toolResultEntry.timestamp,
+        content: sentContent,
+        ownerFeaturesAllowed: context.ownerFeaturesAllowed === true,
+      });
+    }
+  }
+
+  for (const record of records) {
+    void index.record(record).catch((error: unknown) => {
+      context.logger?.warn(
+        { err: error, event: "eval_sent_message_index_failed" },
+        "Failed to record sent Discord message ID for evaluation",
+      );
+    });
+  }
+}
+
+export interface DiscordReactionFeedbackHandlerOptions {
+  readonly store: Pick<SessionEvalCaseStore, "recordReactionFeedback">;
+  readonly accessPolicy?: DiscordAccessPolicy;
+  readonly ownerUserId?: string;
+  readonly negativeFeedbackEmojis?: readonly string[];
+  readonly logger?: Logger;
+  readonly runTask?: (work: () => Promise<void>) => Promise<void>;
+}
+
+export function createDiscordReactionFeedbackHandler(
+  options: DiscordReactionFeedbackHandlerOptions,
+): (reaction: DiscordReactionEvent) => Promise<void> {
+  return (reaction) => {
+    const target = {
+      guildId: reaction.guildId,
+      channelId: reaction.parentChannelId ?? reaction.channelId,
+      threadId: reaction.threadId,
+      userId: reaction.userId,
+      userIsBot: reaction.userIsBot,
+    };
+    if (options.accessPolicy && !options.accessPolicy.canReceive(target)) {
+      return Promise.resolve();
+    }
+
+    const execute = async (): Promise<void> => {
+      try {
+        const recorded = await options.store.recordReactionFeedback(reaction, {
+          ownerUserId: options.ownerUserId,
+          allowedEmojis: options.negativeFeedbackEmojis,
+        });
+        if (recorded) {
+          options.logger?.info(
+            {
+              event: "eval_feedback_case_recorded",
+              caseId: recorded.caseId,
+              channelId: reaction.channelId,
+              messageId: reaction.messageId,
+              emoji: reaction.emoji,
+              entryCount: recorded.slice.entryCount,
+            },
+            "Recorded session evaluation snapshot from Discord reaction",
+          );
+        }
+      } catch (error) {
+        options.logger?.warn(
+          {
+            err: error,
+            event: "eval_feedback_case_record_failed",
+            channelId: reaction.channelId,
+            messageId: reaction.messageId,
+            emoji: reaction.emoji,
+          },
+          "Failed to record session evaluation snapshot from Discord reaction",
+        );
+      }
+    };
+
+    return options.runTask ? options.runTask(execute) : execute();
+  };
+}
+
+export interface EvalFeedbackObserver {
+  readonly index: SentMessageSessionIndex;
+  readonly store: SessionEvalCaseStore;
+  observeSession(
+    session: AgentSession,
+    context: Pick<SessionSentMessageObserverContext, "sessionKey" | "ownerFeaturesAllowed">,
+  ): () => void;
+  handleReaction(reaction: DiscordReactionEvent): Promise<void>;
+  flush(): Promise<void>;
+}
+
+export function createEvalFeedbackObserver(options: {
+  readonly agentDir: string;
+  readonly accessPolicy?: DiscordAccessPolicy;
+  readonly ownerUserId?: string;
+  readonly negativeFeedbackEmojis?: readonly string[];
+  readonly logger?: Logger;
+  readonly runTask?: (work: () => Promise<void>) => Promise<void>;
+}): EvalFeedbackObserver {
+  const index = new SentMessageSessionIndex(options.agentDir);
+  const store = new SessionEvalCaseStore({ agentDir: options.agentDir, index });
+  const handleReaction = createDiscordReactionFeedbackHandler({
+    store,
+    accessPolicy: options.accessPolicy,
+    ownerUserId: options.ownerUserId,
+    negativeFeedbackEmojis: options.negativeFeedbackEmojis,
+    logger: options.logger,
+    runTask: options.runTask,
+  });
+
+  return {
+    index,
+    store,
+    observeSession(session, context) {
+      return observeSessionSentMessages(index, session, {
+        sessionKey: context.sessionKey,
+        ownerFeaturesAllowed: context.ownerFeaturesAllowed,
+        logger: options.logger,
+      });
+    },
+    handleReaction,
+    flush() {
+      return index.flush();
+    },
+  };
 }

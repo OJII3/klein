@@ -3,12 +3,20 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import test from "node:test";
 import { join } from "node:path";
 
-import { parseSessionEntries, type FileEntry } from "@earendil-works/pi-coding-agent";
+import {
+  parseSessionEntries,
+  type AgentSession,
+  type FileEntry,
+  type SessionEntry,
+} from "@earendil-works/pi-coding-agent";
 
+import { createDiscordAccessPolicy } from "@modules/discord/domain/discord-access-policy";
 import { createTempDir } from "../../testing/temp-dir";
 import { TURN_CONTEXT_CUSTOM_TYPE } from "./pi-turn-context";
 import {
   buildLinearBranchBeforeEntry,
+  createDiscordReactionFeedbackHandler,
+  createEvalFeedbackObserver,
   findTurnBoundsForAssistantEntry,
   SentMessageSessionIndex,
   serializeSessionEntriesToJsonl,
@@ -322,4 +330,150 @@ test("SessionEvalCaseStore snapshots session up to pre-message boundary on negat
     false,
   );
   assert.equal(parsedSnapshot.at(-1)?.type !== "session" && parsedSnapshot.at(-1)?.id, "tr1");
+});
+
+test("createDiscordReactionFeedbackHandler enforces accessPolicy, uses runTask, and ignores store failures", async () => {
+  const recordedReactions: string[] = [];
+  let taskInvocations = 0;
+  let shouldThrow = false;
+
+  const handler = createDiscordReactionFeedbackHandler({
+    store: {
+      async recordReactionFeedback(reaction, options) {
+        if (shouldThrow) {
+          throw new Error("disk full");
+        }
+        recordedReactions.push(
+          `${reaction.messageId}:${reaction.emoji}:${options?.ownerUserId ?? ""}`,
+        );
+        return undefined;
+      },
+    },
+    accessPolicy: createDiscordAccessPolicy(
+      { default: "deny", directMessages: "deny" },
+      "owner-1",
+      {
+        getGuildRule: (guildId) =>
+          guildId === "guild-1"
+            ? {
+                channels: {
+                  "ch-allowed": { access: "allow" },
+                },
+              }
+            : undefined,
+      },
+    ),
+    ownerUserId: "owner-1",
+    runTask: async (work) => {
+      taskInvocations += 1;
+      return work();
+    },
+  });
+
+  await handler({
+    emoji: "👎",
+    userId: "user-1",
+    userIsBot: false,
+    channelId: "ch-denied",
+    guildId: "guild-1",
+    messageId: "msg-denied",
+    occurredAt: "2026-11-12T00:00:00.000Z",
+  });
+
+  await handler({
+    emoji: "👎",
+    userId: "user-1",
+    userIsBot: false,
+    channelId: "ch-allowed",
+    guildId: "guild-1",
+    messageId: "msg-allowed",
+    occurredAt: "2026-11-12T00:00:00.000Z",
+  });
+
+  shouldThrow = true;
+  await handler({
+    emoji: "👎",
+    userId: "user-1",
+    userIsBot: false,
+    channelId: "thread-1",
+    parentChannelId: "ch-allowed",
+    threadId: "thread-1",
+    guildId: "guild-1",
+    messageId: "msg-error",
+    occurredAt: "2026-11-12T00:00:00.000Z",
+  });
+
+  assert.deepEqual(recordedReactions, ["msg-allowed:👎:owner-1"]);
+  assert.equal(taskInvocations, 2);
+});
+
+test("createEvalFeedbackObserver observes turn_end discord_send calls, flushes index, and records reaction snapshots", async () => {
+  await using temp = await createTempDir("klein-eval-observer-");
+  const agentDir = temp.path;
+  const sessionDir = join(agentDir, "sessions", encodeURIComponent("discord-channel:ch-1"));
+  await mkdir(sessionDir, { recursive: true });
+  const sessionFilePath = join(sessionDir, "2026-11-01T00-00-00-000Z_sess-1.jsonl");
+  const entries = createSampleEntries();
+  await writeFile(sessionFilePath, serializeSessionEntriesToJsonl(entries), "utf8");
+
+  const observer = createEvalFeedbackObserver({
+    agentDir,
+    accessPolicy: createDiscordAccessPolicy({ default: "allow", directMessages: "allow" }),
+    ownerUserId: "owner-1",
+  });
+
+  const branchEntries = entries.filter((entry): entry is SessionEntry => entry.type !== "session");
+  const toolResultEntry = branchEntries.at(-1)!;
+  if (toolResultEntry.type !== "message") {
+    throw new Error("Expected final entry to be a message");
+  }
+
+  let subscriber: ((event: { type: string; toolResults?: unknown[] }) => void) | undefined;
+  let unsubscribed = false;
+  const fakeSession = {
+    subscribe(listener: (event: { type: string; toolResults?: unknown[] }) => void) {
+      subscriber = listener;
+      return () => {
+        unsubscribed = true;
+        subscriber = undefined;
+      };
+    },
+    sessionManager: {
+      getBranch: () => branchEntries,
+      getSessionId: () => "sess-1",
+      getSessionFile: () => sessionFilePath,
+    },
+  } as unknown as AgentSession;
+
+  const cleanup = observer.observeSession(fakeSession, {
+    sessionKey: "discord-channel:ch-1",
+    ownerFeaturesAllowed: true,
+  });
+
+  subscriber?.({
+    type: "turn_end",
+    toolResults: [toolResultEntry.message],
+  });
+  await observer.flush();
+
+  const indexed = await observer.index.findByDiscordMessageId("discord-msg-999");
+  assert.ok(indexed);
+  assert.equal(indexed.ownerFeaturesAllowed, true);
+  assert.equal(indexed.content, "問題の返信メッセージ");
+
+  await observer.handleReaction({
+    emoji: "👎",
+    userId: "owner-1",
+    userIsBot: false,
+    channelId: "ch-1",
+    messageId: "discord-msg-999",
+    occurredAt: "2026-11-12T01:00:00.000Z",
+  });
+
+  const cases = await observer.store.listCases();
+  assert.equal(cases.length, 1);
+  assert.equal(cases[0]?.sourceSession.ownerFeaturesAllowed, true);
+
+  cleanup();
+  assert.equal(unsubscribed, true);
 });

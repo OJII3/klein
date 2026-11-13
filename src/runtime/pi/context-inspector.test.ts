@@ -40,7 +40,11 @@ import {
   runContextJudge,
 } from "./context-inspector";
 import { createPiAgentFactory } from "./pi-agent-runtime";
-import { SentMessageSessionIndex, SessionEvalCaseStore } from "./session-eval-store";
+import {
+  observeSessionSentMessages,
+  SentMessageSessionIndex,
+  SessionEvalCaseStore,
+} from "./session-eval-store";
 
 const SILENT_LOGGER = pino({ level: "silent" });
 
@@ -347,7 +351,8 @@ test("records a 👎 feedback case, inspects original trace + raw context, and r
     logger: SILENT_LOGGER,
     modelRuntime: initialRuntime,
     sessionMode: "new",
-    sentMessageIndex,
+    onSessionCreated: (session, context) =>
+      observeSessionSentMessages(sentMessageIndex, session, context),
   });
 
   const agent = await DiscordAgent.create(

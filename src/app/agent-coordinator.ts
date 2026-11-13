@@ -5,7 +5,6 @@ import { createDiscordMessageAgentTurn } from "@agents/discord/discord-message-a
 import { BOT_MESSAGE_GUIDANCE } from "@agents/discord/prompt-policy";
 import type { DiscordAccessPolicy } from "@modules/discord/domain/discord-access-policy";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
-import type { DiscordReactionEvent } from "@modules/discord/domain/discord-reaction";
 import type { DiscordOperatingState } from "@modules/discord/domain/discord-operating-state";
 import type { DiscordUserDirectory } from "@modules/discord/application/discord-user-directory";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
@@ -17,7 +16,6 @@ import { renderFirstSpeakerUserMemory } from "@modules/user-memory/infrastructur
 import type { DiscordChannelRuleStore } from "@modules/discord/ports/discord-channel-rule-store";
 import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
 import type { WatchCheckRunner } from "@modules/scheduling/application/watch-check-runner";
-import type { SessionEvalCaseStore } from "@runtime/pi/session-eval-store";
 import { ownerAccessScope, PUBLIC_ACCESS_SCOPE } from "@shared/access";
 import type { TaskCoordinator } from "./task-coordinator";
 import {
@@ -46,8 +44,6 @@ export interface AgentCoordinatorDependencies {
   readonly ownerMemoryStore?: OwnerMemoryStore;
   readonly operatingState: DiscordOperatingState;
   readonly scheduledTaskStore?: ScheduledTaskStore;
-  readonly sessionEvalCaseStore?: SessionEvalCaseStore;
-  readonly negativeFeedbackEmojis?: readonly string[];
   readonly userMemoryCoordinator?: UserMemoryCoordinator;
   readonly userMemoryStore?: Pick<UserMemoryStore, "read">;
   readonly watchCheckRunner: WatchCheckRunner;
@@ -99,55 +95,6 @@ export class AgentCoordinator {
     return this.dependencies.taskCoordinator.run(() =>
       this.sessionManager.runForConversation(conversationKey, () => this.processMessage(message)),
     );
-  }
-
-  handleDiscordReaction(reaction: DiscordReactionEvent): Promise<void> {
-    const store = this.dependencies.sessionEvalCaseStore;
-    if (!store || !this.dependencies.operatingState.isActive()) return Promise.resolve();
-
-    const target = {
-      guildId: reaction.guildId,
-      channelId: reaction.parentChannelId ?? reaction.channelId,
-      threadId: reaction.threadId,
-      userId: reaction.userId,
-      userIsBot: reaction.userIsBot,
-    };
-    if (this.dependencies.accessPolicy && !this.dependencies.accessPolicy.canReceive(target)) {
-      return Promise.resolve();
-    }
-
-    return this.dependencies.taskCoordinator.run(async () => {
-      try {
-        const recorded = await store.recordReactionFeedback(reaction, {
-          ownerUserId: this.dependencies.ownerUserId,
-          allowedEmojis: this.dependencies.negativeFeedbackEmojis,
-        });
-        if (recorded) {
-          this.logger.info(
-            {
-              event: "eval_feedback_case_recorded",
-              caseId: recorded.caseId,
-              channelId: reaction.channelId,
-              messageId: reaction.messageId,
-              emoji: reaction.emoji,
-              entryCount: recorded.slice.entryCount,
-            },
-            "Recorded session evaluation snapshot from Discord reaction",
-          );
-        }
-      } catch (error) {
-        this.logger.warn(
-          {
-            err: error,
-            event: "eval_feedback_case_record_failed",
-            channelId: reaction.channelId,
-            messageId: reaction.messageId,
-            emoji: reaction.emoji,
-          },
-          "Failed to record session evaluation snapshot from Discord reaction",
-        );
-      }
-    });
   }
 
   async rotateIdleChannels(): Promise<void> {

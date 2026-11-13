@@ -95,6 +95,9 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
     accessRuleStore?: DiscordAccessRuleStore,
     ownerUserId?: string,
     accessRequestStore?: DiscordAccessRequestStore,
+    options?: {
+      readonly enableReactions?: boolean;
+    },
   ) {
     this.logger = logger?.child({ component: "discord-service" });
     this.messageAdapter = new DiscordJsMessageAdapter(this.logger);
@@ -108,17 +111,22 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
       channelRuleStore,
       accessRuleStore,
     );
+    const enableReactions = options?.enableReactions === true;
     this.client = new Client({
       intents: [
         GatewayIntentBits.DirectMessages,
-        GatewayIntentBits.DirectMessageReactions,
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.GuildMessageReactions,
         GatewayIntentBits.MessageContent,
+        ...(enableReactions
+          ? [GatewayIntentBits.DirectMessageReactions, GatewayIntentBits.GuildMessageReactions]
+          : []),
         ...(this.voiceChatController ? [GatewayIntentBits.GuildVoiceStates] : []),
       ],
-      partials: [Partials.Channel, Partials.Message, Partials.Reaction, Partials.User],
+      partials: [
+        Partials.Channel,
+        ...(enableReactions ? [Partials.Message, Partials.Reaction, Partials.User] : []),
+      ],
     });
     this.channelAccessRequester =
       accessRuleStore && accessRequestStore
@@ -171,15 +179,17 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
       });
     };
     this.client.on(Events.MessageCreate, this.messageListener);
-    this.reactionListener = (reaction, user) => {
-      void this.handleReactionAdd(reaction, user).catch((error: unknown) => {
-        this.logger?.error(
-          { err: error, event: "discord_reaction_handler_failed" },
-          "Failed to handle Discord message reaction",
-        );
-      });
-    };
-    this.client.on(Events.MessageReactionAdd, this.reactionListener);
+    if (onReaction) {
+      this.reactionListener = (reaction, user) => {
+        void this.handleReactionAdd(reaction, user).catch((error: unknown) => {
+          this.logger?.error(
+            { err: error, event: "discord_reaction_handler_failed" },
+            "Failed to handle Discord message reaction",
+          );
+        });
+      };
+      this.client.on(Events.MessageReactionAdd, this.reactionListener);
+    }
     this.interactionListener = (interaction) => {
       void this.handleInteraction(interaction).catch((error: unknown) => {
         this.logger?.error(

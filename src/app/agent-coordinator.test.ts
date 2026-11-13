@@ -46,8 +46,6 @@ function createHarness(
     | "channelSessionStateStore"
     | "accessPolicy"
     | "ownerUserId"
-    | "sessionEvalCaseStore"
-    | "negativeFeedbackEmojis"
     | "userMemoryCoordinator"
     | "userMemoryStore"
   > = {},
@@ -860,87 +858,6 @@ test("records watch check failures without notifying the agent", async () => {
     assert.match(stored.lastError ?? "", /check failed/u);
     assert.equal(stored.consecutiveFailures, 1);
     assert.equal(harness.prompts.size, 0);
-  } finally {
-    await harness.agentCoordinator.dispose();
-  }
-});
-
-test("records evaluation feedback snapshots only for permitted Discord reactions", async () => {
-  const recordedReactions: string[] = [];
-  const fakeStore = {
-    async recordReactionFeedback(reaction: { messageId: string; emoji: string }) {
-      recordedReactions.push(`${reaction.messageId}:${reaction.emoji}`);
-      return {
-        version: 1 as const,
-        caseId: `case-${reaction.messageId}`,
-        createdAt: "2026-11-12T00:00:00.000Z",
-        sessionFile: "case.session.jsonl",
-        reaction: {
-          emoji: reaction.emoji,
-          userId: "user-1",
-          isOwner: false,
-          channelId: "ch-allowed",
-          messageId: reaction.messageId,
-          occurredAt: "2026-11-12T00:00:00.000Z",
-        },
-        sourceSession: {
-          sessionId: "sess-1",
-          sessionKey: "discord-channel:ch-allowed",
-          ownerFeaturesAllowed: false,
-        },
-        slice: {
-          upToEntryId: "tr1",
-          targetAssistantEntryId: "a1",
-          targetToolResultEntryId: "tr2",
-          entryCount: 3,
-        },
-        recordedResponse: {
-          content: "bad reply",
-          toolCallId: "call-1",
-        },
-      };
-    },
-  } as unknown as NonNullable<AgentCoordinatorDependencies["sessionEvalCaseStore"]>;
-
-  const harness = createHarness(undefined, undefined, {
-    accessPolicy: createDiscordAccessPolicy(
-      { default: "deny", directMessages: "deny" },
-      "owner-1",
-      {
-        getGuildRule: (guildId) =>
-          guildId === "guild-1"
-            ? {
-                channels: {
-                  "ch-allowed": { access: "allow" },
-                },
-              }
-            : undefined,
-      },
-    ),
-    sessionEvalCaseStore: fakeStore,
-  });
-
-  try {
-    await harness.agentCoordinator.handleDiscordReaction({
-      emoji: "👎",
-      userId: "user-1",
-      userIsBot: false,
-      channelId: "ch-denied",
-      guildId: "guild-1",
-      messageId: "msg-denied",
-      occurredAt: "2026-11-12T00:00:00.000Z",
-    });
-    await harness.agentCoordinator.handleDiscordReaction({
-      emoji: "👎",
-      userId: "user-1",
-      userIsBot: false,
-      channelId: "ch-allowed",
-      guildId: "guild-1",
-      messageId: "msg-allowed",
-      occurredAt: "2026-11-12T00:00:00.000Z",
-    });
-
-    assert.deepEqual(recordedReactions, ["msg-allowed:👎"]);
   } finally {
     await harness.agentCoordinator.dispose();
   }

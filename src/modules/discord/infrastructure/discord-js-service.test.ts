@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { Interaction, Message, ModalBuilder } from "discord.js";
-import { MessageFlags } from "discord.js";
+import { Events, GatewayIntentBits, MessageFlags, Partials } from "discord.js";
 
 import { createDiscordAccessPolicy } from "../domain/discord-access-policy";
 import type { DiscordMessage } from "../domain/discord-message";
@@ -908,5 +908,67 @@ test("forwards reactions on bot messages after resolving partials and filters un
     );
   } finally {
     await service.stop();
+  }
+});
+
+test("enables reaction intents, partials, and MessageReactionAdd listener only when opted in", async () => {
+  const defaultService = new DiscordJsService(
+    "token",
+    createDiscordAccessPolicy({ default: "allow", directMessages: "allow" }),
+  );
+  const optInService = new DiscordJsService(
+    "token",
+    createDiscordAccessPolicy({ default: "allow", directMessages: "allow" }),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    { enableReactions: true },
+  );
+
+  type ClientInternals = {
+    options: {
+      intents: { has: (intent: GatewayIntentBits) => boolean };
+      partials?: readonly Partials[];
+    };
+    login: (token: string) => Promise<string>;
+    listenerCount: (event: string) => number;
+  };
+
+  const defaultClient = (defaultService as unknown as { client: ClientInternals }).client;
+  const optInClient = (optInService as unknown as { client: ClientInternals }).client;
+  defaultClient.login = async () => "token";
+  optInClient.login = async () => "token";
+
+  try {
+    assert.equal(defaultClient.options.intents.has(GatewayIntentBits.GuildMessageReactions), false);
+    assert.equal(
+      defaultClient.options.intents.has(GatewayIntentBits.DirectMessageReactions),
+      false,
+    );
+    assert.equal(defaultClient.options.partials?.includes(Partials.Reaction), false);
+    assert.equal(defaultClient.options.partials?.includes(Partials.Message), false);
+    assert.equal(defaultClient.options.partials?.includes(Partials.User), false);
+
+    assert.equal(optInClient.options.intents.has(GatewayIntentBits.GuildMessageReactions), true);
+    assert.equal(optInClient.options.intents.has(GatewayIntentBits.DirectMessageReactions), true);
+    assert.equal(optInClient.options.partials?.includes(Partials.Reaction), true);
+    assert.equal(optInClient.options.partials?.includes(Partials.Message), true);
+    assert.equal(optInClient.options.partials?.includes(Partials.User), true);
+
+    await defaultService.start(async () => undefined);
+    assert.equal(defaultClient.listenerCount(Events.MessageReactionAdd), 0);
+
+    await optInService.start(
+      async () => undefined,
+      async () => undefined,
+    );
+    assert.equal(optInClient.listenerCount(Events.MessageReactionAdd), 1);
+  } finally {
+    await defaultService.stop();
+    await optInService.stop();
   }
 });
