@@ -27,10 +27,8 @@ import type { AgentTurn, AgentTurnContext } from "@agents/core/agent-turn";
 import type { AgentPrompt, AgentRuntime } from "@agents/core/agent-runtime";
 import { ImageAnalysisError, toImageAnalysisFailure } from "@agents/core/image-analysis";
 import type { SessionMode } from "@app/cli-options";
-import {
-  renderWatchToolSection,
-  type WatchToolCatalog,
-} from "@modules/scheduling/application/watch-tool";
+import type { WatchToolCatalog } from "@modules/scheduling/application/watch-tool";
+import { renderWatchToolSection } from "@modules/scheduling/application/watch-tool";
 import { createBackgroundCompactionExtension } from "./background-compaction";
 import { createFxtwitterFetchExtension } from "./fxtwitter-fetch";
 import {
@@ -94,6 +92,11 @@ export interface PiAgentFactoryOptions {
   readonly logger: Logger;
   readonly watchToolCatalog?: WatchToolCatalog;
   readonly usageReporter?: PiUsageReporter;
+  readonly extraExtensions?: readonly ExtensionFactory[];
+  readonly onSessionCreated?: (
+    session: AgentSession,
+    context: AgentCreationOptions,
+  ) => (() => void) | void;
 }
 
 export const DEFAULT_SKILLS_DIRECTORY = "config/klein/skills";
@@ -129,6 +132,7 @@ export class PiAgentRuntime implements AgentRuntime {
     private readonly imageAnalyzer?: ImageAnalyzer,
     private readonly trace?: PiRuntimeTrace,
     private readonly modelRuntime?: ModelRuntime,
+    private readonly onDispose?: () => void,
   ) {
     trace?.attach(session);
   }
@@ -350,6 +354,7 @@ export class PiAgentRuntime implements AgentRuntime {
   }
 
   dispose(): void {
+    this.onDispose?.();
     this.trace?.dispose();
     this.session.dispose();
   }
@@ -372,6 +377,7 @@ export function createResourceLoader(
   options?: {
     readonly normalizeAssistantText?: boolean;
     readonly backgroundCompactionLeadTokens?: number;
+    readonly extraExtensions?: readonly ExtensionFactory[];
   },
 ): DefaultResourceLoader {
   const wrap = (factory: ExtensionFactory) =>
@@ -415,6 +421,7 @@ export function createResourceLoader(
       createFxtwitterFetchExtension(),
       ...(trace ? [trace.extension] : []),
       ...(authorization ? [authorization.extension] : []),
+      ...(options?.extraExtensions ?? []),
     ],
     settingsManager,
     additionalSkillPaths: [resolve(process.cwd(), skillsDirectory)],
@@ -510,6 +517,8 @@ export function createPiAgentFactory({
   permissions,
   watchToolCatalog,
   usageReporter,
+  extraExtensions,
+  onSessionCreated,
 }: PiAgentFactoryOptions): AgentFactory {
   // Pi's MCP extension resolves config, credentials, and logs through this environment variable.
   process.env.PI_CODING_AGENT_DIR = resolve(agentDir);
@@ -560,6 +569,7 @@ export function createPiAgentFactory({
         {
           normalizeAssistantText: hasDiscordSend,
           backgroundCompactionLeadTokens: llm.compaction?.backgroundTokens,
+          extraExtensions,
         },
       );
       await resourceLoader.reload();
@@ -628,7 +638,15 @@ export function createPiAgentFactory({
         ? new PiImageAnalyzer(session.modelRuntime, sessionImageModel, llm.image?.thinkingLevel)
         : undefined;
 
-      return new PiAgentRuntime(session, imageAnalyzer, trace, modelRuntime);
+      const onSessionDispose = onSessionCreated?.(session, options);
+
+      return new PiAgentRuntime(
+        session,
+        imageAnalyzer,
+        trace,
+        modelRuntime,
+        typeof onSessionDispose === "function" ? onSessionDispose : undefined,
+      );
     },
   };
 }

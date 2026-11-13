@@ -28,6 +28,7 @@ import { PiMemoryProcessor } from "@runtime/pi/pi-memory-processor";
 import { PiUserMemoryAgent } from "@runtime/pi/pi-user-memory-agent";
 import { PiVoiceReactionSelector } from "@runtime/pi/pi-voice-reaction-selector";
 import { PiVoiceTranscriptQueueSelector } from "@runtime/pi/pi-voice-transcript-queue-selector";
+import { createEvalFeedbackObserver } from "@runtime/pi/session-eval-store";
 import { createDiscordAccessPolicy } from "@modules/discord/domain/discord-access-policy";
 import { DiscordOperatingState } from "@modules/discord/domain/discord-operating-state";
 import { DiscordUserDirectory } from "@modules/discord/application/discord-user-directory";
@@ -64,6 +65,7 @@ import { WebSocketAsrClient } from "@modules/asr/infrastructure/websocket-asr-cl
 import { FileScheduledTaskStore } from "@modules/scheduling/infrastructure/file-scheduled-task-store";
 import { QuickJsWatchCheckRunner } from "@modules/scheduling/application/quickjs-watch-check-runner";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
+import type { DiscordReactionEvent } from "@modules/discord/domain/discord-reaction";
 
 const DISCORD_USAGE_STATUS_REFRESH_INTERVAL_MS = 60 * 60 * 1_000;
 const CHANNEL_CONTEXT_ROTATION_CHECK_INTERVAL_MS = 60 * 1_000;
@@ -170,6 +172,13 @@ export async function bootstrap(): Promise<void> {
   const transcriptQueueSelector = reactionClassifierModel
     ? new PiVoiceTranscriptQueueSelector(modelRuntime, reactionClassifierModel)
     : undefined;
+  const evalFeedbackObserver = createEvalFeedbackObserver({
+    agentDir,
+    accessPolicy: discordAccessPolicy,
+    ownerUserId,
+    logger,
+    runTask: (work) => taskCoordinator.run(work),
+  });
   const piAgentFactory = createPiAgentFactory({
     agentDir,
     llm: config.llm,
@@ -180,6 +189,7 @@ export async function bootstrap(): Promise<void> {
     permissions: config.permissions,
     usageReporter: piUsageReporter,
     watchToolCatalog,
+    onSessionCreated: (session, context) => evalFeedbackObserver.observeSession(session, context),
   });
   const voiceChatAgentFactory = voiceChatConfig?.llm
     ? createPiAgentFactory({
@@ -286,6 +296,7 @@ export async function bootstrap(): Promise<void> {
     discordAccessRuleStore,
     ownerUserId,
     discordAccessRequestStore,
+    { enableReactions: true },
   );
   const memorySessionId = `memory-${randomUUID()}`;
   const memoryCoordinator = memoryConfig.enabled
@@ -395,6 +406,7 @@ export async function bootstrap(): Promise<void> {
     await taskCoordinator.waitForCompletion();
     await discordService.stop();
     await agentCoordinator.dispose();
+    await evalFeedbackObserver.flush();
     await discordUserDirectory.flush();
     await piUsageReporter?.shutdown();
     logger.info({ event: "shutdown_completed" }, "Shutdown complete");
@@ -410,19 +422,36 @@ export async function bootstrap(): Promise<void> {
 
   try {
     const pendingMessages: DiscordMessage[] = [];
+    const pendingReactions: DiscordReactionEvent[] = [];
     let restoring = true;
-    await discordService.start((message) => {
-      if (restoring) {
-        pendingMessages.push(message);
-        return Promise.resolve();
-      }
-      return agentCoordinator.handleDiscordMessage(message);
-    });
+    await discordService.start(
+      (message) => {
+        if (restoring) {
+          pendingMessages.push(message);
+          return Promise.resolve();
+        }
+        return agentCoordinator.handleDiscordMessage(message);
+      },
+      (reaction) => {
+        if (restoring) {
+          pendingReactions.push(reaction);
+          return Promise.resolve();
+        }
+        return discordOperatingState.isActive()
+          ? evalFeedbackObserver.handleReaction(reaction)
+          : Promise.resolve();
+      },
+    );
     await agentCoordinator.initialize();
     restoring = false;
-    await Promise.all(
-      pendingMessages.map((message) => agentCoordinator.handleDiscordMessage(message)),
-    );
+    await Promise.all([
+      ...pendingMessages.map((message) => agentCoordinator.handleDiscordMessage(message)),
+      ...pendingReactions.map((reaction) =>
+        discordOperatingState.isActive()
+          ? evalFeedbackObserver.handleReaction(reaction)
+          : Promise.resolve(),
+      ),
+    ]);
   } catch (error) {
     await shutdown("startup_failed");
     throw error;

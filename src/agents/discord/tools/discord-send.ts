@@ -18,7 +18,8 @@ export function createDiscordSendTool(
     async execute(_toolCallId, params) {
       await channelApi.sendTyping(channelId);
       await new Promise((resolve) => setTimeout(resolve, 1_000));
-      await channelApi.sendMessage(channelId, params.content);
+      const sent = await channelApi.sendMessage(channelId, params.content);
+      const messageIds = Array.isArray(sent) ? sent : [];
 
       return {
         content: [
@@ -27,7 +28,7 @@ export function createDiscordSendTool(
             text: `The message was sent to Discord.\nSent content:\n${params.content}`,
           },
         ],
-        details: {},
+        details: messageIds.length > 0 ? { messageIds } : {},
       };
     },
   });

@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { Interaction, Message, ModalBuilder } from "discord.js";
-import { MessageFlags } from "discord.js";
+import { Events, GatewayIntentBits, MessageFlags, Partials } from "discord.js";
 
 import { createDiscordAccessPolicy } from "../domain/discord-access-policy";
 import type { DiscordMessage } from "../domain/discord-message";
+import type { DiscordReactionEvent } from "../domain/discord-reaction";
 import { DiscordOperatingState } from "../domain/discord-operating-state";
-import type { DiscordMessageHandler } from "../ports/discord-gateway";
+import type { DiscordMessageHandler, DiscordReactionHandler } from "../ports/discord-gateway";
 import { DiscordJsService } from "./discord-js-service";
 
 type TestableDiscordJsService = {
@@ -22,7 +23,9 @@ type TestableDiscordJsService = {
   };
   acceptingMessages: boolean;
   onMessage?: DiscordMessageHandler;
+  onReaction?: DiscordReactionHandler;
   handleMessage(message: Message): Promise<void>;
+  handleReactionAdd(reaction: unknown, user: unknown): Promise<void>;
   handleInteraction(interaction: Interaction): Promise<void>;
 };
 
@@ -745,5 +748,227 @@ test("does not ask the owner when a denied channel message does not mention the 
     assert.equal(pendingMessages.length, 0);
   } finally {
     await service.stop();
+  }
+});
+
+test("returns sent message IDs from sendMessage", async () => {
+  const service = new DiscordJsService(
+    "token",
+    createDiscordAccessPolicy({ default: "allow", directMessages: "allow" }),
+  );
+  const testableService = service as unknown as TestableDiscordJsService;
+  let counter = 0;
+  testableService.client.channels.fetch = async () => ({
+    isTextBased: () => true,
+    send: async () => ({ id: `sent-${++counter}` }),
+  });
+
+  try {
+    const ids = await service.sendMessage("channel-123", `${"a".repeat(2_000)}b`);
+    assert.deepEqual(ids, ["sent-1", "sent-2"]);
+  } finally {
+    await service.stop();
+  }
+});
+
+test("forwards reactions on bot messages after resolving partials and filters unauthorized reactions", async () => {
+  const service = new DiscordJsService(
+    "token",
+    createDiscordAccessPolicy(
+      {
+        default: "deny",
+        directMessages: "allow",
+      },
+      "owner-1",
+      {
+        getGuildRule: (guildId) =>
+          guildId === "guild-123"
+            ? {
+                access: "allow",
+                channels: { "channel-denied": { access: "deny" } },
+              }
+            : undefined,
+      },
+    ),
+  );
+  const testableService = service as unknown as TestableDiscordJsService;
+  testableService.client.user = { id: "bot-123" };
+  testableService.acceptingMessages = true;
+
+  const received: DiscordReactionEvent[] = [];
+  testableService.onReaction = async (reaction) => {
+    received.push(reaction);
+  };
+
+  try {
+    // Partial reaction/message/user on a bot-authored message in an allowed channel -> forwarded
+    await testableService.handleReactionAdd(
+      {
+        partial: true,
+        async fetch() {
+          return {
+            partial: false,
+            emoji: { name: "👎", identifier: "👎" },
+            message: {
+              partial: true,
+              async fetch() {
+                return {
+                  partial: false,
+                  id: "bot-msg-1",
+                  channelId: "channel-allowed",
+                  guildId: "guild-123",
+                  content: "間違った返信",
+                  author: { id: "bot-123" },
+                  channel: { isThread: () => false, name: "general" },
+                };
+              },
+            },
+          };
+        },
+      },
+      {
+        partial: true,
+        async fetch() {
+          return { id: "user-1", bot: false };
+        },
+      },
+    );
+
+    // Reaction on another user's message -> ignored
+    await testableService.handleReactionAdd(
+      {
+        partial: false,
+        emoji: { name: "👎", identifier: "👎" },
+        message: {
+          partial: false,
+          id: "human-msg-1",
+          channelId: "channel-allowed",
+          guildId: "guild-123",
+          author: { id: "user-2" },
+          channel: { isThread: () => false },
+        },
+      },
+      { partial: false, id: "user-1", bot: false },
+    );
+
+    // Reaction in denied channel -> ignored
+    await testableService.handleReactionAdd(
+      {
+        partial: false,
+        emoji: { name: "👎", identifier: "👎" },
+        message: {
+          partial: false,
+          id: "bot-msg-2",
+          channelId: "channel-denied",
+          guildId: "guild-123",
+          author: { id: "bot-123" },
+          channel: { isThread: () => false },
+        },
+      },
+      { partial: false, id: "user-1", bot: false },
+    );
+
+    // Reaction by a bot -> ignored
+    await testableService.handleReactionAdd(
+      {
+        partial: false,
+        emoji: { name: "👎", identifier: "👎" },
+        message: {
+          partial: false,
+          id: "bot-msg-3",
+          channelId: "channel-allowed",
+          guildId: "guild-123",
+          author: { id: "bot-123" },
+          channel: { isThread: () => false },
+        },
+      },
+      { partial: false, id: "other-bot", bot: true },
+    );
+
+    assert.equal(received.length, 1);
+    assert.deepEqual(
+      {
+        emoji: received[0]?.emoji,
+        messageId: received[0]?.messageId,
+        channelId: received[0]?.channelId,
+        guildId: received[0]?.guildId,
+        channelName: received[0]?.channelName,
+        messageContent: received[0]?.messageContent,
+        userId: received[0]?.userId,
+      },
+      {
+        emoji: "👎",
+        messageId: "bot-msg-1",
+        channelId: "channel-allowed",
+        guildId: "guild-123",
+        channelName: "general",
+        messageContent: "間違った返信",
+        userId: "user-1",
+      },
+    );
+  } finally {
+    await service.stop();
+  }
+});
+
+test("enables reaction intents, partials, and MessageReactionAdd listener only when opted in", async () => {
+  const defaultService = new DiscordJsService(
+    "token",
+    createDiscordAccessPolicy({ default: "allow", directMessages: "allow" }),
+  );
+  const optInService = new DiscordJsService(
+    "token",
+    createDiscordAccessPolicy({ default: "allow", directMessages: "allow" }),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    { enableReactions: true },
+  );
+
+  type ClientInternals = {
+    options: {
+      intents: { has: (intent: GatewayIntentBits) => boolean };
+      partials?: readonly Partials[];
+    };
+    login: (token: string) => Promise<string>;
+    listenerCount: (event: string) => number;
+  };
+
+  const defaultClient = (defaultService as unknown as { client: ClientInternals }).client;
+  const optInClient = (optInService as unknown as { client: ClientInternals }).client;
+  defaultClient.login = async () => "token";
+  optInClient.login = async () => "token";
+
+  try {
+    assert.equal(defaultClient.options.intents.has(GatewayIntentBits.GuildMessageReactions), false);
+    assert.equal(
+      defaultClient.options.intents.has(GatewayIntentBits.DirectMessageReactions),
+      false,
+    );
+    assert.equal(defaultClient.options.partials?.includes(Partials.Reaction), false);
+    assert.equal(defaultClient.options.partials?.includes(Partials.Message), false);
+    assert.equal(defaultClient.options.partials?.includes(Partials.User), false);
+
+    assert.equal(optInClient.options.intents.has(GatewayIntentBits.GuildMessageReactions), true);
+    assert.equal(optInClient.options.intents.has(GatewayIntentBits.DirectMessageReactions), true);
+    assert.equal(optInClient.options.partials?.includes(Partials.Reaction), true);
+    assert.equal(optInClient.options.partials?.includes(Partials.Message), true);
+    assert.equal(optInClient.options.partials?.includes(Partials.User), true);
+
+    await defaultService.start(async () => undefined);
+    assert.equal(defaultClient.listenerCount(Events.MessageReactionAdd), 0);
+
+    await optInService.start(
+      async () => undefined,
+      async () => undefined,
+    );
+    assert.equal(optInClient.listenerCount(Events.MessageReactionAdd), 1);
+  } finally {
+    await defaultService.stop();
+    await optInService.stop();
   }
 });
