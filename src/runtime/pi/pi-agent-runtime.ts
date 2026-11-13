@@ -94,6 +94,7 @@ export interface PiAgentFactoryOptions {
   readonly logger: Logger;
   readonly watchToolCatalog?: WatchToolCatalog;
   readonly usageReporter?: PiUsageReporter;
+  readonly extraExtensions?: readonly ExtensionFactory[];
 }
 
 export const DEFAULT_SKILLS_DIRECTORY = "config/klein/skills";
@@ -372,6 +373,7 @@ export function createResourceLoader(
   options?: {
     readonly normalizeAssistantText?: boolean;
     readonly backgroundCompactionLeadTokens?: number;
+    readonly extraExtensions?: readonly ExtensionFactory[];
   },
 ): DefaultResourceLoader {
   const wrap = (factory: ExtensionFactory) =>
@@ -415,6 +417,7 @@ export function createResourceLoader(
       createFxtwitterFetchExtension(),
       ...(trace ? [trace.extension] : []),
       ...(authorization ? [authorization.extension] : []),
+      ...(options?.extraExtensions ?? []),
     ],
     settingsManager,
     additionalSkillPaths: [resolve(process.cwd(), skillsDirectory)],
@@ -510,6 +513,7 @@ export function createPiAgentFactory({
   permissions,
   watchToolCatalog,
   usageReporter,
+  extraExtensions,
 }: PiAgentFactoryOptions): AgentFactory {
   // Pi's MCP extension resolves config, credentials, and logs through this environment variable.
   process.env.PI_CODING_AGENT_DIR = resolve(agentDir);
@@ -560,6 +564,7 @@ export function createPiAgentFactory({
         {
           normalizeAssistantText: hasDiscordSend,
           backgroundCompactionLeadTokens: llm.compaction?.backgroundTokens,
+          extraExtensions,
         },
       );
       await resourceLoader.reload();
