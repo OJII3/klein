@@ -19,6 +19,7 @@ import {
   type Message,
   type Model,
   type ModelsSimpleStreamOptions,
+  type SystemMessage,
   type Tool,
   type TranscriptContext,
 } from "@earendil-works/pi-ai";
@@ -89,10 +90,101 @@ export interface CapturedLlmRequest {
     readonly api: string;
   };
   readonly systemPrompt: string;
+  readonly systemMessages: readonly SystemMessage[];
   readonly tools: readonly Tool[];
   readonly contextWithSystem: readonly CapturedAgentMessageEntry[];
   readonly transcriptMessages: readonly Message[];
   readonly providerPayload: unknown;
+}
+
+export interface AnalyzedSystemSection {
+  readonly name: string;
+  readonly chars: number;
+  readonly tokens: number;
+}
+
+export interface AnalyzedToolSummary {
+  readonly name: string;
+  readonly description: string;
+  readonly descriptionChars: number;
+  readonly schemaChars: number;
+  readonly totalChars: number;
+  readonly estimatedTokens: number;
+}
+
+export interface AnalyzedMessageSummary {
+  readonly index: number;
+  readonly role: string;
+  readonly kind: string;
+  readonly customType?: string;
+  readonly chars: number;
+  readonly estimatedTokens: number;
+  readonly imageCount: number;
+  readonly preview: string;
+}
+
+export interface ProviderPayloadView {
+  readonly api: string;
+  readonly systemInstructionChars: number;
+  readonly toolCount: number;
+  readonly toolNames: readonly string[];
+  readonly messageCount: number;
+  readonly messageRoles: readonly string[];
+}
+
+export interface ContextTokenAnalysis {
+  readonly requestIndex: number;
+  readonly label?: string;
+  readonly model: CapturedLlmRequest["model"];
+  readonly systemPromptChars: number;
+  readonly systemPromptTokens: number;
+  readonly systemSections: readonly AnalyzedSystemSection[];
+  readonly tools: readonly AnalyzedToolSummary[];
+  readonly toolsTotalChars: number;
+  readonly toolsTotalTokens: number;
+  readonly messages: readonly AnalyzedMessageSummary[];
+  readonly messagesTotalChars: number;
+  readonly messagesTotalTokens: number;
+  readonly totalChars: number;
+  readonly totalEstimatedTokens: number;
+  readonly providerView?: ProviderPayloadView;
+}
+
+export interface PrefixStabilityReport {
+  readonly previousIndex: number;
+  readonly currentIndex: number;
+  readonly transcript: {
+    readonly sharedPrefixChars: number;
+    readonly previousTotalChars: number;
+    readonly currentTotalChars: number;
+    readonly ratio: number;
+    readonly firstDiffIndex?: number;
+    readonly firstDiffLabel?: string;
+  };
+  readonly providerPayload?: {
+    readonly sharedPrefixChars: number;
+    readonly previousTotalChars: number;
+    readonly currentTotalChars: number;
+    readonly ratio: number;
+    readonly firstDiffPath?: string;
+  };
+}
+
+export interface ContextJudgeFeedbackContext {
+  readonly caseId?: string;
+  readonly reaction?: EvalFeedbackCase["reaction"];
+  readonly recordedResponse?: EvalFeedbackCase["recordedResponse"];
+  readonly replayedSentMessages?: readonly string[];
+  readonly replayedFinalAssistantText?: string;
+}
+
+export interface RunContextJudgeOptions {
+  readonly reportMarkdown: string;
+  readonly feedbackContext?: ContextJudgeFeedbackContext;
+  readonly provider: string;
+  readonly model: string;
+  readonly runtimeAgentDir?: string;
+  readonly modelRuntime?: ModelRuntime;
 }
 
 export interface RecordedTurnStep {
@@ -151,6 +243,8 @@ export interface InspectSessionOptions {
   readonly sessionKey?: string;
   readonly mode?: SessionReplayMode;
   readonly turnIndex?: number;
+  readonly allTurns?: boolean;
+  readonly maxTurns?: number;
   readonly preSliced?: boolean;
   readonly runtimeAgentDir?: string;
   readonly captureProviderPayload?: boolean;
@@ -359,6 +453,58 @@ export function extractTurnTraceFromEntries(
 export async function inspectSessionEntries(
   options: InspectSessionOptions,
 ): Promise<InspectSessionResult> {
+  if (options.allTurns && !options.preSliced) {
+    const turns = extractSessionTurns(options.entries);
+    if (turns.length === 0) {
+      const header = options.entries.find((entry) => entry.type === "session");
+      return {
+        sessionId: header?.id ?? "unknown",
+        mode: options.mode ?? "turn-start",
+        turns: [],
+        requests: [],
+      };
+    }
+
+    const selected =
+      options.maxTurns !== undefined && options.maxTurns > 0
+        ? turns.slice(-options.maxTurns)
+        : turns;
+
+    let sessionId = "unknown";
+    const allRequests: CapturedLlmRequest[] = [];
+    let lastTrace: RecordedTurnTrace | undefined;
+
+    for (const turn of selected) {
+      const res = await executeSessionSlice(
+        {
+          ...options,
+          turnIndex: turn.turnIndex,
+          allTurns: false,
+          label: options.label
+            ? `${options.label}:turn-${turn.turnIndex}`
+            : `turn-${turn.turnIndex}`,
+        },
+        { liveReplay: false },
+      );
+      sessionId = res.sessionId;
+      if (res.trace) lastTrace = res.trace;
+      for (const req of res.requests) {
+        allRequests.push({
+          ...req,
+          index: allRequests.length,
+        });
+      }
+    }
+
+    return {
+      sessionId,
+      mode: options.mode ?? "turn-start",
+      turns,
+      ...(lastTrace ? { trace: lastTrace } : {}),
+      requests: allRequests,
+    };
+  }
+
   const executed = await executeSessionSlice(options, {
     liveReplay: false,
   });
@@ -378,6 +524,8 @@ export async function inspectFeedbackCase(
     | "entries"
     | "preSliced"
     | "turnIndex"
+    | "allTurns"
+    | "maxTurns"
     | "traceSourceEntries"
     | "targetAssistantEntryId"
     | "recordedResponseContent"
@@ -429,6 +577,8 @@ export async function replayFeedbackCase(
     | "entries"
     | "preSliced"
     | "turnIndex"
+    | "allTurns"
+    | "maxTurns"
     | "traceSourceEntries"
     | "targetAssistantEntryId"
     | "recordedResponseContent"
@@ -452,6 +602,250 @@ export async function replayFeedbackCase(
     recordedResponseContent: loadedCase.caseMeta.recordedResponse.content,
     assistantTextBeforeCall: loadedCase.caseMeta.recordedResponse.assistantTextBeforeCall,
   });
+}
+
+export function estimateTextTokens(text: string): number {
+  if (!text) return 0;
+  let asciiChars = 0;
+  let nonAsciiChars = 0;
+  for (const char of text) {
+    if (char.codePointAt(0)! <= 0x7f) asciiChars += 1;
+    else nonAsciiChars += 1;
+  }
+  return Math.ceil(asciiChars / 4 + nonAsciiChars / 1.5);
+}
+
+export function analyzeCapturedRequest(request: CapturedLlmRequest): ContextTokenAnalysis {
+  const systemSections = extractSystemSections(request.systemMessages);
+  const tools = request.tools.map(summarizeTool);
+
+  const messages: AnalyzedMessageSummary[] = [];
+  for (const [index, message] of request.transcriptMessages.entries()) {
+    if (message.role === "system") continue;
+    const text = renderMessageTextForDisplay(message);
+    const imageCount = countMessageImages(message);
+    const matchedMeta = findMatchingContextMeta(request.contextWithSystem, message, index);
+    const customType = matchedMeta?.customType;
+    const kind = classifyMessageKind(message, customType);
+    messages.push({
+      index,
+      role: message.role,
+      kind,
+      ...(customType ? { customType } : {}),
+      chars: text.length,
+      estimatedTokens: estimateTextTokens(text) + imageCount * 258,
+      imageCount,
+      preview: toPreview(text),
+    });
+  }
+
+  const systemPromptChars = request.systemPrompt.length;
+  const systemPromptTokens = estimateTextTokens(request.systemPrompt);
+  const toolsTotalChars = tools.reduce((sum, tool) => sum + tool.totalChars, 0);
+  const toolsTotalTokens = tools.reduce((sum, tool) => sum + tool.estimatedTokens, 0);
+  const messagesTotalChars = messages.reduce((sum, message) => sum + message.chars, 0);
+  const messagesTotalTokens = messages.reduce((sum, message) => sum + message.estimatedTokens, 0);
+  const totalChars = systemPromptChars + toolsTotalChars + messagesTotalChars;
+  const totalEstimatedTokens = systemPromptTokens + toolsTotalTokens + messagesTotalTokens;
+  const providerView = extractProviderPayloadView(request.model.api, request.providerPayload);
+
+  return {
+    requestIndex: request.index,
+    ...(request.label ? { label: request.label } : {}),
+    model: request.model,
+    systemPromptChars,
+    systemPromptTokens,
+    systemSections,
+    tools,
+    toolsTotalChars,
+    toolsTotalTokens,
+    messages,
+    messagesTotalChars,
+    messagesTotalTokens,
+    totalChars,
+    totalEstimatedTokens,
+    ...(providerView ? { providerView } : {}),
+  };
+}
+
+export function comparePrefixStability(
+  previous: CapturedLlmRequest,
+  current: CapturedLlmRequest,
+): PrefixStabilityReport {
+  const prevSerializedMessages = previous.transcriptMessages.map((message) =>
+    JSON.stringify(stripTimestamps(message)),
+  );
+  const currSerializedMessages = current.transcriptMessages.map((message) =>
+    JSON.stringify(stripTimestamps(message)),
+  );
+
+  let firstDiffIndex: number | undefined;
+  const maxSharedMessages = Math.min(prevSerializedMessages.length, currSerializedMessages.length);
+  for (let i = 0; i < maxSharedMessages; i += 1) {
+    if (prevSerializedMessages[i] !== currSerializedMessages[i]) {
+      firstDiffIndex = i;
+      break;
+    }
+  }
+  if (
+    firstDiffIndex === undefined &&
+    prevSerializedMessages.length !== currSerializedMessages.length
+  ) {
+    firstDiffIndex = maxSharedMessages;
+  }
+
+  const prevFull = prevSerializedMessages.join("\n");
+  const currFull = currSerializedMessages.join("\n");
+  const sharedTranscriptChars = commonPrefixLength(prevFull, currFull);
+  const firstDiffMessage =
+    firstDiffIndex !== undefined ? current.transcriptMessages[firstDiffIndex] : undefined;
+
+  let providerStability: PrefixStabilityReport["providerPayload"];
+  if (previous.providerPayload !== undefined && current.providerPayload !== undefined) {
+    const prevNormalized = normalizeProviderPayloadForCache(
+      previous.model.api,
+      previous.providerPayload,
+    );
+    const currNormalized = normalizeProviderPayloadForCache(
+      current.model.api,
+      current.providerPayload,
+    );
+    const prevJson = JSON.stringify(prevNormalized);
+    const currJson = JSON.stringify(currNormalized);
+    const sharedChars = commonPrefixLength(prevJson, currJson);
+    providerStability = {
+      sharedPrefixChars: sharedChars,
+      previousTotalChars: prevJson.length,
+      currentTotalChars: currJson.length,
+      ratio: prevJson.length > 0 ? sharedChars / prevJson.length : 1,
+      firstDiffPath: findFirstJsonDiffPath(prevNormalized, currNormalized),
+    };
+  }
+
+  return {
+    previousIndex: previous.index,
+    currentIndex: current.index,
+    transcript: {
+      sharedPrefixChars: sharedTranscriptChars,
+      previousTotalChars: prevFull.length,
+      currentTotalChars: currFull.length,
+      ratio: prevFull.length > 0 ? sharedTranscriptChars / prevFull.length : 1,
+      ...(firstDiffIndex !== undefined ? { firstDiffIndex } : {}),
+      ...(firstDiffMessage
+        ? {
+            firstDiffLabel: `${firstDiffMessage.role}:${classifyMessageKind(firstDiffMessage)}`,
+          }
+        : {}),
+    },
+    ...(providerStability ? { providerPayload: providerStability } : {}),
+  };
+}
+
+export function buildContextJudgePrompt(
+  reportMarkdown: string,
+  feedbackContext?: ContextJudgeFeedbackContext,
+): {
+  readonly systemPrompt: string;
+  readonly userPrompt: string;
+} {
+  const systemPrompt = [
+    "You are an expert LLM context engineer investigating why a Discord communication agent behaved as it did.",
+    "Analyze strictly what is visible in the raw context report: system prompt, tool definitions, turn context, tool calls/results, and message history.",
+    "Respond in Japanese using valid JSON matching the requested schema.",
+  ].join("\n");
+
+  const feedbackLines: string[] = [];
+  if (feedbackContext?.caseId || feedbackContext?.reaction || feedbackContext?.recordedResponse) {
+    feedbackLines.push("", "記録されたネガティブフィードバック情報:");
+    if (feedbackContext.caseId) feedbackLines.push(`- Case ID: ${feedbackContext.caseId}`);
+    if (feedbackContext.reaction) {
+      feedbackLines.push(
+        `- Reaction: ${feedbackContext.reaction.emoji} by ${feedbackContext.reaction.userId} (isOwner=${feedbackContext.reaction.isOwner}, occurredAt=${feedbackContext.reaction.occurredAt})`,
+      );
+    }
+    if (feedbackContext.recordedResponse) {
+      feedbackLines.push(
+        `- Recorded Discord Response: ${JSON.stringify(feedbackContext.recordedResponse.content)}`,
+      );
+      if (feedbackContext.recordedResponse.assistantTextBeforeCall) {
+        feedbackLines.push(
+          `- Assistant Text Before Call: ${JSON.stringify(feedbackContext.recordedResponse.assistantTextBeforeCall)}`,
+        );
+      }
+    }
+    feedbackLines.push(
+      "このコンテキスト状態でなぜ上記の応答が出力され、不適切・不十分と評価されたかを、具体的な根拠を挙げて分析してください。",
+    );
+  }
+  if (
+    feedbackContext?.replayedSentMessages !== undefined ||
+    feedbackContext?.replayedFinalAssistantText !== undefined
+  ) {
+    feedbackLines.push("", "実API再現での出力:");
+    feedbackLines.push(
+      `- Replayed discord_send: ${JSON.stringify(feedbackContext.replayedSentMessages ?? [])}`,
+    );
+    if (feedbackContext.replayedFinalAssistantText) {
+      feedbackLines.push(
+        `- Replayed Final Assistant Text: ${JSON.stringify(feedbackContext.replayedFinalAssistantText)}`,
+      );
+    }
+    feedbackLines.push("元の応答と比較して再現結果がどう変化したかも評価してください。");
+  }
+
+  const userPrompt = [
+    "以下の生コンテキスト調査レポートを読み解き、モデルに何がどう伝わってその振る舞いに至ったか、またコンテキスト設計・プロンプト・ツール・キャッシュ効率上の課題がないかを評価してください。",
+    "",
+    "評価観点:",
+    "1. root_cause_and_context_flow: どの記憶・ルール・過去履歴・ツール結果・システム指示が問題の判断を誘発したか。",
+    "2. instruction_and_tool_clarity: SOUL.md・スキル・ツール説明・チャンネルルールの間で矛盾・曖昧さ・過剰さがないか。",
+    "3. boundary_and_target_clarity: 複数ユーザー発言・過去要約・外部データの境界や宛先認識が明確か。",
+    "4. token_and_cache_efficiency: トークン配分やPrefix Cacheの観点から無駄やキャッシュ破壊がないか。",
+    ...feedbackLines,
+    "",
+    "出力JSONスキーマ:",
+    "{",
+    '  "summary": "全体の要約と原因の仮説",',
+    '  "scores": { "root_cause_clarity": 1-5, "instruction_consistency": 1-5, "tool_clarity_and_budget": 1-5, "boundary_and_target_clarity": 1-5, "token_and_cache_efficiency": 1-5 },',
+    '  "findings": [{ "severity": "high|medium|low", "area": "...", "evidence": "...", "recommendation": "..." }]',
+    "}",
+    "",
+    "--- REPORT ---",
+    reportMarkdown,
+  ].join("\n");
+
+  return { systemPrompt, userPrompt };
+}
+
+export async function runContextJudge(options: RunContextJudgeOptions): Promise<string> {
+  const runtime =
+    options.modelRuntime ??
+    (await createPiModelRuntime(resolve(options.runtimeAgentDir ?? ".runtime/pi")));
+  const model = resolveConfiguredModel(options.provider, options.model, runtime);
+  const prompt = buildContextJudgePrompt(options.reportMarkdown, options.feedbackContext);
+
+  const response = await runtime.completeSimple(
+    model,
+    {
+      systemPrompt: prompt.systemPrompt,
+      messages: [
+        {
+          role: "user",
+          content: prompt.userPrompt,
+          timestamp: Date.now(),
+        },
+      ],
+    },
+    {
+      cacheRetention: "none",
+      maxTokens: 2048,
+    },
+  );
+
+  return response.content
+    .filter((block) => block.type === "text")
+    .map((block) => block.text)
+    .join("\n");
 }
 
 export function formatContextInspectionMarkdown(
@@ -478,6 +872,8 @@ export function formatContextInspectionMarkdown(
     lines.push(`- Owner Features Allowed: ${options.caseMeta.sourceSession.ownerFeaturesAllowed}`);
   }
   lines.push("");
+
+  appendTokenAndCacheSummaryMarkdown(lines, result.requests);
 
   if (result.trace) {
     appendTraceMarkdown(lines, result.trace);
@@ -554,6 +950,8 @@ export function formatReplayResultMarkdown(
     appendStepsMarkdown(lines, result.replaySteps);
   }
 
+  appendTokenAndCacheSummaryMarkdown(lines, result.requests);
+
   if (result.trace) {
     appendTraceMarkdown(lines, result.trace);
   }
@@ -566,6 +964,60 @@ export function formatReplayResultMarkdown(
   }
 
   return lines.join("\n");
+}
+
+function appendTokenAndCacheSummaryMarkdown(
+  lines: string[],
+  requests: readonly CapturedLlmRequest[],
+): void {
+  if (requests.length === 0) return;
+
+  const analyses = requests.map(analyzeCapturedRequest);
+  lines.push("## Token & Cache Reference");
+  lines.push("");
+  lines.push(
+    "| # | Label | Model | System Tokens | Tools (count / tokens) | Messages (count / tokens) | Total Est. Tokens |",
+  );
+  lines.push("| --- | --- | --- | ---: | ---: | ---: | ---: |");
+  for (const analysis of analyses) {
+    lines.push(
+      `| ${analysis.requestIndex} | ${escapeTableCell(analysis.label ?? "-")} | ${analysis.model.provider}/${analysis.model.id} | ${analysis.systemPromptTokens} | ${analysis.tools.length} / ${analysis.toolsTotalTokens} | ${analysis.messages.length} / ${analysis.messagesTotalTokens} | ${analysis.totalEstimatedTokens} |`,
+    );
+  }
+  lines.push("");
+
+  if (requests.length >= 2) {
+    lines.push("### Prefix Cache Stability");
+    lines.push("");
+    lines.push(
+      "| Transition | Transcript Prefix Match | Provider Payload Prefix Match | First Diff |",
+    );
+    lines.push("| --- | ---: | ---: | --- |");
+    for (let i = 1; i < requests.length; i += 1) {
+      const stability = comparePrefixStability(requests[i - 1]!, requests[i]!);
+      const tRatio = `${(stability.transcript.ratio * 100).toFixed(1)}% (${stability.transcript.sharedPrefixChars}/${stability.transcript.previousTotalChars})`;
+      const pRatio = stability.providerPayload
+        ? `${(stability.providerPayload.ratio * 100).toFixed(1)}% (${stability.providerPayload.sharedPrefixChars}/${stability.providerPayload.previousTotalChars})`
+        : "-";
+      const diff =
+        stability.providerPayload?.firstDiffPath ??
+        (stability.transcript.firstDiffIndex !== undefined
+          ? `messages[${stability.transcript.firstDiffIndex}] (${stability.transcript.firstDiffLabel ?? ""})`
+          : "none");
+      lines.push(`| #${i - 1} -> #${i} | ${tRatio} | ${pRatio} | ${escapeTableCell(diff)} |`);
+    }
+    lines.push("");
+  }
+
+  const first = analyses[0];
+  if (first && first.systemSections.length > 0) {
+    lines.push("### System Prompt Sections (#0)");
+    lines.push("");
+    for (const section of first.systemSections) {
+      lines.push(`- \`${section.name}\`: ${section.chars} chars (~${section.tokens} tokens)`);
+    }
+    lines.push("");
+  }
 }
 
 function appendTraceMarkdown(lines: string[], trace: RecordedTurnTrace): void {
@@ -1076,6 +1528,9 @@ async function createOfflineContextCapture(options: {
     const capturedTranscriptMessages = structuredClone(context.messages);
     const capturedTools = structuredClone(getCurrentTools(context.messages));
     const systemPrompt = getCurrentSystemPrompt(context.messages);
+    const systemMessages = structuredClone(
+      context.messages.filter((message): message is SystemMessage => message.role === "system"),
+    );
     const label = nextLabel;
     nextLabel = undefined;
 
@@ -1100,6 +1555,7 @@ async function createOfflineContextCapture(options: {
           api: model.api,
         },
         systemPrompt,
+        systemMessages,
         tools: capturedTools,
         contextWithSystem: capturedContextWithSystem,
         transcriptMessages: capturedTranscriptMessages,
@@ -1155,6 +1611,9 @@ function attachLiveRequestCapture(modelRuntime: ModelRuntime): {
     const capturedTranscriptMessages = structuredClone(context.messages);
     const capturedTools = structuredClone(getCurrentTools(context.messages));
     const systemPrompt = getCurrentSystemPrompt(context.messages);
+    const systemMessages = structuredClone(
+      context.messages.filter((message): message is SystemMessage => message.role === "system"),
+    );
     const label = nextLabel;
     nextLabel = undefined;
     const origOnPayload = streamOptions?.onPayload;
@@ -1172,6 +1631,7 @@ function attachLiveRequestCapture(modelRuntime: ModelRuntime): {
           api: model.api,
         },
         systemPrompt,
+        systemMessages,
         tools: capturedTools,
         contextWithSystem: capturedContextWithSystem,
         transcriptMessages: capturedTranscriptMessages,
@@ -1537,4 +1997,241 @@ function agentMessageToStep(
     ...(toolCalls.length > 0 ? { toolCalls } : {}),
     imageCount,
   };
+}
+
+function extractSystemSections(systemMessages: readonly SystemMessage[]): AnalyzedSystemSection[] {
+  const merged = new Map<string, string>();
+  for (const message of systemMessages) {
+    if (!message.sections) continue;
+    for (const [name, value] of Object.entries(message.sections)) {
+      if (value === null) merged.delete(name);
+      else merged.set(name, value);
+    }
+  }
+  return [...merged.entries()].map(([name, value]) => ({
+    name,
+    chars: value.length,
+    tokens: estimateTextTokens(value),
+  }));
+}
+
+function summarizeTool(tool: Tool): AnalyzedToolSummary {
+  const description = tool.description ?? "";
+  const schemaText = JSON.stringify(tool.parameters ?? {});
+  const totalChars = tool.name.length + description.length + schemaText.length;
+  return {
+    name: tool.name,
+    description,
+    descriptionChars: description.length,
+    schemaChars: schemaText.length,
+    totalChars,
+    estimatedTokens: estimateTextTokens(`${tool.name}\n${description}\n${schemaText}`),
+  };
+}
+
+function classifyMessageKind(message: Message, customType?: string): string {
+  if (customType === TURN_CONTEXT_CUSTOM_TYPE) return "turn-context";
+  if (customType === "klein-context-handoff") return "context-handoff";
+  if (customType === "klein-image-analysis") return "image-analysis";
+  if (customType === "klein-image-analysis-error") return "image-analysis-error";
+  if (customType) return `custom:${customType}`;
+  if (message.role === "user") {
+    const text = renderMessageTextForDisplay(message);
+    if (text.includes("<event-metadata>")) return "event";
+    if (text.includes("<previous-conversation-context>")) return "context-handoff";
+    if (text.includes("<image-analysis")) return "image-analysis";
+    if (
+      text.includes("<owner-memory>") ||
+      text.includes("<user-memory>") ||
+      text.includes("<guild-memory>") ||
+      text.includes("<channel-rule>")
+    ) {
+      return "turn-context";
+    }
+    return "user";
+  }
+  if (message.role === "assistant") {
+    return message.content.some((block) => block.type === "toolCall")
+      ? "assistant-tool-call"
+      : "assistant-text";
+  }
+  if (message.role === "toolResult") {
+    return `tool-result:${message.toolName}`;
+  }
+  return message.role;
+}
+
+function countMessageImages(message: Message): number {
+  if (message.role === "system" || typeof message.content === "string") return 0;
+  return message.content.filter((block) => block.type === "image").length;
+}
+
+function extractProviderPayloadView(
+  api: string,
+  payload: unknown,
+): ProviderPayloadView | undefined {
+  if (!payload || typeof payload !== "object") return undefined;
+  const record = payload as Record<string, unknown>;
+
+  if (api === "google-generative-ai" || api === "google-vertex") {
+    const config = (record.config ?? {}) as Record<string, unknown>;
+    const systemInstruction =
+      typeof config.systemInstruction === "string" ? config.systemInstruction : "";
+    const toolsRaw = Array.isArray(config.tools) ? config.tools : [];
+    const toolNames: string[] = [];
+    for (const toolEntry of toolsRaw) {
+      if (!toolEntry || typeof toolEntry !== "object") continue;
+      const decls = (toolEntry as Record<string, unknown>).functionDeclarations;
+      if (Array.isArray(decls)) {
+        for (const decl of decls) {
+          if (decl && typeof decl === "object" && "name" in decl) {
+            toolNames.push(String((decl as Record<string, unknown>).name));
+          }
+        }
+      }
+    }
+    const contents = Array.isArray(record.contents) ? record.contents : [];
+    const roles = contents.map((item) =>
+      item && typeof item === "object" && "role" in item
+        ? String((item as Record<string, unknown>).role)
+        : "unknown",
+    );
+    return {
+      api,
+      systemInstructionChars: systemInstruction.length,
+      toolCount: toolNames.length,
+      toolNames,
+      messageCount: contents.length,
+      messageRoles: roles,
+    };
+  }
+
+  if (Array.isArray(record.messages)) {
+    const messages = record.messages;
+    const roles = messages.map((item) =>
+      item && typeof item === "object" && "role" in item
+        ? String((item as Record<string, unknown>).role)
+        : "unknown",
+    );
+    const systemInstructionChars = messages
+      .filter(
+        (item): item is Record<string, unknown> =>
+          !!item &&
+          typeof item === "object" &&
+          ((item as Record<string, unknown>).role === "system" ||
+            (item as Record<string, unknown>).role === "developer"),
+      )
+      .reduce((sum, item) => sum + JSON.stringify(item.content ?? "").length, 0);
+
+    const toolsRaw = Array.isArray(record.tools) ? record.tools : [];
+    const toolNames = toolsRaw
+      .map((item) => {
+        if (!item || typeof item !== "object") return undefined;
+        const fn = (item as Record<string, unknown>).function;
+        if (fn && typeof fn === "object" && "name" in fn) {
+          return String((fn as Record<string, unknown>).name);
+        }
+        if ("name" in item) return String((item as Record<string, unknown>).name);
+        return undefined;
+      })
+      .filter((name): name is string => name !== undefined);
+
+    return {
+      api,
+      systemInstructionChars,
+      toolCount: toolNames.length,
+      toolNames,
+      messageCount: messages.length,
+      messageRoles: roles,
+    };
+  }
+
+  return undefined;
+}
+
+function normalizeProviderPayloadForCache(api: string, payload: unknown): unknown {
+  if (!payload || typeof payload !== "object") return payload;
+  const record = payload as Record<string, unknown>;
+
+  if (api === "google-generative-ai" || api === "google-vertex") {
+    const config =
+      record.config && typeof record.config === "object"
+        ? (record.config as Record<string, unknown>)
+        : {};
+    const { systemInstruction, tools, ...restConfig } = config;
+    return {
+      model: record.model,
+      systemInstruction,
+      tools,
+      contents: record.contents,
+      config: restConfig,
+    };
+  }
+
+  if (Array.isArray(record.messages)) {
+    const messages = record.messages as Array<Record<string, unknown>>;
+    const systemMessages = messages.filter(
+      (item) => item?.role === "system" || item?.role === "developer",
+    );
+    const nonSystemMessages = messages.filter(
+      (item) => item?.role !== "system" && item?.role !== "developer",
+    );
+    return {
+      model: record.model,
+      systemMessages,
+      tools: record.tools,
+      messages: nonSystemMessages,
+    };
+  }
+
+  return payload;
+}
+
+function stripTimestamps(message: Message): unknown {
+  const cloned = structuredClone(message) as unknown as Record<string, unknown>;
+  delete cloned.timestamp;
+  return cloned;
+}
+
+function commonPrefixLength(left: string, right: string): number {
+  const max = Math.min(left.length, right.length);
+  let i = 0;
+  while (i < max && left.charCodeAt(i) === right.charCodeAt(i)) {
+    i += 1;
+  }
+  return i;
+}
+
+function findFirstJsonDiffPath(left: unknown, right: unknown, path = "$"): string | undefined {
+  if (Object.is(left, right)) return undefined;
+  if (typeof left !== typeof right || left === null || right === null) return path;
+  if (typeof left !== "object") return path;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    if (!Array.isArray(left) || !Array.isArray(right)) return path;
+    const min = Math.min(left.length, right.length);
+    for (let i = 0; i < min; i += 1) {
+      const diff = findFirstJsonDiffPath(left[i], right[i], `${path}[${i}]`);
+      if (diff) return diff;
+    }
+    return left.length === right.length ? undefined : `${path}[${min}]`;
+  }
+
+  const leftObj = left as Record<string, unknown>;
+  const rightObj = right as Record<string, unknown>;
+  const keys = new Set([...Object.keys(leftObj), ...Object.keys(rightObj)]);
+  for (const key of keys) {
+    if (!(key in leftObj) || !(key in rightObj)) return `${path}.${key}`;
+    const diff = findFirstJsonDiffPath(leftObj[key], rightObj[key], `${path}.${key}`);
+    if (diff) return diff;
+  }
+  return undefined;
+}
+
+function toPreview(text: string, maxLength = 120): string {
+  const singleLine = text.replace(/\s+/gu, " ").trim();
+  return singleLine.length <= maxLength ? singleLine : `${singleLine.slice(0, maxLength - 1)}…`;
+}
+
+function escapeTableCell(value: string): string {
+  return value.replaceAll("|", "\\|").replaceAll("\n", " ");
 }

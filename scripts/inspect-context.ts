@@ -8,6 +8,8 @@ import {
 
 import { loadConfig } from "../src/app/config";
 import {
+  analyzeCapturedRequest,
+  comparePrefixStability,
   extractSessionTurns,
   extractTurnTraceFromEntries,
   formatContextInspectionMarkdown,
@@ -16,6 +18,10 @@ import {
   inspectSessionEntries,
   replayFeedbackCase,
   replaySessionEntries,
+  runContextJudge,
+  type CapturedLlmRequest,
+  type ContextJudgeFeedbackContext,
+  type PrefixStabilityReport,
   type SessionReplayMode,
 } from "../src/runtime/pi/context-inspector";
 import { SessionEvalCaseStore } from "../src/runtime/pi/session-eval-store";
@@ -37,10 +43,15 @@ interface CliOptions {
   readonly caseRef?: string;
   readonly session?: string;
   readonly turn?: number;
+  readonly allTurns: boolean;
+  readonly maxTurns?: number;
   readonly mode?: SessionReplayMode;
   readonly limit?: number;
   readonly includeTools: boolean;
   readonly includeRawPayload: boolean;
+  readonly judge: boolean;
+  readonly judgeProvider?: string;
+  readonly judgeModel?: string;
   readonly json: boolean;
   readonly outPath?: string;
 }
@@ -97,10 +108,15 @@ async function parseOptions(argv: readonly string[]): Promise<CliOptions> {
   let caseRef: string | undefined;
   let session: string | undefined;
   let turn: number | undefined;
+  let allTurns = false;
+  let maxTurns: number | undefined;
   let mode: SessionReplayMode | undefined;
   let limit: number | undefined;
   let includeTools = rawCommand === "show";
   let includeRawPayload = false;
+  let judge = false;
+  let judgeProvider: string | undefined;
+  let judgeModel: string | undefined;
   let json = false;
   let outPath: string | undefined;
 
@@ -124,6 +140,10 @@ async function parseOptions(argv: readonly string[]): Promise<CliOptions> {
       session = args[++i]!;
     } else if (arg === "--turn" && args[i + 1]) {
       turn = parseIntOption(args[++i]!, "--turn");
+    } else if (arg === "--all-turns") {
+      allTurns = true;
+    } else if (arg === "--max-turns" && args[i + 1]) {
+      maxTurns = parseIntOption(args[++i]!, "--max-turns");
     } else if (arg === "--mode" && args[i + 1]) {
       const value = args[++i]!;
       if (value !== "turn-start" && value !== "pre-message") {
@@ -138,6 +158,12 @@ async function parseOptions(argv: readonly string[]): Promise<CliOptions> {
       includeTools = true;
     } else if (arg === "--raw-payload") {
       includeRawPayload = true;
+    } else if (arg === "--judge") {
+      judge = true;
+    } else if (arg === "--judge-provider" && args[i + 1]) {
+      judgeProvider = args[++i]!;
+    } else if (arg === "--judge-model" && args[i + 1]) {
+      judgeModel = args[++i]!;
     } else if (arg === "--json") {
       json = true;
     } else if (arg === "--out" && args[i + 1]) {
@@ -165,10 +191,15 @@ async function parseOptions(argv: readonly string[]): Promise<CliOptions> {
     caseRef,
     session,
     turn,
+    allTurns,
+    maxTurns,
     mode,
     limit,
     includeTools,
     includeRawPayload,
+    judge,
+    judgeProvider,
+    judgeModel,
     json,
     outPath,
   };
@@ -190,7 +221,7 @@ function printUsage(): void {
       "Commands:",
       "  cases       List recorded negative-feedback (👎) candidate cases",
       "  sessions    List recent saved Pi session files",
-      "  show        Inspect recorded turn trace and raw context sent to the LLM (offline, no API call)",
+      "  show        Inspect recorded turn trace and raw context sent to the LLM (offline, no API call unless --judge)",
       "  replay      Re-run a case or session turn against the live configured LLM API (discord_send is captured)",
       "",
       "Common Options:",
@@ -207,9 +238,14 @@ function printUsage(): void {
       "  --case <id|path>         Target a saved feedback case (caseId, messageId, or .case.json path)",
       "  --session <path|id>      Target a saved Pi session (.jsonl path, session ID, or substring)",
       "  --turn <index>           Turn index for --session (0-based or negative like -1; default: -1)",
+      "  --all-turns              (show --session) Capture all turns to inspect token growth & cache stability",
+      "  --max-turns <N>          (with --all-turns) Inspect only the latest N turns",
       "  --mode <mode>            turn-start (current SOUL/tools) or pre-message (up to right before discord_send)",
       "  --raw-payload            Include raw provider HTTP JSON payload",
       "  --no-tools / --tools     Toggle declared tool schemas in markdown output",
+      "  --judge                  Run LLM-as-a-Judge analysis on the generated report (calls external LLM API)",
+      "  --judge-provider <id>    Judge LLM provider override (default: --provider / config)",
+      "  --judge-model <id>       Judge LLM model override (default: --model / config)",
       "",
       "List Options (for cases / sessions):",
       "  --limit <N>              Maximum number of items to list (default: 20)",
@@ -344,15 +380,26 @@ async function runShowOrReplayCommand(options: CliOptions, isReplay: boolean): P
         runtimeAgentDir: options.agentDir,
         captureProviderPayload: options.includeRawPayload,
       });
-      const output = options.json
-        ? JSON.stringify({ caseMeta: loaded.caseMeta, ...result }, null, 2)
-        : formatReplayResultMarkdown(result, {
-            title: `Feedback Case Replay (${loaded.caseMeta.caseId})`,
-            includeTools: options.includeTools,
-            includeProviderPayload: options.includeRawPayload,
-            caseMeta: loaded.caseMeta,
-          });
-      await emitOutput(output, options.outPath);
+      await emitShowOrReplayOutput({
+        options,
+        provider,
+        model,
+        requests: result.requests,
+        jsonBase: { caseMeta: loaded.caseMeta, ...result },
+        markdownReport: formatReplayResultMarkdown(result, {
+          title: `Feedback Case Replay (${loaded.caseMeta.caseId})`,
+          includeTools: options.includeTools,
+          includeProviderPayload: options.includeRawPayload,
+          caseMeta: loaded.caseMeta,
+        }),
+        feedbackContext: {
+          caseId: loaded.caseMeta.caseId,
+          reaction: loaded.caseMeta.reaction,
+          recordedResponse: loaded.caseMeta.recordedResponse,
+          replayedSentMessages: result.sentMessages,
+          replayedFinalAssistantText: result.finalAssistantText,
+        },
+      });
       return;
     }
 
@@ -365,15 +412,24 @@ async function runShowOrReplayCommand(options: CliOptions, isReplay: boolean): P
       runtimeAgentDir: options.agentDir,
       captureProviderPayload: options.includeRawPayload,
     });
-    const output = options.json
-      ? JSON.stringify({ caseMeta: loaded.caseMeta, ...result }, null, 2)
-      : formatContextInspectionMarkdown(result, {
-          title: `Feedback Case Context (${loaded.caseMeta.caseId})`,
-          includeTools: options.includeTools,
-          includeProviderPayload: options.includeRawPayload,
-          caseMeta: loaded.caseMeta,
-        });
-    await emitOutput(output, options.outPath);
+    await emitShowOrReplayOutput({
+      options,
+      provider,
+      model,
+      requests: result.requests,
+      jsonBase: { caseMeta: loaded.caseMeta, ...result },
+      markdownReport: formatContextInspectionMarkdown(result, {
+        title: `Feedback Case Context (${loaded.caseMeta.caseId})`,
+        includeTools: options.includeTools,
+        includeProviderPayload: options.includeRawPayload,
+        caseMeta: loaded.caseMeta,
+      }),
+      feedbackContext: {
+        caseId: loaded.caseMeta.caseId,
+        reaction: loaded.caseMeta.reaction,
+        recordedResponse: loaded.caseMeta.recordedResponse,
+      },
+    });
     return;
   }
 
@@ -396,14 +452,32 @@ async function runShowOrReplayCommand(options: CliOptions, isReplay: boolean): P
       runtimeAgentDir: options.agentDir,
       captureProviderPayload: options.includeRawPayload,
     });
-    const output = options.json
-      ? JSON.stringify({ sourceFile: sessionTarget.filePath, ...result }, null, 2)
-      : formatReplayResultMarkdown(result, {
-          title: `Session Replay (${basename(sessionTarget.filePath)})`,
-          includeTools: options.includeTools,
-          includeProviderPayload: options.includeRawPayload,
-        });
-    await emitOutput(output, options.outPath);
+    await emitShowOrReplayOutput({
+      options,
+      provider,
+      model,
+      requests: result.requests,
+      jsonBase: { sourceFile: sessionTarget.filePath, ...result },
+      markdownReport: formatReplayResultMarkdown(result, {
+        title: `Session Replay (${basename(sessionTarget.filePath)})`,
+        includeTools: options.includeTools,
+        includeProviderPayload: options.includeRawPayload,
+      }),
+      feedbackContext: {
+        ...(result.trace?.recordedResponseContent !== undefined
+          ? {
+              recordedResponse: {
+                content: result.trace.recordedResponseContent,
+                ...(result.trace.assistantTextBeforeCall
+                  ? { assistantTextBeforeCall: result.trace.assistantTextBeforeCall }
+                  : {}),
+              },
+            }
+          : {}),
+        replayedSentMessages: result.sentMessages,
+        replayedFinalAssistantText: result.finalAssistantText,
+      },
+    });
     return;
   }
 
@@ -416,17 +490,114 @@ async function runShowOrReplayCommand(options: CliOptions, isReplay: boolean): P
     sessionKey: sessionTarget.sessionKey,
     ownerFeaturesAllowed,
     turnIndex: options.turn ?? -1,
+    allTurns: options.allTurns,
+    maxTurns: options.maxTurns,
     mode: options.mode ?? "turn-start",
     runtimeAgentDir: options.agentDir,
-    captureProviderPayload: options.includeRawPayload,
+    captureProviderPayload: options.includeRawPayload || options.allTurns,
   });
-  const output = options.json
-    ? JSON.stringify({ sourceFile: sessionTarget.filePath, ...result }, null, 2)
-    : formatContextInspectionMarkdown(result, {
-        title: `Session Context (${basename(sessionTarget.filePath)})`,
-        includeTools: options.includeTools,
-        includeProviderPayload: options.includeRawPayload,
-      });
+  await emitShowOrReplayOutput({
+    options,
+    provider,
+    model,
+    requests: result.requests,
+    jsonBase: { sourceFile: sessionTarget.filePath, ...result },
+    markdownReport: formatContextInspectionMarkdown(result, {
+      title: `Session Context (${basename(sessionTarget.filePath)})`,
+      includeTools: options.includeTools,
+      includeProviderPayload: options.includeRawPayload,
+    }),
+    feedbackContext:
+      result.trace?.recordedResponseContent !== undefined
+        ? {
+            recordedResponse: {
+              content: result.trace.recordedResponseContent,
+              ...(result.trace.assistantTextBeforeCall
+                ? { assistantTextBeforeCall: result.trace.assistantTextBeforeCall }
+                : {}),
+            },
+          }
+        : undefined,
+  });
+}
+
+function buildPrefixStabilityReports(
+  requests: readonly CapturedLlmRequest[],
+): PrefixStabilityReport[] {
+  const reports: PrefixStabilityReport[] = [];
+  for (let i = 1; i < requests.length; i += 1) {
+    reports.push(comparePrefixStability(requests[i - 1]!, requests[i]!));
+  }
+  return reports;
+}
+
+function tryParseJson(raw: string): unknown {
+  const trimmed = raw.trim();
+  const unwrapped = trimmed
+    .replace(/^```json\s*/iu, "")
+    .replace(/^```\s*/u, "")
+    .replace(/\s*```$/u, "")
+    .trim();
+  try {
+    return JSON.parse(unwrapped);
+  } catch {
+    return undefined;
+  }
+}
+
+async function emitShowOrReplayOutput(params: {
+  readonly options: CliOptions;
+  readonly provider: string;
+  readonly model: string;
+  readonly requests: readonly CapturedLlmRequest[];
+  readonly jsonBase: Record<string, unknown>;
+  readonly markdownReport: string;
+  readonly feedbackContext?: ContextJudgeFeedbackContext;
+}): Promise<void> {
+  const { options, provider, model, requests, jsonBase, markdownReport, feedbackContext } = params;
+
+  let judgeRaw: string | undefined;
+  if (options.judge) {
+    judgeRaw = await runContextJudge({
+      reportMarkdown: markdownReport,
+      feedbackContext,
+      provider: options.judgeProvider ?? provider,
+      model: options.judgeModel ?? model,
+      runtimeAgentDir: options.agentDir,
+    });
+  }
+
+  if (options.json) {
+    const analyses = requests.map(analyzeCapturedRequest);
+    const prefixStability = buildPrefixStabilityReports(requests);
+    const parsedJudge = judgeRaw !== undefined ? tryParseJson(judgeRaw) : undefined;
+    const payload = {
+      ...jsonBase,
+      analyses,
+      prefixStability,
+      ...(judgeRaw !== undefined ? { judge: parsedJudge ?? judgeRaw } : {}),
+    };
+    await emitOutput(JSON.stringify(payload, null, 2), options.outPath);
+    return;
+  }
+
+  let output = markdownReport;
+  if (judgeRaw !== undefined) {
+    const judgeBlock = judgeRaw.trim().startsWith("```")
+      ? judgeRaw.trim()
+      : ["```json", judgeRaw.trim(), "```"].join("\n");
+    output = `${markdownReport}\n\n## LLM-as-a-Judge\n\n${judgeBlock}`;
+
+    if (options.outPath) {
+      const judgeOutPath = options.outPath.endsWith(".md")
+        ? options.outPath.replace(/\.md$/u, ".judge.json")
+        : `${options.outPath}.judge.json`;
+      await mkdir(dirname(resolve(judgeOutPath)), { recursive: true });
+      await writeFile(judgeOutPath, `${judgeRaw}\n`, "utf8");
+      console.error(`[inspect-context] Wrote judge output to ${judgeOutPath}`);
+    }
+  }
+
   await emitOutput(output, options.outPath);
 }
 
