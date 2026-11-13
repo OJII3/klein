@@ -236,9 +236,12 @@ export class DiscordChannelAccessRequester {
     await interaction.update({
       components: [
         createContainer(
-          allowed
-            ? "### 許可しました\nこのチャンネルを許可しました。"
-            : "### 拒否しました\nこのチャンネルは許可しませんでした。",
+          [
+            allowed ? "### 許可しました" : "### 拒否しました",
+            ...this.describeLocation(pending),
+            "",
+            allowed ? "このチャンネルを許可しました。" : "このチャンネルは許可しませんでした。",
+          ].join("\n"),
           allowed ? ALLOW_ACCENT_COLOR : DENY_ACCENT_COLOR,
         ),
       ],
@@ -273,21 +276,27 @@ export class DiscordChannelAccessRequester {
     });
   }
 
-  private async sendOwnerMessage(pending: PendingAccessRequest): Promise<void> {
-    if (!this.ownerUserId) return;
-    const owner = await this.client.users.fetch(this.ownerUserId);
+  private describeLocation(pending: PendingAccessRequest): string[] {
     const guildName = this.client.guilds.cache.get(pending.guildId)?.name;
     const location = pending.channelName ? `#${pending.channelName}` : pending.channelId;
     const channelKind = pending.threadId ? "スレッド" : "チャンネル";
+    return [
+      `サーバー: ${guildName ?? pending.guildId}`,
+      `${channelKind}: ${location}`,
+      `リクエスト元: <@${pending.requesterUserId}>`,
+    ];
+  }
+
+  private async sendOwnerMessage(pending: PendingAccessRequest): Promise<void> {
+    if (!this.ownerUserId) return;
+    const owner = await this.client.users.fetch(this.ownerUserId);
 
     await owner.send({
       components: [
         createContainer(
           [
             "### チャンネルの許可リクエスト",
-            `サーバー: ${guildName ?? pending.guildId}`,
-            `${channelKind}: ${location}`,
-            `リクエスト元: <@${pending.requesterUserId}>`,
+            ...this.describeLocation(pending),
             "",
             "このチャンネルを許可しますか？",
           ].join("\n"),

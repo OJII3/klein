@@ -205,6 +205,8 @@ test("allows the channel and updates both messages when the owner accepts", asyn
     },
   ]);
   assert.match(toJson(updated[0]!)[0]?.components[0]?.content ?? "", /許可しました/u);
+  assert.match(toJson(updated[0]!)[0]?.components[0]?.content ?? "", /テストサーバー/u);
+  assert.match(toJson(updated[0]!)[0]?.components[0]?.content ?? "", /#thread-name/u);
   assert.match(toJson(harness.edits[0]!)[0]?.components[0]?.content ?? "", /許可されました/u);
   assert.equal(harness.persistedRequests.size, 0);
 });
