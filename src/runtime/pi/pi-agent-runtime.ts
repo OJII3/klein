@@ -27,10 +27,9 @@ import type { AgentTurn, AgentTurnContext } from "@agents/core/agent-turn";
 import type { AgentPrompt, AgentRuntime } from "@agents/core/agent-runtime";
 import { ImageAnalysisError, toImageAnalysisFailure } from "@agents/core/image-analysis";
 import type { SessionMode } from "@app/cli-options";
-import {
-  renderWatchToolSection,
-  type WatchToolCatalog,
-} from "@modules/scheduling/application/watch-tool";
+import type { WatchToolCatalog } from "@modules/scheduling/application/watch-tool";
+import { renderWatchToolSection } from "@modules/scheduling/application/watch-tool";
+import { parseDiscordChannelId } from "@shared/discord-channel-session-key";
 import { createBackgroundCompactionExtension } from "./background-compaction";
 import { createFxtwitterFetchExtension } from "./fxtwitter-fetch";
 import {
@@ -61,6 +60,7 @@ import {
 import { adaptPiTools } from "./pi-tool-adapter";
 import { PiRuntimeTrace } from "./pi-runtime-trace";
 import type { PiUsageReporter } from "./pi-usage-reporter";
+import type { SentMessageSessionIndex } from "./session-eval-store";
 import { createSkillReadTool } from "./skill-read-tool";
 import { ToolAuthorization, type ToolPermissions } from "./tool-permissions";
 
@@ -95,6 +95,8 @@ export interface PiAgentFactoryOptions {
   readonly watchToolCatalog?: WatchToolCatalog;
   readonly usageReporter?: PiUsageReporter;
   readonly extraExtensions?: readonly ExtensionFactory[];
+  readonly sentMessageIndex?: SentMessageSessionIndex;
+  readonly onSessionCreated?: (session: AgentSession) => void;
 }
 
 export const DEFAULT_SKILLS_DIRECTORY = "config/klein/skills";
@@ -124,14 +126,29 @@ export function createPiSessionManager(
 
 export class PiAgentRuntime implements AgentRuntime {
   private queue: Promise<void> = Promise.resolve();
+  private readonly unsubscribeSentIndex?: () => void;
+  private pendingIndexWrites: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly session: AgentSession,
     private readonly imageAnalyzer?: ImageAnalyzer,
     private readonly trace?: PiRuntimeTrace,
     private readonly modelRuntime?: ModelRuntime,
+    private readonly sentIndexContext?: {
+      readonly index: SentMessageSessionIndex;
+      readonly sessionKey: string;
+      readonly ownerFeaturesAllowed: boolean;
+      readonly logger?: Logger;
+    },
   ) {
     trace?.attach(session);
+    if (sentIndexContext) {
+      this.unsubscribeSentIndex = session.subscribe((event) => {
+        if (event.type === "turn_end") {
+          this.enqueueSentDiscordMessages(event.toolResults);
+        }
+      });
+    }
   }
 
   prompt(turn: AgentTurn): Promise<void> {
@@ -151,6 +168,7 @@ export class PiAgentRuntime implements AgentRuntime {
       try {
         this.recordTurnContext(turn.context);
         await this.runPrompt(prompt);
+        await this.pendingIndexWrites;
       } catch (error) {
         failed = true;
         throw error;
@@ -351,6 +369,7 @@ export class PiAgentRuntime implements AgentRuntime {
   }
 
   dispose(): void {
+    this.unsubscribeSentIndex?.();
     this.trace?.dispose();
     this.session.dispose();
   }
@@ -359,6 +378,115 @@ export class PiAgentRuntime implements AgentRuntime {
     if (this.trace?.isSessionBlocked()) {
       throw new Error("Pi session is blocked after the provider returned HTTP 400");
     }
+  }
+
+  private enqueueSentDiscordMessages(toolResults: readonly Message[]): void {
+    const context = this.sentIndexContext;
+    if (!context) return;
+
+    const sentToolResults = toolResults.filter((message) => {
+      if (message.role !== "toolResult" || message.toolName !== "discord_send" || message.isError) {
+        return false;
+      }
+      const details = message.details as { messageIds?: unknown } | undefined;
+      return (
+        Array.isArray(details?.messageIds) &&
+        details.messageIds.some((id): id is string => typeof id === "string" && id.length > 0)
+      );
+    });
+    if (sentToolResults.length === 0) return;
+
+    const branch = this.session.sessionManager.getBranch();
+    const byId = new Map(branch.map((entry) => [entry.id, entry]));
+    const sessionId = this.session.sessionManager.getSessionId();
+    const sessionFile = this.session.sessionManager.getSessionFile();
+    const channelId = parseDiscordChannelId(context.sessionKey) ?? context.sessionKey;
+
+    const records: Array<{
+      discordMessageId: string;
+      channelId: string;
+      sessionKey: string;
+      sessionId: string;
+      sessionFile?: string;
+      assistantEntryId: string;
+      toolResultEntryId: string;
+      toolCallId: string;
+      sentAt: string;
+      content: string;
+      ownerFeaturesAllowed: boolean;
+    }> = [];
+
+    for (const toolResult of sentToolResults) {
+      if (toolResult.role !== "toolResult") continue;
+      const details = toolResult.details as { messageIds?: unknown } | undefined;
+      const messageIds = Array.isArray(details?.messageIds)
+        ? details.messageIds.filter((id): id is string => typeof id === "string" && id.length > 0)
+        : [];
+      if (messageIds.length === 0) continue;
+
+      const toolResultEntry = [...branch]
+        .reverse()
+        .find(
+          (entry) =>
+            entry.type === "message" &&
+            entry.message.role === "toolResult" &&
+            entry.message.toolCallId === toolResult.toolCallId,
+        );
+      if (!toolResultEntry) continue;
+
+      let cursorId = toolResultEntry.parentId;
+      let assistantEntryId: string | undefined;
+      let sentContent = "";
+      while (cursorId) {
+        const candidate = byId.get(cursorId);
+        if (!candidate) break;
+        if (candidate.type === "message" && candidate.message.role === "assistant") {
+          const call = candidate.message.content.find(
+            (block) => block.type === "toolCall" && block.id === toolResult.toolCallId,
+          );
+          if (call && call.type === "toolCall") {
+            assistantEntryId = candidate.id;
+            if (typeof call.arguments?.content === "string") {
+              sentContent = call.arguments.content;
+            }
+            break;
+          }
+        }
+        cursorId = candidate.parentId;
+      }
+      if (!assistantEntryId) continue;
+
+      for (const discordMessageId of messageIds) {
+        records.push({
+          discordMessageId,
+          channelId,
+          sessionKey: context.sessionKey,
+          sessionId,
+          ...(sessionFile ? { sessionFile } : {}),
+          assistantEntryId,
+          toolResultEntryId: toolResultEntry.id,
+          toolCallId: toolResult.toolCallId,
+          sentAt: toolResultEntry.timestamp,
+          content: sentContent,
+          ownerFeaturesAllowed: context.ownerFeaturesAllowed,
+        });
+      }
+    }
+
+    if (records.length === 0) return;
+
+    this.pendingIndexWrites = this.pendingIndexWrites
+      .then(async () => {
+        for (const record of records) {
+          await context.index.record(record);
+        }
+      })
+      .catch((error: unknown) => {
+        context.logger?.warn(
+          { err: error, event: "eval_sent_message_index_failed" },
+          "Failed to record sent Discord message ID for evaluation",
+        );
+      });
   }
 }
 
@@ -514,6 +642,8 @@ export function createPiAgentFactory({
   watchToolCatalog,
   usageReporter,
   extraExtensions,
+  sentMessageIndex,
+  onSessionCreated,
 }: PiAgentFactoryOptions): AgentFactory {
   // Pi's MCP extension resolves config, credentials, and logs through this environment variable.
   process.env.PI_CODING_AGENT_DIR = resolve(agentDir);
@@ -633,7 +763,22 @@ export function createPiAgentFactory({
         ? new PiImageAnalyzer(session.modelRuntime, sessionImageModel, llm.image?.thinkingLevel)
         : undefined;
 
-      return new PiAgentRuntime(session, imageAnalyzer, trace, modelRuntime);
+      onSessionCreated?.(session);
+
+      return new PiAgentRuntime(
+        session,
+        imageAnalyzer,
+        trace,
+        modelRuntime,
+        sentMessageIndex
+          ? {
+              index: sentMessageIndex,
+              sessionKey: options.sessionKey,
+              ownerFeaturesAllowed: options.ownerFeaturesAllowed === true,
+              logger,
+            }
+          : undefined,
+      );
     },
   };
 }

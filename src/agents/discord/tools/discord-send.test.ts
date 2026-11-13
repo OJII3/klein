@@ -34,3 +34,25 @@ test("returns the sent content in the tool result", async () => {
     },
   ]);
 });
+
+test("records returned Discord message IDs in details", async () => {
+  const tool = createDiscordSendTool(
+    {
+      async sendTyping() {},
+      async sendMessage() {
+        return ["msg-101", "msg-102"];
+      },
+    },
+    "current-channel",
+  );
+
+  const result = await tool.execute(
+    "tool-call",
+    { content: "分割メッセージ" },
+    undefined,
+    undefined,
+    {} as never,
+  );
+
+  assert.deepEqual(result.details, { messageIds: ["msg-101", "msg-102"] });
+});

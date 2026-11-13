@@ -4,8 +4,12 @@ import {
   GatewayIntentBits,
   Partials,
   AttachmentBuilder,
-  type Message,
   type Interaction,
+  type Message,
+  type MessageReaction,
+  type PartialMessageReaction,
+  type PartialUser,
+  type User,
 } from "discord.js";
 import type { Logger } from "pino";
 
@@ -15,12 +19,17 @@ import {
   type DiscordOperatingMode,
 } from "../domain/discord-operating-state";
 import { type DiscordMessage, type DiscordMessageLocator } from "../domain/discord-message";
+import type { DiscordReactionEvent } from "../domain/discord-reaction";
 import type {
   DiscordChannelApi,
   DiscordChannelLocation,
   DiscordMessageRequester,
 } from "../ports/discord-channel-api";
-import type { DiscordGateway, DiscordMessageHandler } from "../ports/discord-gateway";
+import type {
+  DiscordGateway,
+  DiscordMessageHandler,
+  DiscordReactionHandler,
+} from "../ports/discord-gateway";
 import type { DiscordAccessRuleStore } from "../ports/discord-access-rule-store";
 import type { DiscordAccessRequestStore } from "../ports/discord-access-request-store";
 import type { DiscordChannelRuleStore } from "../ports/discord-channel-rule-store";
@@ -66,7 +75,12 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
   private readonly messageAdapter: DiscordJsMessageAdapter;
   private readonly channelAccessRequester?: DiscordChannelAccessRequester;
   private onMessage?: DiscordMessageHandler;
+  private onReaction?: DiscordReactionHandler;
   private messageListener?: (message: Message) => void;
+  private reactionListener?: (
+    reaction: MessageReaction | PartialMessageReaction,
+    user: User | PartialUser,
+  ) => void;
   private interactionListener?: (interaction: Interaction) => void;
   private acceptingMessages = false;
   private readonly logger?: Logger;
@@ -97,12 +111,14 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
     this.client = new Client({
       intents: [
         GatewayIntentBits.DirectMessages,
+        GatewayIntentBits.DirectMessageReactions,
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.GuildMessageReactions,
         GatewayIntentBits.MessageContent,
         ...(this.voiceChatController ? [GatewayIntentBits.GuildVoiceStates] : []),
       ],
-      partials: [Partials.Channel],
+      partials: [Partials.Channel, Partials.Message, Partials.Reaction, Partials.User],
     });
     this.channelAccessRequester =
       accessRuleStore && accessRequestStore
@@ -116,8 +132,12 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
         : undefined;
   }
 
-  async start(onMessage: DiscordMessageHandler): Promise<void> {
+  async start(
+    onMessage: DiscordMessageHandler,
+    onReaction?: DiscordReactionHandler,
+  ): Promise<void> {
     this.onMessage = onMessage;
+    this.onReaction = onReaction;
     this.acceptingMessages = true;
     this.client.once(Events.ClientReady, (readyClient) => {
       this.applyOperatingModePresence();
@@ -151,6 +171,15 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
       });
     };
     this.client.on(Events.MessageCreate, this.messageListener);
+    this.reactionListener = (reaction, user) => {
+      void this.handleReactionAdd(reaction, user).catch((error: unknown) => {
+        this.logger?.error(
+          { err: error, event: "discord_reaction_handler_failed" },
+          "Failed to handle Discord message reaction",
+        );
+      });
+    };
+    this.client.on(Events.MessageReactionAdd, this.reactionListener);
     this.interactionListener = (interaction) => {
       void this.handleInteraction(interaction).catch((error: unknown) => {
         this.logger?.error(
@@ -200,12 +229,23 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
     await channel.sendTyping?.();
   }
 
-  async sendMessage(channelId: string, content: string): Promise<void> {
+  async sendMessage(channelId: string, content: string): Promise<readonly string[]> {
     const channel = await this.getChannel(channelId);
+    const sentIds: string[] = [];
 
     for (const chunk of splitMessage(content)) {
-      await channel.send(chunk);
+      const sent = await channel.send(chunk);
+      if (
+        typeof sent === "object" &&
+        sent !== null &&
+        "id" in sent &&
+        typeof sent.id === "string"
+      ) {
+        sentIds.push(sent.id);
+      }
     }
+
+    return sentIds;
   }
 
   async sendAudio(channelId: string, audio: Uint8Array, filename: string): Promise<void> {
@@ -256,6 +296,11 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
       this.messageListener = undefined;
     }
 
+    if (this.reactionListener) {
+      this.client.off(Events.MessageReactionAdd, this.reactionListener);
+      this.reactionListener = undefined;
+    }
+
     if (this.interactionListener) {
       this.client.off(Events.InteractionCreate, this.interactionListener);
       this.interactionListener = undefined;
@@ -264,6 +309,7 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
 
   async stop(): Promise<void> {
     this.onMessage = undefined;
+    this.onReaction = undefined;
     this.stopAccepting();
     this.channels.clear();
     await this.voiceChatController?.stop();
@@ -334,6 +380,67 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
       images,
       replyTo,
     });
+  }
+
+  private async handleReactionAdd(
+    reaction: MessageReaction | PartialMessageReaction,
+    user: User | PartialUser,
+  ): Promise<void> {
+    if (!this.canAcceptMessages() || !this.onReaction) return;
+
+    const resolvedReaction = reaction.partial ? await reaction.fetch() : reaction;
+    const resolvedMessage = resolvedReaction.message.partial
+      ? await resolvedReaction.message.fetch()
+      : resolvedReaction.message;
+    const resolvedUser = user.partial ? await user.fetch() : user;
+
+    if (!this.canAcceptMessages()) return;
+    if (resolvedUser.bot || resolvedUser.id === this.client.user?.id) return;
+
+    const botUserId = this.client.user?.id;
+    if (botUserId && resolvedMessage.author?.id !== botUserId) return;
+
+    const channel = resolvedMessage.channel;
+    const thread = channel?.isThread?.() ? channel : undefined;
+    const parentChannelId = thread?.parentId ?? undefined;
+    const channelId = resolvedMessage.channelId;
+    const guildId = resolvedMessage.guildId ?? undefined;
+    const channelName =
+      channel && "name" in channel && typeof channel.name === "string" ? channel.name : undefined;
+
+    if (
+      !this.accessPolicy.canReceive({
+        guildId,
+        channelId: parentChannelId ?? channelId,
+        threadId: thread?.id,
+        userId: resolvedUser.id,
+        userIsBot: Boolean(resolvedUser.bot),
+      })
+    ) {
+      return;
+    }
+
+    const emoji = resolvedReaction.emoji.name ?? resolvedReaction.emoji.identifier;
+    if (!emoji) return;
+
+    const event: DiscordReactionEvent = {
+      emoji,
+      messageId: resolvedMessage.id,
+      channelId,
+      ...(guildId ? { guildId } : {}),
+      ...(parentChannelId ? { parentChannelId } : {}),
+      ...(thread?.id ? { threadId: thread.id } : {}),
+      ...(channelName ? { channelName } : {}),
+      ...(resolvedMessage.author?.id ? { messageAuthorId: resolvedMessage.author.id } : {}),
+      ...(typeof resolvedMessage.content === "string" && resolvedMessage.content.length > 0
+        ? { messageContent: resolvedMessage.content }
+        : {}),
+      userId: resolvedUser.id,
+      userIsBot: Boolean(resolvedUser.bot),
+      occurredAt: new Date().toISOString(),
+    };
+
+    await this.onReaction(event);
   }
 
   private canAcceptMessages(): boolean {

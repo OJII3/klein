@@ -1,8 +1,9 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 
 import { fauxAssistantMessage, fauxToolCall, type FauxResponseStep } from "@earendil-works/pi-ai";
+import { parseSessionEntries } from "@earendil-works/pi-coding-agent";
 import pino from "pino";
 
 import { DiscordAgent } from "../src/agents/discord/discord-agent";
@@ -23,20 +24,37 @@ import {
   buildContextJudgePrompt,
   comparePrefixStability,
   createContextEvaluationHarness,
+  evaluateEvalFeedbackCase,
+  evaluateSessionEntries,
   renderContextEvaluationMarkdown,
   type CapturedLlmRequest,
+  type ContextJudgeFeedbackContext,
+  type SessionReplayMode,
 } from "../src/runtime/pi/context-evaluation";
 import {
   createPiAgentFactory,
   createPiModelRuntime,
   resolveConfiguredModel,
 } from "../src/runtime/pi/pi-agent-runtime";
+import { SessionEvalCaseStore } from "../src/runtime/pi/session-eval-store";
 import { createWatchFetchTool } from "../src/runtime/pi/watch-fetch-tool";
 
 interface CliOptions {
   readonly profile: string;
-  readonly provider: string;
-  readonly model: string;
+  readonly provider?: string;
+  readonly model?: string;
+  readonly defaultProvider: string;
+  readonly defaultModel: string;
+  readonly agentDir: string;
+  readonly sessionsDir: string;
+  readonly session?: string;
+  readonly recent?: number;
+  readonly turn?: number;
+  readonly allTurns: boolean;
+  readonly maxTurns?: number;
+  readonly mode?: SessionReplayMode;
+  readonly caseRef?: string;
+  readonly cases: boolean;
   readonly outPath: string;
   readonly includePayload: boolean;
   readonly judge: boolean;
@@ -45,25 +63,43 @@ interface CliOptions {
   readonly judgeModel?: string;
 }
 
+interface DiscoveredSessionFile {
+  readonly filePath: string;
+  readonly sessionKey: string;
+  readonly mtimeMs: number;
+}
+
 const SILENT_LOGGER = pino({ level: "silent" });
 
 async function parseOptions(argv: readonly string[]): Promise<CliOptions> {
   let configProfile = "klein";
   let configProvider = "opencode-go";
   let configModel = "deepseek-v4.1-flash";
+  let configAgentDir = ".runtime/pi";
 
   try {
     const config = await loadConfig();
     configProfile = config.profile;
     configProvider = config.llm.provider;
     configModel = config.llm.model;
+    configAgentDir = config.runtime.agentDir;
   } catch {
     // Fall back to defaults when config/config.jsonc is absent.
   }
 
   let profile = configProfile;
-  let provider = configProvider;
-  let model = configModel;
+  let provider: string | undefined;
+  let model: string | undefined;
+  let agentDir = configAgentDir;
+  let sessionsDir: string | undefined;
+  let session: string | undefined;
+  let recent: number | undefined;
+  let turn: number | undefined;
+  let allTurns = false;
+  let maxTurns: number | undefined;
+  let mode: SessionReplayMode | undefined;
+  let caseRef: string | undefined;
+  let cases = false;
   let outPath: string | undefined;
   let includePayload = false;
   let judge = false;
@@ -79,6 +115,30 @@ async function parseOptions(argv: readonly string[]): Promise<CliOptions> {
       provider = argv[++i]!;
     } else if (arg === "--model" && argv[i + 1]) {
       model = argv[++i]!;
+    } else if (arg === "--agent-dir" && argv[i + 1]) {
+      agentDir = argv[++i]!;
+    } else if (arg === "--sessions-dir" && argv[i + 1]) {
+      sessionsDir = argv[++i]!;
+    } else if (arg === "--session" && argv[i + 1]) {
+      session = argv[++i]!;
+    } else if (arg === "--recent" && argv[i + 1]) {
+      recent = parseIntOption(argv[++i]!, "--recent");
+    } else if (arg === "--turn" && argv[i + 1]) {
+      turn = parseIntOption(argv[++i]!, "--turn");
+    } else if (arg === "--all-turns") {
+      allTurns = true;
+    } else if (arg === "--max-turns" && argv[i + 1]) {
+      maxTurns = parseIntOption(argv[++i]!, "--max-turns");
+    } else if (arg === "--mode" && argv[i + 1]) {
+      const value = argv[++i]!;
+      if (value !== "turn-start" && value !== "pre-message") {
+        throw new Error(`Invalid --mode value: ${value} (expected turn-start or pre-message)`);
+      }
+      mode = value;
+    } else if (arg === "--case" && argv[i + 1]) {
+      caseRef = argv[++i]!;
+    } else if (arg === "--cases") {
+      cases = true;
     } else if (arg === "--out" && argv[i + 1]) {
       outPath = argv[++i]!;
     } else if (arg === "--include-payload") {
@@ -97,10 +157,23 @@ async function parseOptions(argv: readonly string[]): Promise<CliOptions> {
     }
   }
 
+  const resolvedAgentDir = resolve(agentDir);
   return {
     profile,
     provider,
     model,
+    defaultProvider: configProvider,
+    defaultModel: configModel,
+    agentDir: resolvedAgentDir,
+    sessionsDir: resolve(sessionsDir ?? join(resolvedAgentDir, "sessions")),
+    session,
+    recent,
+    turn,
+    allTurns,
+    maxTurns,
+    mode,
+    caseRef,
+    cases,
     outPath: outPath ?? `.runtime/eval/context-report-${profile}.md`,
     includePayload,
     judge,
@@ -110,21 +183,41 @@ async function parseOptions(argv: readonly string[]): Promise<CliOptions> {
   };
 }
 
+function parseIntOption(raw: string, flagName: string): number {
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`Invalid integer for ${flagName}: ${raw}`);
+  }
+  return parsed;
+}
+
 function printUsage(): void {
   console.log(
     [
       "Usage: bun scripts/eval-context.ts [options]",
       "",
-      "Options:",
+      "General Options:",
       "  --profile <name>         Profile name under config/ (default: config.jsonc or klein)",
-      "  --provider <id>          Provider ID for payload rendering (default: config.jsonc or opencode-go)",
-      "  --model <id>             Model ID for payload rendering",
+      "  --provider <id>          Provider ID override for payload rendering / replay",
+      "  --model <id>             Model ID override for payload rendering / replay",
       "  --out <path>             Markdown report output path (default: .runtime/eval/context-report-<profile>.md)",
       "  --include-payload        Include raw JSON provider payload sections in Markdown",
       "  --judge                  Run LLM-as-a-Judge audit using configured provider credentials",
       "  --judge-provider <id>    Override provider for --judge",
       "  --judge-model <id>       Override model for --judge",
-      "  --replay                 Run 1-turn live behavioral replay on golden scenarios",
+      "  --replay                 Run live model replay instead of dry-run faux responses",
+      "",
+      "Local Session & Feedback Case Options:",
+      "  --agent-dir <dir>        Agent runtime directory (default: config.runtime.agentDir or .runtime/pi)",
+      "  --sessions-dir <dir>     Pi sessions root directory (default: <agent-dir>/sessions)",
+      "  --session <path|id>      Evaluate a real saved Pi session (.jsonl path, session ID, or substring)",
+      "  --recent <N>             Evaluate the N most recently modified real Pi sessions",
+      "  --turn <index>           Turn index to evaluate (0-based or negative like -1; default: last turn)",
+      "  --all-turns              Evaluate every turn in selected session(s)",
+      "  --max-turns <N>          Max trailing turns when --all-turns is enabled",
+      "  --mode <mode>            Replay mode: turn-start (current SOUL/tools) or pre-message (frozen slice)",
+      "  --case <id|path>         Evaluate a recorded negative-feedback case (<agent-dir>/eval/cases or path)",
+      "  --cases                  List and evaluate all recorded negative-feedback cases",
     ].join("\n"),
   );
 }
@@ -302,15 +395,18 @@ async function runScenario(options: {
 async function runOfflineEvaluations(options: CliOptions): Promise<{
   readonly markdown: string;
   readonly requests: readonly CapturedLlmRequest[];
+  readonly ownerByRequestIndex: ReadonlyMap<number, boolean>;
 }> {
+  const provider = options.provider ?? options.defaultProvider;
+  const model = options.model ?? options.defaultModel;
   const allRequests: CapturedLlmRequest[] = [];
 
   // Scenario 1: Handoff + multi-turn tool call + turn-context replacement
   const s1 = await runScenario({
     scenarioName: "handoff-and-multiturn",
     profile: options.profile,
-    provider: options.provider,
-    model: options.model,
+    provider,
+    model,
     ownerFeaturesAllowed: false,
     handoffContext: "さっきまで Alice と配信スケジュールについて雑談していた。",
     responses: [
@@ -355,8 +451,8 @@ async function runOfflineEvaluations(options: CliOptions): Promise<{
   const s2 = await runScenario({
     scenarioName: "image-and-bot-guidance",
     profile: options.profile,
-    provider: options.provider,
-    model: options.model,
+    provider,
+    model,
     ownerFeaturesAllowed: false,
     responses: [fauxAssistantMessage("No reply needed")],
     async execute(agent, setNextLabel) {
@@ -382,8 +478,8 @@ async function runOfflineEvaluations(options: CliOptions): Promise<{
   const s3 = await runScenario({
     scenarioName: "owner-conversation",
     profile: options.profile,
-    provider: options.provider,
-    model: options.model,
+    provider,
+    model,
     ownerFeaturesAllowed: true,
     responses: [
       fauxAssistantMessage([fauxToolCall("discord_send", { content: "了解、記録しておくよ。" })]),
@@ -407,6 +503,9 @@ async function runOfflineEvaluations(options: CliOptions): Promise<{
   allRequests.push(...s3);
 
   const reindexed = allRequests.map((req, index) => ({ ...req, index }));
+  const ownerByRequestIndex = new Map<number, boolean>(
+    reindexed.map((req) => [req.index, req.label?.startsWith("owner-conversation") ?? false]),
+  );
   const markdown = renderContextEvaluationMarkdown(reindexed, {
     title: `Klein Context Evaluation (${options.profile})`,
     includeFullSystemPrompt: true,
@@ -414,15 +513,281 @@ async function runOfflineEvaluations(options: CliOptions): Promise<{
     includeProviderPayloadSample: options.includePayload,
   });
 
-  return { markdown, requests: reindexed };
+  return { markdown, requests: reindexed, ownerByRequestIndex };
 }
 
-async function runLiveJudge(options: CliOptions, markdown: string): Promise<void> {
-  const provider = options.judgeProvider ?? options.provider;
-  const modelId = options.judgeModel ?? options.model;
-  const runtime = await createPiModelRuntime(resolve(".runtime/pi"));
+async function discoverSessionFiles(sessionsDir: string): Promise<DiscoveredSessionFile[]> {
+  let channelDirs: string[];
+  try {
+    channelDirs = await readdir(sessionsDir);
+  } catch {
+    return [];
+  }
+
+  const found: DiscoveredSessionFile[] = [];
+  for (const dir of channelDirs) {
+    const dirPath = join(sessionsDir, dir);
+    let files: string[];
+    try {
+      files = await readdir(dirPath);
+    } catch {
+      continue;
+    }
+
+    let sessionKey: string;
+    try {
+      sessionKey = decodeURIComponent(dir);
+    } catch {
+      sessionKey = dir;
+    }
+
+    for (const file of files) {
+      if (!file.endsWith(".jsonl")) continue;
+      const filePath = join(dirPath, file);
+      try {
+        const info = await stat(filePath);
+        if (!info.isFile()) continue;
+        found.push({ filePath, sessionKey, mtimeMs: info.mtimeMs });
+      } catch {
+        // Ignore unreadable files.
+      }
+    }
+  }
+
+  return found.sort((a, b) => b.mtimeMs - a.mtimeMs);
+}
+
+function inferSessionKeyFromPath(filePath: string): string {
+  const parent = basename(dirname(resolve(filePath)));
+  try {
+    return decodeURIComponent(parent);
+  } catch {
+    return parent || "eval-session";
+  }
+}
+
+async function resolveTargetSessions(options: CliOptions): Promise<DiscoveredSessionFile[]> {
+  if (options.session) {
+    if (
+      isAbsolute(options.session) ||
+      options.session.includes("/") ||
+      options.session.endsWith(".jsonl")
+    ) {
+      const resolvedPath = resolve(options.session);
+      const info = await stat(resolvedPath);
+      return [
+        {
+          filePath: resolvedPath,
+          sessionKey: inferSessionKeyFromPath(resolvedPath),
+          mtimeMs: info.mtimeMs,
+        },
+      ];
+    }
+
+    const discovered = await discoverSessionFiles(options.sessionsDir);
+    const matches = discovered.filter(
+      (entry) =>
+        entry.filePath.includes(options.session!) || entry.sessionKey.includes(options.session!),
+    );
+    if (matches.length === 0) {
+      throw new Error(
+        `No session file matching "${options.session}" found under ${options.sessionsDir}`,
+      );
+    }
+    return [matches[0]!];
+  }
+
+  const count = options.recent ?? 1;
+  const discovered = await discoverSessionFiles(options.sessionsDir);
+  if (discovered.length === 0) {
+    throw new Error(`No session files found under ${options.sessionsDir}`);
+  }
+  return discovered.slice(0, Math.max(1, count));
+}
+
+async function runRealSessionEvaluations(options: CliOptions): Promise<{
+  readonly markdown: string;
+  readonly requests: readonly CapturedLlmRequest[];
+  readonly ownerByRequestIndex: ReadonlyMap<number, boolean>;
+}> {
+  const targets = await resolveTargetSessions(options);
+  const allRequests: CapturedLlmRequest[] = [];
+  const ownerByRequestIndex = new Map<number, boolean>();
+
+  for (const target of targets) {
+    const raw = await readFile(target.filePath, "utf8");
+    const entries = parseSessionEntries(raw);
+    const ownerFeaturesAllowed = target.sessionKey.includes(":owner:");
+
+    const result = await evaluateSessionEntries({
+      entries,
+      profile: options.profile,
+      provider: options.provider,
+      model: options.model,
+      ownerFeaturesAllowed,
+      sessionKey: target.sessionKey,
+      mode: options.mode,
+      turnIndex: options.turn,
+      allTurns: options.allTurns,
+      maxTurns: options.maxTurns,
+      liveReplay: options.replay,
+      runtimeAgentDir: options.agentDir,
+    });
+
+    if (result.evaluatedTurns.length === 0) {
+      console.log(`[eval-context] Skipping empty session (${basename(target.filePath)})`);
+      continue;
+    }
+
+    console.log(
+      `[eval-context] Session ${result.sessionId} (${basename(target.filePath)}): turns=${result.turns.length}, evaluated=${result.evaluatedTurns.length}, mode=${options.mode ?? "turn-start"}`,
+    );
+    if (options.replay) {
+      for (const turnOut of result.evaluatedTurns) {
+        console.log(
+          `  replay [${turnOut.label}] sent=${JSON.stringify(turnOut.sentMessages)}${turnOut.finalAssistantText ? ` assistant=${JSON.stringify(turnOut.finalAssistantText)}` : ""}`,
+        );
+      }
+    }
+
+    for (const req of result.requests) {
+      const reindexed = { ...req, index: allRequests.length };
+      ownerByRequestIndex.set(reindexed.index, ownerFeaturesAllowed);
+      allRequests.push(reindexed);
+    }
+  }
+
+  const singleOwner =
+    ownerByRequestIndex.size > 0 && [...ownerByRequestIndex.values()].every(Boolean)
+      ? true
+      : [...ownerByRequestIndex.values()].every((v) => !v)
+        ? false
+        : undefined;
+
+  const markdown = renderContextEvaluationMarkdown(allRequests, {
+    title: `Klein Real Session Evaluation (${options.profile})`,
+    ownerFeaturesAllowed: singleOwner,
+    includeFullSystemPrompt: true,
+    includeToolDetails: true,
+    includeProviderPayloadSample: options.includePayload,
+  });
+
+  return { markdown, requests: allRequests, ownerByRequestIndex };
+}
+
+async function runFeedbackCaseEvaluations(options: CliOptions): Promise<{
+  readonly markdown: string;
+  readonly requests: readonly CapturedLlmRequest[];
+  readonly ownerByRequestIndex: ReadonlyMap<number, boolean>;
+  readonly feedbackContext?: ContextJudgeFeedbackContext;
+}> {
+  const store = new SessionEvalCaseStore({ agentDir: options.agentDir });
+  const targetIds: string[] = [];
+
+  if (options.caseRef) {
+    targetIds.push(options.caseRef);
+  } else {
+    const listed = await store.listCases();
+    if (listed.length === 0) {
+      console.log(`[eval-context] No saved feedback cases found in ${store.directory}`);
+      return {
+        markdown: "# Klein Feedback Case Evaluation\n\nNo saved feedback cases found.\n",
+        requests: [],
+        ownerByRequestIndex: new Map(),
+      };
+    }
+    console.log(
+      `[eval-context] Found ${listed.length} saved feedback case(s) in ${store.directory}:`,
+    );
+    for (const item of listed) {
+      console.log(
+        `  - ${item.caseId} [${item.reaction.emoji}] msg=${item.reaction.messageId} at=${item.reaction.occurredAt} entries=${item.slice.entryCount}`,
+      );
+      targetIds.push(item.caseId);
+    }
+    console.log("");
+  }
+
+  const allRequests: CapturedLlmRequest[] = [];
+  const ownerByRequestIndex = new Map<number, boolean>();
+  let singleFeedbackContext: ContextJudgeFeedbackContext | undefined;
+
+  for (const ref of targetIds) {
+    const loaded = await store.loadCase(ref);
+    if (!loaded) {
+      throw new Error(`Feedback case not found: ${ref} (checked ${store.directory})`);
+    }
+
+    const result = await evaluateEvalFeedbackCase(loaded, {
+      profile: options.profile,
+      provider: options.provider,
+      model: options.model,
+      mode: options.mode,
+      liveReplay: options.replay,
+      runtimeAgentDir: options.agentDir,
+    });
+
+    if (targetIds.length === 1) {
+      singleFeedbackContext = {
+        caseId: loaded.caseMeta.caseId,
+        reaction: loaded.caseMeta.reaction,
+        recordedResponse: loaded.caseMeta.recordedResponse,
+      };
+    }
+
+    console.log(
+      `[eval-context] Case ${loaded.caseMeta.caseId}: reaction=${loaded.caseMeta.reaction.emoji} mode=${result.mode} owner=${loaded.caseMeta.sourceSession.ownerFeaturesAllowed} recorded=${JSON.stringify(loaded.caseMeta.recordedResponse.content)}`,
+    );
+    if (options.replay) {
+      for (const turnOut of result.evaluatedTurns) {
+        console.log(
+          `  replay [${turnOut.label}] sent=${JSON.stringify(turnOut.sentMessages)}${turnOut.finalAssistantText ? ` assistant=${JSON.stringify(turnOut.finalAssistantText)}` : ""}`,
+        );
+      }
+    }
+
+    for (const req of result.requests) {
+      const reindexed = { ...req, index: allRequests.length };
+      ownerByRequestIndex.set(reindexed.index, loaded.caseMeta.sourceSession.ownerFeaturesAllowed);
+      allRequests.push(reindexed);
+    }
+  }
+
+  const singleOwner =
+    ownerByRequestIndex.size > 0 && [...ownerByRequestIndex.values()].every(Boolean)
+      ? true
+      : [...ownerByRequestIndex.values()].every((v) => !v)
+        ? false
+        : undefined;
+
+  const markdown = renderContextEvaluationMarkdown(allRequests, {
+    title: singleFeedbackContext
+      ? `Klein Feedback Case Evaluation (${singleFeedbackContext.caseId})`
+      : `Klein Feedback Cases Evaluation (${options.profile})`,
+    ownerFeaturesAllowed: singleOwner,
+    includeFullSystemPrompt: true,
+    includeToolDetails: true,
+    includeProviderPayloadSample: options.includePayload,
+  });
+
+  return {
+    markdown,
+    requests: allRequests,
+    ownerByRequestIndex,
+    feedbackContext: singleFeedbackContext,
+  };
+}
+
+async function runLiveJudge(
+  options: CliOptions,
+  markdown: string,
+  feedbackContext?: ContextJudgeFeedbackContext,
+): Promise<void> {
+  const provider = options.judgeProvider ?? options.provider ?? options.defaultProvider;
+  const modelId = options.judgeModel ?? options.model ?? options.defaultModel;
+  const runtime = await createPiModelRuntime(options.agentDir);
   const model = resolveConfiguredModel(provider, modelId, runtime);
-  const prompt = buildContextJudgePrompt(markdown);
+  const prompt = buildContextJudgePrompt(markdown, feedbackContext);
 
   console.log(`[eval-context] Running LLM-as-a-Judge with ${provider}/${modelId}...`);
   const response = await runtime.completeSimple(
@@ -455,7 +820,9 @@ async function runLiveJudge(options: CliOptions, markdown: string): Promise<void
 }
 
 async function runLiveReplay(options: CliOptions): Promise<void> {
-  const runtime = await createPiModelRuntime(resolve(".runtime/pi"));
+  const provider = options.provider ?? options.defaultProvider;
+  const model = options.model ?? options.defaultModel;
+  const runtime = await createPiModelRuntime(options.agentDir);
   const profileConfig = resolveProfile(options.profile);
   const systemPrompt = await loadPromptFile(profileConfig.systemPromptFile);
   const tempRoot = await mkdtemp(join(tmpdir(), "klein-eval-replay-"));
@@ -483,8 +850,8 @@ async function runLiveReplay(options: CliOptions): Promise<void> {
     const factory = createPiAgentFactory({
       agentDir,
       llm: {
-        provider: options.provider,
-        model: options.model,
+        provider,
+        model,
         thinkingLevel: "low",
       },
       skillsDirectory: profileConfig.skillsDirectory,
@@ -539,7 +906,17 @@ async function runLiveReplay(options: CliOptions): Promise<void> {
 
 async function main(): Promise<void> {
   const options = await parseOptions(process.argv.slice(2));
-  const { markdown, requests } = await runOfflineEvaluations(options);
+  const isFeedbackCaseMode = Boolean(options.caseRef || options.cases);
+  const isRealSessionMode = Boolean(options.session || options.recent !== undefined);
+
+  const runResult = isFeedbackCaseMode
+    ? await runFeedbackCaseEvaluations(options)
+    : isRealSessionMode
+      ? await runRealSessionEvaluations(options)
+      : await runOfflineEvaluations(options);
+
+  const { markdown, requests, ownerByRequestIndex } = runResult;
+  const feedbackContext = "feedbackContext" in runResult ? runResult.feedbackContext : undefined;
 
   await mkdir(dirname(options.outPath), { recursive: true });
   await writeFile(options.outPath, `${markdown}\n`, "utf8");
@@ -552,7 +929,7 @@ async function main(): Promise<void> {
   console.log("");
 
   for (const req of requests) {
-    const isOwner = req.label?.startsWith("owner-conversation") ?? false;
+    const isOwner = ownerByRequestIndex.get(req.index) ?? false;
     const analysis = analyzeCapturedRequest(req, {
       ownerFeaturesAllowed: isOwner,
       expectProviderPayload: true,
@@ -571,15 +948,15 @@ async function main(): Promise<void> {
   if (requests.length >= 2) {
     const stability = comparePrefixStability(requests[0]!, requests[1]!);
     console.log(
-      `\n[eval-context] Intra-turn prefix match (#0 -> #1): ${(stability.transcript.ratio * 100).toFixed(1)}% (transcript), ` +
+      `\n[eval-context] Prefix match (#0 -> #1): ${(stability.transcript.ratio * 100).toFixed(1)}% (transcript), ` +
         `${stability.providerPayload ? `${(stability.providerPayload.ratio * 100).toFixed(1)}% (provider)` : "n/a"}`,
     );
   }
 
-  if (options.judge) {
-    await runLiveJudge(options, markdown);
+  if (options.judge && requests.length > 0) {
+    await runLiveJudge(options, markdown, feedbackContext);
   }
-  if (options.replay) {
+  if (options.replay && !isFeedbackCaseMode && !isRealSessionMode) {
     await runLiveReplay(options);
   }
 }

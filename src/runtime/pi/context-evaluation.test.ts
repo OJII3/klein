@@ -19,15 +19,22 @@ import { FileScheduledTaskStore } from "@modules/scheduling/infrastructure/file-
 import { MarkdownUserMemoryStore } from "@modules/user-memory/infrastructure/markdown-user-memory-store";
 import { DiscordUserDirectory } from "@modules/discord/application/discord-user-directory";
 
+import { readFile } from "node:fs/promises";
+import { parseSessionEntries } from "@earendil-works/pi-coding-agent";
+
 import { createTempDir } from "../../testing/temp-dir";
 import {
   analyzeCapturedRequest,
   buildContextJudgePrompt,
   comparePrefixStability,
   createContextEvaluationHarness,
+  evaluateEvalFeedbackCase,
+  evaluateSessionEntries,
+  extractSessionTurns,
   renderContextEvaluationMarkdown,
 } from "./context-evaluation";
 import { createPiAgentFactory } from "./pi-agent-runtime";
+import { SentMessageSessionIndex, SessionEvalCaseStore } from "./session-eval-store";
 
 const SILENT_LOGGER = pino({ level: "silent" });
 
@@ -400,3 +407,306 @@ for (const target of [
     }
   });
 }
+
+test("extracts turns from a persisted session JSONL and evaluates them in turn-start and pre-message modes", async () => {
+  const temp = await createTempDir("klein-eval-persisted-");
+  const agentDir = join(temp.path, "pi");
+  const previousAgentDirEnv = process.env.PI_CODING_AGENT_DIR;
+  await mkdir(agentDir, { recursive: true });
+  await writeFile(join(agentDir, "settings.json"), JSON.stringify({ cacheWarming: "off" }), "utf8");
+
+  const harness = await createContextEvaluationHarness({
+    providers: ["opencode-go"],
+    responses: [
+      fauxAssistantMessage([fauxToolCall("discord_send", { content: "1ターン目の返答" })]),
+      fauxAssistantMessage("turn 1 ok"),
+      fauxAssistantMessage([fauxToolCall("discord_read", { messageId: "ref-99" })]),
+      fauxAssistantMessage([fauxToolCall("discord_send", { content: "2ターン目の返答" })]),
+      fauxAssistantMessage("turn 2 ok"),
+    ],
+  });
+
+  let sessionFilePath: string | undefined;
+  const factory = createPiAgentFactory({
+    agentDir,
+    llm: {
+      provider: "opencode-go",
+      model: "deepseek-v4.1-flash",
+      thinkingLevel: "low",
+    },
+    skillsDirectory: "config/klein/skills",
+    logger: SILENT_LOGGER,
+    modelRuntime: harness.modelRuntime,
+    sessionMode: "new",
+    onSessionCreated: (session) => {
+      sessionFilePath = session.sessionFile;
+    },
+  });
+
+  const channelApi: Pick<
+    DiscordChannelApi,
+    "readMessage" | "sendMessage" | "sendTyping" | "sendAudio"
+  > = {
+    async readMessage(target) {
+      return createDiscordMessage({ id: target.messageId, content: "参照メッセージ内容" });
+    },
+    async sendMessage() {
+      return ["sent-msg-1"];
+    },
+    async sendTyping() {},
+    async sendAudio() {},
+  };
+
+  const agent = await DiscordAgent.create(
+    factory,
+    "ch-session",
+    await loadPromptFile("config/klein/SOUL.md"),
+    {
+      sessionKey: "discord-channel:ch-session",
+      ownerFeaturesAllowed: false,
+      ownerUserId: "owner-1",
+      tools: (analyzeImage) =>
+        createDiscordAgentTools(
+          {
+            channelApi,
+            channelId: "ch-session",
+            ownerFeaturesAllowed: false,
+            ownerUserId: "owner-1",
+            watchCheckRunner: new QuickJsWatchCheckRunner({ tools: [] }),
+          },
+          analyzeImage,
+        ),
+    },
+  );
+
+  try {
+    await agent.promptMessage(createDiscordMessage({ id: "u-1", content: "おはよう <@bot>" }), {
+      userMemory: "Alice: 朝型",
+    });
+    await agent.promptMessage(
+      createDiscordMessage({ id: "u-2", content: "昨日の件確認して <@bot>" }),
+      {
+        channelRule: "簡潔に答える",
+      },
+    );
+
+    assert.ok(sessionFilePath);
+    const entries = parseSessionEntries(await readFile(sessionFilePath, "utf8"));
+    const turns = extractSessionTurns(entries);
+    assert.equal(turns.length, 2);
+    assert.deepEqual(turns[0]?.discordSendContents, ["1ターン目の返答"]);
+    assert.deepEqual(turns[1]?.discordSendContents, ["2ターン目の返答"]);
+    assert.equal(turns[1]?.hasTurnContext, true);
+
+    const allTurnsEval = await evaluateSessionEntries({
+      entries,
+      sessionKey: "discord-channel:ch-session",
+      ownerFeaturesAllowed: false,
+      allTurns: true,
+      mode: "turn-start",
+    });
+    assert.equal(allTurnsEval.evaluatedTurns.length, 2);
+    assert.equal(allTurnsEval.requests.length, 2);
+
+    const turn2Analysis = analyzeCapturedRequest(allTurnsEval.requests[1]!, {
+      ownerFeaturesAllowed: false,
+      expectProviderPayload: true,
+    });
+    assert.equal(
+      turn2Analysis.messages.some(
+        (m) => m.kind === "assistant-text" && m.text === "Sent a message to Discord.",
+      ),
+      true,
+    );
+    assert.equal(
+      turn2Analysis.messages.some(
+        (m) => m.kind === "turn-context" && m.text.includes("簡潔に答える"),
+      ),
+      true,
+    );
+    assert.deepEqual(
+      turn2Analysis.findings.filter((f) => f.severity === "error"),
+      [],
+    );
+
+    const preMessageEval = await evaluateSessionEntries({
+      entries,
+      sessionKey: "discord-channel:ch-session",
+      ownerFeaturesAllowed: false,
+      turnIndex: 1,
+      mode: "pre-message",
+    });
+    assert.equal(preMessageEval.requests.length, 1);
+    const preAnalysis = analyzeCapturedRequest(preMessageEval.requests[0]!, {
+      ownerFeaturesAllowed: false,
+      expectProviderPayload: true,
+    });
+    assert.equal(
+      preAnalysis.messages.some((m) => m.kind === "tool-result:discord_read"),
+      true,
+    );
+  } finally {
+    agent.dispose();
+    harness.dispose();
+    if (previousAgentDirEnv === undefined) {
+      delete process.env.PI_CODING_AGENT_DIR;
+    } else {
+      process.env.PI_CODING_AGENT_DIR = previousAgentDirEnv;
+    }
+    await temp[Symbol.asyncDispose]();
+  }
+});
+
+test("records a negative-reaction snapshot from PiAgentRuntime and evaluates it later in pre-message and turn-start modes", async () => {
+  const temp = await createTempDir("klein-eval-e2e-reaction-");
+  const agentDir = join(temp.path, "pi");
+  const previousAgentDirEnv = process.env.PI_CODING_AGENT_DIR;
+  await mkdir(agentDir, { recursive: true });
+  await writeFile(join(agentDir, "settings.json"), JSON.stringify({ cacheWarming: "off" }), "utf8");
+
+  const sentMessageIndex = new SentMessageSessionIndex(agentDir);
+  const caseStore = new SessionEvalCaseStore({ agentDir, index: sentMessageIndex });
+
+  const harness = await createContextEvaluationHarness({
+    providers: ["opencode-go"],
+    responses: [
+      fauxAssistantMessage([fauxToolCall("discord_read", { messageId: "prev-1" })]),
+      fauxAssistantMessage([fauxToolCall("discord_send", { content: "的外れな返答です" })]),
+      fauxAssistantMessage("completed"),
+    ],
+  });
+
+  let sendCounter = 0;
+  const channelApi: Pick<
+    DiscordChannelApi,
+    "readMessage" | "sendMessage" | "sendTyping" | "sendAudio"
+  > = {
+    async readMessage(target) {
+      return createDiscordMessage({ id: target.messageId, content: "元の文脈メッセージ" });
+    },
+    async sendMessage() {
+      return [`discord-bad-${++sendCounter}`];
+    },
+    async sendTyping() {},
+    async sendAudio() {},
+  };
+
+  const factory = createPiAgentFactory({
+    agentDir,
+    llm: {
+      provider: "opencode-go",
+      model: "deepseek-v4.1-flash",
+      thinkingLevel: "low",
+    },
+    skillsDirectory: "config/klein/skills",
+    logger: SILENT_LOGGER,
+    modelRuntime: harness.modelRuntime,
+    sessionMode: "new",
+    sentMessageIndex,
+  });
+
+  const agent = await DiscordAgent.create(
+    factory,
+    "ch-feedback",
+    await loadPromptFile("config/klein/SOUL.md"),
+    {
+      sessionKey: "discord-channel:ch-feedback",
+      ownerFeaturesAllowed: false,
+      ownerUserId: "owner-1",
+      tools: (analyzeImage) =>
+        createDiscordAgentTools(
+          {
+            channelApi,
+            channelId: "ch-feedback",
+            ownerFeaturesAllowed: false,
+            ownerUserId: "owner-1",
+            watchCheckRunner: new QuickJsWatchCheckRunner({ tools: [] }),
+          },
+          analyzeImage,
+        ),
+    },
+  );
+
+  try {
+    await agent.promptMessage(
+      createDiscordMessage({ id: "u-bad-1", content: "これについて教えて <@bot>" }),
+      {
+        guildMemory: "正確な情報だけを答えるチャンネル",
+      },
+    );
+
+    const recordedCase = await caseStore.recordReactionFeedback(
+      {
+        emoji: "👎",
+        userId: "user-1",
+        userIsBot: false,
+        channelId: "ch-feedback",
+        guildId: "guild-1",
+        messageId: "discord-bad-1",
+        occurredAt: "2026-11-12T10:00:00.000Z",
+      },
+      { ownerUserId: "owner-1" },
+    );
+    assert.ok(recordedCase);
+    assert.equal(recordedCase.recordedResponse.content, "的外れな返答です");
+
+    const loaded = await caseStore.loadCase(recordedCase.caseId);
+    assert.ok(loaded);
+
+    // Default mode should infer pre-message because discord_read preceded discord_send.
+    const preResult = await evaluateEvalFeedbackCase(loaded);
+    assert.equal(preResult.mode, "pre-message");
+    assert.equal(preResult.requests.length, 1);
+
+    const preAnalysis = analyzeCapturedRequest(preResult.requests[0]!, {
+      ownerFeaturesAllowed: false,
+      expectProviderPayload: true,
+    });
+    assert.equal(
+      preAnalysis.messages.some((m) => m.kind === "tool-result:discord_read"),
+      true,
+    );
+    assert.equal(
+      preAnalysis.messages.some((m) => m.text.includes("的外れな返答です")),
+      false,
+    );
+    assert.deepEqual(
+      preAnalysis.findings.filter((f) => f.severity === "error"),
+      [],
+    );
+
+    // Explicit turn-start mode replays from the user prompt with current SOUL.md + tools.
+    const turnStartResult = await evaluateEvalFeedbackCase(loaded, { mode: "turn-start" });
+    assert.equal(turnStartResult.mode, "turn-start");
+    assert.equal(turnStartResult.requests.length, 1);
+    const turnStartAnalysis = analyzeCapturedRequest(turnStartResult.requests[0]!, {
+      ownerFeaturesAllowed: false,
+      expectProviderPayload: true,
+    });
+    assert.deepEqual(
+      turnStartAnalysis.messages.map((m) => m.kind),
+      ["turn-context", "event"],
+    );
+
+    const reportMarkdown = renderContextEvaluationMarkdown(preResult.requests, {
+      title: `Feedback ${loaded.caseMeta.caseId}`,
+      ownerFeaturesAllowed: false,
+    });
+    const judgePrompt = buildContextJudgePrompt(reportMarkdown, {
+      caseId: loaded.caseMeta.caseId,
+      reaction: loaded.caseMeta.reaction,
+      recordedResponse: loaded.caseMeta.recordedResponse,
+    });
+    assert.ok(judgePrompt.userPrompt.includes("的外れな返答です"));
+    assert.ok(judgePrompt.userPrompt.includes("👎"));
+  } finally {
+    agent.dispose();
+    harness.dispose();
+    if (previousAgentDirEnv === undefined) {
+      delete process.env.PI_CODING_AGENT_DIR;
+    } else {
+      process.env.PI_CODING_AGENT_DIR = previousAgentDirEnv;
+    }
+    await temp[Symbol.asyncDispose]();
+  }
+});

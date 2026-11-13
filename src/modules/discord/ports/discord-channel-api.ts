@@ -19,7 +19,7 @@ export interface DiscordChannelLocation {
 export interface DiscordChannelApi {
   getChannelLocation(channelId: string): Promise<DiscordChannelLocation>;
   sendTyping(channelId: string): Promise<void>;
-  sendMessage(channelId: string, content: string): Promise<void>;
+  sendMessage(channelId: string, content: string): Promise<readonly string[] | void>;
   sendAudio(channelId: string, audio: Uint8Array, filename: string): Promise<void>;
   readMessage(
     locator: DiscordMessageLocator,
