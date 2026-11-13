@@ -13,7 +13,7 @@
     "build:web": "bun run --cwd web build",
     "dev:web": "bun run --cwd web dev",
     "build:server": "bun scripts/build-server.ts",
-    "eval:context": "bun scripts/eval-context.ts",
+    "inspect:context": "bun scripts/inspect-context.ts",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
     "generate:config-schema": "bun scripts/generate-config-schema.ts && bun fmt config/config.schema.json",
