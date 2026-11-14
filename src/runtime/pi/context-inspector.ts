@@ -49,6 +49,7 @@ import { parseDiscordChannelId } from "@shared/discord-channel-session-key";
 import {
   createPiAgentFactory,
   createPiModelRuntime,
+  ensureConfiguredModels,
   resolveConfiguredModel,
 } from "./pi-agent-runtime";
 import { TURN_CONTEXT_CUSTOM_TYPE } from "./pi-turn-context";
@@ -821,6 +822,7 @@ export async function runContextJudge(options: RunContextJudgeOptions): Promise<
   const runtime =
     options.modelRuntime ??
     (await createPiModelRuntime(resolve(options.runtimeAgentDir ?? ".runtime/pi")));
+  await ensureConfiguredModels(runtime, [{ provider: options.provider, model: options.model }]);
   const model = resolveConfiguredModel(options.provider, options.model, runtime);
   const prompt = buildContextJudgePrompt(options.reportMarkdown, options.feedbackContext);
 
@@ -1239,6 +1241,9 @@ async function executeSessionSlice(
   try {
     const provider = options.provider ?? "opencode-go";
     const modelId = options.model ?? "deepseek-v4.1-flash";
+    if (exec.liveReplay) {
+      await ensureConfiguredModels(activeRuntime, [{ provider, model: modelId }]);
+    }
     const resolvedModel = exec.liveReplay
       ? resolveConfiguredModel(provider, modelId, activeRuntime)
       : resolveSafeOfflineModel(provider, modelId, activeRuntime);

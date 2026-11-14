@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  ensureConfiguredModels,
   resolveConfiguredImageModel,
   resolveConfiguredModel,
   withOpenCodeSessionHeader,
@@ -14,39 +15,64 @@ test("resolves a configured built-in model", () => {
   assert.equal(model.id, "kimi-k3");
 });
 
-test("resolves DeepSeek V4.1 Flash when the local catalog is stale", () => {
-  const model = resolveConfiguredModel("opencode-go", "deepseek-v4.1-flash", {
-    getModel: () => undefined,
-  });
-
-  assert.equal(model.id, "deepseek-v4.1-flash");
-  assert.equal(model.baseUrl, "https://opencode.ai/zen/go/v1");
-  assert.deepEqual(model.input, ["text", "image"]);
-});
-
-test("resolves Mistral DeepSeek V4.1 Flash 1017 when the local catalog is stale", () => {
-  const model = resolveConfiguredModel("mistral", "deepseek-v4-1-flash-1017", {
-    getModel: () => undefined,
-  });
-
-  assert.equal(model.id, "deepseek-v4-1-flash-1017");
-  assert.equal(model.api, "mistral-conversations");
-  assert.equal(model.baseUrl, "https://api.mistral.ai");
-  assert.equal(model.contextWindow, 1_048_576);
-});
-
-test("prefers the online catalog model over the local fallback", () => {
-  const onlineModel = {
-    ...resolveConfiguredModel("opencode-go", "kimi-k3"),
-    id: "deepseek-v4.1-flash",
-    name: "DeepSeek V4.1 Flash (online)",
+test("does not refresh the catalog when every configured model is present", async () => {
+  let refreshes = 0;
+  const catalog = {
+    getModel: () => resolveConfiguredModel("opencode-go", "kimi-k3"),
+    refresh: async () => {
+      refreshes += 1;
+    },
   };
 
-  const model = resolveConfiguredModel("opencode-go", "deepseek-v4.1-flash", {
-    getModel: () => onlineModel,
-  });
+  await ensureConfiguredModels(catalog, [{ provider: "opencode-go", model: "kimi-k3" }]);
 
-  assert.equal(model, onlineModel);
+  assert.equal(refreshes, 0);
+});
+
+test("refreshes the catalog once when a configured model is missing", async () => {
+  const model = resolveConfiguredModel("opencode-go", "kimi-k3");
+  let refreshed = false;
+  const refreshes: { providers?: readonly string[]; force?: boolean }[] = [];
+  const catalog = {
+    getModel: (provider: string, modelId: string) =>
+      refreshed && provider === "mistral" && modelId === "deepseek-v4-1-flash-1017"
+        ? model
+        : undefined,
+    refresh: async (options: { providers?: readonly string[]; force?: boolean }) => {
+      refreshes.push(options);
+      refreshed = true;
+    },
+  };
+
+  await ensureConfiguredModels(catalog, [
+    { provider: "mistral", model: "deepseek-v4-1-flash-1017" },
+  ]);
+
+  assert.equal(refreshes.length, 1);
+  assert.equal(refreshes[0]?.force, true);
+  assert.deepEqual(refreshes[0]?.providers, ["mistral"]);
+});
+
+test("fails with the models still missing after refreshing the catalog", async () => {
+  const catalog = {
+    getModel: () => undefined,
+    refresh: async () => {},
+  };
+
+  await assert.rejects(
+    ensureConfiguredModels(catalog, [
+      { provider: "mistral", model: "deepseek-v4-1-flash-1017" },
+      { provider: "opencode-go", model: "does-not-exist" },
+    ]),
+    /Configured Pi model was not found after refreshing the catalog: mistral\/deepseek-v4-1-flash-1017, opencode-go\/does-not-exist/,
+  );
+});
+
+test("rejects a configured model that the catalog does not contain", () => {
+  assert.throws(
+    () => resolveConfiguredModel("opencode-go", "does-not-exist"),
+    /Configured Pi model was not found: opencode-go\/does-not-exist/,
+  );
 });
 
 test("adds the stable session header to OpenCode models", () => {
@@ -61,13 +87,6 @@ test("does not add a session header to other providers", () => {
   const model = resolveConfiguredModel("anthropic", "claude-sonnet-4-5");
 
   assert.equal(withOpenCodeSessionHeader(model, "session-123"), model);
-});
-
-test("rejects an unknown configured model", () => {
-  assert.throws(
-    () => resolveConfiguredModel("opencode-go", "does-not-exist"),
-    /Configured Pi model was not found: opencode-go\/does-not-exist/,
-  );
 });
 
 test("rejects an image model without image input", () => {
