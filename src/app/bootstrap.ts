@@ -1,3 +1,4 @@
+import "./pi-package-dir";
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 
