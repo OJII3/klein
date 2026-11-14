@@ -99,6 +99,14 @@ const WebUiConfigurationSchema = Type.Object(
     enabled: Type.Boolean(),
     host: Type.Optional(Type.String({ minLength: 1 })),
     port: Type.Optional(Type.Integer({ minimum: 1, maximum: 65535 })),
+    cloudflared: Type.Optional(
+      Type.Object(
+        {
+          enabled: Type.Boolean(),
+        },
+        { additionalProperties: false },
+      ),
+    ),
   },
   { additionalProperties: false },
 );

@@ -3,8 +3,36 @@ import { mkdir } from "node:fs/promises";
 import test from "node:test";
 import { join } from "node:path";
 
-import { resolveWebUiStaticDirectory } from "./webui-config";
+import type { AppConfig } from "@app/config-schema";
+import { resolveWebUiConfig, resolveWebUiStaticDirectory } from "./webui-config";
 import { createTempDir } from "../../../testing/temp-dir";
+
+function createConfig(overrides: Partial<AppConfig> = {}): AppConfig {
+  return {
+    version: 1,
+    llm: { provider: "opencode-go", model: "main-model" },
+    runtime: { agentDir: "/tmp/klein-agent" },
+    discord: { access: { default: "deny", directMessages: "deny" } },
+    features: { memory: { enabled: false }, minecraft: { enabled: false } },
+    ...overrides,
+  };
+}
+
+test("starts cloudflared only when the Web UI configuration enables it", () => {
+  assert.equal(resolveWebUiConfig(createConfig()).cloudflaredEnabled, false);
+  assert.equal(
+    resolveWebUiConfig(
+      createConfig({
+        features: {
+          memory: { enabled: false },
+          minecraft: { enabled: false },
+          webui: { enabled: true, cloudflared: { enabled: true } },
+        },
+      }),
+    ).cloudflaredEnabled,
+    true,
+  );
+});
 
 test("resolves bundled Web UI assets next to the server executable", async () => {
   await using temp = await createTempDir("klein-webui-config-");

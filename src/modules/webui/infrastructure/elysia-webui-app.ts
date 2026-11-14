@@ -14,6 +14,7 @@ export interface WebUiServerOptions extends WebUiDependencies {
   readonly host: string;
   readonly port: number;
   readonly staticDirectory: string;
+  readonly cloudflaredEnabled?: boolean;
   readonly tunnelToken?: string;
 }
 
@@ -66,6 +67,11 @@ export async function createWebUiServerApp(options: WebUiServerOptions) {
 }
 
 export async function startWebUi(options: WebUiServerOptions): Promise<WebUiServer> {
+  const tunnelToken = options.cloudflaredEnabled ? options.tunnelToken : undefined;
+  if (options.cloudflaredEnabled && !tunnelToken) {
+    throw new Error("TUNNEL_TOKEN is required when features.webui.cloudflared.enabled is true");
+  }
+
   const app = await createWebUiServerApp(options);
 
   // Elysia enables SO_REUSEPORT by default, which lets a second Klein instance
@@ -73,8 +79,8 @@ export async function startWebUi(options: WebUiServerOptions): Promise<WebUiServ
   app.listen({ hostname: options.host, port: options.port, reusePort: false });
   let tunnel: CloudflareTunnel | undefined;
   try {
-    if (options.tunnelToken) {
-      tunnel = await startCloudflareTunnel(options.tunnelToken, options.logger);
+    if (tunnelToken) {
+      tunnel = await startCloudflareTunnel(tunnelToken, options.logger);
     }
   } catch (error) {
     await app.stop();

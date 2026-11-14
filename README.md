@@ -108,6 +108,9 @@ An optional dashboard for Pino logs, Pi sessions, memories, and tool usage. Enab
       "enabled": true,
       "host": "127.0.0.1",
       "port": 4310,
+      "cloudflared": {
+        "enabled": false,
+      },
     },
   },
 }
@@ -129,4 +132,4 @@ bun run dev:web
 
 Vite serves the UI on `http://127.0.0.1:5173` and proxies `/api` to port 4310. The production build is written to `dist/web` and served by the Elysia app.
 
-To expose it through Cloudflare Tunnel, add `TUNNEL_TOKEN` to `.env` and protect the route with Cloudflare Access. `cloudflared` starts and stops with Klein.
+To expose it through Cloudflare Tunnel, set `features.webui.cloudflared.enabled` to `true`, add `TUNNEL_TOKEN` to `.env`, and protect the route with Cloudflare Access. `cloudflared` starts and stops with Klein. Klein refuses to start when the tunnel is enabled without a token.

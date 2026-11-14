@@ -68,7 +68,10 @@
     "webui": {
       "enabled": false,
       "host": "127.0.0.1",
-      "port": 4310
+      "port": 4310,
+      "cloudflared": {
+        "enabled": false
+      }
     },
     "tts": {
       "enabled": false,
