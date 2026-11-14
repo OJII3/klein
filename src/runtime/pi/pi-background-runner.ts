@@ -1,3 +1,5 @@
+import { resolve } from "node:path";
+
 import type {
   Api,
   AssistantMessage,
@@ -58,8 +60,8 @@ export interface PiBackgroundSession {
 
 /**
  * Runs background work against Pi without the foreground channel tooling. One-shot
- * completions keep the caller's prompt and parsing; agent sessions get an in-memory
- * session with only the tools the caller passes in.
+ * completions keep the caller's prompt and parsing; agent sessions get a persisted
+ * session file under the agent directory with only the tools the caller passes in.
  */
 export class PiBackgroundRunner {
   constructor(private readonly options: PiBackgroundRunnerOptions) {}
@@ -83,7 +85,10 @@ export class PiBackgroundRunner {
     });
     await resourceLoader.reload();
 
-    const sessionManager = SessionManager.inMemory(options.cwd);
+    const sessionManager = SessionManager.create(
+      options.cwd,
+      backgroundSessionDir(this.options.agentDir, options.sessionId),
+    );
     const model = withOpenCodeSessionHeader(options.model, options.sessionId);
     const { session } = await createAgentSession({
       cwd: options.cwd,
@@ -127,6 +132,18 @@ export class PiBackgroundRunner {
     this.options.usageReporter?.recordAssistantMessage(sessionId, response);
     return response;
   }
+}
+
+/** Name of the directory that holds background sessions under `sessions/`. */
+export const BACKGROUND_SESSION_DIRECTORY = "background";
+
+/**
+ * Directory holding the session files of one background session id. Each
+ * `createSession` call writes a new file under it, so the transcript of every
+ * run survives the process.
+ */
+export function backgroundSessionDir(agentDir: string, sessionId: string): string {
+  return resolve(agentDir, "sessions", BACKGROUND_SESSION_DIRECTORY, encodeURIComponent(sessionId));
 }
 
 async function promptSession(

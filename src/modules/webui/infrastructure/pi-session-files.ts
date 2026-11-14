@@ -1,6 +1,8 @@
 import { readdir } from "node:fs/promises";
 import { resolve } from "node:path";
 
+import { BACKGROUND_SESSION_DIRECTORY } from "@runtime/pi/pi-background-runner";
+
 export interface PiSessionDirectory {
   readonly channelKey: string;
   readonly directory: string;
@@ -21,6 +23,7 @@ export async function listPiSessionDirectories(
 
   return entries
     .filter((entry) => entry.isDirectory())
+    .filter((entry) => entry.name !== BACKGROUND_SESSION_DIRECTORY)
     .flatMap((entry) => {
       const channelKey = decodeChannelKey(entry.name);
       return channelKey === undefined

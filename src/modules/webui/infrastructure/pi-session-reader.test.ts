@@ -1,9 +1,20 @@
 import assert from "node:assert/strict";
+import { mkdir } from "node:fs/promises";
+import { resolve } from "node:path";
 import test from "node:test";
 
 import { createPiSessionManager } from "@runtime/pi/pi-agent-runtime";
 import { PiSessionReader } from "./pi-session-reader";
 import { createTempDir } from "../../../testing/temp-dir";
+
+test("ignores background session directories when listing channel sessions", async () => {
+  await using temp = await createTempDir("klein-pi-reader-");
+  await mkdir(resolve(temp.path, "sessions", "background", "user-memory-1"), { recursive: true });
+
+  const page = await new PiSessionReader(temp.path).list();
+
+  assert.deepEqual(page, { items: [], nextCursor: null });
+});
 
 test("lists and reads Pi sessions without exposing image data", async () => {
   await using temp = await createTempDir("klein-pi-reader-");
