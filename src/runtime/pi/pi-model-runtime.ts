@@ -14,7 +14,7 @@ interface ModelCatalog {
     force?: boolean;
     providers?: readonly string[];
     signal?: AbortSignal;
-  }): Promise<{ aborted?: boolean } | void>;
+  }): Promise<{ aborted?: boolean; errors?: ReadonlyMap<string, Error> } | void>;
 }
 
 interface ConfiguredModelRef {
@@ -40,7 +40,10 @@ export async function ensureConfiguredModels(
   modelCatalog: ModelCatalog,
   models: readonly ConfiguredModelRef[],
 ): Promise<void> {
-  const missing = models.filter(
+  const unique = [
+    ...new Map(models.map((model) => [`${model.provider}\0${model.model}`, model])).values(),
+  ];
+  const missing = unique.filter(
     ({ provider, model }) => modelCatalog.getModel(provider, model) === undefined,
   );
   if (missing.length === 0) return;
@@ -57,10 +60,17 @@ export async function ensureConfiguredModels(
   if (unresolved.length === 0) return;
 
   const names = unresolved.map(({ provider, model }) => `${provider}/${model}`).join(", ");
+  const failures = [...(result?.errors ?? [])].map(
+    ([provider, error]) => `${provider}: ${error.message}`,
+  );
+  const reason =
+    failures.length > 0
+      ? ` (catalog refresh failed: ${failures.join("; ")})`
+      : result?.aborted
+        ? " (catalog refresh timed out)"
+        : "";
   throw new Error(
-    result?.aborted
-      ? `Configured Pi model was not found and the catalog refresh timed out: ${names}`
-      : `Configured Pi model was not found after refreshing the catalog: ${names}`,
+    `Configured Pi model was not found after refreshing the catalog: ${names}${reason}`,
   );
 }
 

@@ -62,9 +62,22 @@ test("fails with the models still missing after refreshing the catalog", async (
   await assert.rejects(
     ensureConfiguredModels(catalog, [
       { provider: "mistral", model: "deepseek-v4-1-flash-1017" },
+      { provider: "mistral", model: "deepseek-v4-1-flash-1017" },
       { provider: "opencode-go", model: "does-not-exist" },
     ]),
-    /Configured Pi model was not found after refreshing the catalog: mistral\/deepseek-v4-1-flash-1017, opencode-go\/does-not-exist/,
+    /Configured Pi model was not found after refreshing the catalog: mistral\/deepseek-v4-1-flash-1017, opencode-go\/does-not-exist$/,
+  );
+});
+
+test("reports why the catalog refresh failed", async () => {
+  const catalog = {
+    getModel: () => undefined,
+    refresh: async () => ({ errors: new Map([["mistral", new Error("404 Not Found")]]) }),
+  };
+
+  await assert.rejects(
+    ensureConfiguredModels(catalog, [{ provider: "mistral", model: "deepseek-v4-1-flash-1017" }]),
+    /catalog refresh failed: mistral: 404 Not Found/,
   );
 });
 
