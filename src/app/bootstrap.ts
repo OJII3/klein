@@ -1,3 +1,4 @@
+import "./pi-package-dir";
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 
@@ -18,6 +19,7 @@ import { createDiscordAgentTools } from "@agents/discord/discord-tools";
 import {
   createPiAgentFactory,
   createPiModelRuntime,
+  ensureConfiguredModels,
   resolveConfiguredModel,
 } from "@runtime/pi/pi-agent-runtime";
 import { PiBackgroundRunner } from "@runtime/pi/pi-background-runner";
@@ -144,6 +146,7 @@ export async function bootstrap(): Promise<void> {
   if (providersInUse.has("google") && !(await modelRuntime.checkAuth("google"))) {
     throw new Error("GEMINI_API_KEY is required");
   }
+  await ensureConfiguredModels(modelRuntime, modelsInUse);
   const backgroundRunner = new PiBackgroundRunner({
     agentDir,
     logger,

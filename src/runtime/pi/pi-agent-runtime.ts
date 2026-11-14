@@ -52,6 +52,7 @@ import {
 } from "./pi-image-analysis-message";
 import {
   createPiModelRuntime,
+  ensureConfiguredModels,
   resolveConfiguredImageModel,
   resolveConfiguredModel,
   withOpenCodeSessionHeader,
@@ -64,6 +65,7 @@ import { ToolAuthorization, type ToolPermissions } from "./tool-permissions";
 
 export {
   createPiModelRuntime,
+  ensureConfiguredModels,
   resolveConfiguredImageModel,
   resolveConfiguredModel,
   withOpenCodeSessionHeader,

@@ -516,28 +516,19 @@ test("resolves a configured built-in model", () => {
   assert.equal(model.id, "kimi-k3");
 });
 
-test("resolves DeepSeek V4.1 Flash when the local catalog is stale", () => {
-  const model = resolveConfiguredModel("opencode-go", "deepseek-v4.1-flash", {
-    getModel: () => undefined,
-  });
+test("resolves DeepSeek V4.1 Flash from the catalog", () => {
+  const model = resolveConfiguredModel("opencode-go", "deepseek-v4.1-flash");
 
   assert.equal(model.id, "deepseek-v4.1-flash");
-  assert.equal(model.baseUrl, "https://opencode.ai/zen/go/v1");
-  assert.deepEqual(model.input, ["text", "image"]);
+  assert.equal(model.provider, "opencode-go");
 });
 
-test("prefers the online catalog model over the local fallback", () => {
-  const onlineModel = {
-    ...resolveConfiguredModel("opencode-go", "kimi-k3"),
-    id: "deepseek-v4.1-flash",
-    name: "DeepSeek V4.1 Flash (online)",
-  };
-
-  const model = resolveConfiguredModel("opencode-go", "deepseek-v4.1-flash", {
-    getModel: () => onlineModel,
-  });
-
-  assert.equal(model, onlineModel);
+test("rejects a configured model that the catalog does not contain", () => {
+  assert.throws(
+    () =>
+      resolveConfiguredModel("opencode-go", "deepseek-v4.1-flash", { getModel: () => undefined }),
+    /Configured Pi model was not found: opencode-go\/deepseek-v4.1-flash/,
+  );
 });
 
 test("adds the stable session header to OpenCode models", () => {

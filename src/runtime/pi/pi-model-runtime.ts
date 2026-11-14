@@ -6,71 +6,21 @@ import type { Api, Model, Models } from "@earendil-works/pi-ai";
 
 const MODEL_CATALOG_REFRESH_TIMEOUT_MS = 5_000;
 
-const DEEPSEEK_V41_FLASH_FALLBACK: Model<"openai-completions"> = {
-  id: "deepseek-v4.1-flash",
-  name: "DeepSeek V4.1 Flash",
-  api: "openai-completions",
-  provider: "opencode-go",
-  baseUrl: "https://opencode.ai/zen/go/v1",
-  reasoning: true,
-  thinkingLevelMap: {
-    minimal: null,
-    low: null,
-    medium: null,
-    high: "high",
-    max: "max",
-  },
-  input: ["text", "image"],
-  cost: {
-    input: 0.15,
-    output: 0.6,
-    cacheRead: 0.003,
-    cacheWrite: 0,
-  },
-  contextWindow: 1_000_000,
-  maxTokens: 384_000,
-  compat: {
-    supportsStore: false,
-    supportsDeveloperRole: false,
-    maxTokensField: "max_tokens",
-    requiresReasoningContentOnAssistantMessages: true,
-    thinkingFormat: "deepseek",
-  },
-};
-
 const BUILTIN_MODEL_CATALOG = builtinModels();
 
-const MISTRAL_DEEPSEEK_V41_FLASH_1017_FALLBACK: Model<"mistral-conversations"> = {
-  id: "deepseek-v4-1-flash-1017",
-  name: "DeepSeek V4.1 Flash 1017",
-  api: "mistral-conversations",
-  provider: "mistral",
-  baseUrl: "https://api.mistral.ai",
-  reasoning: true,
-  thinkingLevelMap: {
-    off: "none",
-    minimal: null,
-    low: "low",
-    medium: null,
-    high: "high",
-    xhigh: null,
-    max: "max",
-  },
-  input: ["text"],
-  cost: {
-    input: 0.3,
-    output: 1.2,
-    cacheRead: 0.007,
-    cacheWrite: 0,
-  },
-  contextWindow: 1_048_576,
-  maxTokens: 128_000,
-};
+interface ModelCatalog {
+  getModel(provider: string, modelId: string): Model<Api> | undefined;
+  refresh(options: {
+    force?: boolean;
+    providers?: readonly string[];
+    signal?: AbortSignal;
+  }): Promise<{ aborted?: boolean; errors?: ReadonlyMap<string, Error> } | void>;
+}
 
-const FALLBACK_MODELS: readonly Model<Api>[] = [
-  DEEPSEEK_V41_FLASH_FALLBACK,
-  MISTRAL_DEEPSEEK_V41_FLASH_1017_FALLBACK,
-];
+interface ConfiguredModelRef {
+  readonly provider: string;
+  readonly model: string;
+}
 
 export async function createPiModelRuntime(agentDir: string): Promise<ModelRuntime> {
   return ModelRuntime.create({
@@ -82,6 +32,48 @@ export async function createPiModelRuntime(agentDir: string): Promise<ModelRunti
   });
 }
 
+/**
+ * Refresh the catalog once when a configured model is missing, then fail with the
+ * missing models instead of substituting hand-maintained model metadata.
+ */
+export async function ensureConfiguredModels(
+  modelCatalog: ModelCatalog,
+  models: readonly ConfiguredModelRef[],
+): Promise<void> {
+  const unique = [
+    ...new Map(models.map((model) => [`${model.provider}\0${model.model}`, model])).values(),
+  ];
+  const missing = unique.filter(
+    ({ provider, model }) => modelCatalog.getModel(provider, model) === undefined,
+  );
+  if (missing.length === 0) return;
+
+  const result = await modelCatalog.refresh({
+    force: true,
+    providers: [...new Set(missing.map(({ provider }) => provider))],
+    signal: AbortSignal.timeout(MODEL_CATALOG_REFRESH_TIMEOUT_MS),
+  });
+
+  const unresolved = missing.filter(
+    ({ provider, model }) => modelCatalog.getModel(provider, model) === undefined,
+  );
+  if (unresolved.length === 0) return;
+
+  const names = unresolved.map(({ provider, model }) => `${provider}/${model}`).join(", ");
+  const failures = [...(result?.errors ?? [])].map(
+    ([provider, error]) => `${provider}: ${error.message}`,
+  );
+  const reason =
+    failures.length > 0
+      ? ` (catalog refresh failed: ${failures.join("; ")})`
+      : result?.aborted
+        ? " (catalog refresh timed out)"
+        : "";
+  throw new Error(
+    `Configured Pi model was not found after refreshing the catalog: ${names}${reason}`,
+  );
+}
+
 export function resolveConfiguredModel(
   provider: string,
   modelId: string,
@@ -89,13 +81,6 @@ export function resolveConfiguredModel(
 ): Model<Api> {
   const model = modelCatalog.getModel(provider, modelId);
   if (!model) {
-    const fallback = FALLBACK_MODELS.find(
-      (candidate) => candidate.provider === provider && candidate.id === modelId,
-    );
-    if (fallback) {
-      return fallback;
-    }
-
     throw new Error(`Configured Pi model was not found: ${provider}/${modelId}`);
   }
 
