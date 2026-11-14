@@ -82,6 +82,23 @@ test("reports a missing cloudflared executable", async () => {
   }
 });
 
+test("requires a tunnel token when cloudflared is enabled", async () => {
+  await using temp = await createTempDir("klein-webui-token-");
+  await assert.rejects(
+    startWebUi({
+      displayName: "Klein",
+      host: "127.0.0.1",
+      port: 1,
+      staticDirectory: temp.path,
+      cloudflaredEnabled: true,
+      piSessions: new PiSessionReader(temp.path),
+      pinoLogs: new PinoJsonlReader(temp.path),
+      toolUsage: new PiToolUsageReader(temp.path),
+    }),
+    /TUNNEL_TOKEN is required/,
+  );
+});
+
 test("logs an unexpected cloudflared exit", async () => {
   await using temp = await createTempDir("klein-tunnel-exit-");
   const directory = temp.path;
@@ -102,7 +119,7 @@ test("logs an unexpected cloudflared exit", async () => {
   }
 });
 
-test("serves local HTTP without a token and releases the listener when tunnel startup fails", async () => {
+test("serves local HTTP when cloudflared is disabled and releases the listener when tunnel startup fails", async () => {
   await using temp = await createTempDir("klein-webui-tunnel-");
   const directory = temp.path;
   const originalPath = process.env.PATH;
@@ -121,6 +138,7 @@ test("serves local HTTP without a token and releases the listener when tunnel st
       host: "127.0.0.1",
       port: address.port,
       staticDirectory: directory,
+      tunnelToken: "test-tunnel-token",
       piSessions: new PiSessionReader(directory),
       pinoLogs: new PinoJsonlReader(directory),
       toolUsage: new PiToolUsageReader(directory),
@@ -149,7 +167,7 @@ test("serves local HTTP without a token and releases the listener when tunnel st
       await webUi.stop();
     }
     await assert.rejects(
-      startWebUi({ ...options, tunnelToken: "test-tunnel-token" }),
+      startWebUi({ ...options, cloudflaredEnabled: true }),
       /Failed to start cloudflared/,
     );
     socket.listen(address.port, "127.0.0.1");

@@ -11,6 +11,7 @@ export interface ResolvedWebUiConfig {
   readonly enabled: boolean;
   readonly host: string;
   readonly port: number;
+  readonly cloudflaredEnabled: boolean;
 }
 
 export function resolveLogDirectory(config: AppConfig): string {
@@ -42,5 +43,6 @@ export function resolveWebUiConfig(config: AppConfig): ResolvedWebUiConfig {
     enabled: webui?.enabled ?? false,
     host: webui?.host ?? DEFAULT_WEBUI_HOST,
     port: webui?.port ?? DEFAULT_WEBUI_PORT,
+    cloudflaredEnabled: webui?.cloudflared?.enabled ?? false,
   };
 }

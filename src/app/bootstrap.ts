@@ -377,6 +377,7 @@ export async function bootstrap(): Promise<void> {
         toolUsage: new PiToolUsageReader(agentDir),
         port: webUiConfig.port,
         staticDirectory: resolveWebUiStaticDirectory(),
+        cloudflaredEnabled: webUiConfig.cloudflaredEnabled,
         tunnelToken: credentials.tunnelToken,
       })
     : undefined;
