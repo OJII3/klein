@@ -33,10 +33,12 @@ interface MemoryViewProps {
   detailError: string | null;
   deleteError: string | null;
   deletingEntryId: string | null;
+  deletingUserMemory: boolean;
   addingRule: boolean;
   addRuleError: string | null;
   onSelect: (scope: MemorySelection) => void;
   onDelete: (entryId: string) => void;
+  onDeleteUserMemory: (userId: string) => void;
   onAddRule: (title: string, content: string) => void;
   onDismissDeleteError: () => void;
   onRetry: () => void;
@@ -84,10 +86,12 @@ export function MemoryView(props: MemoryViewProps) {
     detailError,
     deleteError,
     deletingEntryId,
+    deletingUserMemory,
     addingRule,
     addRuleError,
     onSelect,
     onDelete,
+    onDeleteUserMemory,
     onAddRule,
     onDismissDeleteError,
     onRetry,
@@ -246,7 +250,12 @@ export function MemoryView(props: MemoryViewProps) {
                 <LoadingState label="メモリを読み込み中…" />
               ) : selectedScope?.type === "user" ? (
                 userMemory ? (
-                  <UserMemoryDetail memory={userMemory} />
+                  <UserMemoryDetail
+                    deleting={deletingUserMemory}
+                    memory={userMemory}
+                    onDelete={onDeleteUserMemory}
+                    userId={selectedScope.userId}
+                  />
                 ) : (
                   <EmptyState>ユーザーメモリを読み込めませんでした</EmptyState>
                 )
@@ -541,7 +550,17 @@ function FilterChip({
   );
 }
 
-function UserMemoryDetail({ memory }: { memory: UserMemory }) {
+function UserMemoryDetail({
+  memory,
+  userId,
+  deleting,
+  onDelete,
+}: {
+  memory: UserMemory;
+  userId: string;
+  deleting: boolean;
+  onDelete: (userId: string) => void;
+}) {
   const realName = [memory.lastName, memory.firstName].filter(Boolean).join(" ");
 
   return (
@@ -561,7 +580,24 @@ function UserMemoryDetail({ memory }: { memory: UserMemory }) {
             {realName || "本名は未登録"} · 更新 {formatCompactTimestamp(memory.updatedAt)}
           </p>
         </div>
-        <ImpressionMeter value={memory.impression} />
+        <div className="flex shrink-0 items-start gap-3">
+          <ImpressionMeter value={memory.impression} />
+          <button
+            className="btn btn-error btn-soft btn-xs"
+            disabled={deleting}
+            onClick={() => {
+              if (
+                window.confirm(
+                  `「${memory.displayName}」のユーザーメモリを削除しますか？\nこの操作は元に戻せません。次にこのユーザーが発言すると、新しいメモリが作られます。`,
+                )
+              )
+                onDelete(userId);
+            }}
+            type="button"
+          >
+            {deleting ? "削除中…" : "削除"}
+          </button>
+        </div>
       </header>
 
       <section className="border-b border-line px-4 py-4">

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks"
 
 import {
   deleteMemory,
+  deleteUserMemory as requestDeleteUserMemory,
   addMemoryRule,
   getMemory,
   getUserMemory,
@@ -53,6 +54,7 @@ export function useMemory({ active, onUpdated, selectedScopeKey }: UseMemoryOpti
   const [detailError, setDetailError] = useState<string | null>(null);
   const [detailReloadKey, setDetailReloadKey] = useState(0);
   const [deletingEntryId, setDeletingEntryId] = useState<string | null>(null);
+  const [deletingUserMemory, setDeletingUserMemory] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [addRuleError, setAddRuleError] = useState<string | null>(null);
   const [addingRule, setAddingRule] = useState(false);
@@ -187,6 +189,31 @@ export function useMemory({ active, onUpdated, selectedScopeKey }: UseMemoryOpti
     [deletingEntryId, effectiveScope, load],
   );
 
+  const deleteUser = useCallback(
+    async (userId: string) => {
+      if (deletingUserMemory) return;
+
+      setDeletingUserMemory(true);
+      setDeleteError(null);
+      try {
+        await requestDeleteUserMemory(userId);
+        setUsers((current) => current.filter((user) => user.userId !== userId));
+        setUserMemory(null);
+        setEntries([]);
+        void load();
+      } catch (requestError) {
+        setDeleteError(
+          requestError instanceof Error
+            ? requestError.message
+            : "ユーザーメモリの削除に失敗しました",
+        );
+      } finally {
+        setDeletingUserMemory(false);
+      }
+    },
+    [deletingUserMemory, load],
+  );
+
   const reload = useCallback(() => {
     void load();
     setDetailReloadKey((key) => key + 1);
@@ -205,6 +232,8 @@ export function useMemory({ active, onUpdated, selectedScopeKey }: UseMemoryOpti
     detailLoading,
     detailError,
     deleteEntry,
+    deleteUser,
+    deletingUserMemory,
     createRule,
     addingRule,
     addRuleError,

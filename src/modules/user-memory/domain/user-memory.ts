@@ -76,6 +76,11 @@ export interface UserMemoryReader {
   read(userId: string): Promise<UserMemory | undefined>;
 }
 
+export interface UserMemoryEditor {
+  /** Removes the stored memory. Returns false when the user had no memory. */
+  delete(userId: string): Promise<boolean>;
+}
+
 export interface UserMemoryMessage {
   readonly id: string;
   readonly channelId: string;

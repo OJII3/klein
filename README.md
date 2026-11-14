@@ -119,7 +119,7 @@ Pi sessions are labeled with their Discord channel name. Klein records the name 
 
 The **ツール** view counts every tool execution stored in Pi session history, both per tool and per MCP server. Counts include calls made from codemode scripts and do not reset when Klein restarts.
 
-The **メモリ** view lists owner, guild, and per-user Discord memories. Owner and guild memories accept new rules and entry deletions. User memories are shown read-only from the Markdown files Klein updates in the background, and the user list can be filtered by display name, username, numeric user ID, and summary.
+The **メモリ** view lists owner, guild, and per-user Discord memories. Owner and guild memories accept new rules and entry deletions. User memories are read from the Markdown files Klein updates in the background and can be deleted; the user list can be filtered by display name, username, numeric user ID, and summary.
 
 For frontend development, run the bot as usual and start Vite separately:
 

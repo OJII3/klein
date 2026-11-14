@@ -117,6 +117,9 @@ test("serves health, logs, Pi sessions, and scoped memory through Elysia", async
             }
           : undefined,
     },
+    userMemoryEditor: {
+      delete: async (userId) => userId === "123",
+    },
     piSessions: new PiSessionReader(agentDirectory, channelNames),
     pinoLogs: new PinoJsonlReader(logDirectory),
     toolUsage: new PiToolUsageReader(agentDirectory),
@@ -223,6 +226,17 @@ test("serves health, logs, Pi sessions, and scoped memory through Elysia", async
   const missingUserMemory = await app.handle(new Request("http://localhost/api/memory/user/999"));
   assert.equal(missingUserMemory.status, 404);
 
+  const deletedUserMemory = await app.handle(
+    new Request("http://localhost/api/memory/user/123", { method: "DELETE" }),
+  );
+  assert.equal(deletedUserMemory.status, 200);
+  assert.deepEqual(await deletedUserMemory.json(), { deleted: true });
+
+  const missingDeletedUserMemory = await app.handle(
+    new Request("http://localhost/api/memory/user/999", { method: "DELETE" }),
+  );
+  assert.equal(missingDeletedUserMemory.status, 404);
+
   const ownerMemory = await app.handle(new Request("http://localhost/api/memory/owner"));
   assert.equal(ownerMemory.status, 200);
   assert.equal((await ownerMemory.json()).entries[0].title, "オーナーの事実");
@@ -253,6 +267,11 @@ test("serves health, logs, Pi sessions, and scoped memory through Elysia", async
     new Request("http://localhost/api/memory/user/not-a-snowflake"),
   );
   assert.equal(invalidUserMemory.status, 422);
+
+  const invalidDeletedUserMemory = await app.handle(
+    new Request("http://localhost/api/memory/user/not-a-snowflake", { method: "DELETE" }),
+  );
+  assert.equal(invalidDeletedUserMemory.status, 422);
 
   const invalidMemoryEntry = await app.handle(
     new Request("http://localhost/api/memory/guild/guild-a/mem.1", { method: "DELETE" }),

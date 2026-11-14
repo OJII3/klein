@@ -363,6 +363,7 @@ export async function bootstrap(): Promise<void> {
         memory: webUiMemory,
         memoryEditor: webUiMemory,
         userMemory: userMemoryStore,
+        userMemoryEditor: userMemoryStore,
         channelNames: {
           read: () => channelSessionStateStore.listChannelNames(),
         },
