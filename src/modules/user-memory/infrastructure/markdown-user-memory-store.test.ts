@@ -249,6 +249,18 @@ test("lists saved user memories and ignores unrelated files", async () => {
   assert.deepEqual(await missing.list(), []);
 });
 
+test("deletes a saved user memory and reports when there was none", async () => {
+  await using temp = await createTempDir("klein-user-memory-");
+  const store = new MarkdownUserMemoryStore(temp.path);
+
+  await store.update(userId, identity, { summary: "忘れてよい" });
+  assert.equal(await store.delete(userId), true);
+  assert.equal(await store.read(userId), undefined);
+  assert.deepEqual(await store.list(), []);
+  assert.equal(await store.delete(userId), false);
+  await assert.rejects(store.delete("../escape"), /Invalid Discord user ID/u);
+});
+
 test("renders the documented section headings and front matter order", async () => {
   await using temp = await createTempDir("klein-user-memory-");
   const store = new MarkdownUserMemoryStore(temp.path);

@@ -255,6 +255,10 @@ export function getUserMemory(userId: string): Promise<UserMemoryResponse> {
   return unwrap<UserMemoryResponse>(client.api.memory.user({ userId }).get());
 }
 
+export function deleteUserMemory(userId: string): Promise<{ deleted: boolean }> {
+  return unwrap<{ deleted: boolean }>(client.api.memory.user({ userId }).delete());
+}
+
 export function deleteMemory(scope: MemoryScope, entryId: string): Promise<{ deleted: boolean }> {
   if (scope.type === "owner") {
     return unwrap<{ deleted: boolean }>(client.api.memory.owner({ entryId }).delete());

@@ -121,6 +121,31 @@ export function createWebUiApp(dependencies: WebUiDependencies) {
       },
       { params: MemoryUserParamsSchema },
     )
+    .delete(
+      "/api/memory/user/:userId",
+      async ({ params, set }) => {
+        if (!dependencies.userMemory) {
+          set.status = 404;
+          return { error: "User memory is disabled" };
+        }
+        if (!dependencies.userMemoryEditor) {
+          set.status = 405;
+          return { error: "User memory editing is disabled" };
+        }
+
+        try {
+          const deleted = await dependencies.userMemoryEditor.delete(params.userId);
+          if (!deleted) {
+            set.status = 404;
+            return { error: "User memory not found" };
+          }
+          return { deleted: true };
+        } catch (error) {
+          return handleRouteError(set, dependencies.logger, error, "Failed to delete user memory");
+        }
+      },
+      { params: MemoryUserParamsSchema },
+    )
     .get("/api/memory/owner", async ({ set }) => {
       if (!dependencies.memory) {
         set.status = 404;

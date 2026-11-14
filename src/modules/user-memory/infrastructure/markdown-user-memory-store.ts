@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
 import {
@@ -13,6 +13,7 @@ import {
   USER_MEMORY_SECTION_HEADINGS,
   USER_MEMORY_SECTION_KEYS,
   type UserMemory,
+  type UserMemoryEditor,
   type UserMemoryIdentity,
   type UserMemoryPatch,
   type UserMemoryReader,
@@ -23,7 +24,9 @@ import {
 
 const FRONTMATTER_DELIMITER = "---";
 
-export class MarkdownUserMemoryStore implements UserMemoryStore, UserMemoryReader {
+export class MarkdownUserMemoryStore
+  implements UserMemoryStore, UserMemoryReader, UserMemoryEditor
+{
   private readonly directory: string;
   private writeQueue: Promise<void> = Promise.resolve();
 
@@ -100,6 +103,19 @@ export class MarkdownUserMemoryStore implements UserMemoryStore, UserMemoryReade
     patch: UserMemoryPatch,
   ): Promise<UserMemory> {
     return this.runWrite(() => this.writeMemory(userId, identity, patch));
+  }
+
+  async delete(userId: string): Promise<boolean> {
+    const filePath = this.filePath(userId);
+    return this.runWrite(async () => {
+      try {
+        await unlink(filePath);
+        return true;
+      } catch (error) {
+        if (isNodeError(error) && error.code === "ENOENT") return false;
+        throw new Error(`Failed to delete user memory file: ${filePath}`, { cause: error });
+      }
+    });
   }
 
   private async writeMemory(
