@@ -9,6 +9,8 @@ export interface AgentTurnContext {
   readonly userMemory?: string;
   readonly guildMemory?: string;
   readonly channelRule?: string;
+  /** The Discord user whose message started this turn, when a user started it. */
+  readonly requesterUserId?: string;
 }
 
 export interface AgentTurn {

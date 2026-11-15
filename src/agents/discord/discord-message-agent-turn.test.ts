@@ -30,7 +30,9 @@ test("converts Discord messages to AgentTurn and applies bot guidance by option"
   );
 
   assert.equal(userTurn.event.id, message.id);
-  assert.equal(userTurn.context, context);
+  assert.equal(userTurn.context.guildMemory, "guild context");
+  assert.equal(userTurn.context.requesterUserId, "user-123");
+  assert.equal(botTurn.context.requesterUserId, undefined);
   assert.equal(userTurn.event.content[0]?.type, "text");
   assert.equal(
     userTurn.event.content[0]?.type === "text" ? userTurn.event.content[0].text : "",

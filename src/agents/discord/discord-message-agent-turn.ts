@@ -37,6 +37,9 @@ export function createDiscordMessageAgentTurn(
         ...message.images.map(({ data, mimeType }) => ({ type: "image" as const, data, mimeType })),
       ],
     },
-    context,
+    context: {
+      ...context,
+      requesterUserId: message.author.bot ? undefined : message.author.id,
+    },
   };
 }

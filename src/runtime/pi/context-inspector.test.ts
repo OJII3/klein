@@ -160,13 +160,16 @@ test("inspects turns and raw context from a persisted session JSONL in turn-star
 
   const channelApi: Pick<
     DiscordChannelApi,
-    "readMessage" | "sendMessage" | "sendTyping" | "sendAudio"
+    "readMessage" | "sendMessage" | "sendChoices" | "sendTyping" | "sendAudio"
   > = {
     async readMessage(target) {
       return createDiscordMessage({ id: target.messageId, content: "参照メッセージ内容" });
     },
     async sendMessage() {
       return ["sent-msg-1"];
+    },
+    async sendChoices() {
+      throw new Error("Unexpected choice send");
     },
     async sendTyping() {},
     async sendAudio() {},
@@ -328,13 +331,16 @@ test("records a 👎 feedback case, inspects original trace + raw context, and r
 
   const channelApi: Pick<
     DiscordChannelApi,
-    "readMessage" | "sendMessage" | "sendTyping" | "sendAudio"
+    "readMessage" | "sendMessage" | "sendChoices" | "sendTyping" | "sendAudio"
   > = {
     async readMessage(target) {
       return createDiscordMessage({ id: target.messageId, content: "元の文脈メッセージ" });
     },
     async sendMessage() {
       return ["discord-bad-1"];
+    },
+    async sendChoices() {
+      throw new Error("Unexpected choice send");
     },
     async sendTyping() {},
     async sendAudio() {},

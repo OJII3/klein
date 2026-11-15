@@ -13,6 +13,7 @@ import { createOwnerMemoryTools } from "../tools/owner-memory";
 import { createReminderTools } from "../tools/reminder";
 import { createUserMemoryTools } from "../tools/user-memory";
 import { createWatchTools } from "../tools/watch";
+import { createDiscordAskTool } from "./tools/discord-ask";
 import { createDiscordReadTool, type DiscordImageAnalysis } from "./tools/discord-read";
 import { createDiscordSendTool } from "./tools/discord-send";
 import { createDiscordSpeakTool } from "./tools/discord-speak";
@@ -22,9 +23,10 @@ import { createAttachedControlTools } from "./tools/attached-control";
 export interface DiscordAgentToolsOptions {
   readonly channelApi: Pick<
     DiscordChannelApi,
-    "readMessage" | "sendMessage" | "sendTyping" | "sendAudio"
+    "readMessage" | "sendMessage" | "sendChoices" | "sendTyping" | "sendAudio"
   >;
   readonly channelId: string;
+  readonly requesterUserId?: () => string | undefined;
   readonly ownerFeaturesAllowed: boolean;
   readonly ownerUserId?: string;
   readonly speak?: (text: string, toolCallId?: string) => Promise<void>;
@@ -56,6 +58,9 @@ export function createDiscordAgentTools(
       analyzeImage,
       ownerFeaturesAllowed ? { userId: options.ownerUserId! } : undefined,
     ),
+    ...(options.requesterUserId
+      ? [createDiscordAskTool(options.channelApi, options.channelId, options.requesterUserId)]
+      : []),
     ...(options.speak
       ? [createDiscordSpeakTool(options.speak)]
       : [createDiscordSendTool(options.channelApi, options.channelId)]),

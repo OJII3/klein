@@ -39,7 +39,12 @@ export function resolveAgentPolicy(role: AgentRole): AgentPolicy {
  * them; an attached or standalone agent returns its result to its caller
  * instead of speaking.
  */
-const SURFACE_TOOL_NAMES: readonly string[] = ["discord_send", "discord_speak", "discord_voice"];
+const SURFACE_TOOL_NAMES: readonly string[] = [
+  "discord_send",
+  "discord_ask",
+  "discord_speak",
+  "discord_voice",
+];
 
 export function findSurfaceTool(role: AgentRole, toolNames: readonly string[]): string | undefined {
   if (resolveAgentPolicy(role).surface === "owner") return undefined;
