@@ -5,20 +5,17 @@ import type { ExtensionFactory, ToolDefinition } from "@earendil-works/pi-coding
 import type { Logger } from "pino";
 
 import type {
-  AttachedAgentResult,
-  AttachedAgentStartInput,
-  AttachedAgentToolTarget,
+  AttachedTaskControl,
   AttachedTaskInfo,
+  AttachedTaskResult,
+  AttachedTaskStartInput,
   AttachedTaskStatus,
 } from "@agents/core/attached-agent";
-import type {
-  PiStandaloneSession,
-  PiStandaloneSessionOptions,
-} from "@runtime/pi/pi-standalone-runner";
+import type { PiSession, PiSessionOptions } from "@runtime/pi/pi-session-runner";
 import type { ConversationKey } from "./channel-session-state-store";
 import type { TaskCoordinator } from "./task-coordinator";
 
-export const ATTACHED_AGENT_SYSTEM_PROMPT = `You are a background worker for a Discord conversation. You work in your own session and never speak to Discord users directly.
+export const ATTACHED_AGENT_SYSTEM_PROMPT = `You are an attached worker for a Discord conversation. You work in your own session and never speak to Discord users directly.
 
 - The conversation agent gives you a task. Do the work and return a concise result that the conversation agent can read.
 - You cannot send Discord messages. Do not ask the user questions; if you need more information, say what you need in your result.
@@ -26,31 +23,31 @@ export const ATTACHED_AGENT_SYSTEM_PROMPT = `You are a background worker for a D
 - Prefer concrete findings over narration. State what you checked and what you found.
 - When the task is done, reply with the result. Do not address the user directly.`;
 
-export interface AttachedAgentDelivery {
+export interface AttachedTaskDelivery {
   readonly conversationKey: ConversationKey;
   readonly accessScope: string;
-  readonly result: AttachedAgentResult;
+  readonly result: AttachedTaskResult;
 }
 
-export interface AttachedAgentSessionFactory {
-  createSession(options: PiStandaloneSessionOptions): Promise<PiStandaloneSession>;
+export interface AttachedSessionFactory {
+  createSession(options: PiSessionOptions): Promise<PiSession>;
 }
 
 export interface AttachedAgentCoordinatorOptions {
-  readonly runner: AttachedAgentSessionFactory;
+  readonly runner: AttachedSessionFactory;
   readonly model: Model<Api>;
   readonly systemPrompt: string;
   readonly cwd: string;
   readonly logger: Logger;
   readonly taskCoordinator: TaskCoordinator;
-  readonly thinkingLevel?: PiStandaloneSessionOptions["thinkingLevel"];
+  readonly thinkingLevel?: PiSessionOptions["thinkingLevel"];
   readonly toolNames: readonly string[];
   readonly createTools: (
     conversationKey: ConversationKey,
     accessScope: string,
   ) => readonly ToolDefinition[];
   readonly extensions?: readonly ExtensionFactory[];
-  readonly onResult: (delivery: AttachedAgentDelivery) => Promise<void>;
+  readonly onResult: (delivery: AttachedTaskDelivery) => Promise<void>;
 }
 
 interface AttachedTask {
@@ -61,7 +58,7 @@ interface AttachedTask {
   readonly createdAt: string;
   status: AttachedTaskStatus;
   updatedAt: string;
-  readonly session: PiStandaloneSession;
+  readonly session: PiSession;
   queue: Promise<void>;
   closed: boolean;
 }
@@ -71,7 +68,7 @@ interface AttachedTask {
  * prompts. The task never writes to the conversation surface; every completed
  * or failed prompt is delivered to the conversation agent as a result.
  */
-export class AttachedAgentCoordinator implements AttachedAgentToolTarget {
+export class AttachedAgentCoordinator implements AttachedTaskControl {
   private readonly tasks = new Map<string, AttachedTask>();
   private readonly logger: Logger;
 
@@ -79,10 +76,11 @@ export class AttachedAgentCoordinator implements AttachedAgentToolTarget {
     this.logger = options.logger.child({ component: "attached-agent-coordinator" });
   }
 
-  async start(input: AttachedAgentStartInput): Promise<string> {
+  async start(input: AttachedTaskStartInput): Promise<string> {
     const conversationKey = { kind: "discord", channelId: input.channelId } as const;
     const id = `attached-${randomUUID()}`;
     const session = await this.options.runner.createSession({
+      role: { kind: "attached", taskId: id },
       cwd: this.options.cwd,
       model: this.options.model,
       sessionId: id,
@@ -163,7 +161,7 @@ export class AttachedAgentCoordinator implements AttachedAgentToolTarget {
     task.status = "running";
     task.updatedAt = new Date().toISOString();
 
-    let result: AttachedAgentResult;
+    let result: AttachedTaskResult;
     try {
       const output = await task.session.prompt(text);
       result = { taskId: task.id, status: "completed", text: output ?? "(no text returned)" };

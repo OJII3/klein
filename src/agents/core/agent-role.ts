@@ -8,10 +8,13 @@
  * - attached: belongs to one conversation but returns results to the conversation agent.
  * - standalone: belongs to no conversation; the caller owns its result.
  */
-export type AgentRole =
-  | { readonly kind: "conversation" }
-  | { readonly kind: "attached"; readonly taskId: string }
-  | { readonly kind: "standalone" };
+export type ConversationAgentRole = { readonly kind: "conversation" };
+export type AttachedAgentRole = { readonly kind: "attached"; readonly taskId: string };
+export type StandaloneAgentRole = { readonly kind: "standalone" };
+
+export type NonConversationAgentRole = AttachedAgentRole | StandaloneAgentRole;
+
+export type AgentRole = ConversationAgentRole | NonConversationAgentRole;
 
 export interface AgentPolicy {
   /** Who may write to the conversation surface. */

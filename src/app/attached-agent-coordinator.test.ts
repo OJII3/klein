@@ -2,29 +2,27 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import pino from "pino";
 
-import type {
-  PiStandaloneSession,
-  PiStandaloneSessionOptions,
-} from "@runtime/pi/pi-standalone-runner";
-import { AttachedAgentCoordinator, type AttachedAgentDelivery } from "./attached-agent-coordinator";
+import type { NonConversationAgentRole } from "@agents/core/agent-role";
+import type { PiSession, PiSessionOptions } from "@runtime/pi/pi-session-runner";
+import { AttachedAgentCoordinator, type AttachedTaskDelivery } from "./attached-agent-coordinator";
 import { TaskCoordinator } from "./task-coordinator";
 
 interface Harness {
   readonly coordinator: AttachedAgentCoordinator;
   readonly prompts: string[];
   readonly disposed: string[];
-  readonly deliveries: AttachedAgentDelivery[];
+  readonly deliveries: AttachedTaskDelivery[];
+  readonly roles: NonConversationAgentRole[];
 }
 
-function createHarness(
-  createSession?: (options: PiStandaloneSessionOptions) => Promise<PiStandaloneSession>,
-): Harness {
+function createHarness(createSession?: (options: PiSessionOptions) => Promise<PiSession>): Harness {
   const prompts: string[] = [];
   const disposed: string[] = [];
-  const deliveries: AttachedAgentDelivery[] = [];
+  const deliveries: AttachedTaskDelivery[] = [];
+  const roles: NonConversationAgentRole[] = [];
   const sessionFactory =
     createSession ??
-    (async (options: PiStandaloneSessionOptions) => ({
+    (async (options: PiSessionOptions) => ({
       async prompt(text: string) {
         return `result for ${text}`;
       },
@@ -35,6 +33,7 @@ function createHarness(
   const coordinator = new AttachedAgentCoordinator({
     runner: {
       createSession: async (options) => {
+        roles.push(options.role);
         const session = await sessionFactory(options);
         return {
           async prompt(text) {
@@ -58,7 +57,7 @@ function createHarness(
       deliveries.push(delivery);
     },
   });
-  return { coordinator, prompts, disposed, deliveries };
+  return { coordinator, prompts, disposed, deliveries, roles };
 }
 
 async function waitFor(predicate: () => boolean): Promise<void> {
@@ -78,6 +77,7 @@ test("starts a task and delivers the worker's text to the conversation", async (
   });
 
   assert.match(taskId, /^attached-/);
+  assert.deepEqual(harness.roles, [{ kind: "attached", taskId }]);
   await waitFor(() => harness.deliveries.length === 1);
   assert.deepEqual(harness.deliveries[0], {
     conversationKey: { kind: "discord", channelId: "channel-1" },

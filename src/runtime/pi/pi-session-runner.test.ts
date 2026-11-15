@@ -12,7 +12,7 @@ import type {
 import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
 
 import { createLogger } from "@app/logger";
-import { PiStandaloneRunner, standaloneSessionDir } from "./pi-standalone-runner";
+import { PiSessionRunner, roleSessionDir } from "./pi-session-runner";
 import { resolveConfiguredModel } from "./pi-model-runtime";
 import type { PiUsageReporter } from "./pi-usage-reporter";
 
@@ -40,15 +40,19 @@ function assistantMessage(): AssistantMessage {
   };
 }
 
-test("stores standalone sessions under the agent directory", () => {
+test("stores role sessions under separate directories", () => {
   assert.equal(
-    standaloneSessionDir("/tmp/klein-agent", "user-memory:1"),
+    roleSessionDir("/tmp/klein-agent", { kind: "standalone" }, "user-memory:1"),
     resolve("/tmp/klein-agent/sessions/standalone/user-memory%3A1"),
+  );
+  assert.equal(
+    roleSessionDir("/tmp/klein-agent", { kind: "attached", taskId: "task-1" }, "task-1"),
+    resolve("/tmp/klein-agent/sessions/attached/task-1"),
   );
 });
 
-test("standalone sessions reject surface tools", async () => {
-  const runner = new PiStandaloneRunner({
+test("attached sessions reject surface tools", async () => {
+  const runner = new PiSessionRunner({
     agentDir: "/tmp/klein-agent",
     logger,
     modelRuntime: {} as unknown as ModelRuntime,
@@ -56,14 +60,15 @@ test("standalone sessions reject surface tools", async () => {
 
   await assert.rejects(
     runner.createSession({
+      role: { kind: "attached", taskId: "task-1" },
       cwd: "/tmp",
       model: resolveConfiguredModel("opencode-go", "deepseek-v4.1-flash"),
-      sessionId: "user-memory-1",
+      sessionId: "task-1",
       systemPrompt: "system",
       toolNames: ["discord_send"],
       tools: [],
     }),
-    /standalone agent role may not use the surface tool discord_send/,
+    /attached agent role may not use the surface tool discord_send/,
   );
 });
 
@@ -72,7 +77,7 @@ test("records a one-shot completion's usage and session header", async () => {
   let receivedModel: Model<Api> | undefined;
   const receivedOptions: { maxTokens?: number; sessionId?: string }[] = [];
   const recorded: { message: AssistantMessage; sessionId: string }[] = [];
-  const runner = new PiStandaloneRunner({
+  const runner = new PiSessionRunner({
     agentDir: "/tmp/klein-agent",
     logger,
     modelRuntime: {

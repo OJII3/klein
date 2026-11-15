@@ -869,7 +869,7 @@ test("delivers an attached task result to the conversation agent", async () => {
     await harness.agentCoordinator.handleDiscordMessage(
       createMessage("test-channel", "m-1", "hello"),
     );
-    await harness.agentCoordinator.deliverAttachedResult(
+    await harness.agentCoordinator.deliverAttachedTaskResult(
       { kind: "discord", channelId: "test-channel" },
       "public",
       { taskId: "task-1", status: "completed", text: "found it" },

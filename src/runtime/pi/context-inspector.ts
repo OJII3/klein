@@ -1311,7 +1311,7 @@ async function executeSessionSlice(
 
     const sliceRoot = join(tempRoot, "slice");
     const agentDir = join(sliceRoot, "pi");
-    const sessionDir = join(agentDir, "sessions", encodeURIComponent(sessionKey));
+    const sessionDir = join(agentDir, "sessions", "conversation", encodeURIComponent(sessionKey));
     await mkdir(sessionDir, { recursive: true });
     await writeFile(
       join(agentDir, "settings.json"),

@@ -120,7 +120,7 @@ export function createPiSessionManager(
   sessionMode: SessionMode,
   cwd = process.cwd(),
 ): SessionManager {
-  const sessionDir = resolve(agentDir, "sessions", encodeURIComponent(sessionKey));
+  const sessionDir = resolve(agentDir, "sessions", "conversation", encodeURIComponent(sessionKey));
 
   return sessionMode === "resume"
     ? SessionManager.continueRecent(cwd, sessionDir)

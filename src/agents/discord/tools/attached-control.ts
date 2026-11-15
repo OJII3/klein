@@ -1,10 +1,14 @@
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
-import type { AttachedAgentToolTarget } from "@agents/core/attached-agent";
+import type { AttachedTaskControl } from "@agents/core/attached-agent";
 
-export function createAttachedAgentTools(
-  target: AttachedAgentToolTarget,
+/**
+ * Conversation-side controls for attached tasks. The attached agent itself
+ * does not see these tools; it only receives the prompts and returns results.
+ */
+export function createAttachedControlTools(
+  target: AttachedTaskControl,
   channelId: string,
   accessScope: string,
 ) {
@@ -13,7 +17,7 @@ export function createAttachedAgentTools(
       name: "attached_start",
       label: "Start Attached Task",
       description:
-        "Start a background task in its own session. The task cannot send Discord messages; its result arrives as an event. Use attached_send to give it follow-up instructions.",
+        "Start an attached task in its own session. The task cannot send Discord messages; its result arrives as an event. Use attached_send to give it follow-up instructions.",
       parameters: Type.Object({
         prompt: Type.String({ minLength: 1, maxLength: 4_000 }),
       }),

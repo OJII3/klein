@@ -7,8 +7,9 @@ import { createPiSessionManager } from "@runtime/pi/pi-agent-runtime";
 import { PiSessionReader } from "./pi-session-reader";
 import { createTempDir } from "../../../testing/temp-dir";
 
-test("ignores standalone session directories when listing channel sessions", async () => {
+test("ignores non-conversation session directories when listing channel sessions", async () => {
   await using temp = await createTempDir("klein-pi-reader-");
+  await mkdir(resolve(temp.path, "sessions", "attached", "task-1"), { recursive: true });
   await mkdir(resolve(temp.path, "sessions", "standalone", "user-memory-1"), { recursive: true });
 
   const page = await new PiSessionReader(temp.path).list();

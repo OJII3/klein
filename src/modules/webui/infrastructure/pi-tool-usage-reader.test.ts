@@ -72,6 +72,7 @@ test("reads appends split across partial lines without duplicating them", async 
   const sessionDirectory = join(
     agentDirectory,
     "sessions",
+    "conversation",
     encodeURIComponent("discord-channel:1"),
   );
   await mkdir(sessionDirectory, { recursive: true });

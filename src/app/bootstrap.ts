@@ -20,14 +20,14 @@ import { TaskCoordinator } from "./task-coordinator";
 import { VoiceChatCoordinator } from "./voice-chat-coordinator";
 import { DiscordAgent } from "@agents/discord/discord-agent";
 import { createDiscordAgentTools } from "@agents/discord/discord-tools";
-import { createDiscordReadTool } from "@agents/discord/tools/discord-read";
+import { createAttachedWorkerTools } from "@agents/discord/tools/attached-worker";
 import {
   createPiAgentFactory,
   createPiModelRuntime,
   ensureConfiguredModels,
   resolveConfiguredModel,
 } from "@runtime/pi/pi-agent-runtime";
-import { PiStandaloneRunner } from "@runtime/pi/pi-standalone-runner";
+import { PiSessionRunner } from "@runtime/pi/pi-session-runner";
 import { migratePiDurableStorage } from "@runtime/pi/pi-durable-migration";
 import { createPiUsageReporterFromEnv } from "@runtime/pi/pi-usage-reporter";
 import { createWatchFetchTool } from "@runtime/pi/watch-fetch-tool";
@@ -154,7 +154,7 @@ export async function bootstrap(): Promise<void> {
     throw new Error("GEMINI_API_KEY is required");
   }
   await ensureConfiguredModels(modelRuntime, modelsInUse);
-  const standaloneRunner = new PiStandaloneRunner({
+  const sessionRunner = new PiSessionRunner({
     agentDir,
     logger,
     modelRuntime,
@@ -216,7 +216,7 @@ export async function bootstrap(): Promise<void> {
   let discordService!: DiscordJsService;
   let agentCoordinator!: AgentCoordinator;
   const attachedAgentCoordinator = new AttachedAgentCoordinator({
-    runner: standaloneRunner,
+    runner: sessionRunner,
     model: resolveConfiguredModel(config.llm.provider, config.llm.model, modelRuntime),
     systemPrompt: ATTACHED_AGENT_SYSTEM_PROMPT,
     cwd: process.cwd(),
@@ -224,19 +224,17 @@ export async function bootstrap(): Promise<void> {
     taskCoordinator,
     ...(config.llm.thinkingLevel ? { thinkingLevel: config.llm.thinkingLevel } : {}),
     toolNames: ["discord_read", "web_search", "fetch_content", "get_search_content"],
-    createTools: (conversationKey, accessScope) => [
-      createDiscordReadTool(
+    createTools: (conversationKey, accessScope) =>
+      createAttachedWorkerTools(
         discordService,
         conversationKey.channelId,
-        undefined,
         isOwnerAccessScope(accessScope, ownerUserId) && ownerUserId
           ? { userId: ownerUserId }
           : undefined,
       ),
-    ],
     extensions: [webAccessExtension],
     onResult: (delivery) =>
-      agentCoordinator.deliverAttachedResult(
+      agentCoordinator.deliverAttachedTaskResult(
         delivery.conversationKey,
         delivery.accessScope,
         delivery.result,
@@ -266,7 +264,7 @@ export async function bootstrap(): Promise<void> {
             tts,
             userMemoryStore,
             watchCheckRunner,
-            attachedAgent: attachedAgentCoordinator,
+            attachedTasks: attachedAgentCoordinator,
           },
           analyzeImage,
         ),
@@ -282,7 +280,7 @@ export async function bootstrap(): Promise<void> {
               userMemoryConfig.llm.model,
               modelRuntime,
             ),
-            runner: standaloneRunner,
+            runner: sessionRunner,
             thinkingLevel: userMemoryConfig.llm.thinkingLevel,
           }),
           logger,
@@ -306,7 +304,7 @@ export async function bootstrap(): Promise<void> {
                     speak,
                     userMemoryStore,
                     watchCheckRunner,
-                    attachedAgent: attachedAgentCoordinator,
+                    attachedTasks: attachedAgentCoordinator,
                   },
                   analyzeImage,
                 ),
@@ -348,7 +346,7 @@ export async function bootstrap(): Promise<void> {
         processor: new PiMemoryProcessor(
           resolveConfiguredModel(memoryConfig.llm.provider, memoryConfig.llm.model, modelRuntime),
           memoryConfig.llm.thinkingLevel,
-          standaloneRunner.createCompleter(memorySessionId),
+          sessionRunner.createCompleter(memorySessionId),
         ),
         taskCoordinator,
       })

@@ -36,16 +36,16 @@ surface ツールは `discord_send`、`discord_speak`、`discord_voice` の 3 �
 
 - `DiscordAgent` は会話エージェントである。テキストチャンネルとボイスチャンネルの両方で使う。
 - `AttachedAgentCoordinator` のタスクは会話付随エージェントである。会話エージェントが `attached_start` で始め、`attached_send` で続きの指示を渡す。結果は `attached.result` イベントとして会話へ戻る。
-- `PiStandaloneRunner` のセッションは独立エージェントである。ユーザーメモリ更新がこれを使う。
+- `PiSessionRunner` の `standalone` セッションは独立エージェントである。ユーザーメモリ更新がこれを使う。
 - `PiMemoryProcessor` の完了呼び出しは独立エージェントである。ツールを持たず、結果を呼び出し元が parse する。
 
 ## 会話付随エージェントのやり取り
 
-会話エージェントは `attached_start` でタスクを始める。タスクは自分の Pi セッションを持ち、会話のセッションとは共有しない。`attached_send` は同じセッションへ続きの指示を渡し、`attached_close` はセッションを捨てる。`attached_list` はその会話のタスクを返す。
+会話エージェントは `attached_start` でタスクを始める。タスクは自分の Pi セッションを持ち、会話のセッションとは共有しない。セッションは `sessions/attached/` に置かれ、トレースは `role: attached` で記録される。`attached_send` は同じセッションへ続きの指示を渡し、`attached_close` はセッションを捨てる。`attached_list` はその会話のタスクを返す。
 
 タスクが 1 回のプロンプトを終えると、結果は `attached.result` イベントとして会話へ届く。イベントの本文は外部データとして扱うよう注記され、会話エージェントが発話するかどうかを決める。タスクは Discord に直接書かない。
 
-タスクの状態はプロセス内にだけ保持する。再起動すると、実行中だったタスクも待機中だったタスクも失われる。セッションのファイルは `sessions/standalone/` に残るが、タスクとの対応は復元しない。Web UI のセッション一覧にも出ない。
+タスクの状態はプロセス内にだけ保持する。再起動すると、実行中だったタスクも待機中だったタスクも失われる。セッションのファイルは `sessions/attached/` に残るが、タスクとの対応は復元しない。Web UI のセッション一覧にも出ない。
 
 ## 役割を選ぶ基準
 

@@ -318,7 +318,7 @@ test("migrates pi-durable SQLite channel states and conversations idempotently",
   const listed = await reader.list();
   assert.equal(listed.items.length, 2);
 
-  const sessionDir = join(agentDir, "sessions", encodeURIComponent(sessionKey));
+  const sessionDir = join(agentDir, "sessions", "conversation", encodeURIComponent(sessionKey));
   const filesBefore = (await readdir(sessionDir)).sort();
   assert.equal(filesBefore.length, 2);
 

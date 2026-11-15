@@ -191,7 +191,12 @@ async function migrateSingleDatabase(options: {
       const parsed = parseSessionConversations(doc.record.key, doc.value);
       if (!parsed || parsed.conversationIds.length === 0) continue;
 
-      const sessionDir = resolve(agentDir, "sessions", encodeURIComponent(parsed.sessionKey));
+      const sessionDir = resolve(
+        agentDir,
+        "sessions",
+        "conversation",
+        encodeURIComponent(parsed.sessionKey),
+      );
       await mkdir(sessionDir, { recursive: true });
       const existingFiles = await findExistingSessionFilesById(sessionDir);
       const sessionFilesInOrder: string[] = [];

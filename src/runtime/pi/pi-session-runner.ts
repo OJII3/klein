@@ -20,7 +20,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import type { Logger } from "pino";
 
-import { assertSurfaceToolsAllowed } from "@agents/core/agent-role";
+import { assertSurfaceToolsAllowed, type NonConversationAgentRole } from "@agents/core/agent-role";
 import { withOpenCodeSessionHeader } from "./pi-model-runtime";
 import { PiRuntimeTrace } from "./pi-runtime-trace";
 import type { PiUsageReporter } from "./pi-usage-reporter";
@@ -33,14 +33,15 @@ export type CompleteSimple = (
   options?: SimpleStreamOptions,
 ) => Promise<AssistantMessage>;
 
-export interface PiStandaloneRunnerOptions {
+export interface PiSessionRunnerOptions {
   readonly agentDir: string;
   readonly logger: Logger;
   readonly modelRuntime: ModelRuntime;
   readonly usageReporter?: PiUsageReporter;
 }
 
-export interface PiStandaloneSessionOptions {
+export interface PiSessionOptions {
+  readonly role: NonConversationAgentRole;
   readonly cwd: string;
   readonly model: Model<Api>;
   readonly sessionId: string;
@@ -51,33 +52,31 @@ export interface PiStandaloneSessionOptions {
   readonly extensions?: readonly ExtensionFactory[];
 }
 
-export interface PiStandalonePromptOptions {
+export interface PiSessionPromptOptions {
   readonly signal?: AbortSignal;
   readonly timeoutMs?: number;
 }
 
-export interface PiStandaloneSession {
-  prompt(text: string, options?: PiStandalonePromptOptions): Promise<string | undefined>;
+export interface PiSession {
+  prompt(text: string, options?: PiSessionPromptOptions): Promise<string | undefined>;
   dispose(): void;
 }
 
 /**
- * Runs standalone agents against Pi. A standalone agent belongs to no
- * conversation: it never writes to a conversation surface, and its result
- * returns to the caller. One-shot completions keep the caller's prompt and
- * parsing; agent sessions get a persisted session file under the agent
- * directory with only the tools the caller passes in.
+ * Runs Pi sessions for roles that do not own a conversation surface. The role
+ * decides the session directory and the trace label, so an attached agent and
+ * a standalone agent stay distinguishable in storage and logs. One-shot
+ * completions keep the caller's prompt and parsing.
  */
-export class PiStandaloneRunner {
-  constructor(private readonly options: PiStandaloneRunnerOptions) {}
+export class PiSessionRunner {
+  constructor(private readonly options: PiSessionRunnerOptions) {}
 
   createCompleter(sessionId: string): CompleteSimple {
     return (model, context, options) => this.complete(model, context, options, sessionId);
   }
 
-  async createSession(options: PiStandaloneSessionOptions): Promise<PiStandaloneSession> {
-    const role = { kind: "standalone" } as const;
-    assertSurfaceToolsAllowed(role, [
+  async createSession(options: PiSessionOptions): Promise<PiSession> {
+    assertSurfaceToolsAllowed(options.role, [
       ...options.toolNames,
       ...options.tools.map((tool) => tool.name),
     ]);
@@ -98,7 +97,7 @@ export class PiStandaloneRunner {
 
     const sessionManager = SessionManager.create(
       options.cwd,
-      standaloneSessionDir(this.options.agentDir, options.sessionId),
+      roleSessionDir(this.options.agentDir, options.role, options.sessionId),
     );
     const model = withOpenCodeSessionHeader(options.model, options.sessionId);
     const { session } = await createAgentSession({
@@ -115,7 +114,12 @@ export class PiStandaloneRunner {
     });
 
     const trace = new PiRuntimeTrace(
-      this.options.logger.child({ component: "pi-standalone", sessionId: options.sessionId }),
+      this.options.logger.child({
+        component: "pi-session",
+        role: options.role.kind,
+        ...(options.role.kind === "attached" ? { taskId: options.role.taskId } : {}),
+        sessionId: options.sessionId,
+      }),
       { usageReporter: this.options.usageReporter },
     );
     trace.attach(session);
@@ -145,24 +149,25 @@ export class PiStandaloneRunner {
   }
 }
 
-/** Directory under `sessions/` that holds standalone agent sessions. */
-export const STANDALONE_SESSION_DIRECTORY = "standalone";
-
 /**
- * Directory holding the session files of one standalone session id. Each
- * `createSession` call writes a new file under it, so the transcript of every
- * run survives the process.
+ * Directory holding the session files of one non-conversation session. The
+ * role decides the directory, so attached tasks and standalone runs never
+ * share a namespace.
  */
-export function standaloneSessionDir(agentDir: string, sessionId: string): string {
-  return resolve(agentDir, "sessions", STANDALONE_SESSION_DIRECTORY, encodeURIComponent(sessionId));
+export function roleSessionDir(
+  agentDir: string,
+  role: NonConversationAgentRole,
+  sessionId: string,
+): string {
+  return resolve(agentDir, "sessions", role.kind, encodeURIComponent(sessionId));
 }
 
 async function promptSession(
   session: AgentSession,
   text: string,
-  options: PiStandalonePromptOptions = {},
+  options: PiSessionPromptOptions = {},
 ): Promise<string | undefined> {
-  if (options.signal?.aborted) throw new Error("Standalone agent was aborted");
+  if (options.signal?.aborted) throw new Error("Agent session was aborted");
 
   let timedOut = false;
   const abort = (): void => {
@@ -180,9 +185,9 @@ async function promptSession(
 
   try {
     await session.prompt(text, { expandPromptTemplates: false });
-    if (options.signal?.aborted) throw new Error("Standalone agent was aborted");
+    if (options.signal?.aborted) throw new Error("Agent session was aborted");
     if (timedOut) {
-      throw new Error(`Standalone agent timed out after ${options.timeoutMs} ms`);
+      throw new Error(`Agent session timed out after ${options.timeoutMs} ms`);
     }
     return lastAssistantText(session);
   } finally {

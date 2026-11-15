@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { AttachedAgentStartInput, AttachedAgentToolTarget } from "@agents/core/attached-agent";
-import { createAttachedAgentTools } from "./attached-agent";
+import type { AttachedTaskControl, AttachedTaskStartInput } from "@agents/core/attached-agent";
+import { createAttachedControlTools } from "./attached-control";
 
 function createTarget() {
-  const started: AttachedAgentStartInput[] = [];
+  const started: AttachedTaskStartInput[] = [];
   const sent: { taskId: string; message: string }[] = [];
   const closed: string[] = [];
-  const target: AttachedAgentToolTarget = {
+  const target: AttachedTaskControl = {
     async start(input) {
       started.push(input);
       return "task-1";
@@ -36,7 +36,7 @@ function createTarget() {
   return { target, started, sent, closed };
 }
 
-function findTool(tools: ReturnType<typeof createAttachedAgentTools>, name: string) {
+function findTool(tools: ReturnType<typeof createAttachedControlTools>, name: string) {
   const tool = tools.find((candidate) => candidate.name === name);
   assert.ok(tool, `missing tool ${name}`);
   return tool;
@@ -44,7 +44,10 @@ function findTool(tools: ReturnType<typeof createAttachedAgentTools>, name: stri
 
 test("starts a task in the current conversation", async () => {
   const { target, started } = createTarget();
-  const tool = findTool(createAttachedAgentTools(target, "channel-1", "public"), "attached_start");
+  const tool = findTool(
+    createAttachedControlTools(target, "channel-1", "public"),
+    "attached_start",
+  );
 
   const result = await tool.execute(
     "tool-call",
@@ -62,7 +65,7 @@ test("starts a task in the current conversation", async () => {
 
 test("sends a follow-up to a task", async () => {
   const { target, sent } = createTarget();
-  const tool = findTool(createAttachedAgentTools(target, "channel-1", "public"), "attached_send");
+  const tool = findTool(createAttachedControlTools(target, "channel-1", "public"), "attached_send");
 
   const result = await tool.execute(
     "tool-call",
@@ -78,7 +81,10 @@ test("sends a follow-up to a task", async () => {
 
 test("closes a task", async () => {
   const { target, closed } = createTarget();
-  const tool = findTool(createAttachedAgentTools(target, "channel-1", "public"), "attached_close");
+  const tool = findTool(
+    createAttachedControlTools(target, "channel-1", "public"),
+    "attached_close",
+  );
 
   const result = await tool.execute(
     "tool-call",
@@ -94,7 +100,7 @@ test("closes a task", async () => {
 
 test("lists the tasks of the current conversation", async () => {
   const { target } = createTarget();
-  const tool = findTool(createAttachedAgentTools(target, "channel-1", "public"), "attached_list");
+  const tool = findTool(createAttachedControlTools(target, "channel-1", "public"), "attached_list");
 
   const result = await tool.execute("tool-call", {} as never, undefined, undefined, {} as never);
 

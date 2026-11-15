@@ -8,7 +8,7 @@ export interface AttachedTaskInfo {
   readonly updatedAt: string;
 }
 
-export interface AttachedAgentResult {
+export interface AttachedTaskResult {
   readonly taskId: string;
   readonly status: "completed" | "failed";
   /** The worker's assistant text, or a placeholder when it produced none. */
@@ -16,7 +16,7 @@ export interface AttachedAgentResult {
   readonly error?: string;
 }
 
-export interface AttachedAgentStartInput {
+export interface AttachedTaskStartInput {
   readonly channelId: string;
   /** The access scope of the conversation that started the task. */
   readonly accessScope: string;
@@ -24,13 +24,13 @@ export interface AttachedAgentStartInput {
 }
 
 /**
- * The conversation-side interface for attached tasks. The conversation agent
+ * The conversation-side controls for attached tasks. The conversation agent
  * starts a task, sends follow-ups, closes it, and lists its own tasks. The
  * attached agent never writes to the conversation surface; results return
  * through the coordinator's result callback.
  */
-export interface AttachedAgentToolTarget {
-  start(input: AttachedAgentStartInput): Promise<string>;
+export interface AttachedTaskControl {
+  start(input: AttachedTaskStartInput): Promise<string>;
   send(taskId: string, message: string): Promise<boolean>;
   close(taskId: string): Promise<boolean>;
   list(channelId: string): readonly AttachedTaskInfo[];

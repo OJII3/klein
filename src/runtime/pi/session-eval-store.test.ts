@@ -253,7 +253,12 @@ test("findTurnBoundsForAssistantEntry resolves turnStartEntryId, turnContextEntr
 test("SessionEvalCaseStore snapshots session up to pre-message boundary on negative emoji and deduplicates", async () => {
   await using temp = await createTempDir("klein-eval-cases-");
   const agentDir = temp.path;
-  const sessionDir = join(agentDir, "sessions", encodeURIComponent("discord-channel:ch-1"));
+  const sessionDir = join(
+    agentDir,
+    "sessions",
+    "conversation",
+    encodeURIComponent("discord-channel:ch-1"),
+  );
   await mkdir(sessionDir, { recursive: true });
   const sessionFilePath = join(sessionDir, "2026-11-01T00-00-00-000Z_sess-1.jsonl");
   await writeFile(sessionFilePath, serializeSessionEntriesToJsonl(createSampleEntries()), "utf8");
@@ -410,7 +415,12 @@ test("createDiscordReactionFeedbackHandler enforces accessPolicy, uses runTask, 
 test("createEvalFeedbackObserver observes turn_end discord_send calls, flushes index, and records reaction snapshots", async () => {
   await using temp = await createTempDir("klein-eval-observer-");
   const agentDir = temp.path;
-  const sessionDir = join(agentDir, "sessions", encodeURIComponent("discord-channel:ch-1"));
+  const sessionDir = join(
+    agentDir,
+    "sessions",
+    "conversation",
+    encodeURIComponent("discord-channel:ch-1"),
+  );
   await mkdir(sessionDir, { recursive: true });
   const sessionFilePath = join(sessionDir, "2026-11-01T00-00-00-000Z_sess-1.jsonl");
   const entries = createSampleEntries();
