@@ -95,7 +95,7 @@ export class PiStandaloneRunner {
 
     const sessionManager = SessionManager.create(
       options.cwd,
-      backgroundSessionDir(this.options.agentDir, options.sessionId),
+      standaloneSessionDir(this.options.agentDir, options.sessionId),
     );
     const model = withOpenCodeSessionHeader(options.model, options.sessionId);
     const { session } = await createAgentSession({
@@ -143,16 +143,15 @@ export class PiStandaloneRunner {
 }
 
 /** Directory under `sessions/` that holds standalone agent sessions. */
-export const BACKGROUND_SESSION_DIRECTORY = "background";
+export const STANDALONE_SESSION_DIRECTORY = "standalone";
 
 /**
- * Directory holding the session files of one standalone session id. The
- * directory keeps the `background` name because existing installations store
- * their sessions there. Each `createSession` call writes a new file under it,
- * so the transcript of every run survives the process.
+ * Directory holding the session files of one standalone session id. Each
+ * `createSession` call writes a new file under it, so the transcript of every
+ * run survives the process.
  */
-export function backgroundSessionDir(agentDir: string, sessionId: string): string {
-  return resolve(agentDir, "sessions", BACKGROUND_SESSION_DIRECTORY, encodeURIComponent(sessionId));
+export function standaloneSessionDir(agentDir: string, sessionId: string): string {
+  return resolve(agentDir, "sessions", STANDALONE_SESSION_DIRECTORY, encodeURIComponent(sessionId));
 }
 
 async function promptSession(

@@ -12,7 +12,7 @@ import type {
 import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
 
 import { createLogger } from "@app/logger";
-import { backgroundSessionDir, PiStandaloneRunner } from "./pi-standalone-runner";
+import { PiStandaloneRunner, standaloneSessionDir } from "./pi-standalone-runner";
 import { resolveConfiguredModel } from "./pi-model-runtime";
 import type { PiUsageReporter } from "./pi-usage-reporter";
 
@@ -40,10 +40,10 @@ function assistantMessage(): AssistantMessage {
   };
 }
 
-test("stores background sessions under the agent directory", () => {
+test("stores standalone sessions under the agent directory", () => {
   assert.equal(
-    backgroundSessionDir("/tmp/klein-agent", "user-memory:1"),
-    resolve("/tmp/klein-agent/sessions/background/user-memory%3A1"),
+    standaloneSessionDir("/tmp/klein-agent", "user-memory:1"),
+    resolve("/tmp/klein-agent/sessions/standalone/user-memory%3A1"),
   );
 });
 
