@@ -35,13 +35,13 @@ surface ツールは `discord_send`、`discord_speak`、`discord_voice` の 3 �
 ## 現在の割り当て
 
 - `DiscordAgent` は会話エージェントである。テキストチャンネルとボイスチャンネルの両方で使う。
-- `AttachedAgentCoordinator` のタスクは会話付随エージェントである。会話エージェントと同じリッチな Pi セッションを使い、surface ツールと rotation を持たない。会話エージェントが `attached_start` で始め、`attached_send` で続きの指示を渡す。結果は `attached.result` イベントとして会話へ戻る。
+- `AttachedAgentCoordinator` のタスクは会話付随エージェントである。会話エージェントと同じリッチな Pi セッションを使い、surface ツールと rotation を持たない。会話エージェントが `worker_start` で始め、`worker_send` で続きの指示を渡す。結果は `attached.result` イベントとして会話へ戻る。
 - `createPiMinimalAgentFactory` のセッションは独立エージェントである。ユーザーメモリ更新がこれを使う。最小プロファイルの Pi セッションは `PiStandaloneSessionRunner` が作る。
 - `PiMemoryProcessor` の完了呼び出しは独立エージェントである。ツールを持たず、結果を呼び出し元が parse する。
 
 ## 会話付随エージェントのやり取り
 
-会話エージェントは `attached_start` でタスクを始める。タスクは会話エージェントと同じファクトリから作られ、拡張、スキル、MCP、権限、画像解析、background compaction を持つ。surface ツールは持たず、rotation にも参加しない。セッションは `sessions/attached/` に置かれ、トレースは `role: attached` で記録される。`attached_send` は同じセッションへ続きの指示を渡し、`attached_close` はセッションを捨てる。`attached_list` はその会話のタスクを返す。
+会話エージェントは `worker_start` でタスクを始める。タスクは会話エージェントと同じファクトリから作られ、拡張、スキル、MCP、権限、画像解析、background compaction を持つ。surface ツールは持たず、rotation にも参加しない。セッションは `sessions/attached/` に置かれ、トレースは `role: attached` で記録される。`worker_send` は同じセッションへ続きの指示を渡し、`worker_close` はセッションを捨てる。`worker_list` はその会話のタスクを返す。
 
 タスクが 1 回のプロンプトを終えると、結果は `attached.result` イベントとして会話へ届く。イベントの本文は外部データとして扱うよう注記され、会話エージェントが発話するかどうかを決める。タスクは Discord に直接書かない。
 

@@ -46,7 +46,7 @@ test("starts a task in the current conversation", async () => {
   const { target, started } = createTarget();
   const tool = findTool(
     createAttachedControlTools(target, "channel-1", "public", false),
-    "attached_start",
+    "worker_start",
   );
 
   const result = await tool.execute(
@@ -72,7 +72,7 @@ test("sends a follow-up to a task", async () => {
   const { target, sent } = createTarget();
   const tool = findTool(
     createAttachedControlTools(target, "channel-1", "public", false),
-    "attached_send",
+    "worker_send",
   );
 
   const result = await tool.execute(
@@ -91,7 +91,7 @@ test("closes a task", async () => {
   const { target, closed } = createTarget();
   const tool = findTool(
     createAttachedControlTools(target, "channel-1", "public", false),
-    "attached_close",
+    "worker_close",
   );
 
   const result = await tool.execute(
@@ -110,7 +110,7 @@ test("lists the tasks of the current conversation", async () => {
   const { target } = createTarget();
   const tool = findTool(
     createAttachedControlTools(target, "channel-1", "public", false),
-    "attached_list",
+    "worker_list",
   );
 
   const result = await tool.execute("tool-call", {} as never, undefined, undefined, {} as never);

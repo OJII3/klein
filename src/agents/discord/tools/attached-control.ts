@@ -15,10 +15,10 @@ export function createAttachedControlTools(
 ) {
   return [
     defineTool({
-      name: "attached_start",
-      label: "Start Attached Task",
+      name: "worker_start",
+      label: "Start Worker",
       description:
-        "Start an attached task in its own session. The task cannot send Discord messages; its result arrives as an event. Use attached_send to give it follow-up instructions.",
+        "Start a worker: a separate agent with its own session and tools. The worker cannot send Discord messages; its result arrives as an event. Use worker_send to give it follow-up instructions.",
       parameters: Type.Object({
         prompt: Type.String({ minLength: 1, maxLength: 4_000 }),
       }),
@@ -34,7 +34,7 @@ export function createAttachedControlTools(
           content: [
             {
               type: "text",
-              text: `Started attached task ${taskId}. Its result will arrive as an event.`,
+              text: `Started worker ${taskId}. Its result will arrive as an event.`,
             },
           ],
           details: { taskId },
@@ -42,10 +42,10 @@ export function createAttachedControlTools(
       },
     }),
     defineTool({
-      name: "attached_send",
-      label: "Send to Attached Task",
+      name: "worker_send",
+      label: "Send to Worker",
       description:
-        "Send a follow-up instruction to an attached task. The task keeps its own session and returns another result.",
+        "Send a follow-up instruction to a worker. The worker keeps its own session and returns another result.",
       parameters: Type.Object({
         taskId: Type.String({ minLength: 1 }),
         message: Type.String({ minLength: 1, maxLength: 4_000 }),
@@ -59,7 +59,7 @@ export function createAttachedControlTools(
               type: "text",
               text: sent
                 ? `Sent the follow-up to ${params.taskId}. Its next result will arrive as an event.`
-                : `No attached task ${params.taskId} is available.`,
+                : `No worker ${params.taskId} is available.`,
             },
           ],
           details: { taskId: params.taskId, sent },
@@ -67,9 +67,9 @@ export function createAttachedControlTools(
       },
     }),
     defineTool({
-      name: "attached_close",
-      label: "Close Attached Task",
-      description: "Close an attached task and discard its session.",
+      name: "worker_close",
+      label: "Close Worker",
+      description: "Close a worker and discard its session.",
       parameters: Type.Object({ taskId: Type.String({ minLength: 1 }) }),
       exposure: "deferred",
       async execute(_toolCallId, params) {
@@ -79,8 +79,8 @@ export function createAttachedControlTools(
             {
               type: "text",
               text: closed
-                ? `Closed attached task ${params.taskId}.`
-                : `No attached task ${params.taskId} is available.`,
+                ? `Closed worker ${params.taskId}.`
+                : `No worker ${params.taskId} is available.`,
             },
           ],
           details: { taskId: params.taskId, closed },
@@ -88,9 +88,9 @@ export function createAttachedControlTools(
       },
     }),
     defineTool({
-      name: "attached_list",
-      label: "List Attached Tasks",
-      description: "List attached tasks in the current conversation.",
+      name: "worker_list",
+      label: "List Workers",
+      description: "List workers in the current conversation.",
       parameters: Type.Object({}),
       exposure: "deferred",
       async execute() {
@@ -101,7 +101,7 @@ export function createAttachedControlTools(
               type: "text",
               text:
                 tasks.length === 0
-                  ? "No attached tasks in this conversation."
+                  ? "No workers in this conversation."
                   : tasks.map((task) => `- ${task.id} [${task.status}] ${task.prompt}`).join("\n"),
             },
           ],
