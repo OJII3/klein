@@ -111,3 +111,12 @@ test("keeps disabled watches out of the due list", async () => {
   assert.deepEqual(await store.listDue(Date.parse("2026-10-14T00:05:00.000Z")), []);
   assert.deepEqual(await store.listForScope("watch", "channel-a", "owner:123"), [disabledWatch]);
 });
+
+test("round-trips the worker that owns a watch", async () => {
+  await using temp = await createTempDir("klein-schedules-");
+  const directory = temp.path;
+  const store = new FileScheduledTaskStore(directory);
+  const workerWatch: WatchTask = { ...watch, ownerTaskId: "attached-1" };
+  await store.create(workerWatch);
+  assert.deepEqual(await store.listForScope("watch", "channel-a", "owner:123"), [workerWatch]);
+});

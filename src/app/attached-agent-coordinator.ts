@@ -40,6 +40,7 @@ export interface AttachedAgentCoordinatorOptions {
   readonly createTools: (
     conversationKey: ConversationKey,
     accessScope: string,
+    taskId: string,
   ) => readonly ToolDefinition[];
   readonly onResult: (delivery: AttachedTaskDelivery) => Promise<void>;
 }
@@ -110,7 +111,7 @@ export class AttachedAgentCoordinator implements AttachedTaskControl {
     const id = `attached-${randomUUID()}`;
     const runtime = await this.options.factory.create(
       { systemPrompt: this.options.systemPrompt },
-      this.options.createTools(conversationKey, input.accessScope),
+      this.options.createTools(conversationKey, input.accessScope, id),
       {
         role: { kind: "attached", taskId: id },
         sessionKey: id,
@@ -244,7 +245,7 @@ export class AttachedAgentCoordinator implements AttachedTaskControl {
 
     const runtime = await this.options.factory.create(
       { systemPrompt: this.options.systemPrompt },
-      this.options.createTools(task.conversationKey, task.accessScope),
+      this.options.createTools(task.conversationKey, task.accessScope, task.id),
       {
         role: { kind: "attached", taskId: task.id },
         sessionKey: task.id,

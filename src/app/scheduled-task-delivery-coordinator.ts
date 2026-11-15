@@ -276,8 +276,68 @@ export class ScheduledTaskDeliveryCoordinator {
   }
 
   private async deliverWatch(triggered: TriggeredWatch): Promise<void> {
+    const ownerTaskId = triggered.watch.ownerTaskId;
+    if (ownerTaskId) {
+      await this.deliverWatchToWorker(triggered, ownerTaskId);
+      return;
+    }
     const conversationKey = { kind: "discord", channelId: triggered.watch.channelId } as const;
     await this.deliverEvent(conversationKey, triggered.watch, triggered.event);
+  }
+
+  /**
+   * Resumes the worker that registered the watch. The worker's result returns
+   * to the conversation through the attached task result event, so the
+   * conversation still decides whether to speak.
+   */
+  private async deliverWatchToWorker(
+    triggered: TriggeredWatch,
+    ownerTaskId: string,
+  ): Promise<void> {
+    const { watch, event } = triggered;
+    let sent: boolean;
+    try {
+      sent = await this.dependencies.attachedTasks.send(ownerTaskId, buildEventText(event));
+    } catch (error) {
+      await this.failWatchDelivery(watch, error);
+      this.dependencies.logger.warn(
+        {
+          err: error,
+          event: "watch_worker_delivery_failed",
+          taskId: watch.id,
+          workerTaskId: ownerTaskId,
+        },
+        "Failed to deliver a watch wake to its worker",
+      );
+      return;
+    }
+
+    if (!sent) {
+      // The worker was closed or lost, so keep the notification by handing it
+      // to the conversation instead of dropping the wake.
+      this.dependencies.logger.warn(
+        {
+          event: "watch_worker_unavailable",
+          taskId: watch.id,
+          workerTaskId: ownerTaskId,
+        },
+        "Watch worker is unavailable; delivering the wake to the conversation",
+      );
+      await this.deliverEvent({ kind: "discord", channelId: watch.channelId }, watch, event);
+      return;
+    }
+
+    await this.completeWatch(watch);
+    this.dependencies.logger.info(
+      {
+        event: "scheduled_task_delivered",
+        taskId: watch.id,
+        taskKind: watch.kind,
+        eventId: event.id,
+        workerTaskId: ownerTaskId,
+      },
+      "Delivered scheduled task to its worker",
+    );
   }
 
   private async deliverEvent(
@@ -294,7 +354,7 @@ export class ScheduledTaskDeliveryCoordinator {
         task.accessScope,
         async (agent) => {
           const ownerMemory = isOwnerAccessScope(task.accessScope, this.dependencies.ownerUserId)
-            ? await this.dependencies.ownerMemoryStore?.getContext(buildEventMemoryQuery(event))
+            ? await this.dependencies.ownerMemoryStore?.getContext(buildEventText(event))
             : undefined;
           try {
             await agent.promptEvent(event, { ownerMemory });
@@ -379,7 +439,7 @@ function clearWatchError(watch: WatchTask): WatchTask {
   return rest;
 }
 
-function buildEventMemoryQuery(event: AgentEvent): string {
+function buildEventText(event: AgentEvent): string {
   return event.content
     .filter((block) => block.type === "text")
     .map((block) => block.text)

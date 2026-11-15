@@ -31,6 +31,7 @@ interface Harness {
   readonly deliveries: AttachedTaskDelivery[];
   readonly roles: AgentCreationOptions["role"][];
   readonly resumeSessions: (boolean | undefined)[];
+  readonly toolTaskIds: string[];
   readonly store: MemoryTaskStore;
 }
 
@@ -43,6 +44,7 @@ function createHarness(
   const deliveries: AttachedTaskDelivery[] = [];
   const roles: AgentCreationOptions["role"][] = [];
   const resumeSessions: (boolean | undefined)[] = [];
+  const toolTaskIds: string[] = [];
   const factory: AgentFactory = {
     async create(_definition, _tools, options) {
       roles.push(options.role);
@@ -71,12 +73,24 @@ function createHarness(
     logger: pino({ level: "silent" }),
     store,
     taskCoordinator: new TaskCoordinator(),
-    createTools: () => [],
+    createTools: (_conversationKey, _accessScope, taskId) => {
+      toolTaskIds.push(taskId);
+      return [];
+    },
     onResult: async (delivery) => {
       deliveries.push(delivery);
     },
   });
-  return { coordinator, prompts, disposed, deliveries, roles, resumeSessions, store };
+  return {
+    coordinator,
+    prompts,
+    disposed,
+    deliveries,
+    roles,
+    resumeSessions,
+    toolTaskIds,
+    store,
+  };
 }
 
 async function waitFor(predicate: () => boolean): Promise<void> {
@@ -105,6 +119,19 @@ test("starts a task and delivers the worker's text to the conversation", async (
     result: { taskId, status: "completed", text: "result for investigate" },
   });
   assert.deepEqual(harness.prompts, ["investigate"]);
+});
+
+test("gives each worker its own task id to its tools", async () => {
+  const harness = createHarness();
+  const taskId = await harness.coordinator.start({
+    channelId: "channel-1",
+    accessScope: "public",
+    ownerFeaturesAllowed: false,
+    prompt: "first",
+  });
+  await waitFor(() => harness.deliveries.length === 1);
+
+  assert.deepEqual(harness.toolTaskIds, [taskId]);
 });
 
 test("queues follow-ups on the same session", async () => {
