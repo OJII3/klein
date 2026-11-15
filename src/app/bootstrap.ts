@@ -356,6 +356,7 @@ export async function bootstrap(): Promise<void> {
     : undefined;
   agentCoordinator = new AgentCoordinator({
     accessPolicy: discordAccessPolicy,
+    attachedTasks: attachedAgentCoordinator,
     ownerUserId,
     createDiscordAgent,
     channelSessionStateStore,

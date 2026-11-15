@@ -1,7 +1,7 @@
 import type { Logger } from "pino";
 
 import type { AgentEvent } from "@agents/core/agent-event";
-import type { AttachedTaskResult } from "@agents/core/attached-agent";
+import type { AttachedTaskControl, AttachedTaskResult } from "@agents/core/attached-agent";
 import type { ConversationAgent } from "@agents/core/conversation-agent";
 import { createDiscordMessageAgentTurn } from "@agents/discord/discord-message-agent-turn";
 import { BOT_MESSAGE_GUIDANCE } from "@agents/discord/prompt-policy";
@@ -32,6 +32,7 @@ import { SessionSpeakerTracker } from "./session-speaker-tracker";
 export interface AgentCoordinatorDependencies {
   readonly channelApi: DiscordChannelApi;
   readonly accessPolicy?: DiscordAccessPolicy;
+  readonly attachedTasks: AttachedTaskControl;
   readonly ownerUserId?: string;
   readonly createDiscordAgent: (
     channelId: string,
@@ -78,6 +79,7 @@ export class AgentCoordinator {
     });
     this.scheduledTaskDeliveryCoordinator = new ScheduledTaskDeliveryCoordinator({
       accessPolicy: dependencies.accessPolicy,
+      attachedTasks: dependencies.attachedTasks,
       channelApi: dependencies.channelApi,
       logger: this.logger,
       operatingState: dependencies.operatingState,

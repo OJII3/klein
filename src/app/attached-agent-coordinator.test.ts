@@ -139,6 +139,22 @@ test("lists only the tasks of the requested conversation", async () => {
   assert.notEqual(first, second);
 });
 
+test("closes a task after delivering its result when requested", async () => {
+  const harness = createHarness();
+  const taskId = await harness.coordinator.start({
+    channelId: "channel-1",
+    accessScope: "public",
+    ownerFeaturesAllowed: false,
+    prompt: "remind",
+    closeAfterResult: true,
+  });
+
+  await waitFor(() => harness.deliveries.length === 1);
+  await waitFor(() => harness.disposed.length === 1);
+  assert.deepEqual(harness.disposed, [taskId]);
+  assert.deepEqual(harness.coordinator.list("channel-1"), []);
+});
+
 test("delivers a failed result when the worker throws", async () => {
   const harness = createHarness(async () => ({
     async prompt() {

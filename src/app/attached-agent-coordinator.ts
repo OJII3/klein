@@ -51,6 +51,7 @@ interface AttachedTask {
   status: AttachedTaskStatus;
   updatedAt: string;
   readonly runtime: AgentRuntime;
+  readonly closeAfterResult: boolean;
   queue: Promise<void>;
   closed: boolean;
 }
@@ -91,6 +92,7 @@ export class AttachedAgentCoordinator implements AttachedTaskControl {
       status: "idle",
       updatedAt: now,
       runtime,
+      closeAfterResult: input.closeAfterResult ?? false,
       queue: Promise.resolve(),
       closed: false,
     };
@@ -184,6 +186,8 @@ export class AttachedAgentCoordinator implements AttachedTaskControl {
         "Failed to deliver attached task result",
       );
     }
+
+    if (task.closeAfterResult) this.closeTask(task);
   }
 
   private closeTask(task: AttachedTask): void {
