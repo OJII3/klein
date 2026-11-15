@@ -1,6 +1,6 @@
 import type { Logger } from "pino";
 
-import type { ChannelAgent } from "@agents/core/channel-agent";
+import type { ConversationAgent } from "@agents/core/conversation-agent";
 import { createDiscordMessageAgentTurn } from "@agents/discord/discord-message-agent-turn";
 import { BOT_MESSAGE_GUIDANCE } from "@agents/discord/prompt-policy";
 import type { DiscordAccessPolicy } from "@modules/discord/domain/discord-access-policy";
@@ -35,7 +35,7 @@ export interface AgentCoordinatorDependencies {
     sessionKey: string,
     handoffContext?: string,
     ownerFeaturesAllowed?: boolean,
-  ) => Promise<ChannelAgent>;
+  ) => Promise<ConversationAgent>;
   readonly discordUserDirectory?: DiscordUserDirectory;
   readonly channelSessionStateStore?: ChannelSessionStateStore;
   readonly channelRuleStore?: DiscordChannelRuleStore;

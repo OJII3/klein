@@ -22,7 +22,7 @@ import {
   ensureConfiguredModels,
   resolveConfiguredModel,
 } from "@runtime/pi/pi-agent-runtime";
-import { PiBackgroundRunner } from "@runtime/pi/pi-background-runner";
+import { PiStandaloneRunner } from "@runtime/pi/pi-standalone-runner";
 import { migratePiDurableStorage } from "@runtime/pi/pi-durable-migration";
 import { createPiUsageReporterFromEnv } from "@runtime/pi/pi-usage-reporter";
 import { createWatchFetchTool } from "@runtime/pi/watch-fetch-tool";
@@ -147,7 +147,7 @@ export async function bootstrap(): Promise<void> {
     throw new Error("GEMINI_API_KEY is required");
   }
   await ensureConfiguredModels(modelRuntime, modelsInUse);
-  const backgroundRunner = new PiBackgroundRunner({
+  const standaloneRunner = new PiStandaloneRunner({
     agentDir,
     logger,
     modelRuntime,
@@ -247,7 +247,7 @@ export async function bootstrap(): Promise<void> {
               userMemoryConfig.llm.model,
               modelRuntime,
             ),
-            runner: backgroundRunner,
+            runner: standaloneRunner,
             thinkingLevel: userMemoryConfig.llm.thinkingLevel,
           }),
           logger,
@@ -312,7 +312,7 @@ export async function bootstrap(): Promise<void> {
         processor: new PiMemoryProcessor(
           resolveConfiguredModel(memoryConfig.llm.provider, memoryConfig.llm.model, modelRuntime),
           memoryConfig.llm.thinkingLevel,
-          backgroundRunner.createCompleter(memorySessionId),
+          standaloneRunner.createCompleter(memorySessionId),
         ),
         taskCoordinator,
       })

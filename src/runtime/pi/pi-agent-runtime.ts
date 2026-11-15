@@ -23,6 +23,7 @@ import webAccessExtension from "pi-web-access";
 
 import type { AgentDefinition } from "@agents/core/agent-definition";
 import type { AgentFactory, AgentCreationOptions } from "@agents/core/agent-factory";
+import { assertSurfaceToolsAllowed } from "@agents/core/agent-role";
 import type { AgentTurn, AgentTurnContext } from "@agents/core/agent-turn";
 import type { AgentPrompt, AgentRuntime } from "@agents/core/agent-runtime";
 import { ImageAnalysisError, toImageAnalysisFailure } from "@agents/core/image-analysis";
@@ -547,6 +548,10 @@ export function createPiAgentFactory({
         ...adaptPiTools(tools),
         ...(skillReadTool ? [skillReadTool] : []),
       ].filter((tool) => authorization.allowsTool(tool.name));
+      assertSurfaceToolsAllowed(
+        options.role,
+        customTools.map((tool) => tool.name),
+      );
       const hasDiscordSend = customTools.some((tool) => tool.name === "discord_send");
       const hasWatchAdd = customTools.some((tool) => tool.name === "watch_add");
       const systemPrompt = [
@@ -556,7 +561,11 @@ export function createPiAgentFactory({
         .filter(Boolean)
         .join("\n\n");
       const trace = new PiRuntimeTrace(
-        logger.child({ component: "pi-runtime", sessionKey: options.sessionKey }),
+        logger.child({
+          component: "pi-runtime",
+          role: options.role.kind,
+          sessionKey: options.sessionKey,
+        }),
         { usageReporter },
       );
       const settingsManager = SettingsManager.create(process.cwd(), agentDir);

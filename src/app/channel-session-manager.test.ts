@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import pino from "pino";
 
-import type { ChannelAgent } from "@agents/core/channel-agent";
+import type { ConversationAgent } from "@agents/core/conversation-agent";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
 import {
   getChannelRotationBucket,
@@ -58,7 +58,7 @@ function createHarness(initialState: ChannelSessionState) {
       const label = agentCount++ === 0 ? "old" : "new";
       events.push(`create:${label}`);
       assert.equal(handoffContext, label === "new" ? "handoff summary" : undefined);
-      const agent: ChannelAgent = {
+      const agent: ConversationAgent = {
         async prompt() {},
         async promptEvent() {},
         async steer() {},

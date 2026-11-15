@@ -1,7 +1,7 @@
 import { readdir } from "node:fs/promises";
 import { resolve } from "node:path";
 
-import { BACKGROUND_SESSION_DIRECTORY } from "@runtime/pi/pi-background-runner";
+import { BACKGROUND_SESSION_DIRECTORY } from "@runtime/pi/pi-standalone-runner";
 
 export interface PiSessionDirectory {
   readonly channelKey: string;

@@ -19,6 +19,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import type { Logger } from "pino";
 
+import { assertSurfaceToolsAllowed } from "@agents/core/agent-role";
 import { withOpenCodeSessionHeader } from "./pi-model-runtime";
 import { PiRuntimeTrace } from "./pi-runtime-trace";
 import type { PiUsageReporter } from "./pi-usage-reporter";
@@ -31,14 +32,14 @@ export type CompleteSimple = (
   options?: SimpleStreamOptions,
 ) => Promise<AssistantMessage>;
 
-export interface PiBackgroundRunnerOptions {
+export interface PiStandaloneRunnerOptions {
   readonly agentDir: string;
   readonly logger: Logger;
   readonly modelRuntime: ModelRuntime;
   readonly usageReporter?: PiUsageReporter;
 }
 
-export interface PiBackgroundSessionOptions {
+export interface PiStandaloneSessionOptions {
   readonly cwd: string;
   readonly model: Model<Api>;
   readonly sessionId: string;
@@ -48,29 +49,36 @@ export interface PiBackgroundSessionOptions {
   readonly tools: readonly ToolDefinition[];
 }
 
-export interface PiBackgroundPromptOptions {
+export interface PiStandalonePromptOptions {
   readonly signal?: AbortSignal;
   readonly timeoutMs?: number;
 }
 
-export interface PiBackgroundSession {
-  prompt(text: string, options?: PiBackgroundPromptOptions): Promise<void>;
+export interface PiStandaloneSession {
+  prompt(text: string, options?: PiStandalonePromptOptions): Promise<void>;
   dispose(): void;
 }
 
 /**
- * Runs background work against Pi without the foreground channel tooling. One-shot
- * completions keep the caller's prompt and parsing; agent sessions get a persisted
- * session file under the agent directory with only the tools the caller passes in.
+ * Runs standalone agents against Pi. A standalone agent belongs to no
+ * conversation: it never writes to a conversation surface, and its result
+ * returns to the caller. One-shot completions keep the caller's prompt and
+ * parsing; agent sessions get a persisted session file under the agent
+ * directory with only the tools the caller passes in.
  */
-export class PiBackgroundRunner {
-  constructor(private readonly options: PiBackgroundRunnerOptions) {}
+export class PiStandaloneRunner {
+  constructor(private readonly options: PiStandaloneRunnerOptions) {}
 
   createCompleter(sessionId: string): CompleteSimple {
     return (model, context, options) => this.complete(model, context, options, sessionId);
   }
 
-  async createSession(options: PiBackgroundSessionOptions): Promise<PiBackgroundSession> {
+  async createSession(options: PiStandaloneSessionOptions): Promise<PiStandaloneSession> {
+    const role = { kind: "standalone" } as const;
+    assertSurfaceToolsAllowed(role, [
+      ...options.toolNames,
+      ...options.tools.map((tool) => tool.name),
+    ]);
     const settingsManager = SettingsManager.create(options.cwd, this.options.agentDir);
     const resourceLoader = new DefaultResourceLoader({
       cwd: options.cwd,
@@ -104,7 +112,7 @@ export class PiBackgroundRunner {
     });
 
     const trace = new PiRuntimeTrace(
-      this.options.logger.child({ component: "pi-background", sessionId: options.sessionId }),
+      this.options.logger.child({ component: "pi-standalone", sessionId: options.sessionId }),
       { usageReporter: this.options.usageReporter },
     );
     trace.attach(session);
@@ -134,13 +142,14 @@ export class PiBackgroundRunner {
   }
 }
 
-/** Name of the directory that holds background sessions under `sessions/`. */
+/** Directory under `sessions/` that holds standalone agent sessions. */
 export const BACKGROUND_SESSION_DIRECTORY = "background";
 
 /**
- * Directory holding the session files of one background session id. Each
- * `createSession` call writes a new file under it, so the transcript of every
- * run survives the process.
+ * Directory holding the session files of one standalone session id. The
+ * directory keeps the `background` name because existing installations store
+ * their sessions there. Each `createSession` call writes a new file under it,
+ * so the transcript of every run survives the process.
  */
 export function backgroundSessionDir(agentDir: string, sessionId: string): string {
   return resolve(agentDir, "sessions", BACKGROUND_SESSION_DIRECTORY, encodeURIComponent(sessionId));
@@ -149,7 +158,7 @@ export function backgroundSessionDir(agentDir: string, sessionId: string): strin
 async function promptSession(
   session: AgentSession,
   text: string,
-  options: PiBackgroundPromptOptions = {},
+  options: PiStandalonePromptOptions = {},
 ): Promise<void> {
   if (options.signal?.aborted) throw new Error("Background agent was aborted");
 
