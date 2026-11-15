@@ -13,6 +13,7 @@ import type {
   AttachedTaskStartInput,
   AttachedTaskStatus,
 } from "@agents/core/attached-agent";
+import type { AttachedTaskStore } from "./attached-task-store";
 import type { ConversationKey } from "./channel-session-state-store";
 import type { TaskCoordinator } from "./task-coordinator";
 
@@ -34,6 +35,7 @@ export interface AttachedAgentCoordinatorOptions {
   readonly factory: AgentFactory;
   readonly systemPrompt: string;
   readonly logger: Logger;
+  readonly store: AttachedTaskStore;
   readonly taskCoordinator: TaskCoordinator;
   readonly createTools: (
     conversationKey: ConversationKey,
@@ -46,11 +48,13 @@ interface AttachedTask {
   readonly id: string;
   readonly conversationKey: ConversationKey;
   readonly accessScope: string;
+  readonly ownerFeaturesAllowed: boolean;
   readonly prompt: string;
   readonly createdAt: string;
   status: AttachedTaskStatus;
   updatedAt: string;
-  readonly runtime: AgentRuntime;
+  /** Absent until the first prompt runs, so a restored task does not build a Pi session eagerly. */
+  runtime?: AgentRuntime;
   readonly closeAfterResult: boolean;
   queue: Promise<void>;
   closed: boolean;
@@ -60,6 +64,11 @@ interface AttachedTask {
  * Owns attached agents. Each task has its own rich Pi session and a queue of
  * prompts. The task never writes to the conversation surface; every completed
  * or failed prompt is delivered to the conversation agent as a result.
+ *
+ * The task metadata is persisted, so a restart restores the task list. A
+ * restored task resumes its Pi session when the conversation sends the next
+ * prompt. A prompt that was running at shutdown is marked `interrupted` and is
+ * not re-run automatically.
  */
 export class AttachedAgentCoordinator implements AttachedTaskControl {
   private readonly tasks = new Map<string, AttachedTask>();
@@ -67,6 +76,33 @@ export class AttachedAgentCoordinator implements AttachedTaskControl {
 
   constructor(private readonly options: AttachedAgentCoordinatorOptions) {
     this.logger = options.logger.child({ component: "attached-agent-coordinator" });
+  }
+
+  /** Restores the tasks saved by a previous process. Call once before serving prompts. */
+  async load(): Promise<void> {
+    for (const stored of await this.options.store.list()) {
+      const status: AttachedTaskStatus =
+        stored.status === "running" ? "interrupted" : stored.status;
+      const task: AttachedTask = {
+        id: stored.id,
+        conversationKey: { kind: "discord", channelId: stored.channelId },
+        accessScope: stored.accessScope,
+        ownerFeaturesAllowed: stored.ownerFeaturesAllowed,
+        prompt: stored.prompt,
+        createdAt: stored.createdAt,
+        status,
+        updatedAt: stored.updatedAt,
+        closeAfterResult: stored.closeAfterResult,
+        queue: Promise.resolve(),
+        closed: false,
+      };
+      this.tasks.set(task.id, task);
+      if (status !== stored.status) await this.persist(task);
+    }
+    this.logger.info(
+      { event: "attached_tasks_restored", count: this.tasks.size },
+      "Restored attached tasks",
+    );
   }
 
   async start(input: AttachedTaskStartInput): Promise<string> {
@@ -87,6 +123,7 @@ export class AttachedAgentCoordinator implements AttachedTaskControl {
       id,
       conversationKey,
       accessScope: input.accessScope,
+      ownerFeaturesAllowed: input.ownerFeaturesAllowed,
       prompt: input.prompt,
       createdAt: now,
       status: "idle",
@@ -97,6 +134,7 @@ export class AttachedAgentCoordinator implements AttachedTaskControl {
       closed: false,
     };
     this.tasks.set(id, task);
+    await this.persist(task);
     this.enqueue(task, input.prompt);
     this.logger.info(
       { event: "attached_task_started", taskId: id, channelId: input.channelId },
@@ -115,7 +153,7 @@ export class AttachedAgentCoordinator implements AttachedTaskControl {
   async close(taskId: string): Promise<boolean> {
     const task = this.tasks.get(taskId);
     if (!task) return false;
-    this.closeTask(task);
+    await this.closeTask(task);
     return true;
   }
 
@@ -131,10 +169,18 @@ export class AttachedAgentCoordinator implements AttachedTaskControl {
       }));
   }
 
+  /** Stops the runtimes but keeps the saved tasks so the next process can restore them. */
   async dispose(): Promise<void> {
     for (const task of this.tasks.values()) {
-      this.closeTask(task);
+      task.closed = true;
+      task.runtime?.dispose();
+      if (task.status === "running") {
+        task.status = "interrupted";
+        task.updatedAt = new Date().toISOString();
+        await this.persist(task);
+      }
     }
+    this.tasks.clear();
   }
 
   private enqueue(task: AttachedTask, text: string): void {
@@ -152,14 +198,16 @@ export class AttachedAgentCoordinator implements AttachedTaskControl {
     if (task.closed) return;
     task.status = "running";
     task.updatedAt = new Date().toISOString();
+    await this.persist(task);
 
     let result: AttachedTaskResult;
     try {
-      await task.runtime.prompt({
+      const runtime = await this.ensureRuntime(task);
+      await runtime.prompt({
         event: createAttachedPromptEvent(task.id, text),
         context: {},
       });
-      const output = task.runtime.lastAssistantText?.();
+      const output = runtime.lastAssistantText?.();
       result = { taskId: task.id, status: "completed", text: output ?? "(no text returned)" };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -173,6 +221,7 @@ export class AttachedAgentCoordinator implements AttachedTaskControl {
     if (task.closed) return;
     task.status = result.status === "completed" ? "idle" : "failed";
     task.updatedAt = new Date().toISOString();
+    await this.persist(task);
 
     try {
       await this.options.onResult({
@@ -187,15 +236,61 @@ export class AttachedAgentCoordinator implements AttachedTaskControl {
       );
     }
 
-    if (task.closeAfterResult) this.closeTask(task);
+    if (task.closeAfterResult) await this.closeTask(task);
   }
 
-  private closeTask(task: AttachedTask): void {
+  private async ensureRuntime(task: AttachedTask): Promise<AgentRuntime> {
+    if (task.runtime) return task.runtime;
+
+    const runtime = await this.options.factory.create(
+      { systemPrompt: this.options.systemPrompt },
+      this.options.createTools(task.conversationKey, task.accessScope),
+      {
+        role: { kind: "attached", taskId: task.id },
+        sessionKey: task.id,
+        ownerFeaturesAllowed: task.ownerFeaturesAllowed,
+        resumeSession: true,
+      },
+    );
+    task.runtime = runtime;
+    return runtime;
+  }
+
+  private async closeTask(task: AttachedTask): Promise<void> {
     if (task.closed) return;
     task.closed = true;
-    task.runtime.dispose();
+    task.runtime?.dispose();
     this.tasks.delete(task.id);
+    try {
+      await this.options.store.delete(task.id);
+    } catch (error) {
+      this.logger.warn(
+        { err: error, event: "attached_task_delete_failed", taskId: task.id },
+        "Failed to delete attached task",
+      );
+    }
     this.logger.info({ event: "attached_task_closed", taskId: task.id }, "Closed attached task");
+  }
+
+  private async persist(task: AttachedTask): Promise<void> {
+    try {
+      await this.options.store.save({
+        id: task.id,
+        channelId: task.conversationKey.channelId,
+        accessScope: task.accessScope,
+        ownerFeaturesAllowed: task.ownerFeaturesAllowed,
+        prompt: task.prompt,
+        status: task.status,
+        createdAt: task.createdAt,
+        updatedAt: task.updatedAt,
+        closeAfterResult: task.closeAfterResult,
+      });
+    } catch (error) {
+      this.logger.warn(
+        { err: error, event: "attached_task_persist_failed", taskId: task.id },
+        "Failed to persist attached task",
+      );
+    }
   }
 }
 
