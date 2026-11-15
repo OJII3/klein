@@ -49,7 +49,12 @@ export function createWatchTools(
   channelId: string,
   accessScope: ScheduledTaskAccessScope,
   watchCheckRunner: WatchCheckRunner,
+  ownerTaskId?: string,
 ) {
+  // The conversation manages every watch in its channel; a worker sees only the
+  // watches it registered, so two workers do not edit each other's watches.
+  const canManage = (watch: WatchTask) =>
+    ownerTaskId === undefined || watch.ownerTaskId === ownerTaskId;
   return [
     defineTool({
       name: "watch_add",
@@ -60,6 +65,7 @@ export function createWatchTools(
         "Only the tools in the `watch` section are available; normal session tools, timers, files, and process APIs are not. " +
         "`store(key, value)` and `load(key)` keep JSON values between checks of the same watch; storing `undefined` deletes a key. " +
         "Text printed with `text()` or `console.*` becomes the wake output. " +
+        "The wake goes to the session that registered the watch: the conversation agent, or the worker that called this tool. " +
         "The script runs once before the watch is registered; if that run fails, the watch is not registered. " +
         "Times use Japan Standard Time (JST). Weekly schedules require one or more weekdays: sun, mon, tue, wed, thu, fri, sat.",
       parameters: Type.Object({
@@ -83,6 +89,7 @@ export function createWatchTools(
           script: params.script.trim(),
           args: params.args ?? [],
           message: params.message.trim(),
+          ...(ownerTaskId ? { ownerTaskId } : {}),
           enabled: true,
           consecutiveFailures: 0,
           schedule: resolved.schedule,
@@ -128,7 +135,7 @@ export function createWatchTools(
       exposure: "deferred",
       async execute(_toolCallId, params) {
         const watches = await store.listForScope("watch", channelId, accessScope);
-        const current = watches.find((watch) => watch.id === params.id);
+        const current = watches.find((watch) => watch.id === params.id && canManage(watch));
         if (!current) {
           const details: WatchUpdateDetails = { id: params.id, updated: false, enabled: false };
           return {
@@ -194,11 +201,13 @@ export function createWatchTools(
       name: "watch_list",
       label: "List Watches",
       description:
-        "List watches attached to the current conversation, including their next run and last status.",
+        "List watches attached to the current conversation, or the watches owned by this worker session, including their next run and last status.",
       parameters: Type.Object({}),
       exposure: "deferred",
       async execute() {
-        const watches = await store.listForScope("watch", channelId, accessScope);
+        const watches = (await store.listForScope("watch", channelId, accessScope)).filter(
+          canManage,
+        );
         return {
           content: [
             {
@@ -219,6 +228,7 @@ export function createWatchTools(
                 script,
                 args,
                 message,
+                ownerTaskId: watchOwnerTaskId,
                 enabled,
                 lastCheckedAt,
                 lastTriggeredAt,
@@ -235,6 +245,7 @@ export function createWatchTools(
                 message,
                 enabled,
                 consecutiveFailures,
+                ...(watchOwnerTaskId ? { ownerTaskId: watchOwnerTaskId } : {}),
                 ...(lastCheckedAt ? { lastCheckedAt } : {}),
                 ...(lastTriggeredAt ? { lastTriggeredAt } : {}),
                 ...(lastStatus ? { lastStatus } : {}),
@@ -254,7 +265,9 @@ export function createWatchTools(
       exposure: "deferred",
       async execute(_toolCallId, params) {
         const watches = await store.listForScope("watch", channelId, accessScope);
-        const watch = watches.find((candidate) => candidate.id === params.id);
+        const watch = watches.find(
+          (candidate) => candidate.id === params.id && canManage(candidate),
+        );
         if (!watch) {
           return {
             content: [
@@ -280,7 +293,13 @@ export function createWatchTools(
       parameters: Type.Object({ id: Type.String({ minLength: 1 }) }),
       exposure: "deferred",
       async execute(_toolCallId, params) {
-        const deleted = await store.delete("watch", channelId, accessScope, params.id);
+        const watches = await store.listForScope("watch", channelId, accessScope);
+        const watch = watches.find(
+          (candidate) => candidate.id === params.id && canManage(candidate),
+        );
+        const deleted = watch
+          ? await store.delete("watch", channelId, accessScope, params.id)
+          : false;
         return {
           content: [
             {
@@ -300,11 +319,12 @@ export function createWatchTools(
 function formatWatch(watch: WatchTask): string {
   const status = watch.lastStatus ? ` / 前回: ${watch.lastStatus}` : "";
   const error = watch.lastError ? ` / エラー: ${watch.lastError}` : "";
+  const owner = watch.ownerTaskId ? ` / ワーカー: ${watch.ownerTaskId}` : "";
   const lastTriggeredAt = watch.lastTriggeredAt
     ? ` / 最終通知: ${formatJapanDateTime(watch.lastTriggeredAt)}`
     : "";
   const nextRun = watch.enabled ? `次回: ${formatJapanDateTime(watch.nextRunAt)}` : "停止中";
-  return `- ${watch.id}: ${watch.name} — ${formatSchedule(watch.schedule)} / ${nextRun}${status}${lastTriggeredAt}${error}`;
+  return `- ${watch.id}: ${watch.name} — ${formatSchedule(watch.schedule)} / ${nextRun}${owner}${status}${lastTriggeredAt}${error}`;
 }
 
 function formatWatchDetails(watch: WatchTask): string {
@@ -315,6 +335,7 @@ function formatWatchDetails(watch: WatchTask): string {
     `${watch.id}: ${watch.name}`,
     `スケジュール: ${formatSchedule(watch.schedule)}`,
     nextRun,
+    ...(watch.ownerTaskId ? [`登録元ワーカー: ${watch.ownerTaskId}`] : []),
     `引数: ${args}`,
     `通知内容: ${watch.message}`,
     `保存値: ${state}`,

@@ -226,3 +226,126 @@ test("keeps a watch disabled when the dry run fails on re-enable", async () => {
   assert.equal(stored?.enabled, false);
   assert.equal(stored?.lastStatus, undefined);
 });
+
+function createMultiStore(initial: readonly WatchTask[]) {
+  let watches = [...initial];
+  const store = {
+    async create(task: ScheduledTask) {
+      watches.push(task as WatchTask);
+    },
+    async listForScope(kind: ScheduledTask["kind"], channelId: string, accessScope: string) {
+      return watches.filter(
+        (watch) =>
+          watch.kind === kind && watch.channelId === channelId && watch.accessScope === accessScope,
+      );
+    },
+    async listDue() {
+      return [];
+    },
+    async delete(kind: ScheduledTask["kind"], channelId: string, accessScope: string, id: string) {
+      const before = watches.length;
+      watches = watches.filter(
+        (watch) =>
+          !(
+            watch.id === id &&
+            watch.kind === kind &&
+            watch.channelId === channelId &&
+            watch.accessScope === accessScope
+          ),
+      );
+      return watches.length !== before;
+    },
+    async update(task: ScheduledTask) {
+      watches = watches.map((watch) => (watch.id === task.id ? (task as WatchTask) : watch));
+    },
+  } as unknown as ScheduledTaskStore;
+  return { store, getWatches: () => watches };
+}
+
+const baseWatch: WatchTask = {
+  kind: "watch",
+  id: "watch-conversation",
+  channelId: "channel-a",
+  accessScope: "public",
+  name: "会話の監視",
+  script: "silent();",
+  args: [],
+  message: "会話の監視です。",
+  enabled: true,
+  consecutiveFailures: 0,
+  createdAt: "2026-10-14T00:00:00.000Z",
+  schedule: { type: "every", minutes: 5 },
+  nextRunAt: "2026-10-14T00:05:00.000Z",
+};
+
+test("scopes worker watches to the worker that registered them", async () => {
+  const { store, getWatches } = createMultiStore([
+    baseWatch,
+    { ...baseWatch, id: "watch-worker-1", ownerTaskId: "attached-1" },
+    { ...baseWatch, id: "watch-worker-2", ownerTaskId: "attached-2" },
+  ]);
+  const { runner } = createRunner();
+  const workerTools = createWatchTools(store, "channel-a", "public", runner, "attached-1");
+  const conversationTools = createWatchTools(store, "channel-a", "public", runner);
+
+  const listWatches = async (tools: ReturnType<typeof createWatchTools>) => {
+    const tool = tools.find((candidate) => candidate.name === "watch_list");
+    assert.ok(tool);
+    const result = await tool.execute("tool-call", {} as never, undefined, undefined, {} as never);
+    return (result.details as { watches: { id: string }[] }).watches.map((watch) => watch.id);
+  };
+  assert.deepEqual(await listWatches(workerTools), ["watch-worker-1"]);
+  assert.deepEqual(await listWatches(conversationTools), [
+    "watch-conversation",
+    "watch-worker-1",
+    "watch-worker-2",
+  ]);
+
+  const findTool = (tools: ReturnType<typeof createWatchTools>, name: string) => {
+    const tool = tools.find((candidate) => candidate.name === name);
+    assert.ok(tool);
+    return tool;
+  };
+  const getResult = await findTool(workerTools, "watch_get").execute(
+    "tool-call",
+    { id: "watch-worker-2" } as never,
+    undefined,
+    undefined,
+    {} as never,
+  );
+  assert.match(textOf(getResult), /ありません/u);
+
+  const updateResult = await findTool(workerTools, "watch_update").execute(
+    "tool-call",
+    { id: "watch-worker-2", enabled: false } as never,
+    undefined,
+    undefined,
+    {} as never,
+  );
+  assert.equal((updateResult.details as { updated: boolean }).updated, false);
+
+  const deleteResult = await findTool(workerTools, "watch_delete").execute(
+    "tool-call",
+    { id: "watch-worker-2" } as never,
+    undefined,
+    undefined,
+    {} as never,
+  );
+  assert.equal((deleteResult.details as { deleted: boolean }).deleted, false);
+  assert.equal(
+    getWatches().some((watch) => watch.id === "watch-worker-2"),
+    true,
+  );
+
+  await addWatch(workerTools);
+  assert.equal(getWatches().at(-1)?.ownerTaskId, "attached-1");
+
+  const conversationGetResult = await findTool(conversationTools, "watch_get").execute(
+    "tool-call",
+    { id: "watch-worker-2" } as never,
+    undefined,
+    undefined,
+    {} as never,
+  );
+  assert.equal((conversationGetResult.details as { found: boolean }).found, true);
+});

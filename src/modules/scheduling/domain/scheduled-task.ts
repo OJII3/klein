@@ -24,6 +24,11 @@ export interface WatchTask extends ScheduledTaskBase {
   readonly script: string;
   readonly args: readonly string[];
   readonly message: string;
+  /**
+   * The attached task that registered the watch. Its wake goes to that worker
+   * session instead of the conversation session.
+   */
+  readonly ownerTaskId?: string;
   /** Disabled watches keep their settings but are not checked. */
   readonly enabled: boolean;
   /** Values the script kept with `store()`. */
@@ -92,6 +97,8 @@ export function parseScheduledTask(value: unknown): ScheduledTask {
       !record.args.every((arg) => typeof arg === "string") ||
       typeof record.message !== "string" ||
       record.message.length === 0 ||
+      (record.ownerTaskId !== undefined &&
+        (typeof record.ownerTaskId !== "string" || record.ownerTaskId.length === 0)) ||
       (record.enabled !== undefined && typeof record.enabled !== "boolean") ||
       (record.state !== undefined && !isJsonObject(record.state)) ||
       !isRecurringSchedule(schedule) ||
@@ -122,6 +129,7 @@ export function parseScheduledTask(value: unknown): ScheduledTask {
       script: record.script,
       args: record.args as string[],
       message: record.message,
+      ...(record.ownerTaskId !== undefined ? { ownerTaskId: record.ownerTaskId as string } : {}),
       enabled: record.enabled !== false,
       ...(record.state !== undefined ? { state: record.state as Record<string, unknown> } : {}),
       ...(record.lastCheckedAt !== undefined

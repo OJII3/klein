@@ -225,10 +225,14 @@ export async function bootstrap(): Promise<void> {
     logger,
     store: new FileAttachedTaskStore(resolve(agentDir, "attached-tasks")),
     taskCoordinator,
-    createTools: (conversationKey, accessScope) =>
+    createTools: (conversationKey, accessScope, taskId) =>
       createAttachedWorkerTools(
         discordService,
         conversationKey.channelId,
+        accessScope,
+        taskId,
+        scheduledTaskStore,
+        watchCheckRunner,
         isOwnerAccessScope(accessScope, ownerUserId) && ownerUserId
           ? { userId: ownerUserId }
           : undefined,

@@ -34,6 +34,7 @@ import { createTempDir } from "../testing/temp-dir";
 interface TestHarness {
   readonly agentCoordinator: AgentCoordinator;
   readonly attachedStarts: AttachedTaskStartInput[];
+  readonly attachedSends: { readonly taskId: string; readonly message: string }[];
   readonly channelLocationCalls: string[];
   readonly createdSessionKeys: string[];
   readonly prompts: Map<string, AgentTurn[]>;
@@ -56,19 +57,22 @@ function createHarness(
       throw new Error("Unexpected watch check");
     },
   },
+  attachedSendResult = false,
 ): TestHarness {
   const channelLocationCalls: string[] = [];
   const createdSessionKeys: string[] = [];
   const prompts = new Map<string, AgentTurn[]>();
   const ownerFeaturesAllowed: boolean[] = [];
   const attachedStarts: AttachedTaskStartInput[] = [];
+  const attachedSends: { taskId: string; message: string }[] = [];
   const attachedTasks: AttachedTaskControl = {
     async start(input) {
       attachedStarts.push(input);
       return `attached-${attachedStarts.length}`;
     },
-    async send() {
-      return false;
+    async send(taskId, message) {
+      attachedSends.push({ taskId, message });
+      return attachedSendResult;
     },
     async close() {
       return false;
@@ -135,6 +139,7 @@ function createHarness(
       taskCoordinator: new TaskCoordinator(),
     }),
     attachedStarts,
+    attachedSends,
     channelLocationCalls,
     createdSessionKeys,
     prompts,
@@ -714,6 +719,69 @@ test("delivers a watch when the script calls wake()", async () => {
     assert.equal(events?.[0]?.event.type, "watch.triggered");
     assert.equal(events?.[0]?.event.source, "watch");
     assert.match(eventText(events?.[0]?.event), /two/u);
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+test("resumes the worker that registered a watch instead of the conversation", async () => {
+  const runner: WatchCheckRunner = {
+    async run() {
+      return { output: "changed", decision: "wake", exitCode: 0, durationMs: 1, state: {} };
+    },
+  };
+  const watches = createScheduledTaskStore({ ...dueWatch, ownerTaskId: "attached-1" });
+  const harness = createHarness(
+    undefined,
+    watches.store,
+    {
+      accessPolicy: createDiscordAccessPolicy({ default: "owner", directMessages: "deny" }, "123"),
+      ownerUserId: "123",
+    },
+    runner,
+    true,
+  );
+  try {
+    await harness.agentCoordinator.deliverDueTasks(Date.parse("2026-10-14T00:05:00.000Z"));
+    assert.deepEqual(
+      harness.attachedSends.map((send) => send.taskId),
+      ["attached-1"],
+    );
+    assert.match(harness.attachedSends[0]?.message ?? "", /changed/u);
+    assert.equal(harness.prompts.size, 0);
+    const stored = watches.getStored();
+    assert.ok(stored?.kind === "watch");
+    assert.ok(stored.lastTriggeredAt);
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+test("delivers a worker watch to the conversation when the worker is gone", async () => {
+  const runner: WatchCheckRunner = {
+    async run() {
+      return { output: "changed", decision: "wake", exitCode: 0, durationMs: 1, state: {} };
+    },
+  };
+  const watches = createScheduledTaskStore({ ...dueWatch, ownerTaskId: "attached-1" });
+  const harness = createHarness(
+    undefined,
+    watches.store,
+    {
+      accessPolicy: createDiscordAccessPolicy({ default: "owner", directMessages: "deny" }, "123"),
+      ownerUserId: "123",
+    },
+    runner,
+  );
+  try {
+    await harness.agentCoordinator.deliverDueTasks(Date.parse("2026-10-14T00:05:00.000Z"));
+    assert.deepEqual(
+      harness.attachedSends.map((send) => send.taskId),
+      ["attached-1"],
+    );
+    const events = harness.prompts.get("test-channel:owner:123");
+    assert.equal(events?.[0]?.event.type, "watch.triggered");
+    assert.match(eventText(events?.[0]?.event), /changed/u);
   } finally {
     await harness.agentCoordinator.dispose();
   }
