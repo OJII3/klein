@@ -56,7 +56,7 @@ Keep existing content unless the messages correct or extend it. Preserve the fro
 Use read to inspect the file. Use write for a complete rewrite or edit for a targeted replacement. Do not create or modify any other file. When nothing durable should change, leave the file untouched and reply "no change".`;
 
 export interface UserMemoryAgentSession {
-  prompt(text: string): Promise<void>;
+  prompt(text: string): Promise<unknown>;
   dispose(): void;
 }
 

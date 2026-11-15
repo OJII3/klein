@@ -3,6 +3,10 @@ import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 
 import { AgentCoordinator } from "./agent-coordinator";
+import {
+  AttachedAgentCoordinator,
+  ATTACHED_AGENT_SYSTEM_PROMPT,
+} from "./attached-agent-coordinator";
 import { ChannelSessionStateStore } from "./channel-session-state-store";
 import { parseCliOptions } from "./cli-options";
 import { loadConfig } from "./config";
@@ -16,6 +20,7 @@ import { TaskCoordinator } from "./task-coordinator";
 import { VoiceChatCoordinator } from "./voice-chat-coordinator";
 import { DiscordAgent } from "@agents/discord/discord-agent";
 import { createDiscordAgentTools } from "@agents/discord/discord-tools";
+import { createDiscordReadTool } from "@agents/discord/tools/discord-read";
 import {
   createPiAgentFactory,
   createPiModelRuntime,
@@ -68,6 +73,8 @@ import { FileScheduledTaskStore } from "@modules/scheduling/infrastructure/file-
 import { QuickJsWatchCheckRunner } from "@modules/scheduling/application/quickjs-watch-check-runner";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import type { DiscordReactionEvent } from "@modules/discord/domain/discord-reaction";
+import { isOwnerAccessScope } from "@shared/access";
+import webAccessExtension from "pi-web-access";
 
 const DISCORD_USAGE_STATUS_REFRESH_INTERVAL_MS = 60 * 60 * 1_000;
 const CHANNEL_CONTEXT_ROTATION_CHECK_INTERVAL_MS = 60 * 1_000;
@@ -208,6 +215,33 @@ export async function bootstrap(): Promise<void> {
     : piAgentFactory;
   let discordService!: DiscordJsService;
   let agentCoordinator!: AgentCoordinator;
+  const attachedAgentCoordinator = new AttachedAgentCoordinator({
+    runner: standaloneRunner,
+    model: resolveConfiguredModel(config.llm.provider, config.llm.model, modelRuntime),
+    systemPrompt: ATTACHED_AGENT_SYSTEM_PROMPT,
+    cwd: process.cwd(),
+    logger,
+    taskCoordinator,
+    ...(config.llm.thinkingLevel ? { thinkingLevel: config.llm.thinkingLevel } : {}),
+    toolNames: ["discord_read", "web_search", "fetch_content", "get_search_content"],
+    createTools: (conversationKey, accessScope) => [
+      createDiscordReadTool(
+        discordService,
+        conversationKey.channelId,
+        undefined,
+        isOwnerAccessScope(accessScope, ownerUserId) && ownerUserId
+          ? { userId: ownerUserId }
+          : undefined,
+      ),
+    ],
+    extensions: [webAccessExtension],
+    onResult: (delivery) =>
+      agentCoordinator.deliverAttachedResult(
+        delivery.conversationKey,
+        delivery.accessScope,
+        delivery.result,
+      ),
+  });
   const createDiscordAgent = (
     channelId: string,
     sessionKey: string,
@@ -232,6 +266,7 @@ export async function bootstrap(): Promise<void> {
             tts,
             userMemoryStore,
             watchCheckRunner,
+            attachedAgent: attachedAgentCoordinator,
           },
           analyzeImage,
         ),
@@ -271,6 +306,7 @@ export async function bootstrap(): Promise<void> {
                     speak,
                     userMemoryStore,
                     watchCheckRunner,
+                    attachedAgent: attachedAgentCoordinator,
                   },
                   analyzeImage,
                 ),
@@ -409,6 +445,7 @@ export async function bootstrap(): Promise<void> {
     memoryCoordinator?.dispose();
     userMemoryCoordinator?.dispose();
     await taskCoordinator.waitForCompletion();
+    await attachedAgentCoordinator.dispose();
     await discordService.stop();
     await agentCoordinator.dispose();
     await evalFeedbackObserver.flush();

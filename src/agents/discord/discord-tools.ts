@@ -1,5 +1,6 @@
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 
+import type { AttachedAgentToolTarget } from "@agents/core/attached-agent";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
 import type { DiscordUserResolver } from "@modules/discord/domain/discord-user";
 import type { OwnerMemoryStore } from "@modules/memory/application/owner-memory-store";
@@ -16,6 +17,7 @@ import { createDiscordReadTool, type DiscordImageAnalysis } from "./tools/discor
 import { createDiscordSendTool } from "./tools/discord-send";
 import { createDiscordSpeakTool } from "./tools/discord-speak";
 import { createDiscordVoiceTool } from "./tools/discord-voice";
+import { createAttachedAgentTools } from "./tools/attached-agent";
 
 export interface DiscordAgentToolsOptions {
   readonly channelApi: Pick<
@@ -32,6 +34,7 @@ export interface DiscordAgentToolsOptions {
   readonly ownerMemoryStore?: OwnerMemoryStore;
   readonly userMemoryStore?: UserMemoryStore;
   readonly discordUserDirectory?: DiscordUserResolver;
+  readonly attachedAgent?: AttachedAgentToolTarget;
 }
 
 /**
@@ -69,6 +72,9 @@ export function createDiscordAgentTools(
           accessScope,
           options.watchCheckRunner,
         )
+      : []),
+    ...(options.attachedAgent
+      ? createAttachedAgentTools(options.attachedAgent, options.channelId, accessScope)
       : []),
     ...(ownerFeaturesAllowed && options.ownerMemoryStore
       ? createOwnerMemoryTools(options.ownerMemoryStore, `communication:${options.channelId}`)

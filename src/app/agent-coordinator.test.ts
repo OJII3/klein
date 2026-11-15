@@ -863,6 +863,27 @@ test("records watch check failures without notifying the agent", async () => {
   }
 });
 
+test("delivers an attached task result to the conversation agent", async () => {
+  const harness = createHarness();
+  try {
+    await harness.agentCoordinator.handleDiscordMessage(
+      createMessage("test-channel", "m-1", "hello"),
+    );
+    await harness.agentCoordinator.deliverAttachedResult(
+      { kind: "discord", channelId: "test-channel" },
+      "public",
+      { taskId: "task-1", status: "completed", text: "found it" },
+    );
+
+    const turns = harness.prompts.get("test-channel") ?? [];
+    assert.equal(turns.length, 2);
+    assert.equal(turns[1]?.event.type, "attached.result");
+    assert.match(eventText(turns[1]?.event), /found it/u);
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
 function eventText(event: AgentEvent | undefined): string {
   return (
     event?.content

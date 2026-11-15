@@ -14,6 +14,7 @@ import {
   SettingsManager,
   type AgentSession,
   type CreateAgentSessionOptions,
+  type ExtensionFactory,
   type ModelRuntime,
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
@@ -47,6 +48,7 @@ export interface PiStandaloneSessionOptions {
   readonly thinkingLevel?: ThinkingLevel;
   readonly toolNames: readonly string[];
   readonly tools: readonly ToolDefinition[];
+  readonly extensions?: readonly ExtensionFactory[];
 }
 
 export interface PiStandalonePromptOptions {
@@ -55,7 +57,7 @@ export interface PiStandalonePromptOptions {
 }
 
 export interface PiStandaloneSession {
-  prompt(text: string, options?: PiStandalonePromptOptions): Promise<void>;
+  prompt(text: string, options?: PiStandalonePromptOptions): Promise<string | undefined>;
   dispose(): void;
 }
 
@@ -84,6 +86,7 @@ export class PiStandaloneRunner {
       cwd: options.cwd,
       agentDir: this.options.agentDir,
       settingsManager,
+      extensionFactories: [...(options.extensions ?? [])],
       noExtensions: true,
       noSkills: true,
       noPromptTemplates: true,
@@ -158,8 +161,8 @@ async function promptSession(
   session: AgentSession,
   text: string,
   options: PiStandalonePromptOptions = {},
-): Promise<void> {
-  if (options.signal?.aborted) throw new Error("Background agent was aborted");
+): Promise<string | undefined> {
+  if (options.signal?.aborted) throw new Error("Standalone agent was aborted");
 
   let timedOut = false;
   const abort = (): void => {
@@ -177,12 +180,27 @@ async function promptSession(
 
   try {
     await session.prompt(text, { expandPromptTemplates: false });
-    if (options.signal?.aborted) throw new Error("Background agent was aborted");
+    if (options.signal?.aborted) throw new Error("Standalone agent was aborted");
     if (timedOut) {
-      throw new Error(`Background agent timed out after ${options.timeoutMs} ms`);
+      throw new Error(`Standalone agent timed out after ${options.timeoutMs} ms`);
     }
+    return lastAssistantText(session);
   } finally {
     if (timeout) clearTimeout(timeout);
     options.signal?.removeEventListener("abort", handleAbort);
   }
+}
+
+function lastAssistantText(session: AgentSession): string | undefined {
+  const message = [...session.messages]
+    .reverse()
+    .find((candidate) => candidate.role === "assistant");
+  if (!message) return undefined;
+
+  const text = message.content
+    .filter((block) => block.type === "text")
+    .map((block) => block.text)
+    .join("\n")
+    .trim();
+  return text || undefined;
 }
