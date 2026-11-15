@@ -969,7 +969,7 @@ test("delivers an attached task result to the conversation agent", async () => {
 
     const turns = harness.prompts.get("test-channel") ?? [];
     assert.equal(turns.length, 2);
-    assert.equal(turns[1]?.event.type, "attached.result");
+    assert.equal(turns[1]?.event.type, "worker.result");
     assert.match(eventText(turns[1]?.event), /found it/u);
   } finally {
     await harness.agentCoordinator.dispose();
