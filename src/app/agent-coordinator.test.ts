@@ -102,6 +102,9 @@ function createHarness(
   const channelApi: DiscordChannelApi = {
     async sendTyping() {},
     async sendMessage() {},
+    async sendChoices() {
+      throw new Error("Unexpected choice send");
+    },
     async sendAudio() {},
     async readMessage() {
       return message;

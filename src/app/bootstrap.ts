@@ -249,7 +249,7 @@ export async function bootstrap(): Promise<void> {
       ownerFeaturesAllowed,
       ownerUserId,
       sessionKey,
-      tools: (analyzeImage) =>
+      tools: (analyzeImage, requesterUserId) =>
         createDiscordAgentTools(
           {
             channelApi: discordService,
@@ -258,6 +258,7 @@ export async function bootstrap(): Promise<void> {
             ownerFeaturesAllowed,
             ownerMemoryStore,
             ownerUserId,
+            requesterUserId,
             scheduledTaskStore,
             tts,
             userMemoryStore,
@@ -297,13 +298,14 @@ export async function bootstrap(): Promise<void> {
           createVoiceChatAgent: (channelId, sessionKey, speak) =>
             DiscordAgent.create(voiceChatAgentFactory, channelId, voiceSystemPrompt, {
               sessionKey,
-              tools: (analyzeImage) =>
+              tools: (analyzeImage, requesterUserId) =>
                 createDiscordAgentTools(
                   {
                     channelApi: discordService,
                     channelId,
                     discordUserDirectory,
                     ownerFeaturesAllowed: false,
+                    requesterUserId,
                     speak,
                     userMemoryStore,
                     watchCheckRunner,

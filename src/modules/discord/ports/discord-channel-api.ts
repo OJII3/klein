@@ -1,3 +1,4 @@
+import type { DiscordChoiceRequest } from "../domain/discord-choice";
 import type { DiscordMessage, DiscordMessageLocator } from "../domain/discord-message";
 
 export interface DiscordMessageRequester {
@@ -20,6 +21,7 @@ export interface DiscordChannelApi {
   getChannelLocation(channelId: string): Promise<DiscordChannelLocation>;
   sendTyping(channelId: string): Promise<void>;
   sendMessage(channelId: string, content: string): Promise<readonly string[] | void>;
+  sendChoices(channelId: string, request: DiscordChoiceRequest): Promise<string>;
   sendAudio(channelId: string, audio: Uint8Array, filename: string): Promise<void>;
   readMessage(
     locator: DiscordMessageLocator,

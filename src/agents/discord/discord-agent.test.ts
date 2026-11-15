@@ -118,6 +118,65 @@ test("routes voice replies through discord_speak using the existing runtime prom
   agent.dispose();
 });
 
+test("adds discord_ask only when a turn requester is available", () => {
+  const channelApi = {} as DiscordChannelApi;
+  const withRequester = createDiscordAgentTools(
+    {
+      channelApi,
+      channelId: "channel-123",
+      ownerFeaturesAllowed: false,
+      requesterUserId: () => "user-123",
+      watchCheckRunner: silentWatchCheckRunner,
+    },
+    async () => undefined,
+  );
+  const withoutRequester = createDiscordAgentTools(
+    {
+      channelApi,
+      channelId: "channel-123",
+      ownerFeaturesAllowed: false,
+      watchCheckRunner: silentWatchCheckRunner,
+    },
+    async () => undefined,
+  );
+
+  assert.ok(withRequester.some((tool) => tool.name === "discord_ask"));
+  assert.ok(!withoutRequester.some((tool) => tool.name === "discord_ask"));
+});
+
+test("exposes the message author as the turn's requester and clears it for events", async () => {
+  let requesterUserId: (() => string | undefined) | undefined;
+  const runtime: AgentRuntime = {
+    async prompt() {},
+    dispose() {},
+  };
+  const agentFactory: AgentFactory = {
+    async create() {
+      return runtime;
+    },
+  };
+  const agent = await DiscordAgent.create(agentFactory, "channel-123", "system prompt", {
+    tools: (_analyzeImage, getRequesterUserId) => {
+      requesterUserId = getRequesterUserId;
+      return [];
+    },
+  });
+
+  await agent.promptMessage(message);
+  assert.equal(requesterUserId?.(), "123456789012345678");
+
+  const event: AgentEvent = {
+    id: "attached:task-1",
+    occurredAt: "2026-10-14T09:31:00.000Z",
+    type: "attached.result",
+    source: "attached",
+    content: [{ type: "text", text: "結果" }],
+  };
+  await agent.promptEvent(event);
+  assert.equal(requesterUserId?.(), undefined);
+  agent.dispose();
+});
+
 test("wires the runtime image analyzer into discord_read", async () => {
   let tools: readonly ToolDefinition[] = [];
   let analyzedPrompt: unknown;
@@ -141,6 +200,9 @@ test("wires the runtime image analyzer into discord_read", async () => {
     },
     async sendTyping() {},
     async sendMessage() {},
+    async sendChoices() {
+      throw new Error("Unexpected choice send");
+    },
     async sendAudio() {},
     async readMessage() {
       return message;

@@ -1334,7 +1334,7 @@ async function executeSessionSlice(
     const sentMessages: string[] = [];
     const channelApi: Pick<
       DiscordChannelApi,
-      "readMessage" | "sendMessage" | "sendTyping" | "sendAudio"
+      "readMessage" | "sendMessage" | "sendChoices" | "sendTyping" | "sendAudio"
     > = {
       async readMessage(target) {
         return createFallbackSampleDiscordMessage(target.channelId, target.messageId);
@@ -1342,6 +1342,9 @@ async function executeSessionSlice(
       async sendMessage(_channelId, content) {
         sentMessages.push(content);
         return [`replay-sent-${sentMessages.length}`];
+      },
+      async sendChoices() {
+        throw new Error("Unexpected choice send");
       },
       async sendTyping() {},
       async sendAudio() {},

@@ -14,6 +14,7 @@ import {
 import type { Logger } from "pino";
 
 import type { DiscordAccessPolicy } from "../domain/discord-access-policy";
+import type { DiscordChoiceRequest } from "../domain/discord-choice";
 import {
   DiscordOperatingState,
   type DiscordOperatingMode,
@@ -35,6 +36,7 @@ import type { DiscordAccessRequestStore } from "../ports/discord-access-request-
 import type { DiscordChannelRuleStore } from "../ports/discord-channel-rule-store";
 
 import { DiscordChannelAccessRequester } from "./discord-channel-access-request";
+import { DiscordChoiceRequester } from "./discord-choice-requester";
 import {
   DiscordVoiceChatController,
   type DiscordVoiceChatControllerOptions,
@@ -74,6 +76,7 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
   private readonly interactionHandler: DiscordJsInteractionHandler;
   private readonly messageAdapter: DiscordJsMessageAdapter;
   private readonly channelAccessRequester?: DiscordChannelAccessRequester;
+  private readonly choiceRequester: DiscordChoiceRequester;
   private onMessage?: DiscordMessageHandler;
   private onReaction?: DiscordReactionHandler;
   private messageListener?: (message: Message) => void;
@@ -128,6 +131,12 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
         ...(enableReactions ? [Partials.Message, Partials.Reaction, Partials.User] : []),
       ],
     });
+    this.choiceRequester = new DiscordChoiceRequester(
+      this.client,
+      accessPolicy,
+      (message) => this.onMessage?.(message) ?? Promise.resolve(),
+      this.logger,
+    );
     this.channelAccessRequester =
       accessRuleStore && accessRequestStore
         ? new DiscordChannelAccessRequester(
@@ -258,6 +267,10 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
     return sentIds;
   }
 
+  sendChoices(channelId: string, request: DiscordChoiceRequest): Promise<string> {
+    return this.choiceRequester.send(channelId, request);
+  }
+
   async sendAudio(channelId: string, audio: Uint8Array, filename: string): Promise<void> {
     const channel = await this.getChannel(channelId);
     await channel.send({ files: [new AttachmentBuilder(Buffer.from(audio), { name: filename })] });
@@ -321,6 +334,7 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
     this.onMessage = undefined;
     this.onReaction = undefined;
     this.stopAccepting();
+    this.choiceRequester.clear();
     this.channels.clear();
     await this.voiceChatController?.stop();
     this.client.destroy();
@@ -473,6 +487,9 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
   }
 
   private async handleInteraction(interaction: Interaction): Promise<void> {
+    if (interaction.isButton?.() && (await this.choiceRequester.handleButton(interaction))) {
+      return;
+    }
     if (
       this.channelAccessRequester &&
       interaction.isButton?.() &&

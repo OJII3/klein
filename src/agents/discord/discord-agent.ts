@@ -15,7 +15,14 @@ export interface DiscordAgentCreateOptions {
   readonly handoffContext?: string;
   readonly ownerFeaturesAllowed?: boolean;
   readonly ownerUserId?: string;
-  readonly tools?: (analyzeImage: DiscordImageAnalysis) => readonly ToolDefinition[];
+  readonly tools?: (
+    analyzeImage: DiscordImageAnalysis,
+    requesterUserId: () => string | undefined,
+  ) => readonly ToolDefinition[];
+}
+
+interface DiscordTurnState {
+  requesterUserId?: string;
 }
 
 export class DiscordAgent implements ConversationAgent {
@@ -24,6 +31,7 @@ export class DiscordAgent implements ConversationAgent {
     private readonly channelId: string,
     private readonly ownerUserId?: string,
     private readonly ownerFeaturesAllowed = false,
+    private readonly turnState: DiscordTurnState = {},
   ) {}
 
   static async create(
@@ -44,11 +52,12 @@ export class DiscordAgent implements ConversationAgent {
     };
 
     const ownerFeaturesAllowed = options.ownerFeaturesAllowed === true && !!options.ownerUserId;
+    const turnState: DiscordTurnState = {};
     runtime = await agentFactory.create(
       {
         systemPrompt,
       },
-      options.tools?.(analyzeImage) ?? [],
+      options.tools?.(analyzeImage, () => turnState.requesterUserId) ?? [],
       {
         role: { kind: "conversation" },
         initialContext: options.handoffContext
@@ -61,10 +70,17 @@ export class DiscordAgent implements ConversationAgent {
       },
     );
 
-    return new DiscordAgent(runtime, channelId, options.ownerUserId, ownerFeaturesAllowed);
+    return new DiscordAgent(
+      runtime,
+      channelId,
+      options.ownerUserId,
+      ownerFeaturesAllowed,
+      turnState,
+    );
   }
 
   prompt(turn: AgentTurn): Promise<void> {
+    this.turnState.requesterUserId = turn.context.requesterUserId;
     return this.runtime.prompt(this.withContextAccess(turn)).then(() => undefined);
   }
 
@@ -73,6 +89,7 @@ export class DiscordAgent implements ConversationAgent {
   }
 
   steer(turn: AgentTurn): Promise<void> {
+    this.turnState.requesterUserId = turn.context.requesterUserId;
     const next = this.withContextAccess(turn);
     return (this.runtime.steer ? this.runtime.steer(next) : this.runtime.prompt(next)).then(
       () => undefined,

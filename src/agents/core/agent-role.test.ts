@@ -29,9 +29,14 @@ test("standalone agents return results to their caller", () => {
 
 test("only conversation agents may hold a surface tool", () => {
   assert.doesNotThrow(() => assertSurfaceToolsAllowed({ kind: "conversation" }, ["discord_send"]));
+  assert.doesNotThrow(() => assertSurfaceToolsAllowed({ kind: "conversation" }, ["discord_ask"]));
   assert.throws(
     () => assertSurfaceToolsAllowed({ kind: "attached", taskId: "task-1" }, ["discord_send"]),
     /attached agent role may not use the surface tool discord_send/,
+  );
+  assert.throws(
+    () => assertSurfaceToolsAllowed({ kind: "attached", taskId: "task-1" }, ["discord_ask"]),
+    /attached agent role may not use the surface tool discord_ask/,
   );
   assert.throws(
     () => assertSurfaceToolsAllowed({ kind: "standalone" }, ["discord_speak"]),

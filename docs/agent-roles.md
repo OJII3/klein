@@ -30,7 +30,7 @@ surface とは Discord のチャンネルに表示される発話を指す。テ
 
 `AgentRole` は役割を型で表し、`resolveAgentPolicy` が役割ごとの surface の所有、寿命、assistant text の行き先を返す。`assertSurfaceToolsAllowed` は surface ツールを持つことを許されない役割に surface ツールが渡された時点で失敗する。
 
-surface ツールは `discord_send`、`discord_speak`、`discord_voice` の 3 つである。会話エージェントだけがこれらを持てる。
+surface ツールは `discord_send`、`discord_ask`、`discord_speak`、`discord_voice` の 4 つである。会話エージェントだけがこれらを持てる。
 
 ## 現在の割り当て
 
