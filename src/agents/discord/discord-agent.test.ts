@@ -168,8 +168,8 @@ test("exposes the message author as the turn's requester and clears it for event
   const event: AgentEvent = {
     id: "attached:task-1",
     occurredAt: "2026-10-14T09:31:00.000Z",
-    type: "attached.result",
-    source: "attached",
+    type: "worker.result",
+    source: "worker",
     content: [{ type: "text", text: "結果" }],
   };
   await agent.promptEvent(event);

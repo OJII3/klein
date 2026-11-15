@@ -35,7 +35,7 @@ surface ツールは `discord_send`、`discord_ask`、`discord_speak`、`discord
 ## 現在の割り当て
 
 - `DiscordAgent` は会話エージェントである。テキストチャンネルとボイスチャンネルの両方で使う。
-- `AttachedAgentCoordinator` のタスクは会話付随エージェントである。会話エージェントと同じリッチな Pi セッションを使い、surface ツールと rotation を持たない。会話エージェントが `worker_start` で始め、`worker_send` で続きの指示を渡す。結果は `attached.result` イベントとして会話へ戻る。
+- `AttachedAgentCoordinator` のタスクは会話付随エージェントである。会話エージェントと同じリッチな Pi セッションを使い、surface ツールと rotation を持たない。会話エージェントが `worker_start` で始め、`worker_send` で続きの指示を渡す。結果は `worker.result` イベントとして会話へ戻る。
 - `createPiMinimalAgentFactory` のセッションは独立エージェントである。ユーザーメモリ更新がこれを使う。最小プロファイルの Pi セッションは `PiStandaloneSessionRunner` が作る。
 - `PiMemoryProcessor` の完了呼び出しは独立エージェントである。ツールを持たず、結果を呼び出し元が parse する。
 
@@ -43,11 +43,11 @@ surface ツールは `discord_send`、`discord_ask`、`discord_speak`、`discord
 
 会話エージェントは `worker_start` でタスクを始める。タスクは会話エージェントと同じファクトリから作られ、拡張、スキル、MCP、権限、画像解析、background compaction を持つ。surface ツールは持たず、rotation にも参加しない。セッションは `sessions/attached/` に置かれ、トレースは `role: attached` で記録される。`worker_send` は同じセッションへ続きの指示を渡し、`worker_close` はセッションを捨てる。`worker_list` はその会話のタスクを返す。
 
-タスクが 1 回のプロンプトを終えると、結果は `attached.result` イベントとして会話へ届く。イベントの本文は外部データとして扱うよう注記され、会話エージェントが発話するかどうかを決める。タスクは Discord に直接書かない。
+タスクが 1 回のプロンプトを終えると、結果は `worker.result` イベントとして会話へ届く。イベントの本文は外部データとして扱うよう注記され、会話エージェントが発話するかどうかを決める。タスクは Discord に直接書かない。
 
 リマインダーが発火すると、会話エージェントを直接プロンプトせず、そのチャンネルの会話付随エージェントを 1 回だけ起動する。結果は同じ経路で会話へ戻り、会話エージェントが発話する。リマインダーのタスクは結果を届けた後に自分を閉じる。
 
-会話付随エージェントは watch を登録できる。登録した watch はそのタスクに属し、wake はそのタスクのセッションを再開する。結果は同じく `attached.result` として会話へ戻る。タスクが閉じられていて再開できない場合、wake は会話エージェントへ届く。
+会話付随エージェントは watch を登録できる。登録した watch はそのタスクに属し、wake はそのタスクのセッションを再開する。結果は同じく `worker.result` として会話へ戻る。タスクが閉じられていて再開できない場合、wake は会話エージェントへ届く。
 
 タスクのメタデータは `attached-tasks/` に保存する。再起動するとタスク一覧は復元され、次の `worker_send` で `sessions/attached/` のセッションを再開する。再起動時に実行中だったプロンプトは `interrupted` として記録し、自動では再実行しない。Web UI のセッション一覧には出ない。
 

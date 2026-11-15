@@ -315,8 +315,8 @@ function createAttachedTaskResultEvent(result: AttachedTaskResult): AgentEvent {
   return {
     id: `attached:${result.taskId}:${Date.now()}`,
     occurredAt: new Date().toISOString(),
-    type: "attached.result",
-    source: "attached",
+    type: "worker.result",
+    source: "worker",
     content: [
       {
         type: "text",
