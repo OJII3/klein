@@ -11,7 +11,7 @@ import type {
   AttachedTaskStartInput,
   AttachedTaskStatus,
 } from "@agents/core/attached-agent";
-import type { PiSession, PiSessionOptions } from "@runtime/pi/pi-session-runner";
+import type { PiSession, PiSessionOptions } from "@runtime/pi/pi-non-conversation-session-runner";
 import type { ConversationKey } from "./channel-session-state-store";
 import type { TaskCoordinator } from "./task-coordinator";
 

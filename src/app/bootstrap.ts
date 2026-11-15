@@ -27,7 +27,7 @@ import {
   ensureConfiguredModels,
   resolveConfiguredModel,
 } from "@runtime/pi/pi-agent-runtime";
-import { PiSessionRunner } from "@runtime/pi/pi-session-runner";
+import { PiNonConversationSessionRunner } from "@runtime/pi/pi-non-conversation-session-runner";
 import { migratePiDurableStorage } from "@runtime/pi/pi-durable-migration";
 import { createPiUsageReporterFromEnv } from "@runtime/pi/pi-usage-reporter";
 import { createWatchFetchTool } from "@runtime/pi/watch-fetch-tool";
@@ -154,7 +154,7 @@ export async function bootstrap(): Promise<void> {
     throw new Error("GEMINI_API_KEY is required");
   }
   await ensureConfiguredModels(modelRuntime, modelsInUse);
-  const sessionRunner = new PiSessionRunner({
+  const sessionRunner = new PiNonConversationSessionRunner({
     agentDir,
     logger,
     modelRuntime,

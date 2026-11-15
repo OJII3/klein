@@ -3,7 +3,7 @@ import test from "node:test";
 import pino from "pino";
 
 import type { NonConversationAgentRole } from "@agents/core/agent-role";
-import type { PiSession, PiSessionOptions } from "@runtime/pi/pi-session-runner";
+import type { PiSession, PiSessionOptions } from "@runtime/pi/pi-non-conversation-session-runner";
 import { AttachedAgentCoordinator, type AttachedTaskDelivery } from "./attached-agent-coordinator";
 import { TaskCoordinator } from "./task-coordinator";
 

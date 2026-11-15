@@ -33,7 +33,7 @@ export type CompleteSimple = (
   options?: SimpleStreamOptions,
 ) => Promise<AssistantMessage>;
 
-export interface PiSessionRunnerOptions {
+export interface PiNonConversationSessionRunnerOptions {
   readonly agentDir: string;
   readonly logger: Logger;
   readonly modelRuntime: ModelRuntime;
@@ -68,8 +68,8 @@ export interface PiSession {
  * a standalone agent stay distinguishable in storage and logs. One-shot
  * completions keep the caller's prompt and parsing.
  */
-export class PiSessionRunner {
-  constructor(private readonly options: PiSessionRunnerOptions) {}
+export class PiNonConversationSessionRunner {
+  constructor(private readonly options: PiNonConversationSessionRunnerOptions) {}
 
   createCompleter(sessionId: string): CompleteSimple {
     return (model, context, options) => this.complete(model, context, options, sessionId);

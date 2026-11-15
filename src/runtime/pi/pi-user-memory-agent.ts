@@ -21,7 +21,7 @@ import {
   parseUserMemory,
   renderUserMemory,
 } from "@modules/user-memory/infrastructure/markdown-user-memory-store";
-import type { PiSessionRunner } from "./pi-session-runner";
+import type { PiNonConversationSessionRunner } from "./pi-non-conversation-session-runner";
 
 type ThinkingLevel = NonNullable<CreateAgentSessionOptions["thinkingLevel"]>;
 
@@ -76,7 +76,7 @@ export interface PiUserMemoryAgentOptions {
   readonly model: Model<Api>;
   readonly sessionId?: string;
   readonly thinkingLevel?: ThinkingLevel;
-  readonly runner?: PiSessionRunner;
+  readonly runner?: PiNonConversationSessionRunner;
   readonly sessionFactory?: UserMemoryAgentSessionFactory;
 }
 

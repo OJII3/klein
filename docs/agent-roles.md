@@ -36,7 +36,7 @@ surface ツールは `discord_send`、`discord_speak`、`discord_voice` の 3 �
 
 - `DiscordAgent` は会話エージェントである。テキストチャンネルとボイスチャンネルの両方で使う。
 - `AttachedAgentCoordinator` のタスクは会話付随エージェントである。会話エージェントが `attached_start` で始め、`attached_send` で続きの指示を渡す。結果は `attached.result` イベントとして会話へ戻る。
-- `PiSessionRunner` の `standalone` セッションは独立エージェントである。ユーザーメモリ更新がこれを使う。
+- `PiNonConversationSessionRunner` の `standalone` セッションは独立エージェントである。ユーザーメモリ更新がこれを使う。
 - `PiMemoryProcessor` の完了呼び出しは独立エージェントである。ツールを持たず、結果を呼び出し元が parse する。
 
 ## 会話付随エージェントのやり取り
