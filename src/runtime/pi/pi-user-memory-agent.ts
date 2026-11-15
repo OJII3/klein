@@ -3,15 +3,15 @@ import { constants } from "node:fs";
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
-import type { Api, Model } from "@earendil-works/pi-ai";
 import {
   createEditToolDefinition,
   createReadToolDefinition,
   createWriteToolDefinition,
-  type CreateAgentSessionOptions,
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 
+import type { AgentEvent } from "@agents/core/agent-event";
+import type { AgentFactory } from "@agents/core/agent-factory";
 import type {
   UserMemory,
   UserMemoryMessage,
@@ -21,9 +21,6 @@ import {
   parseUserMemory,
   renderUserMemory,
 } from "@modules/user-memory/infrastructure/markdown-user-memory-store";
-import type { PiStandaloneSessionRunner } from "./pi-standalone-session-runner";
-
-type ThinkingLevel = NonNullable<CreateAgentSessionOptions["thinkingLevel"]>;
 
 export const USER_MEMORY_AGENT_SYSTEM_PROMPT = `You are Klein's background user-memory curator.
 You update one Markdown memory file for one Discord user with the read, write, and edit tools.
@@ -63,8 +60,6 @@ export interface UserMemoryAgentSession {
 export interface UserMemoryAgentSessionOptions {
   readonly directory: string;
   readonly fileName: string;
-  readonly model: Model<Api>;
-  readonly thinkingLevel?: ThinkingLevel;
 }
 
 export type UserMemoryAgentSessionFactory = (
@@ -73,10 +68,8 @@ export type UserMemoryAgentSessionFactory = (
 
 export interface PiUserMemoryAgentOptions {
   readonly directory: string;
-  readonly model: Model<Api>;
   readonly sessionId?: string;
-  readonly thinkingLevel?: ThinkingLevel;
-  readonly runner?: PiStandaloneSessionRunner;
+  readonly factory?: AgentFactory;
   readonly sessionFactory?: UserMemoryAgentSessionFactory;
 }
 
@@ -91,19 +84,20 @@ export class PiUserMemoryAgent implements UserMemoryProcessor {
     const sessionId = options.sessionId ?? `user-memory-${randomUUID()}`;
     this.sessionFactory =
       options.sessionFactory ??
-      ((sessionOptions) => {
-        if (!options.runner) {
-          throw new Error("PiUserMemoryAgent requires a runner or a sessionFactory");
+      (async (sessionOptions) => {
+        if (!options.factory) {
+          throw new Error("PiUserMemoryAgent requires a factory or a sessionFactory");
         }
-        return options.runner.createSession({
-          cwd: sessionOptions.directory,
-          model: sessionOptions.model,
-          sessionId,
-          systemPrompt: USER_MEMORY_AGENT_SYSTEM_PROMPT,
-          thinkingLevel: sessionOptions.thinkingLevel,
-          toolNames: ["read", "write", "edit"],
-          tools: createSandboxedTools(sessionOptions.directory, sessionOptions.fileName),
-        });
+        const runtime = await options.factory.create(
+          { systemPrompt: USER_MEMORY_AGENT_SYSTEM_PROMPT },
+          createSandboxedTools(sessionOptions.directory, sessionOptions.fileName),
+          { role: { kind: "standalone" }, sessionKey: sessionId },
+        );
+        return {
+          prompt: (text) =>
+            runtime.prompt({ event: createStandalonePromptEvent(text), context: {} }),
+          dispose: () => runtime.dispose(),
+        };
       });
   }
 
@@ -120,8 +114,6 @@ export class PiUserMemoryAgent implements UserMemoryProcessor {
       const session = await this.sessionFactory({
         directory: this.options.directory,
         fileName,
-        model: this.options.model,
-        thinkingLevel: this.options.thinkingLevel,
       });
       try {
         await session.prompt(buildUserPrompt(fileName, memory, messages));
@@ -200,4 +192,14 @@ ${messageBatch || "(empty)"}
 </messages>
 
 Use read, write, or edit on "${fileName}". If nothing durable should change, leave the file untouched and reply "no change".`;
+}
+
+function createStandalonePromptEvent(text: string): AgentEvent {
+  return {
+    id: `standalone:${randomUUID()}`,
+    occurredAt: new Date().toISOString(),
+    type: "standalone.prompt",
+    source: "standalone",
+    content: [{ type: "text", text }],
+  };
 }

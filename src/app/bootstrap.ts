@@ -28,6 +28,7 @@ import {
   resolveConfiguredModel,
 } from "@runtime/pi/pi-agent-runtime";
 import { PiStandaloneSessionRunner } from "@runtime/pi/pi-standalone-session-runner";
+import { createPiMinimalAgentFactory } from "@runtime/pi/pi-minimal-agent-factory";
 import { migratePiDurableStorage } from "@runtime/pi/pi-durable-migration";
 import { createPiUsageReporterFromEnv } from "@runtime/pi/pi-usage-reporter";
 import { createWatchFetchTool } from "@runtime/pi/watch-fetch-tool";
@@ -272,13 +273,18 @@ export async function bootstrap(): Promise<void> {
           store: userMemoryStore,
           processor: new PiUserMemoryAgent({
             directory: userMemoryDirectory,
-            model: resolveConfiguredModel(
-              userMemoryConfig.llm.provider,
-              userMemoryConfig.llm.model,
-              modelRuntime,
-            ),
-            runner: sessionRunner,
-            thinkingLevel: userMemoryConfig.llm.thinkingLevel,
+            factory: createPiMinimalAgentFactory({
+              runner: sessionRunner,
+              model: resolveConfiguredModel(
+                userMemoryConfig.llm.provider,
+                userMemoryConfig.llm.model,
+                modelRuntime,
+              ),
+              cwd: process.cwd(),
+              ...(userMemoryConfig.llm.thinkingLevel
+                ? { thinkingLevel: userMemoryConfig.llm.thinkingLevel }
+                : {}),
+            }),
           }),
           logger,
           taskCoordinator,
