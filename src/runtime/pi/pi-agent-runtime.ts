@@ -23,6 +23,7 @@ import webAccessExtension from "pi-web-access";
 
 import type { AgentDefinition } from "@agents/core/agent-definition";
 import type { AgentFactory, AgentCreationOptions } from "@agents/core/agent-factory";
+import { assertSurfaceToolsAllowed, type AgentRole } from "@agents/core/agent-role";
 import type { AgentTurn, AgentTurnContext } from "@agents/core/agent-turn";
 import type { AgentPrompt, AgentRuntime } from "@agents/core/agent-runtime";
 import { ImageAnalysisError, toImageAnalysisFailure } from "@agents/core/image-analysis";
@@ -31,6 +32,7 @@ import type { WatchToolCatalog } from "@modules/scheduling/application/watch-too
 import { renderWatchToolSection } from "@modules/scheduling/application/watch-tool";
 import { createBackgroundCompactionExtension } from "./background-compaction";
 import { createFxtwitterFetchExtension } from "./fxtwitter-fetch";
+import { readLastAssistantText } from "./pi-assistant-text";
 import {
   buildHandoffSummaryPrompt,
   extractTextContent,
@@ -118,8 +120,9 @@ export function createPiSessionManager(
   sessionKey: string,
   sessionMode: SessionMode,
   cwd = process.cwd(),
+  role: AgentRole = { kind: "conversation" },
 ): SessionManager {
-  const sessionDir = resolve(agentDir, "sessions", encodeURIComponent(sessionKey));
+  const sessionDir = resolve(agentDir, "sessions", role.kind, encodeURIComponent(sessionKey));
 
   return sessionMode === "resume"
     ? SessionManager.continueRecent(cwd, sessionDir)
@@ -355,6 +358,10 @@ export class PiAgentRuntime implements AgentRuntime {
     return formatHandoffSummary(summaryBody);
   }
 
+  lastAssistantText(): string | undefined {
+    return readLastAssistantText(this.session);
+  }
+
   dispose(): void {
     this.onDispose?.();
     this.trace?.dispose();
@@ -547,6 +554,10 @@ export function createPiAgentFactory({
         ...adaptPiTools(tools),
         ...(skillReadTool ? [skillReadTool] : []),
       ].filter((tool) => authorization.allowsTool(tool.name));
+      assertSurfaceToolsAllowed(
+        options.role,
+        customTools.map((tool) => tool.name),
+      );
       const hasDiscordSend = customTools.some((tool) => tool.name === "discord_send");
       const hasWatchAdd = customTools.some((tool) => tool.name === "watch_add");
       const systemPrompt = [
@@ -556,7 +567,11 @@ export function createPiAgentFactory({
         .filter(Boolean)
         .join("\n\n");
       const trace = new PiRuntimeTrace(
-        logger.child({ component: "pi-runtime", sessionKey: options.sessionKey }),
+        logger.child({
+          component: "pi-runtime",
+          role: options.role.kind,
+          sessionKey: options.sessionKey,
+        }),
         { usageReporter },
       );
       const settingsManager = SettingsManager.create(process.cwd(), agentDir);
@@ -585,6 +600,7 @@ export function createPiAgentFactory({
         options.sessionKey,
         sessionMode,
         process.cwd(),
+        options.role,
       );
       const sessionId = sessionManager.getSessionId();
       const model = withOpenCodeSessionHeader(

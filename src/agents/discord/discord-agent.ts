@@ -2,7 +2,7 @@ import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 
 import type { AgentEvent } from "../core/agent-event";
 import type { AgentTurn, AgentTurnContext } from "../core/agent-turn";
-import type { ChannelAgent } from "../core/channel-agent";
+import type { ConversationAgent } from "../core/conversation-agent";
 import type { AgentFactory } from "../core/agent-factory";
 import type { AgentRuntime } from "../core/agent-runtime";
 import { formatDiscordMessage, type DiscordMessage } from "@modules/discord/domain/discord-message";
@@ -18,7 +18,7 @@ export interface DiscordAgentCreateOptions {
   readonly tools?: (analyzeImage: DiscordImageAnalysis) => readonly ToolDefinition[];
 }
 
-export class DiscordAgent implements ChannelAgent {
+export class DiscordAgent implements ConversationAgent {
   private constructor(
     private readonly runtime: AgentRuntime,
     private readonly channelId: string,
@@ -50,6 +50,7 @@ export class DiscordAgent implements ChannelAgent {
       },
       options.tools?.(analyzeImage) ?? [],
       {
+        role: { kind: "conversation" },
         initialContext: options.handoffContext
           ? `<previous-conversation-context>\n` +
             `This is background context for continuity, not a new message to answer.\n` +

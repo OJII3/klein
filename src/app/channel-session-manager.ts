@@ -1,6 +1,6 @@
 import type { Logger } from "pino";
 
-import type { ChannelAgent } from "@agents/core/channel-agent";
+import type { ConversationAgent } from "@agents/core/conversation-agent";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
 import type { DiscordAccessPolicy } from "@modules/discord/domain/discord-access-policy";
 import { isOwnerAccessScope, ownerAccessScope, PUBLIC_ACCESS_SCOPE } from "@shared/access";
@@ -23,14 +23,14 @@ export interface ChannelSessionManagerDependencies {
     sessionKey: string,
     handoffContext?: string,
     ownerFeaturesAllowed?: boolean,
-  ) => Promise<ChannelAgent>;
+  ) => Promise<ConversationAgent>;
   readonly channelApi: DiscordChannelApi;
   readonly logger: Logger;
   readonly ownerUserId?: string;
 }
 
 export class ChannelSessionManager {
-  private readonly agents = new Map<string, Promise<ChannelAgent>>();
+  private readonly agents = new Map<string, Promise<ConversationAgent>>();
   private readonly agentSessionKeys = new Map<string, string>();
   private readonly channelOperations = new Map<string, Promise<void>>();
   private readonly inMemoryChannelStates = new Map<string, ChannelSessionState>();
@@ -108,7 +108,7 @@ export class ChannelSessionManager {
   async runTurn(
     conversationKey: ConversationKey,
     accessScope: string,
-    turn: (agent: ChannelAgent, state: ChannelSessionState) => Promise<void>,
+    turn: (agent: ConversationAgent, state: ChannelSessionState) => Promise<void>,
     details: { readonly channelName?: string } = {},
   ): Promise<void> {
     const now = Date.now();
@@ -213,7 +213,10 @@ export class ChannelSessionManager {
     return this.dependencies.channelSessionStateStore?.save(state) ?? Promise.resolve();
   }
 
-  getAgent(conversationKey: ConversationKey, state: ChannelSessionState): Promise<ChannelAgent> {
+  getAgent(
+    conversationKey: ConversationKey,
+    state: ChannelSessionState,
+  ): Promise<ConversationAgent> {
     const key = serializeConversationKey(conversationKey);
     const existing = this.agents.get(key);
     if (existing && this.agentSessionKeys.get(key) === state.sessionKey) return existing;

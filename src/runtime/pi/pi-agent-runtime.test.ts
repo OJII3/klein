@@ -646,6 +646,18 @@ test("starts a separate session in new mode", async () => {
   assert.equal(fresh.buildSessionContext().messages.length, 0);
 });
 
+test("stores attached sessions under sessions/attached", async () => {
+  await using temp = await createTempDir("klein-pi-session-");
+  const agentDir = temp.path;
+
+  const attached = createPiSessionManager(agentDir, "attached-1", "new", process.cwd(), {
+    kind: "attached",
+    taskId: "attached-1",
+  });
+
+  assert.equal(attached.getSessionDir(), resolve(agentDir, "sessions", "attached", "attached-1"));
+});
+
 test("starts background compaction before the built-in threshold", async () => {
   const settingsManager = SettingsManager.inMemory({
     compaction: { enabled: true, reserveTokens: 100, keepRecentTokens: 150 },

@@ -498,7 +498,7 @@ export class SessionEvalCaseStore {
       }
     }
 
-    const sessionsRoot = join(this.agentDir, "sessions");
+    const sessionsRoot = join(this.agentDir, "sessions", "conversation");
     let dirs: string[];
     try {
       dirs = await readdir(sessionsRoot);

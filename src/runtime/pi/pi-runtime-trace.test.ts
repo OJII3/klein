@@ -295,7 +295,7 @@ test("real Pi keeps accepting steer while a spoken tool blocks the next model ca
         await playback;
       }),
     ],
-    { sessionKey: "voice-trace-integration" },
+    { role: { kind: "conversation" }, sessionKey: "voice-trace-integration" },
   );
   const entries = () => lines.map((line) => JSON.parse(line) as Record<string, unknown>);
   const processing = runtime.prompt({

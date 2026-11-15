@@ -12,7 +12,7 @@ import type {
 import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
 
 import { createLogger } from "@app/logger";
-import { backgroundSessionDir, PiBackgroundRunner } from "./pi-background-runner";
+import { PiStandaloneSessionRunner, standaloneSessionDir } from "./pi-standalone-session-runner";
 import { resolveConfiguredModel } from "./pi-model-runtime";
 import type { PiUsageReporter } from "./pi-usage-reporter";
 
@@ -40,10 +40,30 @@ function assistantMessage(): AssistantMessage {
   };
 }
 
-test("stores background sessions under the agent directory", () => {
+test("stores standalone sessions under the agent directory", () => {
   assert.equal(
-    backgroundSessionDir("/tmp/klein-agent", "user-memory:1"),
-    resolve("/tmp/klein-agent/sessions/background/user-memory%3A1"),
+    standaloneSessionDir("/tmp/klein-agent", "user-memory:1"),
+    resolve("/tmp/klein-agent/sessions/standalone/user-memory%3A1"),
+  );
+});
+
+test("standalone sessions reject surface tools", async () => {
+  const runner = new PiStandaloneSessionRunner({
+    agentDir: "/tmp/klein-agent",
+    logger,
+    modelRuntime: {} as unknown as ModelRuntime,
+  });
+
+  await assert.rejects(
+    runner.createSession({
+      cwd: "/tmp",
+      model: resolveConfiguredModel("opencode-go", "deepseek-v4.1-flash"),
+      sessionId: "user-memory-1",
+      systemPrompt: "system",
+      toolNames: ["discord_send"],
+      tools: [],
+    }),
+    /standalone agent role may not use the surface tool discord_send/,
   );
 });
 
@@ -52,7 +72,7 @@ test("records a one-shot completion's usage and session header", async () => {
   let receivedModel: Model<Api> | undefined;
   const receivedOptions: { maxTokens?: number; sessionId?: string }[] = [];
   const recorded: { message: AssistantMessage; sessionId: string }[] = [];
-  const runner = new PiBackgroundRunner({
+  const runner = new PiStandaloneSessionRunner({
     agentDir: "/tmp/klein-agent",
     logger,
     modelRuntime: {

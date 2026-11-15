@@ -70,7 +70,7 @@ for (const restricted of [false, true]) {
         systemPrompt: "You are クライン. Keep your usual tone.",
       },
       [readTool, sendTool],
-      { sessionKey: "codemode-test" },
+      { role: { kind: "conversation" }, sessionKey: "codemode-test" },
     );
 
     try {

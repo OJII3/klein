@@ -9,7 +9,6 @@ import {
   renderUserMemory,
 } from "@modules/user-memory/infrastructure/markdown-user-memory-store";
 import { createTempDir } from "../../testing/temp-dir";
-import { resolveConfiguredModel } from "./pi-model-runtime";
 import {
   PiUserMemoryAgent,
   USER_MEMORY_AGENT_SYSTEM_PROMPT,
@@ -32,7 +31,6 @@ function createAgent(
 ): PiUserMemoryAgent {
   return new PiUserMemoryAgent({
     directory,
-    model: resolveConfiguredModel("opencode-go", "deepseek-v4.1-flash"),
     sessionFactory,
   });
 }

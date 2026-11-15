@@ -9,20 +9,11 @@ export async function sumMonthlyProviderCost(
   monthStart: number,
 ): Promise<number> {
   const sessionsDirectory = resolve(agentDirectory, "sessions");
-  let directories;
-  try {
-    directories = await readdir(sessionsDirectory, { withFileTypes: true });
-  } catch (error) {
-    if (isNodeError(error) && error.code === "ENOENT") {
-      return 0;
-    }
-    throw error;
-  }
+  const sessionDirectories = await listSessionDirectories(sessionsDirectory);
 
   let cost = 0;
-  for (const directory of directories) {
-    if (!directory.isDirectory()) continue;
-    const sessionInfos = await SessionManager.listAll(resolve(sessionsDirectory, directory.name));
+  for (const directory of sessionDirectories) {
+    const sessionInfos = await SessionManager.listAll(directory);
     for (const info of sessionInfos) {
       const entries = parseSessionEntries(await readFile(info.path, "utf8"));
       for (const entry of entries) {
@@ -36,6 +27,40 @@ export async function sumMonthlyProviderCost(
   }
 
   return cost;
+}
+
+/**
+ * Finds every directory that holds session files. The session root groups
+ * sessions by role, and each role directory holds one directory per session,
+ * so the walk stops at the first directory that contains `.jsonl` files.
+ */
+async function listSessionDirectories(root: string): Promise<string[]> {
+  let entries;
+  try {
+    entries = await readdir(root, { withFileTypes: true });
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") return [];
+    throw error;
+  }
+
+  const directories: string[] = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const path = resolve(root, entry.name);
+    let children;
+    try {
+      children = await readdir(path, { withFileTypes: true });
+    } catch (error) {
+      if (isNodeError(error) && error.code === "ENOENT") continue;
+      throw error;
+    }
+    if (children.some((child) => child.isFile() && child.name.endsWith(".jsonl"))) {
+      directories.push(path);
+    } else {
+      directories.push(...(await listSessionDirectories(path)));
+    }
+  }
+  return directories;
 }
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {

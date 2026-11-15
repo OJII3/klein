@@ -3,6 +3,10 @@ import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 
 import { AgentCoordinator } from "./agent-coordinator";
+import {
+  AttachedAgentCoordinator,
+  ATTACHED_AGENT_SYSTEM_PROMPT,
+} from "./attached-agent-coordinator";
 import { ChannelSessionStateStore } from "./channel-session-state-store";
 import { parseCliOptions } from "./cli-options";
 import { loadConfig } from "./config";
@@ -16,13 +20,15 @@ import { TaskCoordinator } from "./task-coordinator";
 import { VoiceChatCoordinator } from "./voice-chat-coordinator";
 import { DiscordAgent } from "@agents/discord/discord-agent";
 import { createDiscordAgentTools } from "@agents/discord/discord-tools";
+import { createAttachedWorkerTools } from "@agents/discord/tools/attached-worker";
 import {
   createPiAgentFactory,
   createPiModelRuntime,
   ensureConfiguredModels,
   resolveConfiguredModel,
 } from "@runtime/pi/pi-agent-runtime";
-import { PiBackgroundRunner } from "@runtime/pi/pi-background-runner";
+import { PiStandaloneSessionRunner } from "@runtime/pi/pi-standalone-session-runner";
+import { createPiMinimalAgentFactory } from "@runtime/pi/pi-minimal-agent-factory";
 import { migratePiDurableStorage } from "@runtime/pi/pi-durable-migration";
 import { createPiUsageReporterFromEnv } from "@runtime/pi/pi-usage-reporter";
 import { createWatchFetchTool } from "@runtime/pi/watch-fetch-tool";
@@ -68,6 +74,7 @@ import { FileScheduledTaskStore } from "@modules/scheduling/infrastructure/file-
 import { QuickJsWatchCheckRunner } from "@modules/scheduling/application/quickjs-watch-check-runner";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import type { DiscordReactionEvent } from "@modules/discord/domain/discord-reaction";
+import { isOwnerAccessScope } from "@shared/access";
 
 const DISCORD_USAGE_STATUS_REFRESH_INTERVAL_MS = 60 * 60 * 1_000;
 const CHANNEL_CONTEXT_ROTATION_CHECK_INTERVAL_MS = 60 * 1_000;
@@ -147,7 +154,7 @@ export async function bootstrap(): Promise<void> {
     throw new Error("GEMINI_API_KEY is required");
   }
   await ensureConfiguredModels(modelRuntime, modelsInUse);
-  const backgroundRunner = new PiBackgroundRunner({
+  const sessionRunner = new PiStandaloneSessionRunner({
     agentDir,
     logger,
     modelRuntime,
@@ -192,7 +199,10 @@ export async function bootstrap(): Promise<void> {
     permissions: config.permissions,
     usageReporter: piUsageReporter,
     watchToolCatalog,
-    onSessionCreated: (session, context) => evalFeedbackObserver.observeSession(session, context),
+    onSessionCreated: (session, context) =>
+      context.role.kind === "conversation"
+        ? evalFeedbackObserver.observeSession(session, context)
+        : undefined,
   });
   const voiceChatAgentFactory = voiceChatConfig?.llm
     ? createPiAgentFactory({
@@ -208,6 +218,26 @@ export async function bootstrap(): Promise<void> {
     : piAgentFactory;
   let discordService!: DiscordJsService;
   let agentCoordinator!: AgentCoordinator;
+  const attachedAgentCoordinator = new AttachedAgentCoordinator({
+    factory: piAgentFactory,
+    systemPrompt: ATTACHED_AGENT_SYSTEM_PROMPT,
+    logger,
+    taskCoordinator,
+    createTools: (conversationKey, accessScope) =>
+      createAttachedWorkerTools(
+        discordService,
+        conversationKey.channelId,
+        isOwnerAccessScope(accessScope, ownerUserId) && ownerUserId
+          ? { userId: ownerUserId }
+          : undefined,
+      ),
+    onResult: (delivery) =>
+      agentCoordinator.deliverAttachedTaskResult(
+        delivery.conversationKey,
+        delivery.accessScope,
+        delivery.result,
+      ),
+  });
   const createDiscordAgent = (
     channelId: string,
     sessionKey: string,
@@ -232,6 +262,7 @@ export async function bootstrap(): Promise<void> {
             tts,
             userMemoryStore,
             watchCheckRunner,
+            attachedTasks: attachedAgentCoordinator,
           },
           analyzeImage,
         ),
@@ -242,13 +273,18 @@ export async function bootstrap(): Promise<void> {
           store: userMemoryStore,
           processor: new PiUserMemoryAgent({
             directory: userMemoryDirectory,
-            model: resolveConfiguredModel(
-              userMemoryConfig.llm.provider,
-              userMemoryConfig.llm.model,
-              modelRuntime,
-            ),
-            runner: backgroundRunner,
-            thinkingLevel: userMemoryConfig.llm.thinkingLevel,
+            factory: createPiMinimalAgentFactory({
+              runner: sessionRunner,
+              model: resolveConfiguredModel(
+                userMemoryConfig.llm.provider,
+                userMemoryConfig.llm.model,
+                modelRuntime,
+              ),
+              cwd: process.cwd(),
+              ...(userMemoryConfig.llm.thinkingLevel
+                ? { thinkingLevel: userMemoryConfig.llm.thinkingLevel }
+                : {}),
+            }),
           }),
           logger,
           taskCoordinator,
@@ -271,6 +307,7 @@ export async function bootstrap(): Promise<void> {
                     speak,
                     userMemoryStore,
                     watchCheckRunner,
+                    attachedTasks: attachedAgentCoordinator,
                   },
                   analyzeImage,
                 ),
@@ -312,7 +349,7 @@ export async function bootstrap(): Promise<void> {
         processor: new PiMemoryProcessor(
           resolveConfiguredModel(memoryConfig.llm.provider, memoryConfig.llm.model, modelRuntime),
           memoryConfig.llm.thinkingLevel,
-          backgroundRunner.createCompleter(memorySessionId),
+          sessionRunner.createCompleter(memorySessionId),
         ),
         taskCoordinator,
       })
@@ -409,6 +446,7 @@ export async function bootstrap(): Promise<void> {
     memoryCoordinator?.dispose();
     userMemoryCoordinator?.dispose();
     await taskCoordinator.waitForCompletion();
+    await attachedAgentCoordinator.dispose();
     await discordService.stop();
     await agentCoordinator.dispose();
     await evalFeedbackObserver.flush();

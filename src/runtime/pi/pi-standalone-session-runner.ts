@@ -14,12 +14,15 @@ import {
   SettingsManager,
   type AgentSession,
   type CreateAgentSessionOptions,
+  type ExtensionFactory,
   type ModelRuntime,
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import type { Logger } from "pino";
 
+import { assertSurfaceToolsAllowed } from "@agents/core/agent-role";
 import { withOpenCodeSessionHeader } from "./pi-model-runtime";
+import { readLastAssistantText } from "./pi-assistant-text";
 import { PiRuntimeTrace } from "./pi-runtime-trace";
 import type { PiUsageReporter } from "./pi-usage-reporter";
 
@@ -31,14 +34,14 @@ export type CompleteSimple = (
   options?: SimpleStreamOptions,
 ) => Promise<AssistantMessage>;
 
-export interface PiBackgroundRunnerOptions {
+export interface PiStandaloneSessionRunnerOptions {
   readonly agentDir: string;
   readonly logger: Logger;
   readonly modelRuntime: ModelRuntime;
   readonly usageReporter?: PiUsageReporter;
 }
 
-export interface PiBackgroundSessionOptions {
+export interface PiSessionOptions {
   readonly cwd: string;
   readonly model: Model<Api>;
   readonly sessionId: string;
@@ -46,36 +49,45 @@ export interface PiBackgroundSessionOptions {
   readonly thinkingLevel?: ThinkingLevel;
   readonly toolNames: readonly string[];
   readonly tools: readonly ToolDefinition[];
+  readonly extensions?: readonly ExtensionFactory[];
 }
 
-export interface PiBackgroundPromptOptions {
+export interface PiSessionPromptOptions {
   readonly signal?: AbortSignal;
   readonly timeoutMs?: number;
 }
 
-export interface PiBackgroundSession {
-  prompt(text: string, options?: PiBackgroundPromptOptions): Promise<void>;
+export interface PiSession {
+  prompt(text: string, options?: PiSessionPromptOptions): Promise<string | undefined>;
   dispose(): void;
 }
 
 /**
- * Runs background work against Pi without the foreground channel tooling. One-shot
- * completions keep the caller's prompt and parsing; agent sessions get a persisted
- * session file under the agent directory with only the tools the caller passes in.
+ * Runs standalone agents against Pi. A standalone agent belongs to no
+ * conversation: it never writes to a conversation surface, and its result
+ * returns to the caller. One-shot completions keep the caller's prompt and
+ * parsing; agent sessions get a persisted session file under
+ * `sessions/standalone/` with only the tools the caller passes in.
  */
-export class PiBackgroundRunner {
-  constructor(private readonly options: PiBackgroundRunnerOptions) {}
+export class PiStandaloneSessionRunner {
+  constructor(private readonly options: PiStandaloneSessionRunnerOptions) {}
 
   createCompleter(sessionId: string): CompleteSimple {
     return (model, context, options) => this.complete(model, context, options, sessionId);
   }
 
-  async createSession(options: PiBackgroundSessionOptions): Promise<PiBackgroundSession> {
+  async createSession(options: PiSessionOptions): Promise<PiSession> {
+    const role = { kind: "standalone" } as const;
+    assertSurfaceToolsAllowed(role, [
+      ...options.toolNames,
+      ...options.tools.map((tool) => tool.name),
+    ]);
     const settingsManager = SettingsManager.create(options.cwd, this.options.agentDir);
     const resourceLoader = new DefaultResourceLoader({
       cwd: options.cwd,
       agentDir: this.options.agentDir,
       settingsManager,
+      extensionFactories: [...(options.extensions ?? [])],
       noExtensions: true,
       noSkills: true,
       noPromptTemplates: true,
@@ -87,7 +99,7 @@ export class PiBackgroundRunner {
 
     const sessionManager = SessionManager.create(
       options.cwd,
-      backgroundSessionDir(this.options.agentDir, options.sessionId),
+      standaloneSessionDir(this.options.agentDir, options.sessionId),
     );
     const model = withOpenCodeSessionHeader(options.model, options.sessionId);
     const { session } = await createAgentSession({
@@ -104,7 +116,11 @@ export class PiBackgroundRunner {
     });
 
     const trace = new PiRuntimeTrace(
-      this.options.logger.child({ component: "pi-background", sessionId: options.sessionId }),
+      this.options.logger.child({
+        component: "pi-session",
+        role: "standalone",
+        sessionId: options.sessionId,
+      }),
       { usageReporter: this.options.usageReporter },
     );
     trace.attach(session);
@@ -134,24 +150,21 @@ export class PiBackgroundRunner {
   }
 }
 
-/** Name of the directory that holds background sessions under `sessions/`. */
-export const BACKGROUND_SESSION_DIRECTORY = "background";
-
 /**
- * Directory holding the session files of one background session id. Each
+ * Directory holding the session files of one standalone session id. Each
  * `createSession` call writes a new file under it, so the transcript of every
  * run survives the process.
  */
-export function backgroundSessionDir(agentDir: string, sessionId: string): string {
-  return resolve(agentDir, "sessions", BACKGROUND_SESSION_DIRECTORY, encodeURIComponent(sessionId));
+export function standaloneSessionDir(agentDir: string, sessionId: string): string {
+  return resolve(agentDir, "sessions", "standalone", encodeURIComponent(sessionId));
 }
 
 async function promptSession(
   session: AgentSession,
   text: string,
-  options: PiBackgroundPromptOptions = {},
-): Promise<void> {
-  if (options.signal?.aborted) throw new Error("Background agent was aborted");
+  options: PiSessionPromptOptions = {},
+): Promise<string | undefined> {
+  if (options.signal?.aborted) throw new Error("Agent session was aborted");
 
   let timedOut = false;
   const abort = (): void => {
@@ -169,10 +182,11 @@ async function promptSession(
 
   try {
     await session.prompt(text, { expandPromptTemplates: false });
-    if (options.signal?.aborted) throw new Error("Background agent was aborted");
+    if (options.signal?.aborted) throw new Error("Agent session was aborted");
     if (timedOut) {
-      throw new Error(`Background agent timed out after ${options.timeoutMs} ms`);
+      throw new Error(`Agent session timed out after ${options.timeoutMs} ms`);
     }
+    return readLastAssistantText(session);
   } finally {
     if (timeout) clearTimeout(timeout);
     options.signal?.removeEventListener("abort", handleAbort);

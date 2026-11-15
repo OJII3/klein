@@ -77,6 +77,10 @@ The sandbox has no timers, filesystem, process APIs, or persistent storage (`sto
 
 Schedules use a unified format; the old `<runtime.agentDir>/reminders` directory is ignored.
 
+### Attached tasks
+
+The conversation agent can start an attached task with `attached_start`. The task runs in its own Pi session with the same extensions, skills, MCP servers, permissions, image analysis, and background compaction as the conversation agent, but without the Discord surface tools. It never writes to Discord, and returns its assistant text as an `attached.result` event. The conversation agent decides whether to speak. `attached_send` gives the task a follow-up, `attached_close` discards it, and `attached_list` lists the tasks in the conversation. Task state lives in the process, so a restart drops every task.
+
 ### Remote MCP tools
 
 Register MCP tools in Pi's agent directory (`.runtime/pi`):
