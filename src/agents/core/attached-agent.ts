@@ -23,6 +23,11 @@ export interface AttachedTaskStartInput {
   /** Whether the conversation allows owner-only tools for this task. */
   readonly ownerFeaturesAllowed: boolean;
   readonly prompt: string;
+  /**
+   * Closes the task after its result is delivered. Use this for a task that
+   * exists only to produce one result, such as a reminder.
+   */
+  readonly closeAfterResult?: boolean;
 }
 
 /**

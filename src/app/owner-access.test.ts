@@ -69,6 +69,20 @@ function createHarness(store: ChannelSessionStateStore, channelRule: { access: D
           guildId === "guild" ? { channels: { channel: channelRule } } : undefined,
       },
     ),
+    attachedTasks: {
+      async start() {
+        return "attached-test";
+      },
+      async send() {
+        return false;
+      },
+      async close() {
+        return false;
+      },
+      list() {
+        return [];
+      },
+    },
     ownerUserId: ownerId,
     channelSessionStateStore: store,
     createDiscordAgent: (channelId, sessionKey, handoffContext, ownerFeaturesAllowed) =>

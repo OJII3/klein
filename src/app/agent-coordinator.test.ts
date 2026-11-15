@@ -8,6 +8,7 @@ import type { AgentRuntime } from "@agents/core/agent-runtime";
 import type { AgentEvent } from "@agents/core/agent-event";
 import type { AgentTurn } from "@agents/core/agent-turn";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
+import type { AttachedTaskControl, AttachedTaskStartInput } from "@agents/core/attached-agent";
 
 import {
   createDiscordAccessPolicy,
@@ -32,6 +33,7 @@ import { createTempDir } from "../testing/temp-dir";
 
 interface TestHarness {
   readonly agentCoordinator: AgentCoordinator;
+  readonly attachedStarts: AttachedTaskStartInput[];
   readonly channelLocationCalls: string[];
   readonly createdSessionKeys: string[];
   readonly prompts: Map<string, AgentTurn[]>;
@@ -59,6 +61,22 @@ function createHarness(
   const createdSessionKeys: string[] = [];
   const prompts = new Map<string, AgentTurn[]>();
   const ownerFeaturesAllowed: boolean[] = [];
+  const attachedStarts: AttachedTaskStartInput[] = [];
+  const attachedTasks: AttachedTaskControl = {
+    async start(input) {
+      attachedStarts.push(input);
+      return `attached-${attachedStarts.length}`;
+    },
+    async send() {
+      return false;
+    },
+    async close() {
+      return false;
+    },
+    list() {
+      return [];
+    },
+  };
   const agentFactory: AgentFactory = {
     async create(_definition, _tools, options): Promise<AgentRuntime> {
       createdSessionKeys.push(options.sessionKey);
@@ -97,6 +115,7 @@ function createHarness(
   return {
     agentCoordinator: new AgentCoordinator({
       ...options,
+      attachedTasks,
       createDiscordAgent: (channelId, sessionKey, handoffContext, ownerFeaturesAllowed) =>
         DiscordAgent.create(agentFactory, channelId, "system prompt", {
           sessionKey,
@@ -112,6 +131,7 @@ function createHarness(
       watchCheckRunner,
       taskCoordinator: new TaskCoordinator(),
     }),
+    attachedStarts,
     channelLocationCalls,
     createdSessionKeys,
     prompts,
@@ -500,7 +520,7 @@ const dueWatch: WatchTask = {
   nextRunAt: "2026-10-14T00:05:00.000Z",
 };
 
-test("delivers reminders to the current rotated session and reuses it for conversation", async () => {
+test("starts a reminder worker and keeps the conversation session for conversation", async () => {
   await using temp = await createTempDir("klein-reminder-session-");
   const directory = temp.path;
   const channelSessionStateStore = new ChannelSessionStateStore(directory);
@@ -521,31 +541,32 @@ test("delivers reminders to the current rotated session and reuses it for conver
 
   try {
     await harness.agentCoordinator.deliverDueTasks(Date.parse("2026-10-14T00:02:00.000Z"));
-    assert.deepEqual(harness.createdSessionKeys, [sessionKey]);
+    assert.deepEqual(harness.createdSessionKeys, []);
     assert.equal(reminders.getStored(), undefined);
-    const events = harness.prompts.get(sessionKey.slice("discord-channel:".length));
-    assert.equal(events?.[0]?.event.type, "reminder.due");
-    assert.equal(events?.[0]?.event.source, "reminder");
-    assert.match(
-      events?.[0]?.event.content[0]?.type === "text" ? events[0]?.event.content[0].text : "",
-      /定例会が始まります/u,
-    );
+    assert.equal(harness.attachedStarts.length, 1);
+    assert.equal(harness.attachedStarts[0]?.channelId, "test-channel");
+    assert.equal(harness.attachedStarts[0]?.accessScope, "public");
+    assert.equal(harness.attachedStarts[0]?.closeAfterResult, true);
+    assert.match(harness.attachedStarts[0]?.prompt ?? "", /定例会が始まります/u);
+
     await harness.agentCoordinator.handleDiscordMessage(
       createMessage("test-channel", "reply", "ありがとう"),
     );
     assert.deepEqual(harness.createdSessionKeys, [sessionKey]);
-    assert.equal(events?.[1]?.event.type, "discord.message");
+    assert.equal(
+      harness.prompts.get(sessionKey.slice("discord-channel:".length))?.[0]?.event.type,
+      "discord.message",
+    );
   } finally {
     await harness.agentCoordinator.dispose();
   }
 });
 
-test("rotates an idle session before delivering a reminder into the new conversation", async () => {
+test("starts a reminder worker without rotating the conversation session", async () => {
   await using temp = await createTempDir("klein-reminder-rotation-");
   const directory = temp.path;
   const channelSessionStateStore = new ChannelSessionStateStore(directory);
   const oldKey = "discord-channel:test-channel:public:rotation:2000-01-01";
-  const newKey = `discord-channel:test-channel:public:rotation:${getChannelRotationBucket(Date.now())}`;
   await channelSessionStateStore.save({
     conversationKey: { kind: "discord", channelId: dueReminder.channelId },
     accessScope: "public",
@@ -561,25 +582,21 @@ test("rotates an idle session before delivering a reminder into the new conversa
   });
   try {
     await harness.agentCoordinator.deliverDueTasks(Date.parse("2026-10-14T00:02:00.000Z"));
-    assert.deepEqual(harness.createdSessionKeys, [oldKey, newKey]);
-    assert.deepEqual(harness.prompts.get(oldKey.slice("discord-channel:".length)), []);
-    assert.equal(
-      harness.prompts.get(newKey.slice("discord-channel:".length))?.[0]?.event.type,
-      "reminder.due",
-    );
+    assert.deepEqual(harness.createdSessionKeys, []);
+    assert.equal(harness.attachedStarts.length, 1);
     assert.equal(reminders.getStored(), undefined);
     const state = await channelSessionStateStore.getOrCreate(
       { kind: "discord", channelId: dueReminder.channelId },
       getChannelRotationBucket(Date.now()),
     );
-    assert.equal(state.sessionKey, newKey);
+    assert.equal(state.sessionKey, oldKey);
     assert.equal(state.handoffContext, undefined);
   } finally {
     await harness.agentCoordinator.dispose();
   }
 });
 
-test("delivers reminders through an already active channel agent", async () => {
+test("starts a reminder worker without prompting an active channel agent", async () => {
   const reminders = createScheduledTaskStore(dueReminder);
   const harness = createHarness(undefined, reminders.store);
   try {
@@ -590,8 +607,9 @@ test("delivers reminders through an already active channel agent", async () => {
     assert.deepEqual(harness.createdSessionKeys, ["discord-channel:test-channel"]);
     assert.deepEqual(
       harness.prompts.get("test-channel")?.map((turn) => turn.event.type),
-      ["discord.message", "reminder.due"],
+      ["discord.message"],
     );
+    assert.equal(harness.attachedStarts.length, 1);
     assert.equal(reminders.getStored(), undefined);
   } finally {
     await harness.agentCoordinator.dispose();
@@ -622,11 +640,13 @@ for (const { scope, access, owner, delivered } of [
     });
     try {
       await harness.agentCoordinator.deliverDueTasks(Date.parse("2026-10-14T00:02:00.000Z"));
-      assert.equal(harness.createdSessionKeys.length, delivered ? 1 : 0);
+      assert.equal(harness.createdSessionKeys.length, 0);
+      assert.equal(harness.attachedStarts.length, delivered ? 1 : 0);
       assert.equal(reminders.getStored() === undefined, delivered);
       if (delivered) {
-        assert.equal(harness.createdSessionKeys[0], `discord-channel:test-channel:${scope}`);
-        assert.equal(harness.ownerFeaturesAllowed[0], scope.startsWith("owner:"));
+        assert.equal(harness.attachedStarts[0]?.channelId, "test-channel");
+        assert.equal(harness.attachedStarts[0]?.accessScope, scope);
+        assert.equal(harness.attachedStarts[0]?.ownerFeaturesAllowed, scope.startsWith("owner:"));
       }
     } finally {
       await harness.agentCoordinator.dispose();
@@ -650,6 +670,7 @@ test("advances a recurring reminder without changing its stable ownership", asyn
     assert.equal(stored.accessScope, reminder.accessScope);
     assert.ok(Date.parse(stored.nextRunAt) > before);
     assert.equal("sessionKey" in stored, false);
+    assert.equal(harness.attachedStarts.length, 1);
   } finally {
     await harness.agentCoordinator.dispose();
   }
