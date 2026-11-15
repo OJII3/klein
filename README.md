@@ -79,7 +79,7 @@ Schedules use a unified format; the old `<runtime.agentDir>/reminders` directory
 
 ### Attached tasks
 
-The conversation agent can start an attached task with `worker_start`, and a reminder starts one when it fires. The task runs in its own Pi session with the same extensions, skills, MCP servers, permissions, image analysis, and background compaction as the conversation agent, but without the Discord surface tools. It never writes to Discord, and returns its assistant text as an `attached.result` event. The conversation agent decides whether to speak. `worker_send` gives the task a follow-up, `worker_close` discards it, and `worker_list` lists the tasks in the conversation. A reminder's task closes itself after it delivers its result. Task state lives in the process, so a restart drops every task.
+The conversation agent can start an attached task with `worker_start`, and a reminder starts one when it fires. The task runs in its own Pi session with the same extensions, skills, MCP servers, permissions, image analysis, and background compaction as the conversation agent, but without the Discord surface tools. It never writes to Discord, and returns its assistant text as an `attached.result` event. The conversation agent decides whether to speak. `worker_send` gives the task a follow-up, `worker_close` discards it, and `worker_list` lists the tasks in the conversation. A reminder's task closes itself after it delivers its result. Task metadata is saved under `attached-tasks/`, so a restart restores the task list and the next `worker_send` resumes the saved Pi session. A prompt that was running at shutdown is marked `interrupted` and is not re-run automatically.
 
 ### Remote MCP tools
 

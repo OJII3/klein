@@ -1,4 +1,8 @@
-export type AttachedTaskStatus = "running" | "idle" | "failed";
+/**
+ * `interrupted` marks a task whose prompt was still running when the process
+ * stopped. The task is restored, but its prompt is not re-run automatically.
+ */
+export type AttachedTaskStatus = "running" | "idle" | "failed" | "interrupted";
 
 export interface AttachedTaskInfo {
   readonly id: string;

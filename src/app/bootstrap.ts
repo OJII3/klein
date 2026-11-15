@@ -7,6 +7,7 @@ import {
   AttachedAgentCoordinator,
   ATTACHED_AGENT_SYSTEM_PROMPT,
 } from "./attached-agent-coordinator";
+import { FileAttachedTaskStore } from "./attached-task-store";
 import { ChannelSessionStateStore } from "./channel-session-state-store";
 import { parseCliOptions } from "./cli-options";
 import { loadConfig } from "./config";
@@ -222,6 +223,7 @@ export async function bootstrap(): Promise<void> {
     factory: piAgentFactory,
     systemPrompt: ATTACHED_AGENT_SYSTEM_PROMPT,
     logger,
+    store: new FileAttachedTaskStore(resolve(agentDir, "attached-tasks")),
     taskCoordinator,
     createTools: (conversationKey, accessScope) =>
       createAttachedWorkerTools(
@@ -470,6 +472,7 @@ export async function bootstrap(): Promise<void> {
     const pendingMessages: DiscordMessage[] = [];
     const pendingReactions: DiscordReactionEvent[] = [];
     let restoring = true;
+    await attachedAgentCoordinator.load();
     await discordService.start(
       (message) => {
         if (restoring) {
