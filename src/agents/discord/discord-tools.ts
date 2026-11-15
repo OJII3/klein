@@ -74,7 +74,12 @@ export function createDiscordAgentTools(
         )
       : []),
     ...(options.attachedTasks
-      ? createAttachedControlTools(options.attachedTasks, options.channelId, accessScope)
+      ? createAttachedControlTools(
+          options.attachedTasks,
+          options.channelId,
+          accessScope,
+          ownerFeaturesAllowed,
+        )
       : []),
     ...(ownerFeaturesAllowed && options.ownerMemoryStore
       ? createOwnerMemoryTools(options.ownerMemoryStore, `communication:${options.channelId}`)

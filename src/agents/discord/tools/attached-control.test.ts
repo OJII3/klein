@@ -45,7 +45,7 @@ function findTool(tools: ReturnType<typeof createAttachedControlTools>, name: st
 test("starts a task in the current conversation", async () => {
   const { target, started } = createTarget();
   const tool = findTool(
-    createAttachedControlTools(target, "channel-1", "public"),
+    createAttachedControlTools(target, "channel-1", "public", false),
     "attached_start",
   );
 
@@ -58,14 +58,22 @@ test("starts a task in the current conversation", async () => {
   );
 
   assert.deepEqual(started, [
-    { channelId: "channel-1", accessScope: "public", prompt: "investigate" },
+    {
+      channelId: "channel-1",
+      accessScope: "public",
+      ownerFeaturesAllowed: false,
+      prompt: "investigate",
+    },
   ]);
   assert.deepEqual(result.details, { taskId: "task-1" });
 });
 
 test("sends a follow-up to a task", async () => {
   const { target, sent } = createTarget();
-  const tool = findTool(createAttachedControlTools(target, "channel-1", "public"), "attached_send");
+  const tool = findTool(
+    createAttachedControlTools(target, "channel-1", "public", false),
+    "attached_send",
+  );
 
   const result = await tool.execute(
     "tool-call",
@@ -82,7 +90,7 @@ test("sends a follow-up to a task", async () => {
 test("closes a task", async () => {
   const { target, closed } = createTarget();
   const tool = findTool(
-    createAttachedControlTools(target, "channel-1", "public"),
+    createAttachedControlTools(target, "channel-1", "public", false),
     "attached_close",
   );
 
@@ -100,7 +108,10 @@ test("closes a task", async () => {
 
 test("lists the tasks of the current conversation", async () => {
   const { target } = createTarget();
-  const tool = findTool(createAttachedControlTools(target, "channel-1", "public"), "attached_list");
+  const tool = findTool(
+    createAttachedControlTools(target, "channel-1", "public", false),
+    "attached_list",
+  );
 
   const result = await tool.execute("tool-call", {} as never, undefined, undefined, {} as never);
 

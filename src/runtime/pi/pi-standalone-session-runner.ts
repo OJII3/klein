@@ -20,8 +20,9 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import type { Logger } from "pino";
 
-import { assertSurfaceToolsAllowed, type NonConversationAgentRole } from "@agents/core/agent-role";
+import { assertSurfaceToolsAllowed } from "@agents/core/agent-role";
 import { withOpenCodeSessionHeader } from "./pi-model-runtime";
+import { readLastAssistantText } from "./pi-assistant-text";
 import { PiRuntimeTrace } from "./pi-runtime-trace";
 import type { PiUsageReporter } from "./pi-usage-reporter";
 
@@ -33,7 +34,7 @@ export type CompleteSimple = (
   options?: SimpleStreamOptions,
 ) => Promise<AssistantMessage>;
 
-export interface PiNonConversationSessionRunnerOptions {
+export interface PiStandaloneSessionRunnerOptions {
   readonly agentDir: string;
   readonly logger: Logger;
   readonly modelRuntime: ModelRuntime;
@@ -41,7 +42,6 @@ export interface PiNonConversationSessionRunnerOptions {
 }
 
 export interface PiSessionOptions {
-  readonly role: NonConversationAgentRole;
   readonly cwd: string;
   readonly model: Model<Api>;
   readonly sessionId: string;
@@ -63,20 +63,22 @@ export interface PiSession {
 }
 
 /**
- * Runs Pi sessions for roles that do not own a conversation surface. The role
- * decides the session directory and the trace label, so an attached agent and
- * a standalone agent stay distinguishable in storage and logs. One-shot
- * completions keep the caller's prompt and parsing.
+ * Runs standalone agents against Pi. A standalone agent belongs to no
+ * conversation: it never writes to a conversation surface, and its result
+ * returns to the caller. One-shot completions keep the caller's prompt and
+ * parsing; agent sessions get a persisted session file under
+ * `sessions/standalone/` with only the tools the caller passes in.
  */
-export class PiNonConversationSessionRunner {
-  constructor(private readonly options: PiNonConversationSessionRunnerOptions) {}
+export class PiStandaloneSessionRunner {
+  constructor(private readonly options: PiStandaloneSessionRunnerOptions) {}
 
   createCompleter(sessionId: string): CompleteSimple {
     return (model, context, options) => this.complete(model, context, options, sessionId);
   }
 
   async createSession(options: PiSessionOptions): Promise<PiSession> {
-    assertSurfaceToolsAllowed(options.role, [
+    const role = { kind: "standalone" } as const;
+    assertSurfaceToolsAllowed(role, [
       ...options.toolNames,
       ...options.tools.map((tool) => tool.name),
     ]);
@@ -97,7 +99,7 @@ export class PiNonConversationSessionRunner {
 
     const sessionManager = SessionManager.create(
       options.cwd,
-      roleSessionDir(this.options.agentDir, options.role, options.sessionId),
+      standaloneSessionDir(this.options.agentDir, options.sessionId),
     );
     const model = withOpenCodeSessionHeader(options.model, options.sessionId);
     const { session } = await createAgentSession({
@@ -116,8 +118,7 @@ export class PiNonConversationSessionRunner {
     const trace = new PiRuntimeTrace(
       this.options.logger.child({
         component: "pi-session",
-        role: options.role.kind,
-        ...(options.role.kind === "attached" ? { taskId: options.role.taskId } : {}),
+        role: "standalone",
         sessionId: options.sessionId,
       }),
       { usageReporter: this.options.usageReporter },
@@ -150,16 +151,12 @@ export class PiNonConversationSessionRunner {
 }
 
 /**
- * Directory holding the session files of one non-conversation session. The
- * role decides the directory, so attached tasks and standalone runs never
- * share a namespace.
+ * Directory holding the session files of one standalone session id. Each
+ * `createSession` call writes a new file under it, so the transcript of every
+ * run survives the process.
  */
-export function roleSessionDir(
-  agentDir: string,
-  role: NonConversationAgentRole,
-  sessionId: string,
-): string {
-  return resolve(agentDir, "sessions", role.kind, encodeURIComponent(sessionId));
+export function standaloneSessionDir(agentDir: string, sessionId: string): string {
+  return resolve(agentDir, "sessions", "standalone", encodeURIComponent(sessionId));
 }
 
 async function promptSession(
@@ -189,23 +186,9 @@ async function promptSession(
     if (timedOut) {
       throw new Error(`Agent session timed out after ${options.timeoutMs} ms`);
     }
-    return lastAssistantText(session);
+    return readLastAssistantText(session);
   } finally {
     if (timeout) clearTimeout(timeout);
     options.signal?.removeEventListener("abort", handleAbort);
   }
-}
-
-function lastAssistantText(session: AgentSession): string | undefined {
-  const message = [...session.messages]
-    .reverse()
-    .find((candidate) => candidate.role === "assistant");
-  if (!message) return undefined;
-
-  const text = message.content
-    .filter((block) => block.type === "text")
-    .map((block) => block.text)
-    .join("\n")
-    .trim();
-  return text || undefined;
 }

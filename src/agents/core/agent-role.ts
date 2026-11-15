@@ -12,9 +12,7 @@ export type ConversationAgentRole = { readonly kind: "conversation" };
 export type AttachedAgentRole = { readonly kind: "attached"; readonly taskId: string };
 export type StandaloneAgentRole = { readonly kind: "standalone" };
 
-export type NonConversationAgentRole = AttachedAgentRole | StandaloneAgentRole;
-
-export type AgentRole = ConversationAgentRole | NonConversationAgentRole;
+export type AgentRole = ConversationAgentRole | AttachedAgentRole | StandaloneAgentRole;
 
 export interface AgentPolicy {
   /** Who may write to the conversation surface. */

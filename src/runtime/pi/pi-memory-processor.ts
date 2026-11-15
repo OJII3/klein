@@ -9,7 +9,7 @@ import type {
   MemoryOperation,
   MemoryProcessor,
 } from "@modules/memory/domain/memory";
-import type { CompleteSimple } from "./pi-non-conversation-session-runner";
+import type { CompleteSimple } from "./pi-standalone-session-runner";
 
 type ThinkingLevel = NonNullable<CreateAgentSessionOptions["thinkingLevel"]>;
 

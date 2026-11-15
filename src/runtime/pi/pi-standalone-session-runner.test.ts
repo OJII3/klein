@@ -12,10 +12,7 @@ import type {
 import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
 
 import { createLogger } from "@app/logger";
-import {
-  PiNonConversationSessionRunner,
-  roleSessionDir,
-} from "./pi-non-conversation-session-runner";
+import { PiStandaloneSessionRunner, standaloneSessionDir } from "./pi-standalone-session-runner";
 import { resolveConfiguredModel } from "./pi-model-runtime";
 import type { PiUsageReporter } from "./pi-usage-reporter";
 
@@ -43,19 +40,15 @@ function assistantMessage(): AssistantMessage {
   };
 }
 
-test("stores role sessions under separate directories", () => {
+test("stores standalone sessions under the agent directory", () => {
   assert.equal(
-    roleSessionDir("/tmp/klein-agent", { kind: "standalone" }, "user-memory:1"),
+    standaloneSessionDir("/tmp/klein-agent", "user-memory:1"),
     resolve("/tmp/klein-agent/sessions/standalone/user-memory%3A1"),
-  );
-  assert.equal(
-    roleSessionDir("/tmp/klein-agent", { kind: "attached", taskId: "task-1" }, "task-1"),
-    resolve("/tmp/klein-agent/sessions/attached/task-1"),
   );
 });
 
-test("attached sessions reject surface tools", async () => {
-  const runner = new PiNonConversationSessionRunner({
+test("standalone sessions reject surface tools", async () => {
+  const runner = new PiStandaloneSessionRunner({
     agentDir: "/tmp/klein-agent",
     logger,
     modelRuntime: {} as unknown as ModelRuntime,
@@ -63,15 +56,14 @@ test("attached sessions reject surface tools", async () => {
 
   await assert.rejects(
     runner.createSession({
-      role: { kind: "attached", taskId: "task-1" },
       cwd: "/tmp",
       model: resolveConfiguredModel("opencode-go", "deepseek-v4.1-flash"),
-      sessionId: "task-1",
+      sessionId: "user-memory-1",
       systemPrompt: "system",
       toolNames: ["discord_send"],
       tools: [],
     }),
-    /attached agent role may not use the surface tool discord_send/,
+    /standalone agent role may not use the surface tool discord_send/,
   );
 });
 
@@ -80,7 +72,7 @@ test("records a one-shot completion's usage and session header", async () => {
   let receivedModel: Model<Api> | undefined;
   const receivedOptions: { maxTokens?: number; sessionId?: string }[] = [];
   const recorded: { message: AssistantMessage; sessionId: string }[] = [];
-  const runner = new PiNonConversationSessionRunner({
+  const runner = new PiStandaloneSessionRunner({
     agentDir: "/tmp/klein-agent",
     logger,
     modelRuntime: {

@@ -11,6 +11,7 @@ export function createAttachedControlTools(
   target: AttachedTaskControl,
   channelId: string,
   accessScope: string,
+  ownerFeaturesAllowed: boolean,
 ) {
   return [
     defineTool({
@@ -26,6 +27,7 @@ export function createAttachedControlTools(
         const taskId = await target.start({
           channelId,
           accessScope,
+          ownerFeaturesAllowed,
           prompt: params.prompt,
         });
         return {

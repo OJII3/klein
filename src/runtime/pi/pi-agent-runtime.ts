@@ -23,7 +23,7 @@ import webAccessExtension from "pi-web-access";
 
 import type { AgentDefinition } from "@agents/core/agent-definition";
 import type { AgentFactory, AgentCreationOptions } from "@agents/core/agent-factory";
-import { assertSurfaceToolsAllowed } from "@agents/core/agent-role";
+import { assertSurfaceToolsAllowed, type AgentRole } from "@agents/core/agent-role";
 import type { AgentTurn, AgentTurnContext } from "@agents/core/agent-turn";
 import type { AgentPrompt, AgentRuntime } from "@agents/core/agent-runtime";
 import { ImageAnalysisError, toImageAnalysisFailure } from "@agents/core/image-analysis";
@@ -32,6 +32,7 @@ import type { WatchToolCatalog } from "@modules/scheduling/application/watch-too
 import { renderWatchToolSection } from "@modules/scheduling/application/watch-tool";
 import { createBackgroundCompactionExtension } from "./background-compaction";
 import { createFxtwitterFetchExtension } from "./fxtwitter-fetch";
+import { readLastAssistantText } from "./pi-assistant-text";
 import {
   buildHandoffSummaryPrompt,
   extractTextContent,
@@ -119,8 +120,9 @@ export function createPiSessionManager(
   sessionKey: string,
   sessionMode: SessionMode,
   cwd = process.cwd(),
+  role: AgentRole = { kind: "conversation" },
 ): SessionManager {
-  const sessionDir = resolve(agentDir, "sessions", "conversation", encodeURIComponent(sessionKey));
+  const sessionDir = resolve(agentDir, "sessions", role.kind, encodeURIComponent(sessionKey));
 
   return sessionMode === "resume"
     ? SessionManager.continueRecent(cwd, sessionDir)
@@ -354,6 +356,10 @@ export class PiAgentRuntime implements AgentRuntime {
     if (!summaryBody) throw new Error("Handoff summarization returned an empty summary");
 
     return formatHandoffSummary(summaryBody);
+  }
+
+  lastAssistantText(): string | undefined {
+    return readLastAssistantText(this.session);
   }
 
   dispose(): void {
@@ -594,6 +600,7 @@ export function createPiAgentFactory({
         options.sessionKey,
         sessionMode,
         process.cwd(),
+        options.role,
       );
       const sessionId = sessionManager.getSessionId();
       const model = withOpenCodeSessionHeader(

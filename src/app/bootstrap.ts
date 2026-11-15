@@ -27,7 +27,7 @@ import {
   ensureConfiguredModels,
   resolveConfiguredModel,
 } from "@runtime/pi/pi-agent-runtime";
-import { PiNonConversationSessionRunner } from "@runtime/pi/pi-non-conversation-session-runner";
+import { PiStandaloneSessionRunner } from "@runtime/pi/pi-standalone-session-runner";
 import { migratePiDurableStorage } from "@runtime/pi/pi-durable-migration";
 import { createPiUsageReporterFromEnv } from "@runtime/pi/pi-usage-reporter";
 import { createWatchFetchTool } from "@runtime/pi/watch-fetch-tool";
@@ -74,7 +74,6 @@ import { QuickJsWatchCheckRunner } from "@modules/scheduling/application/quickjs
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import type { DiscordReactionEvent } from "@modules/discord/domain/discord-reaction";
 import { isOwnerAccessScope } from "@shared/access";
-import webAccessExtension from "pi-web-access";
 
 const DISCORD_USAGE_STATUS_REFRESH_INTERVAL_MS = 60 * 60 * 1_000;
 const CHANNEL_CONTEXT_ROTATION_CHECK_INTERVAL_MS = 60 * 1_000;
@@ -154,7 +153,7 @@ export async function bootstrap(): Promise<void> {
     throw new Error("GEMINI_API_KEY is required");
   }
   await ensureConfiguredModels(modelRuntime, modelsInUse);
-  const sessionRunner = new PiNonConversationSessionRunner({
+  const sessionRunner = new PiStandaloneSessionRunner({
     agentDir,
     logger,
     modelRuntime,
@@ -199,7 +198,10 @@ export async function bootstrap(): Promise<void> {
     permissions: config.permissions,
     usageReporter: piUsageReporter,
     watchToolCatalog,
-    onSessionCreated: (session, context) => evalFeedbackObserver.observeSession(session, context),
+    onSessionCreated: (session, context) =>
+      context.role.kind === "conversation"
+        ? evalFeedbackObserver.observeSession(session, context)
+        : undefined,
   });
   const voiceChatAgentFactory = voiceChatConfig?.llm
     ? createPiAgentFactory({
@@ -216,14 +218,10 @@ export async function bootstrap(): Promise<void> {
   let discordService!: DiscordJsService;
   let agentCoordinator!: AgentCoordinator;
   const attachedAgentCoordinator = new AttachedAgentCoordinator({
-    runner: sessionRunner,
-    model: resolveConfiguredModel(config.llm.provider, config.llm.model, modelRuntime),
+    factory: piAgentFactory,
     systemPrompt: ATTACHED_AGENT_SYSTEM_PROMPT,
-    cwd: process.cwd(),
     logger,
     taskCoordinator,
-    ...(config.llm.thinkingLevel ? { thinkingLevel: config.llm.thinkingLevel } : {}),
-    toolNames: ["discord_read", "web_search", "fetch_content", "get_search_content"],
     createTools: (conversationKey, accessScope) =>
       createAttachedWorkerTools(
         discordService,
@@ -232,7 +230,6 @@ export async function bootstrap(): Promise<void> {
           ? { userId: ownerUserId }
           : undefined,
       ),
-    extensions: [webAccessExtension],
     onResult: (delivery) =>
       agentCoordinator.deliverAttachedTaskResult(
         delivery.conversationKey,

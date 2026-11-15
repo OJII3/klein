@@ -20,6 +20,8 @@ export interface AttachedTaskStartInput {
   readonly channelId: string;
   /** The access scope of the conversation that started the task. */
   readonly accessScope: string;
+  /** Whether the conversation allows owner-only tools for this task. */
+  readonly ownerFeaturesAllowed: boolean;
   readonly prompt: string;
 }
 

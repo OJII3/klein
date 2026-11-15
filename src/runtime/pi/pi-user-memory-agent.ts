@@ -21,7 +21,7 @@ import {
   parseUserMemory,
   renderUserMemory,
 } from "@modules/user-memory/infrastructure/markdown-user-memory-store";
-import type { PiNonConversationSessionRunner } from "./pi-non-conversation-session-runner";
+import type { PiStandaloneSessionRunner } from "./pi-standalone-session-runner";
 
 type ThinkingLevel = NonNullable<CreateAgentSessionOptions["thinkingLevel"]>;
 
@@ -76,7 +76,7 @@ export interface PiUserMemoryAgentOptions {
   readonly model: Model<Api>;
   readonly sessionId?: string;
   readonly thinkingLevel?: ThinkingLevel;
-  readonly runner?: PiNonConversationSessionRunner;
+  readonly runner?: PiStandaloneSessionRunner;
   readonly sessionFactory?: UserMemoryAgentSessionFactory;
 }
 
@@ -96,7 +96,6 @@ export class PiUserMemoryAgent implements UserMemoryProcessor {
           throw new Error("PiUserMemoryAgent requires a runner or a sessionFactory");
         }
         return options.runner.createSession({
-          role: { kind: "standalone" },
           cwd: sessionOptions.directory,
           model: sessionOptions.model,
           sessionId,

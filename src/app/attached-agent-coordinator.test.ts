@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import pino from "pino";
 
-import type { NonConversationAgentRole } from "@agents/core/agent-role";
-import type { PiSession, PiSessionOptions } from "@runtime/pi/pi-non-conversation-session-runner";
+import type { AgentCreationOptions, AgentFactory } from "@agents/core/agent-factory";
+import type { AgentRuntime } from "@agents/core/agent-runtime";
 import { AttachedAgentCoordinator, type AttachedTaskDelivery } from "./attached-agent-coordinator";
 import { TaskCoordinator } from "./task-coordinator";
 
@@ -12,46 +12,42 @@ interface Harness {
   readonly prompts: string[];
   readonly disposed: string[];
   readonly deliveries: AttachedTaskDelivery[];
-  readonly roles: NonConversationAgentRole[];
+  readonly roles: AgentCreationOptions["role"][];
 }
 
-function createHarness(createSession?: (options: PiSessionOptions) => Promise<PiSession>): Harness {
+function createHarness(
+  createRuntime?: (options: AgentCreationOptions) => Promise<AgentRuntime>,
+): Harness {
   const prompts: string[] = [];
   const disposed: string[] = [];
   const deliveries: AttachedTaskDelivery[] = [];
-  const roles: NonConversationAgentRole[] = [];
-  const sessionFactory =
-    createSession ??
-    (async (options: PiSessionOptions) => ({
-      async prompt(text: string) {
-        return `result for ${text}`;
-      },
-      dispose() {
-        disposed.push(options.sessionId);
-      },
-    }));
-  const coordinator = new AttachedAgentCoordinator({
-    runner: {
-      createSession: async (options) => {
-        roles.push(options.role);
-        const session = await sessionFactory(options);
-        return {
-          async prompt(text) {
-            prompts.push(text);
-            return session.prompt(text);
-          },
-          dispose() {
-            session.dispose();
-          },
-        };
-      },
+  const roles: AgentCreationOptions["role"][] = [];
+  const factory: AgentFactory = {
+    async create(_definition, _tools, options) {
+      roles.push(options.role);
+      if (createRuntime) return createRuntime(options);
+      return {
+        async prompt(turn) {
+          const text = turn.event.content
+            .filter((block) => block.type === "text")
+            .map((block) => block.text)
+            .join("\n");
+          prompts.push(text);
+        },
+        lastAssistantText() {
+          return `result for ${prompts.at(-1)}`;
+        },
+        dispose() {
+          disposed.push(options.sessionKey);
+        },
+      };
     },
-    model: {} as never,
+  };
+  const coordinator = new AttachedAgentCoordinator({
+    factory,
     systemPrompt: "system",
-    cwd: "/tmp",
     logger: pino({ level: "silent" }),
     taskCoordinator: new TaskCoordinator(),
-    toolNames: ["discord_read"],
     createTools: () => [],
     onResult: async (delivery) => {
       deliveries.push(delivery);
@@ -73,6 +69,7 @@ test("starts a task and delivers the worker's text to the conversation", async (
   const taskId = await harness.coordinator.start({
     channelId: "channel-1",
     accessScope: "public",
+    ownerFeaturesAllowed: false,
     prompt: "investigate",
   });
 
@@ -92,6 +89,7 @@ test("queues follow-ups on the same session", async () => {
   const taskId = await harness.coordinator.start({
     channelId: "channel-1",
     accessScope: "public",
+    ownerFeaturesAllowed: false,
     prompt: "first",
   });
   await waitFor(() => harness.deliveries.length === 1);
@@ -107,6 +105,7 @@ test("closes a task and disposes its session", async () => {
   const taskId = await harness.coordinator.start({
     channelId: "channel-1",
     accessScope: "public",
+    ownerFeaturesAllowed: false,
     prompt: "first",
   });
   await waitFor(() => harness.deliveries.length === 1);
@@ -122,11 +121,13 @@ test("lists only the tasks of the requested conversation", async () => {
   const first = await harness.coordinator.start({
     channelId: "channel-1",
     accessScope: "public",
+    ownerFeaturesAllowed: false,
     prompt: "first",
   });
   const second = await harness.coordinator.start({
     channelId: "channel-2",
     accessScope: "public",
+    ownerFeaturesAllowed: false,
     prompt: "second",
   });
   await waitFor(() => harness.deliveries.length === 2);
@@ -148,6 +149,7 @@ test("delivers a failed result when the worker throws", async () => {
   await harness.coordinator.start({
     channelId: "channel-1",
     accessScope: "public",
+    ownerFeaturesAllowed: false,
     prompt: "first",
   });
   await waitFor(() => harness.deliveries.length === 1);
