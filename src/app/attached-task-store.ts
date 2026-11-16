@@ -2,13 +2,12 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rename, unlink, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
-import type { AttachedTaskStatus } from "@agents/core/attached-agent";
+import type { AttachedTaskScope, AttachedTaskStatus } from "@agents/core/attached-agent";
+import { isConversationKey } from "@shared/conversation-key";
 
 /** The task metadata that outlives the process. The Pi session itself lives in `sessions/attached/`. */
-export interface StoredAttachedTask {
+export interface StoredAttachedTask extends AttachedTaskScope {
   readonly id: string;
-  readonly channelId: string;
-  readonly accessScope: string;
   readonly ownerFeaturesAllowed: boolean;
   readonly prompt: string;
   readonly status: AttachedTaskStatus;
@@ -84,8 +83,7 @@ function isStoredAttachedTask(value: unknown): value is StoredAttachedTask {
   return (
     typeof task.id === "string" &&
     task.id.length > 0 &&
-    typeof task.channelId === "string" &&
-    task.channelId.length > 0 &&
+    isConversationKey(task.conversationKey) &&
     typeof task.accessScope === "string" &&
     typeof task.ownerFeaturesAllowed === "boolean" &&
     typeof task.prompt === "string" &&

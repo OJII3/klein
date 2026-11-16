@@ -258,7 +258,7 @@ test("marks a task that was running at shutdown as interrupted", async () => {
   const store = new MemoryTaskStore();
   await store.save({
     id: "attached-1",
-    channelId: "channel-1",
+    conversationKey: { kind: "discord", channelId: "channel-1" },
     accessScope: "public",
     ownerFeaturesAllowed: false,
     prompt: "first",
@@ -364,7 +364,11 @@ test("deletes closeAfterResult tasks on dispose instead of keeping them interrup
 
   assert.equal(harness.store.tasks.has(taskId), false);
   assert.deepEqual(harness.closedTasks, [
-    { id: taskId, channelId: "channel-1", accessScope: "owner:123" },
+    {
+      id: taskId,
+      conversationKey: { kind: "discord", channelId: "channel-1" },
+      accessScope: "owner:123",
+    },
   ]);
 });
 
@@ -372,7 +376,7 @@ test("cleans up leftover closeAfterResult tasks during load", async () => {
   const store = new MemoryTaskStore();
   await store.save({
     id: "attached-1",
-    channelId: "channel-1",
+    conversationKey: { kind: "discord", channelId: "channel-1" },
     accessScope: "public",
     ownerFeaturesAllowed: false,
     prompt: "remind",
@@ -388,7 +392,11 @@ test("cleans up leftover closeAfterResult tasks during load", async () => {
   assert.deepEqual(harness.coordinator.list(scope("channel-1")), []);
   assert.equal(store.tasks.has("attached-1"), false);
   assert.deepEqual(harness.closedTasks, [
-    { id: "attached-1", channelId: "channel-1", accessScope: "public" },
+    {
+      id: "attached-1",
+      conversationKey: { kind: "discord", channelId: "channel-1" },
+      accessScope: "public",
+    },
   ]);
 });
 
@@ -425,7 +433,11 @@ test("aborts a running worker on close, runs onTaskClosed, and prevents stale pe
   assert.equal(harness.deliveries.length, 0);
   assert.equal(harness.store.tasks.has(taskId), false);
   assert.deepEqual(harness.closedTasks, [
-    { id: taskId, channelId: "channel-1", accessScope: "public" },
+    {
+      id: taskId,
+      conversationKey: { kind: "discord", channelId: "channel-1" },
+      accessScope: "public",
+    },
   ]);
 });
 
@@ -471,8 +483,12 @@ test("rejects new starts and ignores send/close after dispose", async () => {
 
 test("closeIdleTasks closes idle tasks past the timeout unless they own watches", async () => {
   const watchedIds = new Set<string>();
+  const checkedWatchRefs: AttachedTaskReference[] = [];
   const harness = createHarness(undefined, new MemoryTaskStore(), {
-    hasOwnedWatches: async ({ id }) => watchedIds.has(id),
+    hasOwnedWatches: async (task) => {
+      checkedWatchRefs.push(task);
+      return watchedIds.has(task.id);
+    },
   });
 
   const idleTaskId = await harness.coordinator.start(startInput("channel-1", "idle task"));
@@ -498,10 +514,26 @@ test("closeIdleTasks closes idle tasks past the timeout unless they own watches"
     await harness.coordinator.closeIdleTasks(updatedAtMs + ATTACHED_TASK_IDLE_CLOSE_MS + 1_000),
     1,
   );
+  assert.deepEqual(checkedWatchRefs, [
+    {
+      id: idleTaskId,
+      conversationKey: { kind: "discord", channelId: "channel-1" },
+      accessScope: "public",
+    },
+    {
+      id: watchedTaskId,
+      conversationKey: { kind: "discord", channelId: "channel-1" },
+      accessScope: "owner:123",
+    },
+  ]);
   assert.deepEqual(harness.disposed, [idleTaskId]);
   assert.equal(harness.store.tasks.has(idleTaskId), false);
   assert.deepEqual(harness.closedTasks, [
-    { id: idleTaskId, channelId: "channel-1", accessScope: "public" },
+    {
+      id: idleTaskId,
+      conversationKey: { kind: "discord", channelId: "channel-1" },
+      accessScope: "public",
+    },
   ]);
   assert.deepEqual(harness.coordinator.list(scope("channel-1", "public")), []);
   assert.deepEqual(
@@ -595,7 +627,7 @@ test("closeIdleTasks closes failed and restored interrupted tasks after timeout"
   const staleTime = "2026-01-01T00:00:00.000Z";
   await store.save({
     id: "attached-interrupted",
-    channelId: "channel-1",
+    conversationKey: { kind: "discord", channelId: "channel-1" },
     accessScope: "public",
     ownerFeaturesAllowed: false,
     prompt: "restored",
@@ -631,7 +663,7 @@ test("forwards AgentToolContext to createTools for started and restored tasks", 
   const store = new MemoryTaskStore();
   await store.save({
     id: "attached-restored",
-    channelId: "channel-1",
+    conversationKey: { kind: "discord", channelId: "channel-1" },
     accessScope: "public",
     ownerFeaturesAllowed: false,
     prompt: "restored",
@@ -717,7 +749,7 @@ test("enforces conversationKey and accessScope boundaries for restored tasks", a
   const store = new MemoryTaskStore();
   await store.save({
     id: "attached-owner",
-    channelId: "channel-1",
+    conversationKey: { kind: "discord", channelId: "channel-1" },
     accessScope: "owner:123",
     ownerFeaturesAllowed: true,
     prompt: "owner task",

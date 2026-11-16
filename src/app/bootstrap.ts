@@ -227,10 +227,10 @@ export async function bootstrap(): Promise<void> {
     logger,
     store: new FileAttachedTaskStore(resolve(agentDir, "attached-tasks")),
     taskCoordinator,
-    hasOwnedWatches: async ({ id, channelId, accessScope }) => {
+    hasOwnedWatches: async ({ id, conversationKey, accessScope }) => {
       const watches = await scheduledTaskStore.listForScope(
         "watch",
-        channelId,
+        conversationKey.channelId,
         accessScope as ScheduledTaskAccessScope,
       );
       return watches.some((watch) => watch.ownerTaskId === id);
@@ -254,10 +254,10 @@ export async function bootstrap(): Promise<void> {
         delivery.accessScope,
         delivery.result,
       ),
-    onTaskClosed: async ({ id, channelId, accessScope }) => {
+    onTaskClosed: async ({ id, conversationKey, accessScope }) => {
       const watches = await scheduledTaskStore.listForScope(
         "watch",
-        channelId,
+        conversationKey.channelId,
         accessScope as ScheduledTaskAccessScope,
       );
       for (const watch of watches) {

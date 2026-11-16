@@ -29,16 +29,12 @@ export const ATTACHED_AGENT_SYSTEM_PROMPT = `You are an attached worker for a Di
 
 export const ATTACHED_TASK_IDLE_CLOSE_MS = 60 * 60 * 1_000;
 
-export interface AttachedTaskDelivery {
-  readonly conversationKey: ConversationKey;
-  readonly accessScope: string;
+export interface AttachedTaskDelivery extends AttachedTaskScope {
   readonly result: AttachedTaskResult;
 }
 
-export interface AttachedTaskReference {
+export interface AttachedTaskReference extends AttachedTaskScope {
   readonly id: string;
-  readonly channelId: string;
-  readonly accessScope: string;
 }
 
 export type ClosedAttachedTask = AttachedTaskReference;
@@ -109,7 +105,7 @@ export class AttachedAgentCoordinator implements AttachedTaskControl {
         await this.deleteStoredTask(stored.id);
         await this.notifyTaskClosed({
           id: stored.id,
-          channelId: stored.channelId,
+          conversationKey: stored.conversationKey,
           accessScope: stored.accessScope,
         });
         continue;
@@ -119,7 +115,7 @@ export class AttachedAgentCoordinator implements AttachedTaskControl {
         stored.status === "running" ? "interrupted" : stored.status;
       const task: AttachedTask = {
         id: stored.id,
-        conversationKey: { kind: "discord", channelId: stored.channelId },
+        conversationKey: stored.conversationKey,
         accessScope: stored.accessScope,
         ownerFeaturesAllowed: stored.ownerFeaturesAllowed,
         prompt: stored.prompt,
@@ -246,7 +242,7 @@ export class AttachedAgentCoordinator implements AttachedTaskControl {
           try {
             hasWatches = await this.options.hasOwnedWatches({
               id: task.id,
-              channelId: task.conversationKey.channelId,
+              conversationKey: task.conversationKey,
               accessScope: task.accessScope,
             });
           } catch (error) {
@@ -292,7 +288,7 @@ export class AttachedAgentCoordinator implements AttachedTaskControl {
         await this.enqueueStorage(task, () => this.deleteStoredTask(task.id));
         await this.notifyTaskClosed({
           id: task.id,
-          channelId: task.conversationKey.channelId,
+          conversationKey: task.conversationKey,
           accessScope: task.accessScope,
         });
       } else if (task.status === "running") {
@@ -420,7 +416,7 @@ export class AttachedAgentCoordinator implements AttachedTaskControl {
     await this.enqueueStorage(task, () => this.deleteStoredTask(task.id));
     await this.notifyTaskClosed({
       id: task.id,
-      channelId: task.conversationKey.channelId,
+      conversationKey: task.conversationKey,
       accessScope: task.accessScope,
     });
     this.logger.info(
@@ -456,7 +452,7 @@ export class AttachedAgentCoordinator implements AttachedTaskControl {
     try {
       await this.options.store.save({
         id: task.id,
-        channelId: task.conversationKey.channelId,
+        conversationKey: task.conversationKey,
         accessScope: task.accessScope,
         ownerFeaturesAllowed: task.ownerFeaturesAllowed,
         prompt: task.prompt,
