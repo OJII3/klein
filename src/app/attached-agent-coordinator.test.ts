@@ -4,7 +4,11 @@ import pino from "pino";
 
 import type { AgentCreationOptions, AgentFactory } from "@agents/core/agent-factory";
 import type { AgentRuntime } from "@agents/core/agent-runtime";
-import { AttachedAgentCoordinator, type AttachedTaskDelivery } from "./attached-agent-coordinator";
+import {
+  AttachedAgentCoordinator,
+  type AttachedTaskDelivery,
+  type ClosedAttachedTask,
+} from "./attached-agent-coordinator";
 import type { AttachedTaskStore, StoredAttachedTask } from "./attached-task-store";
 import { TaskCoordinator } from "./task-coordinator";
 
@@ -29,27 +33,35 @@ interface Harness {
   readonly prompts: string[];
   readonly disposed: string[];
   readonly deliveries: AttachedTaskDelivery[];
+  readonly closedTasks: ClosedAttachedTask[];
   readonly roles: AgentCreationOptions["role"][];
   readonly resumeSessions: (boolean | undefined)[];
   readonly toolTaskIds: string[];
   readonly store: MemoryTaskStore;
+  readonly taskCoordinator: TaskCoordinator;
 }
 
 function createHarness(
   createRuntime?: (options: AgentCreationOptions) => Promise<AgentRuntime>,
   store = new MemoryTaskStore(),
+  options?: {
+    readonly onResult?: (delivery: AttachedTaskDelivery) => Promise<void>;
+    readonly onTaskClosed?: (task: ClosedAttachedTask) => Promise<void>;
+  },
 ): Harness {
   const prompts: string[] = [];
   const disposed: string[] = [];
   const deliveries: AttachedTaskDelivery[] = [];
+  const closedTasks: ClosedAttachedTask[] = [];
   const roles: AgentCreationOptions["role"][] = [];
   const resumeSessions: (boolean | undefined)[] = [];
   const toolTaskIds: string[] = [];
+  const taskCoordinator = new TaskCoordinator();
   const factory: AgentFactory = {
-    async create(_definition, _tools, options) {
-      roles.push(options.role);
-      resumeSessions.push(options.resumeSession);
-      if (createRuntime) return createRuntime(options);
+    async create(_definition, _tools, creationOptions) {
+      roles.push(creationOptions.role);
+      resumeSessions.push(creationOptions.resumeSession);
+      if (createRuntime) return createRuntime(creationOptions);
       return {
         async prompt(turn) {
           const text = turn.event.content
@@ -62,7 +74,7 @@ function createHarness(
           return `result for ${prompts.at(-1)}`;
         },
         dispose() {
-          disposed.push(options.sessionKey);
+          disposed.push(creationOptions.sessionKey);
         },
       };
     },
@@ -72,13 +84,18 @@ function createHarness(
     systemPrompt: "system",
     logger: pino({ level: "silent" }),
     store,
-    taskCoordinator: new TaskCoordinator(),
+    taskCoordinator,
     createTools: (_conversationKey, _accessScope, taskId) => {
       toolTaskIds.push(taskId);
       return [];
     },
     onResult: async (delivery) => {
       deliveries.push(delivery);
+      await options?.onResult?.(delivery);
+    },
+    onTaskClosed: async (task) => {
+      closedTasks.push(task);
+      await options?.onTaskClosed?.(task);
     },
   });
   return {
@@ -86,10 +103,12 @@ function createHarness(
     prompts,
     disposed,
     deliveries,
+    closedTasks,
     roles,
     resumeSessions,
     toolTaskIds,
     store,
+    taskCoordinator,
   };
 }
 
@@ -287,4 +306,195 @@ test("delivers a failed result when the worker throws", async () => {
 
   assert.equal(harness.deliveries[0]?.result.status, "failed");
   assert.equal(harness.deliveries[0]?.result.error, "boom");
+});
+
+test("aborts a running worker on dispose, marks it interrupted, and lets taskCoordinator complete", async () => {
+  let promptStarted = false;
+  let aborted = false;
+  let disposed = false;
+  let releasePrompt: (() => void) | undefined;
+  const harness = createHarness(async () => ({
+    async prompt() {
+      promptStarted = true;
+      await new Promise<void>((resolve) => {
+        releasePrompt = resolve;
+      });
+    },
+    async abort() {
+      aborted = true;
+      releasePrompt?.();
+    },
+    dispose() {
+      disposed = true;
+    },
+  }));
+
+  const taskId = await harness.coordinator.start({
+    channelId: "channel-1",
+    accessScope: "public",
+    ownerFeaturesAllowed: false,
+    prompt: "long work",
+  });
+  await waitFor(() => promptStarted);
+
+  await harness.coordinator.dispose();
+  await harness.taskCoordinator.waitForCompletion();
+
+  assert.equal(aborted, true);
+  assert.equal(disposed, true);
+  assert.equal(harness.deliveries.length, 0);
+  assert.equal(harness.store.tasks.get(taskId)?.status, "interrupted");
+});
+
+test("deletes closeAfterResult tasks on dispose instead of keeping them interrupted", async () => {
+  let promptStarted = false;
+  let releasePrompt: (() => void) | undefined;
+  const harness = createHarness(async () => ({
+    async prompt() {
+      promptStarted = true;
+      await new Promise<void>((resolve) => {
+        releasePrompt = resolve;
+      });
+    },
+    async abort() {
+      releasePrompt?.();
+    },
+    dispose() {},
+  }));
+
+  const taskId = await harness.coordinator.start({
+    channelId: "channel-1",
+    accessScope: "owner:123",
+    ownerFeaturesAllowed: true,
+    prompt: "remind",
+    closeAfterResult: true,
+  });
+  await waitFor(() => promptStarted);
+
+  await harness.coordinator.dispose();
+
+  assert.equal(harness.store.tasks.has(taskId), false);
+  assert.deepEqual(harness.closedTasks, [
+    { id: taskId, channelId: "channel-1", accessScope: "owner:123" },
+  ]);
+});
+
+test("cleans up leftover closeAfterResult tasks during load", async () => {
+  const store = new MemoryTaskStore();
+  await store.save({
+    id: "attached-1",
+    channelId: "channel-1",
+    accessScope: "public",
+    ownerFeaturesAllowed: false,
+    prompt: "remind",
+    status: "running",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    closeAfterResult: true,
+  });
+
+  const harness = createHarness(undefined, store);
+  await harness.coordinator.load();
+
+  assert.deepEqual(harness.coordinator.list("channel-1"), []);
+  assert.equal(store.tasks.has("attached-1"), false);
+  assert.deepEqual(harness.closedTasks, [
+    { id: "attached-1", channelId: "channel-1", accessScope: "public" },
+  ]);
+});
+
+test("aborts a running worker on close, runs onTaskClosed, and prevents stale persistence", async () => {
+  let promptStarted = false;
+  let aborted = false;
+  let disposed = false;
+  let releasePrompt: (() => void) | undefined;
+  const harness = createHarness(async () => ({
+    async prompt() {
+      promptStarted = true;
+      await new Promise<void>((resolve) => {
+        releasePrompt = resolve;
+      });
+    },
+    async abort() {
+      aborted = true;
+      releasePrompt?.();
+    },
+    dispose() {
+      disposed = true;
+    },
+  }));
+
+  const taskId = await harness.coordinator.start({
+    channelId: "channel-1",
+    accessScope: "public",
+    ownerFeaturesAllowed: false,
+    prompt: "investigate",
+  });
+  await waitFor(() => promptStarted);
+
+  assert.equal(await harness.coordinator.close(taskId), true);
+  await harness.taskCoordinator.waitForCompletion();
+
+  assert.equal(aborted, true);
+  assert.equal(disposed, true);
+  assert.equal(harness.deliveries.length, 0);
+  assert.equal(harness.store.tasks.has(taskId), false);
+  assert.deepEqual(harness.closedTasks, [
+    { id: taskId, channelId: "channel-1", accessScope: "public" },
+  ]);
+});
+
+test("closing a worker while onResult is waiting does not deadlock", async () => {
+  let releaseDelivery: (() => void) | undefined;
+  let deliveryStarted = false;
+  let taskId = "";
+  const harness = createHarness(undefined, new MemoryTaskStore(), {
+    onResult: async () => {
+      deliveryStarted = true;
+      await new Promise<void>((resolve) => {
+        releaseDelivery = resolve;
+      });
+    },
+  });
+
+  taskId = await harness.coordinator.start({
+    channelId: "channel-1",
+    accessScope: "public",
+    ownerFeaturesAllowed: false,
+    prompt: "investigate",
+    closeAfterResult: true,
+  });
+  await waitFor(() => deliveryStarted);
+
+  assert.equal(await harness.coordinator.close(taskId), true);
+  assert.equal(harness.closedTasks.length, 1);
+  releaseDelivery?.();
+  await harness.taskCoordinator.waitForCompletion();
+  assert.equal(harness.closedTasks.length, 1);
+});
+
+test("rejects new starts and ignores send/close after dispose", async () => {
+  const harness = createHarness();
+  const taskId = await harness.coordinator.start({
+    channelId: "channel-1",
+    accessScope: "public",
+    ownerFeaturesAllowed: false,
+    prompt: "first",
+  });
+  await waitFor(() => harness.deliveries.length === 1);
+
+  await harness.coordinator.dispose();
+
+  await assert.rejects(
+    () =>
+      harness.coordinator.start({
+        channelId: "channel-1",
+        accessScope: "public",
+        ownerFeaturesAllowed: false,
+        prompt: "after",
+      }),
+    /disposed/,
+  );
+  assert.equal(await harness.coordinator.send(taskId, "follow-up"), false);
+  assert.equal(await harness.coordinator.close(taskId), false);
 });

@@ -167,6 +167,17 @@ export class ScheduledTaskDeliveryCoordinator {
     await store.update(update(current));
   }
 
+  private async releaseWatchOwner(watch: WatchTask, ownerTaskId: string): Promise<void> {
+    const store = this.dependencies.scheduledTaskStore;
+    if (!store) return;
+    const current = (await store.listForScope("watch", watch.channelId, watch.accessScope)).find(
+      (candidate) => candidate.id === watch.id,
+    );
+    if (!current || current.ownerTaskId !== ownerTaskId) return;
+    const { ownerTaskId: _ownerTaskId, ...rest } = current;
+    await store.update(rest);
+  }
+
   private async isAllowed(task: ScheduledTask): Promise<boolean> {
     const accessPolicy = this.dependencies.accessPolicy;
     if (!accessPolicy) {
@@ -323,7 +334,9 @@ export class ScheduledTaskDeliveryCoordinator {
         },
         "Watch worker is unavailable; delivering the wake to the conversation",
       );
-      await this.deliverEvent({ kind: "discord", channelId: watch.channelId }, watch, event);
+      await this.releaseWatchOwner(watch, ownerTaskId);
+      const { ownerTaskId: _ownerTaskId, ...unownedWatch } = watch;
+      await this.deliverEvent({ kind: "discord", channelId: watch.channelId }, unownedWatch, event);
       return;
     }
 
