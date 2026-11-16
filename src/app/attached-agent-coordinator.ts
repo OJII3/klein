@@ -25,17 +25,21 @@ export const ATTACHED_AGENT_SYSTEM_PROMPT = `You are an attached worker for a Di
 - Prefer concrete findings over narration. State what you checked and what you found.
 - When the task is done, reply with the result. Do not address the user directly.`;
 
+export const ATTACHED_TASK_IDLE_CLOSE_MS = 60 * 60 * 1_000;
+
 export interface AttachedTaskDelivery {
   readonly conversationKey: ConversationKey;
   readonly accessScope: string;
   readonly result: AttachedTaskResult;
 }
 
-export interface ClosedAttachedTask {
+export interface AttachedTaskReference {
   readonly id: string;
   readonly channelId: string;
   readonly accessScope: string;
 }
+
+export type ClosedAttachedTask = AttachedTaskReference;
 
 export interface AttachedAgentCoordinatorOptions {
   readonly factory: AgentFactory;
@@ -43,6 +47,8 @@ export interface AttachedAgentCoordinatorOptions {
   readonly logger: Logger;
   readonly store: AttachedTaskStore;
   readonly taskCoordinator: TaskCoordinator;
+  readonly idleCloseMs?: number;
+  readonly hasOwnedWatches?: (task: AttachedTaskReference) => Promise<boolean>;
   readonly createTools: (
     conversationKey: ConversationKey,
     accessScope: string,
@@ -65,6 +71,7 @@ interface AttachedTask {
   runtime?: AgentRuntime;
   readonly closeAfterResult: boolean;
   queue: Promise<void>;
+  pendingPrompts: number;
   /** Tracks runtime creation and prompt execution (excluding `onResult`), so close/dispose can abort without deadlocking on conversation locks. */
   activeExecution?: Promise<void>;
   storageQueue: Promise<void>;
@@ -86,6 +93,7 @@ export class AttachedAgentCoordinator implements AttachedTaskControl {
   private readonly logger: Logger;
   private disposed = false;
   private disposePromise: Promise<void> | undefined;
+  private idleCleanupRunning = false;
 
   constructor(private readonly options: AttachedAgentCoordinatorOptions) {
     this.logger = options.logger.child({ component: "attached-agent-coordinator" });
@@ -117,6 +125,7 @@ export class AttachedAgentCoordinator implements AttachedTaskControl {
         updatedAt: stored.updatedAt,
         closeAfterResult: stored.closeAfterResult,
         queue: Promise.resolve(),
+        pendingPrompts: 0,
         storageQueue: Promise.resolve(),
         closed: false,
       };
@@ -163,6 +172,7 @@ export class AttachedAgentCoordinator implements AttachedTaskControl {
       runtime,
       closeAfterResult: input.closeAfterResult ?? false,
       queue: Promise.resolve(),
+      pendingPrompts: 0,
       storageQueue: Promise.resolve(),
       closed: false,
     };
@@ -191,7 +201,7 @@ export class AttachedAgentCoordinator implements AttachedTaskControl {
     if (this.disposed) return false;
     const task = this.tasks.get(taskId);
     if (!task) return false;
-    await this.closeTask(task);
+    await this.closeTask(task, "manual");
     return true;
   }
 
@@ -205,6 +215,49 @@ export class AttachedAgentCoordinator implements AttachedTaskControl {
         createdAt,
         updatedAt,
       }));
+  }
+
+  /**
+   * Closes non-running tasks that have been idle past `idleCloseMs` and own no
+   * scheduled watches.
+   */
+  async closeIdleTasks(now = Date.now()): Promise<number> {
+    if (this.disposed || this.idleCleanupRunning) return 0;
+    this.idleCleanupRunning = true;
+    const idleCloseMs = this.options.idleCloseMs ?? ATTACHED_TASK_IDLE_CLOSE_MS;
+    let closedCount = 0;
+
+    try {
+      for (const task of Array.from(this.tasks.values())) {
+        if (this.disposed || task.closed) continue;
+        if (!isIdleTaskDue(task, now, idleCloseMs)) continue;
+
+        if (this.options.hasOwnedWatches) {
+          let hasWatches: boolean;
+          try {
+            hasWatches = await this.options.hasOwnedWatches({
+              id: task.id,
+              channelId: task.conversationKey.channelId,
+              accessScope: task.accessScope,
+            });
+          } catch (error) {
+            this.logger.warn(
+              { err: error, event: "attached_task_watch_check_failed", taskId: task.id },
+              "Failed to check owned watches before closing an idle attached task",
+            );
+            continue;
+          }
+          if (hasWatches) continue;
+        }
+
+        if (this.disposed || task.closed || !isIdleTaskDue(task, now, idleCloseMs)) continue;
+        await this.closeTask(task, "idle");
+        closedCount += 1;
+      }
+      return closedCount;
+    } finally {
+      this.idleCleanupRunning = false;
+    }
   }
 
   /** Stops the runtimes but keeps the saved tasks so the next process can restore them. */
@@ -245,8 +298,15 @@ export class AttachedAgentCoordinator implements AttachedTaskControl {
   }
 
   private enqueue(task: AttachedTask, text: string): void {
+    task.pendingPrompts += 1;
     task.queue = task.queue
-      .then(() => this.options.taskCoordinator.run(() => this.runPrompt(task, text)))
+      .then(async () => {
+        try {
+          await this.options.taskCoordinator.run(() => this.runPrompt(task, text));
+        } finally {
+          task.pendingPrompts = Math.max(0, task.pendingPrompts - 1);
+        }
+      })
       .catch((error: unknown) => {
         this.logger.error(
           { err: error, event: "attached_task_queue_failed", taskId: task.id },
@@ -312,7 +372,7 @@ export class AttachedAgentCoordinator implements AttachedTaskControl {
       );
     }
 
-    if (task.closeAfterResult && !task.closed) await this.closeTask(task);
+    if (task.closeAfterResult && !task.closed) await this.closeTask(task, "after_result");
   }
 
   private async ensureRuntime(task: AttachedTask): Promise<AgentRuntime> {
@@ -336,7 +396,10 @@ export class AttachedAgentCoordinator implements AttachedTaskControl {
     return runtime;
   }
 
-  private async closeTask(task: AttachedTask): Promise<void> {
+  private async closeTask(
+    task: AttachedTask,
+    reason: "manual" | "after_result" | "idle",
+  ): Promise<void> {
     if (task.closed) return;
     task.closed = true;
     this.tasks.delete(task.id);
@@ -351,7 +414,10 @@ export class AttachedAgentCoordinator implements AttachedTaskControl {
       channelId: task.conversationKey.channelId,
       accessScope: task.accessScope,
     });
-    this.logger.info({ event: "attached_task_closed", taskId: task.id }, "Closed attached task");
+    this.logger.info(
+      { event: "attached_task_closed", taskId: task.id, reason },
+      "Closed attached task",
+    );
   }
 
   private disposeRuntime(task: AttachedTask): void {
@@ -420,6 +486,19 @@ export class AttachedAgentCoordinator implements AttachedTaskControl {
       );
     }
   }
+}
+
+function isIdleTaskDue(task: AttachedTask, now: number, idleCloseMs: number): boolean {
+  if (
+    task.closed ||
+    task.status === "running" ||
+    task.pendingPrompts > 0 ||
+    task.activeExecution !== undefined
+  ) {
+    return false;
+  }
+  const updatedAtMs = Date.parse(task.updatedAt);
+  return Number.isFinite(updatedAtMs) && now - updatedAtMs >= idleCloseMs;
 }
 
 function createAttachedPromptEvent(taskId: string, text: string): AgentEvent {

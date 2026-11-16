@@ -49,6 +49,8 @@ surface ツールは `discord_send`、`discord_ask`、`discord_speak`、`discord
 
 会話付随エージェントは watch を登録できる。登録した watch はそのタスクに属し、wake はそのタスクのセッションを再開する。結果は同じく `worker.result` として会話へ戻る。タスクが閉じられていて再開できない場合、wake は会話エージェントへ届く。
 
+watch を持たないタスクは、実行中でない状態のまま 1 時間経過すると自動的に閉じられる。watch を持つタスクは一時停止中の watch だけが残っている場合も含めて自動終了の対象外とする。
+
 タスクのメタデータは `attached-tasks/` に保存する。再起動するとタスク一覧は復元され、次の `worker_send` で `sessions/attached/` のセッションを再開する。再起動時に実行中だったプロンプトは `interrupted` として記録し、自動では再実行しない。Web UI のセッション一覧には出ない。
 
 ## 役割を選ぶ基準

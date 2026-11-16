@@ -5,8 +5,10 @@ import pino from "pino";
 import type { AgentCreationOptions, AgentFactory } from "@agents/core/agent-factory";
 import type { AgentRuntime } from "@agents/core/agent-runtime";
 import {
+  ATTACHED_TASK_IDLE_CLOSE_MS,
   AttachedAgentCoordinator,
   type AttachedTaskDelivery,
+  type AttachedTaskReference,
   type ClosedAttachedTask,
 } from "./attached-agent-coordinator";
 import type { AttachedTaskStore, StoredAttachedTask } from "./attached-task-store";
@@ -45,6 +47,8 @@ function createHarness(
   createRuntime?: (options: AgentCreationOptions) => Promise<AgentRuntime>,
   store = new MemoryTaskStore(),
   options?: {
+    readonly idleCloseMs?: number;
+    readonly hasOwnedWatches?: (task: AttachedTaskReference) => Promise<boolean>;
     readonly onResult?: (delivery: AttachedTaskDelivery) => Promise<void>;
     readonly onTaskClosed?: (task: ClosedAttachedTask) => Promise<void>;
   },
@@ -85,6 +89,8 @@ function createHarness(
     logger: pino({ level: "silent" }),
     store,
     taskCoordinator,
+    ...(options?.idleCloseMs !== undefined ? { idleCloseMs: options.idleCloseMs } : {}),
+    ...(options?.hasOwnedWatches ? { hasOwnedWatches: options.hasOwnedWatches } : {}),
     createTools: (_conversationKey, _accessScope, taskId) => {
       toolTaskIds.push(taskId);
       return [];
@@ -497,4 +503,185 @@ test("rejects new starts and ignores send/close after dispose", async () => {
   );
   assert.equal(await harness.coordinator.send(taskId, "follow-up"), false);
   assert.equal(await harness.coordinator.close(taskId), false);
+});
+
+test("closeIdleTasks closes idle tasks past the timeout unless they own watches", async () => {
+  const watchedIds = new Set<string>();
+  const harness = createHarness(undefined, new MemoryTaskStore(), {
+    hasOwnedWatches: async ({ id }) => watchedIds.has(id),
+  });
+
+  const idleTaskId = await harness.coordinator.start({
+    channelId: "channel-1",
+    accessScope: "public",
+    ownerFeaturesAllowed: false,
+    prompt: "idle task",
+  });
+  const watchedTaskId = await harness.coordinator.start({
+    channelId: "channel-1",
+    accessScope: "owner:123",
+    ownerFeaturesAllowed: true,
+    prompt: "watched task",
+  });
+  watchedIds.add(watchedTaskId);
+  await waitFor(() => harness.deliveries.length === 2);
+  await harness.taskCoordinator.waitForCompletion();
+
+  const updatedAtMs = Date.parse(harness.store.tasks.get(idleTaskId)!.updatedAt);
+  assert.equal(
+    await harness.coordinator.closeIdleTasks(updatedAtMs + ATTACHED_TASK_IDLE_CLOSE_MS - 1),
+    0,
+  );
+  assert.equal(harness.coordinator.list("channel-1").length, 2);
+
+  assert.equal(
+    await harness.coordinator.closeIdleTasks(updatedAtMs + ATTACHED_TASK_IDLE_CLOSE_MS + 1_000),
+    1,
+  );
+  assert.deepEqual(harness.disposed, [idleTaskId]);
+  assert.equal(harness.store.tasks.has(idleTaskId), false);
+  assert.deepEqual(harness.closedTasks, [
+    { id: idleTaskId, channelId: "channel-1", accessScope: "public" },
+  ]);
+  assert.deepEqual(
+    harness.coordinator.list("channel-1").map((task) => task.id),
+    [watchedTaskId],
+  );
+});
+
+test("closeIdleTasks skips running tasks, watch-check failures, and tasks receiving a concurrent send", async () => {
+  let releaseRunning: (() => void) | undefined;
+  let runningStarted = false;
+  let watchCheckStarted = false;
+  let releaseWatchCheck: (() => void) | undefined;
+  let failWatchCheckFor: string | undefined;
+
+  const harness = createHarness(
+    async (creationOptions) => {
+      if (creationOptions.sessionKey === failWatchCheckFor) {
+        return {
+          async prompt() {},
+          lastAssistantText() {
+            return "ok";
+          },
+          dispose() {},
+        };
+      }
+      return {
+        async prompt(turn) {
+          const text = turn.event.content
+            .filter((block) => block.type === "text")
+            .map((block) => block.text)
+            .join("\n");
+          if (text === "long") {
+            runningStarted = true;
+            await new Promise<void>((resolve) => {
+              releaseRunning = resolve;
+            });
+          }
+        },
+        lastAssistantText() {
+          return "done";
+        },
+        dispose() {},
+      };
+    },
+    new MemoryTaskStore(),
+    {
+      hasOwnedWatches: async ({ id }) => {
+        if (id === failWatchCheckFor) {
+          throw new Error("watch store unavailable");
+        }
+        watchCheckStarted = true;
+        await new Promise<void>((resolve) => {
+          releaseWatchCheck = resolve;
+        });
+        return false;
+      },
+    },
+  );
+
+  const sendRaceTaskId = await harness.coordinator.start({
+    channelId: "channel-1",
+    accessScope: "public",
+    ownerFeaturesAllowed: false,
+    prompt: "quick",
+  });
+  const watchErrorTaskId = await harness.coordinator.start({
+    channelId: "channel-1",
+    accessScope: "public",
+    ownerFeaturesAllowed: false,
+    prompt: "quick",
+  });
+  failWatchCheckFor = watchErrorTaskId;
+  await waitFor(() => harness.deliveries.length === 2);
+  await harness.taskCoordinator.waitForCompletion();
+
+  const runningTaskId = await harness.coordinator.start({
+    channelId: "channel-1",
+    accessScope: "public",
+    ownerFeaturesAllowed: false,
+    prompt: "long",
+  });
+  await waitFor(() => runningStarted);
+
+  const cleanupPromise = harness.coordinator.closeIdleTasks(
+    Date.now() + ATTACHED_TASK_IDLE_CLOSE_MS + 10_000,
+  );
+  await waitFor(() => watchCheckStarted);
+  assert.equal(await harness.coordinator.send(sendRaceTaskId, "follow-up"), true);
+  releaseWatchCheck?.();
+
+  assert.equal(await cleanupPromise, 0);
+  await waitFor(() => harness.deliveries.length === 3);
+  assert.equal(harness.coordinator.list("channel-1").length, 3);
+
+  releaseRunning?.();
+  await waitFor(() => harness.deliveries.length === 4);
+  await harness.taskCoordinator.waitForCompletion();
+  assert.equal(harness.store.tasks.has(runningTaskId), true);
+  assert.equal(harness.store.tasks.has(sendRaceTaskId), true);
+  assert.equal(harness.store.tasks.has(watchErrorTaskId), true);
+});
+
+test("closeIdleTasks closes failed and restored interrupted tasks after timeout", async () => {
+  const store = new MemoryTaskStore();
+  const staleTime = "2026-01-01T00:00:00.000Z";
+  await store.save({
+    id: "attached-interrupted",
+    channelId: "channel-1",
+    accessScope: "public",
+    ownerFeaturesAllowed: false,
+    prompt: "restored",
+    status: "interrupted",
+    createdAt: staleTime,
+    updatedAt: staleTime,
+    closeAfterResult: false,
+  });
+
+  const harness = createHarness(
+    async () => ({
+      async prompt() {
+        throw new Error("boom");
+      },
+      dispose() {},
+    }),
+    store,
+  );
+  await harness.coordinator.load();
+
+  const failedTaskId = await harness.coordinator.start({
+    channelId: "channel-1",
+    accessScope: "public",
+    ownerFeaturesAllowed: false,
+    prompt: "fail",
+  });
+  await waitFor(() => harness.deliveries.length === 1);
+  await harness.taskCoordinator.waitForCompletion();
+
+  const futureNow = Date.now() + ATTACHED_TASK_IDLE_CLOSE_MS + 1_000;
+  assert.equal(await harness.coordinator.closeIdleTasks(futureNow), 2);
+  assert.deepEqual(harness.coordinator.list("channel-1"), []);
+  assert.equal(store.tasks.has("attached-interrupted"), false);
+  assert.equal(store.tasks.has(failedTaskId), false);
 });
