@@ -84,12 +84,12 @@ test("records completed turn outcomes while preserving the active turn after sen
     messages[0],
     { ...oldCall, content: oldCall.content.filter((block) => block.type !== "text") },
     messages[2],
-    { ...oldEnd, content: [{ type: "text", text: "Sent a reply to the conversation." }] },
+    { ...oldEnd, content: [{ type: "text", text: "Sent something to the conversation." }] },
     messages[4],
     {
       ...silentEnd,
       content: [
-        { type: "text", text: "I didn't send a reply to the conversation, so I stayed silent." },
+        { type: "text", text: "I didn't send anything to the conversation, so I stayed silent." },
       ],
     },
     ...messages.slice(6),
@@ -103,29 +103,33 @@ for (const { toolNames, errors, expected } of [
   {
     toolNames: [],
     errors: [],
-    expected: "I didn't send a reply to the conversation, so I stayed silent.",
+    expected: "I didn't send anything to the conversation, so I stayed silent.",
   },
   {
     toolNames: ["discord_read"],
     errors: [false],
-    expected: "I didn't send a reply to the conversation, so I stayed silent.",
+    expected: "I didn't send anything to the conversation, so I stayed silent.",
   },
   {
     toolNames: ["discord_send"],
     errors: [true],
-    expected: "I didn't send a reply to the conversation, so I stayed silent.",
+    expected: "I didn't send anything to the conversation, so I stayed silent.",
   },
-  { toolNames: ["discord_send"], errors: [false], expected: "Sent a reply to the conversation." },
+  { toolNames: ["discord_send"], errors: [false], expected: "Sent something to the conversation." },
   {
     toolNames: ["discord_send", "discord_send"],
     errors: [false, true],
-    expected: "Sent a reply to the conversation.",
+    expected: "Sent something to the conversation.",
   },
-  { toolNames: ["discord_speak"], errors: [false], expected: "Sent a reply to the conversation." },
+  {
+    toolNames: ["discord_speak"],
+    errors: [false],
+    expected: "Sent something to the conversation.",
+  },
   {
     toolNames: ["discord_speak"],
     errors: [true],
-    expected: "I didn't send a reply to the conversation, so I stayed silent.",
+    expected: "I didn't send anything to the conversation, so I stayed silent.",
   },
 ]) {
   test(`summarizes completed assistant text (${JSON.stringify({ toolNames, errors })})`, async () => {
@@ -261,10 +265,10 @@ test("normalizes completed turns from the surface tools the role holds", async (
         .filter((message) => message.role === "assistant")
         .flatMap((message) => message.content.filter((block) => block.type === "text"))
         .map((block) => block.text);
-    assert.deepEqual(assistantTexts(requests[0]!), ["Sent a reply to the conversation."]);
+    assert.deepEqual(assistantTexts(requests[0]!), ["Sent something to the conversation."]);
     assert.deepEqual(assistantTexts(requests[1]!), [
-      "Sent a reply to the conversation.",
-      "I didn't send a reply to the conversation, so I stayed silent.",
+      "Sent something to the conversation.",
+      "I didn't send anything to the conversation, so I stayed silent.",
     ]);
   } finally {
     runtime.dispose();

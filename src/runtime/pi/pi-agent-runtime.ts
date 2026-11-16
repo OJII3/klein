@@ -551,8 +551,8 @@ export function normalizeCompletedAssistantText<TMessage extends Message>(
       content.push({
         type: "text",
         text: sentMessage
-          ? "Sent a reply to the conversation."
-          : "I didn't send a reply to the conversation, so I stayed silent.",
+          ? "Sent something to the conversation."
+          : "I didn't send anything to the conversation, so I stayed silent.",
       });
       sentMessage = false;
     }
