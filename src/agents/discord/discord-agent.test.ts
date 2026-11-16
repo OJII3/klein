@@ -5,6 +5,7 @@ import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 
 import type { AgentFactory } from "../core/agent-factory";
 import type { AgentRuntime } from "../core/agent-runtime";
+import type { AgentTool } from "../core/agent-tool";
 import { DiscordAgent } from "./discord-agent";
 import { createDiscordMessageAgentTurn } from "./discord-message-agent-turn";
 import { createDiscordAgentTools } from "./discord-tools";
@@ -142,6 +143,37 @@ test("adds discord_ask only when a turn requester is available", () => {
 
   assert.ok(withRequester.some((tool) => tool.name === "discord_ask"));
   assert.ok(!withoutRequester.some((tool) => tool.name === "discord_ask"));
+});
+
+test("marks the Discord surface tools so the core layer can reject them", () => {
+  const channelApi = {} as DiscordChannelApi;
+  const withSpeak = createDiscordAgentTools(
+    {
+      channelApi,
+      channelId: "channel-123",
+      ownerFeaturesAllowed: false,
+      requesterUserId: () => "user-123",
+      speak: async () => {},
+      watchCheckRunner: silentWatchCheckRunner,
+    },
+    async () => undefined,
+  );
+  const withVoice = createDiscordAgentTools(
+    {
+      channelApi,
+      channelId: "channel-123",
+      ownerFeaturesAllowed: false,
+      tts: {} as never,
+      watchCheckRunner: silentWatchCheckRunner,
+    },
+    async () => undefined,
+  );
+
+  const surfaceNames = [...withSpeak, ...withVoice]
+    .filter((tool) => (tool as AgentTool).surface === true)
+    .map((tool) => tool.name)
+    .sort();
+  assert.deepEqual(surfaceNames, ["discord_ask", "discord_send", "discord_speak", "discord_voice"]);
 });
 
 test("exposes the message author as the turn's requester and clears it for events", async () => {
@@ -293,7 +325,9 @@ test("passes guild memory as turn context without merging it into the event", as
 
   await agent.promptMessage(message, { guildMemory: "### 定例会の曜日\n\n毎週土曜日" });
 
-  assert.equal(receivedTurn?.context.guildMemory, "### 定例会の曜日\n\n毎週土曜日");
+  assert.deepEqual(receivedTurn?.context.blocks, [
+    { name: "guild-memory", content: "### 定例会の曜日\n\n毎週土曜日" },
+  ]);
   assert.doesNotMatch(eventText(receivedTurn?.event), /<guild-memory>/u);
   assert.match(eventText(receivedTurn?.event), /読み取った本文/u);
   agent.dispose();

@@ -1,10 +1,11 @@
-import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+
+import { defineSurfaceTool } from "./surface-tool";
 
 export function createDiscordSpeakTool(
   speak: (text: string, toolCallId?: string) => Promise<void>,
 ) {
-  return defineTool({
+  return defineSurfaceTool({
     name: "discord_speak",
     label: "Speak in Discord Voice Channel",
     exposure: "model-only",

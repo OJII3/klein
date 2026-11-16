@@ -1,7 +1,7 @@
-import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { AgentDefinition } from "./agent-definition";
 import type { AgentRole } from "./agent-role";
 import type { AgentRuntime } from "./agent-runtime";
+import type { AgentTool } from "./agent-tool";
 
 export interface AgentCreationOptions {
   readonly role: AgentRole;
@@ -12,8 +12,12 @@ export interface AgentCreationOptions {
   readonly resumeSession?: boolean;
 }
 
-export interface AgentFactory {
-  create<TTool = ToolDefinition>(
+/**
+ * Creates an agent runtime. The tool type stays generic so the runtime adapter
+ * receives its own tool shape, while the core layer sees only {@link AgentTool}.
+ */
+export interface AgentFactory<TTool extends AgentTool = AgentTool> {
+  create(
     definition: AgentDefinition,
     tools: readonly TTool[],
     options: AgentCreationOptions,

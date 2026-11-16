@@ -1,15 +1,15 @@
-import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
 import type { TextToSpeech } from "@modules/tts/infrastructure/sbv2-tts";
+import { defineSurfaceTool } from "./surface-tool";
 
 export function createDiscordVoiceTool(
   channelApi: Pick<DiscordChannelApi, "sendAudio" | "sendTyping">,
   channelId: Parameters<DiscordChannelApi["sendMessage"]>[0],
   tts: TextToSpeech,
 ) {
-  return defineTool({
+  return defineSurfaceTool({
     name: "discord_voice",
     label: "Send Discord Voice Message",
     exposure: "model-only",

@@ -1,14 +1,14 @@
-import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
+import { defineSurfaceTool } from "./surface-tool";
 
 export function createDiscordAskTool(
   channelApi: Pick<DiscordChannelApi, "sendChoices">,
   channelId: string,
   requesterUserId: () => string | undefined,
 ) {
-  return defineTool({
+  return defineSurfaceTool({
     name: "discord_ask",
     label: "Ask with Discord Buttons",
     exposure: "model-only",

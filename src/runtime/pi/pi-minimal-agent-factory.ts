@@ -1,10 +1,11 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
-import type { CreateAgentSessionOptions, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { CreateAgentSessionOptions } from "@earendil-works/pi-coding-agent";
 
 import type { AgentCreationOptions, AgentFactory } from "@agents/core/agent-factory";
 import type { AgentDefinition } from "@agents/core/agent-definition";
 import type { AgentRuntime } from "@agents/core/agent-runtime";
 import type { AgentTurn } from "@agents/core/agent-turn";
+import type { PiTool } from "./pi-tool";
 import type { PiSession, PiStandaloneSessionRunner } from "./pi-standalone-session-runner";
 
 type ThinkingLevel = NonNullable<CreateAgentSessionOptions["thinkingLevel"]>;
@@ -22,11 +23,13 @@ export interface PiMinimalAgentFactoryOptions {
  * same AgentRuntime contract as conversation and attached agents while keeping
  * the minimal session configuration.
  */
-export function createPiMinimalAgentFactory(options: PiMinimalAgentFactoryOptions): AgentFactory {
+export function createPiMinimalAgentFactory(
+  options: PiMinimalAgentFactoryOptions,
+): AgentFactory<PiTool> {
   return {
-    async create<TTool = ToolDefinition>(
+    async create(
       definition: AgentDefinition,
-      tools: readonly TTool[],
+      tools: readonly PiTool[],
       creation: AgentCreationOptions,
     ): Promise<AgentRuntime> {
       if (creation.role.kind !== "standalone") {
@@ -36,15 +39,14 @@ export function createPiMinimalAgentFactory(options: PiMinimalAgentFactoryOption
         throw new Error("The minimal agent factory does not support initial context");
       }
 
-      const toolDefinitions = tools as readonly ToolDefinition[];
       const session = await options.runner.createSession({
         cwd: options.cwd,
         model: options.model,
         sessionId: creation.sessionKey,
         systemPrompt: definition.systemPrompt,
         ...(options.thinkingLevel ? { thinkingLevel: options.thinkingLevel } : {}),
-        toolNames: definition.toolNames ?? toolDefinitions.map((tool) => tool.name),
-        tools: toolDefinitions,
+        toolNames: definition.toolNames ?? tools.map((tool) => tool.name),
+        tools,
       });
       return new PiMinimalAgentRuntime(session);
     },

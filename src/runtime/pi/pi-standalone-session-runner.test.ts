@@ -60,8 +60,8 @@ test("standalone sessions reject surface tools", async () => {
       model: resolveConfiguredModel("opencode-go", "deepseek-v4.1-flash"),
       sessionId: "user-memory-1",
       systemPrompt: "system",
-      toolNames: ["discord_send"],
-      tools: [],
+      toolNames: [],
+      tools: [{ name: "discord_send", surface: true } as never],
     }),
     /standalone agent role may not use the surface tool discord_send/,
   );

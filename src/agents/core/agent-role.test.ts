@@ -28,22 +28,40 @@ test("standalone agents return results to their caller", () => {
 });
 
 test("only conversation agents may hold a surface tool", () => {
-  assert.doesNotThrow(() => assertSurfaceToolsAllowed({ kind: "conversation" }, ["discord_send"]));
-  assert.doesNotThrow(() => assertSurfaceToolsAllowed({ kind: "conversation" }, ["discord_ask"]));
+  assert.doesNotThrow(() =>
+    assertSurfaceToolsAllowed({ kind: "conversation" }, [{ name: "discord_send", surface: true }]),
+  );
+  assert.doesNotThrow(() =>
+    assertSurfaceToolsAllowed({ kind: "conversation" }, [{ name: "discord_ask", surface: true }]),
+  );
   assert.throws(
-    () => assertSurfaceToolsAllowed({ kind: "attached", taskId: "task-1" }, ["discord_send"]),
+    () =>
+      assertSurfaceToolsAllowed({ kind: "attached", taskId: "task-1" }, [
+        { name: "discord_send", surface: true },
+      ]),
     /attached agent role may not use the surface tool discord_send/,
   );
   assert.throws(
-    () => assertSurfaceToolsAllowed({ kind: "attached", taskId: "task-1" }, ["discord_ask"]),
+    () =>
+      assertSurfaceToolsAllowed({ kind: "attached", taskId: "task-1" }, [
+        { name: "discord_ask", surface: true },
+      ]),
     /attached agent role may not use the surface tool discord_ask/,
   );
   assert.throws(
-    () => assertSurfaceToolsAllowed({ kind: "standalone" }, ["discord_speak"]),
+    () =>
+      assertSurfaceToolsAllowed({ kind: "standalone" }, [{ name: "discord_speak", surface: true }]),
     /standalone agent role may not use the surface tool discord_speak/,
   );
 });
 
 test("non-surface tools are allowed for every role", () => {
-  assert.equal(findSurfaceTool({ kind: "standalone" }, ["read", "write"]), undefined);
+  assert.equal(
+    findSurfaceTool({ kind: "standalone" }, [{ name: "read" }, { name: "write" }]),
+    undefined,
+  );
+});
+
+test("a tool is a surface tool only when it declares itself", () => {
+  assert.equal(findSurfaceTool({ kind: "standalone" }, [{ name: "discord_send" }]), undefined);
 });

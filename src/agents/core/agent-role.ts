@@ -1,3 +1,5 @@
+import type { AgentTool } from "./agent-tool";
+
 /**
  * How an agent relates to a conversation.
  *
@@ -35,24 +37,17 @@ export function resolveAgentPolicy(role: AgentRole): AgentPolicy {
 }
 
 /**
- * Tools that write to the Discord surface. Only a conversation agent may hold
- * them; an attached or standalone agent returns its result to its caller
- * instead of speaking.
+ * Tools that write to the conversation surface declare themselves with
+ * `surface: true`. Only a conversation agent may hold them; an attached or
+ * standalone agent returns its result to its caller instead of speaking.
  */
-const SURFACE_TOOL_NAMES: readonly string[] = [
-  "discord_send",
-  "discord_ask",
-  "discord_speak",
-  "discord_voice",
-];
-
-export function findSurfaceTool(role: AgentRole, toolNames: readonly string[]): string | undefined {
+export function findSurfaceTool(role: AgentRole, tools: readonly AgentTool[]): string | undefined {
   if (resolveAgentPolicy(role).surface === "owner") return undefined;
-  return toolNames.find((name) => SURFACE_TOOL_NAMES.includes(name));
+  return tools.find((tool) => tool.surface === true)?.name;
 }
 
-export function assertSurfaceToolsAllowed(role: AgentRole, toolNames: readonly string[]): void {
-  const surfaceTool = findSurfaceTool(role, toolNames);
+export function assertSurfaceToolsAllowed(role: AgentRole, tools: readonly AgentTool[]): void {
+  const surfaceTool = findSurfaceTool(role, tools);
   if (surfaceTool !== undefined) {
     throw new Error(`The ${role.kind} agent role may not use the surface tool ${surfaceTool}`);
   }
