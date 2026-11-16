@@ -1,31 +1,23 @@
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 
 import type { AgentEvent } from "../core/agent-event";
+import type { AgentFactory, AgentToolContext } from "../core/agent-factory";
+import type { AgentRuntime } from "../core/agent-runtime";
 import type { AgentTurn, AgentTurnContext } from "../core/agent-turn";
 import type { ConversationAgent } from "../core/conversation-agent";
-import type { AgentFactory } from "../core/agent-factory";
-import type { AgentRuntime } from "../core/agent-runtime";
-import { formatDiscordMessage, type DiscordMessage } from "@modules/discord/domain/discord-message";
+import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import {
   createDiscordMessageAgentTurn,
   type DiscordTurnContext,
 } from "./discord-message-agent-turn";
 import { BOT_MESSAGE_GUIDANCE } from "./prompt-policy";
-import type { DiscordImageAnalysis } from "./tools/discord-read";
 
 export interface DiscordAgentCreateOptions {
   readonly sessionKey?: string;
   readonly handoffContext?: string;
   readonly ownerFeaturesAllowed?: boolean;
   readonly ownerUserId?: string;
-  readonly tools?: (
-    analyzeImage: DiscordImageAnalysis,
-    requesterUserId: () => string | undefined,
-  ) => readonly ToolDefinition[];
-}
-
-interface DiscordTurnState {
-  requesterUserId?: string;
+  readonly tools?: (context: AgentToolContext) => readonly ToolDefinition[];
 }
 
 export class DiscordAgent implements ConversationAgent {
@@ -34,7 +26,6 @@ export class DiscordAgent implements ConversationAgent {
     private readonly channelId: string,
     private readonly ownerUserId?: string,
     private readonly ownerFeaturesAllowed = false,
-    private readonly turnState: DiscordTurnState = {},
   ) {}
 
   static async create(
@@ -43,24 +34,12 @@ export class DiscordAgent implements ConversationAgent {
     systemPrompt: string,
     options: DiscordAgentCreateOptions = {},
   ): Promise<DiscordAgent> {
-    let runtime: AgentRuntime | undefined;
-    const analyzeImage: DiscordImageAnalysis = async (message, focus) => {
-      if (!runtime?.analyzeImage) return undefined;
-
-      return runtime.analyzeImage({
-        text: formatDiscordMessage(message),
-        images: message.images.map(({ data, mimeType }) => ({ data, mimeType })),
-        ...(focus ? { focus } : {}),
-      });
-    };
-
     const ownerFeaturesAllowed = options.ownerFeaturesAllowed === true && !!options.ownerUserId;
-    const turnState: DiscordTurnState = {};
-    runtime = await agentFactory.create(
+    const runtime = await agentFactory.create(
       {
         systemPrompt,
       },
-      options.tools?.(analyzeImage, () => turnState.requesterUserId) ?? [],
+      options.tools ?? (() => []),
       {
         role: { kind: "conversation" },
         initialContext: options.handoffContext
@@ -78,12 +57,10 @@ export class DiscordAgent implements ConversationAgent {
       channelId,
       options.ownerUserId,
       ownerFeaturesAllowed,
-      turnState,
     );
   }
 
   prompt(turn: AgentTurn): Promise<void> {
-    this.turnState.requesterUserId = turn.context.requesterId;
     return this.runtime.prompt(this.withContextAccess(turn)).then(() => undefined);
   }
 
@@ -92,7 +69,6 @@ export class DiscordAgent implements ConversationAgent {
   }
 
   steer(turn: AgentTurn): Promise<void> {
-    this.turnState.requesterUserId = turn.context.requesterId;
     const next = this.withContextAccess(turn);
     return (this.runtime.steer ? this.runtime.steer(next) : this.runtime.prompt(next)).then(
       () => undefined,

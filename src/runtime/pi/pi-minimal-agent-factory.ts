@@ -1,7 +1,11 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
 import type { CreateAgentSessionOptions } from "@earendil-works/pi-coding-agent";
 
-import type { AgentCreationOptions, AgentFactory } from "@agents/core/agent-factory";
+import type {
+  AgentCreationOptions,
+  AgentFactory,
+  AgentToolsFactory,
+} from "@agents/core/agent-factory";
 import type { AgentDefinition } from "@agents/core/agent-definition";
 import type { AgentRuntime } from "@agents/core/agent-runtime";
 import type { AgentTurn } from "@agents/core/agent-turn";
@@ -29,7 +33,7 @@ export function createPiMinimalAgentFactory(
   return {
     async create(
       definition: AgentDefinition,
-      tools: readonly PiTool[],
+      createTools: AgentToolsFactory<PiTool>,
       creation: AgentCreationOptions,
     ): Promise<AgentRuntime> {
       if (creation.role.kind !== "standalone") {
@@ -39,6 +43,10 @@ export function createPiMinimalAgentFactory(
         throw new Error("The minimal agent factory does not support initial context");
       }
 
+      const turnState: { requesterId?: string } = {};
+      const tools = createTools({
+        requesterId: () => turnState.requesterId,
+      });
       const session = await options.runner.createSession({
         cwd: options.cwd,
         model: options.model,
@@ -48,7 +56,7 @@ export function createPiMinimalAgentFactory(
         toolNames: definition.toolNames ?? tools.map((tool) => tool.name),
         tools,
       });
-      return new PiMinimalAgentRuntime(session);
+      return new PiMinimalAgentRuntime(session, turnState);
     },
   };
 }
@@ -56,7 +64,10 @@ export function createPiMinimalAgentFactory(
 class PiMinimalAgentRuntime implements AgentRuntime {
   private lastText: string | undefined;
 
-  constructor(private readonly session: PiSession) {}
+  constructor(
+    private readonly session: PiSession,
+    private readonly turnState: { requesterId?: string },
+  ) {}
 
   async prompt(turn: AgentTurn): Promise<void> {
     this.lastText = undefined;
@@ -64,7 +75,12 @@ class PiMinimalAgentRuntime implements AgentRuntime {
       .filter((block) => block.type === "text")
       .map((block) => block.text)
       .join("\n\n");
-    this.lastText = await this.session.prompt(text);
+    this.turnState.requesterId = turn.context.requesterId;
+    try {
+      this.lastText = await this.session.prompt(text);
+    } finally {
+      this.turnState.requesterId = undefined;
+    }
   }
 
   lastAssistantText(): string | undefined {

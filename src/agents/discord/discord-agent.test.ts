@@ -3,7 +3,7 @@ import test from "node:test";
 
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 
-import type { AgentFactory } from "../core/agent-factory";
+import type { AgentFactory, AgentToolContext } from "../core/agent-factory";
 import type { AgentRuntime } from "../core/agent-runtime";
 import type { AgentTool } from "../core/agent-tool";
 import { DiscordAgent } from "./discord-agent";
@@ -16,7 +16,6 @@ import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-a
 import type { WatchCheckRunner } from "@modules/scheduling/application/watch-check-runner";
 import type { ReminderTask, ScheduledTask } from "@modules/scheduling/domain/scheduled-task";
 import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
-import type { DiscordImageAnalysis } from "./tools/discord-read";
 
 const silentWatchCheckRunner: WatchCheckRunner = {
   async run() {
@@ -55,19 +54,18 @@ function createToolsFor(
     readonly speak?: (text: string, toolCallId?: string) => Promise<void>;
   } = {},
 ) {
-  return (analyzeImage: DiscordImageAnalysis) =>
-    createDiscordAgentTools(
-      {
-        channelApi,
-        channelId,
-        ownerFeaturesAllowed: options.ownerFeaturesAllowed ?? false,
-        ownerUserId: options.ownerUserId,
-        scheduledTaskStore: options.scheduledTaskStore,
-        speak: options.speak,
-        watchCheckRunner: silentWatchCheckRunner,
-      },
-      analyzeImage,
-    );
+  return (toolContext: AgentToolContext) =>
+    createDiscordAgentTools({
+      analyzeImage: toolContext.analyzeImage,
+      channelApi,
+      channelId,
+      ownerFeaturesAllowed: options.ownerFeaturesAllowed ?? false,
+      ownerUserId: options.ownerUserId,
+      requesterUserId: toolContext.requesterId,
+      scheduledTaskStore: options.scheduledTaskStore,
+      speak: options.speak,
+      watchCheckRunner: silentWatchCheckRunner,
+    });
 }
 
 test("routes voice replies through discord_speak using the existing runtime prompt", async () => {
@@ -97,9 +95,9 @@ test("routes voice replies through discord_speak using the existing runtime prom
     dispose() {},
   };
   const agentFactory: AgentFactory = {
-    async create(definition, registeredTools) {
+    async create(definition, createTools) {
       assert.equal(definition.systemPrompt, "voice system prompt");
-      tools = registeredTools as readonly ToolDefinition[];
+      tools = createTools({ requesterId: () => undefined }) as readonly ToolDefinition[];
       return runtime;
     },
   };
@@ -121,25 +119,21 @@ test("routes voice replies through discord_speak using the existing runtime prom
 
 test("adds discord_ask only when a turn requester is available", () => {
   const channelApi = {} as DiscordChannelApi;
-  const withRequester = createDiscordAgentTools(
-    {
-      channelApi,
-      channelId: "channel-123",
-      ownerFeaturesAllowed: false,
-      requesterUserId: () => "user-123",
-      watchCheckRunner: silentWatchCheckRunner,
-    },
-    async () => undefined,
-  );
-  const withoutRequester = createDiscordAgentTools(
-    {
-      channelApi,
-      channelId: "channel-123",
-      ownerFeaturesAllowed: false,
-      watchCheckRunner: silentWatchCheckRunner,
-    },
-    async () => undefined,
-  );
+  const withRequester = createDiscordAgentTools({
+    analyzeImage: async () => "",
+    channelApi,
+    channelId: "channel-123",
+    ownerFeaturesAllowed: false,
+    requesterUserId: () => "user-123",
+    watchCheckRunner: silentWatchCheckRunner,
+  });
+  const withoutRequester = createDiscordAgentTools({
+    analyzeImage: async () => "",
+    channelApi,
+    channelId: "channel-123",
+    ownerFeaturesAllowed: false,
+    watchCheckRunner: silentWatchCheckRunner,
+  });
 
   assert.ok(withRequester.some((tool) => tool.name === "discord_ask"));
   assert.ok(!withoutRequester.some((tool) => tool.name === "discord_ask"));
@@ -147,27 +141,23 @@ test("adds discord_ask only when a turn requester is available", () => {
 
 test("marks the Discord surface tools so the core layer can reject them", () => {
   const channelApi = {} as DiscordChannelApi;
-  const withSpeak = createDiscordAgentTools(
-    {
-      channelApi,
-      channelId: "channel-123",
-      ownerFeaturesAllowed: false,
-      requesterUserId: () => "user-123",
-      speak: async () => {},
-      watchCheckRunner: silentWatchCheckRunner,
-    },
-    async () => undefined,
-  );
-  const withVoice = createDiscordAgentTools(
-    {
-      channelApi,
-      channelId: "channel-123",
-      ownerFeaturesAllowed: false,
-      tts: {} as never,
-      watchCheckRunner: silentWatchCheckRunner,
-    },
-    async () => undefined,
-  );
+  const withSpeak = createDiscordAgentTools({
+    analyzeImage: async () => "",
+    channelApi,
+    channelId: "channel-123",
+    ownerFeaturesAllowed: false,
+    requesterUserId: () => "user-123",
+    speak: async () => {},
+    watchCheckRunner: silentWatchCheckRunner,
+  });
+  const withVoice = createDiscordAgentTools({
+    analyzeImage: async () => "",
+    channelApi,
+    channelId: "channel-123",
+    ownerFeaturesAllowed: false,
+    tts: {} as never,
+    watchCheckRunner: silentWatchCheckRunner,
+  });
 
   const surfaceNames = [...withSpeak, ...withVoice]
     .filter((tool) => (tool as AgentTool).surface === true)
@@ -176,26 +166,40 @@ test("marks the Discord surface tools so the core layer can reject them", () => 
   assert.deepEqual(surfaceNames, ["discord_ask", "discord_send", "discord_speak", "discord_voice"]);
 });
 
-test("exposes the message author as the turn's requester and clears it for events", async () => {
+test("passes the message author as the turn's requester and clears it for events", async () => {
   let requesterUserId: (() => string | undefined) | undefined;
+  let activeRequesterId: string | undefined;
+  const observedDuringPrompt: (string | undefined)[] = [];
+  const receivedTurns: AgentTurn[] = [];
   const runtime: AgentRuntime = {
-    async prompt() {},
+    async prompt(turn) {
+      receivedTurns.push(turn);
+      activeRequesterId = turn.context.requesterId;
+      try {
+        observedDuringPrompt.push(requesterUserId?.());
+      } finally {
+        activeRequesterId = undefined;
+      }
+    },
     dispose() {},
   };
   const agentFactory: AgentFactory = {
-    async create() {
+    async create(_definition, createTools) {
+      createTools({ requesterId: () => activeRequesterId });
       return runtime;
     },
   };
   const agent = await DiscordAgent.create(agentFactory, "channel-123", "system prompt", {
-    tools: (_analyzeImage, getRequesterUserId) => {
-      requesterUserId = getRequesterUserId;
+    tools: (toolContext) => {
+      requesterUserId = toolContext.requesterId;
       return [];
     },
   });
 
   await agent.promptMessage(message);
-  assert.equal(requesterUserId?.(), "123456789012345678");
+  assert.equal(receivedTurns[0]?.context.requesterId, "123456789012345678");
+  assert.equal(observedDuringPrompt[0], "123456789012345678");
+  assert.equal(requesterUserId?.(), undefined);
 
   const event: AgentEvent = {
     id: "attached:task-1",
@@ -205,6 +209,8 @@ test("exposes the message author as the turn's requester and clears it for event
     content: [{ type: "text", text: "結果" }],
   };
   await agent.promptEvent(event);
+  assert.equal(receivedTurns[1]?.context.requesterId, undefined);
+  assert.equal(observedDuringPrompt[1], undefined);
   assert.equal(requesterUserId?.(), undefined);
   agent.dispose();
 });
@@ -213,16 +219,18 @@ test("wires the runtime image analyzer into discord_read", async () => {
   let tools: readonly ToolDefinition[] = [];
   let analyzedPrompt: unknown;
   const runtime: AgentRuntime = {
-    async analyzeImage(prompt) {
-      analyzedPrompt = prompt;
-      return "画像解析結果";
-    },
     async prompt() {},
     dispose() {},
   };
   const agentFactory: AgentFactory = {
-    async create(_definition, registeredTools) {
-      tools = registeredTools as readonly ToolDefinition[];
+    async create(_definition, createTools) {
+      tools = createTools({
+        async analyzeImage(prompt) {
+          analyzedPrompt = prompt;
+          return "画像解析結果";
+        },
+        requesterId: () => undefined,
+      }) as readonly ToolDefinition[];
       return runtime;
     },
   };
@@ -362,9 +370,9 @@ test("binds private reads to the owner and refuses other authors or channels", a
   let tools: readonly ToolDefinition[] = [];
   let requester: Parameters<DiscordChannelApi["readMessage"]>[1];
   const factory: AgentFactory = {
-    async create(_definition, registeredTools, options) {
+    async create(_definition, createTools, options) {
       assert.equal(options.ownerFeaturesAllowed, true);
-      tools = registeredTools as readonly ToolDefinition[];
+      tools = createTools({ requesterId: () => undefined }) as readonly ToolDefinition[];
       return {
         async prompt(turn) {
           prompts.push(turn);
@@ -451,8 +459,8 @@ test("keeps reminders across session rotation and isolates channel and access sc
     let tools: readonly ToolDefinition[] = [];
     await DiscordAgent.create(
       {
-        async create(_definition, registeredTools) {
-          tools = registeredTools as readonly ToolDefinition[];
+        async create(_definition, createTools) {
+          tools = createTools({ requesterId: () => undefined }) as readonly ToolDefinition[];
           return { async prompt() {}, dispose() {} };
         },
       },

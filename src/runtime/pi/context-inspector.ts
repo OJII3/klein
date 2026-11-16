@@ -1388,21 +1388,20 @@ async function executeSessionSlice(
       sessionKey,
       ownerFeaturesAllowed,
       ownerUserId,
-      tools: (analyzeImage) =>
-        createDiscordAgentTools(
-          {
-            channelApi,
-            channelId,
-            ownerFeaturesAllowed,
-            ownerUserId,
-            scheduledTaskStore,
-            watchCheckRunner,
-            ownerMemoryStore,
-            userMemoryStore,
-            discordUserDirectory,
-          },
-          analyzeImage,
-        ),
+      tools: (toolContext) =>
+        createDiscordAgentTools({
+          analyzeImage: toolContext.analyzeImage,
+          channelApi,
+          channelId,
+          ownerFeaturesAllowed,
+          ownerUserId,
+          requesterUserId: toolContext.requesterId,
+          scheduledTaskStore,
+          watchCheckRunner,
+          ownerMemoryStore,
+          userMemoryStore,
+          discordUserDirectory,
+        }),
     });
 
     setNextLabel(options.label ?? `${header.id}:${mode}`);

@@ -235,7 +235,7 @@ export async function bootstrap(): Promise<void> {
       );
       return watches.some((watch) => watch.ownerTaskId === id);
     },
-    createTools: (conversationKey, accessScope, taskId) =>
+    createTools: (conversationKey, accessScope, taskId, toolContext) =>
       createAttachedWorkerTools(
         discordService,
         conversationKey.channelId,
@@ -246,6 +246,7 @@ export async function bootstrap(): Promise<void> {
         isOwnerAccessScope(accessScope, ownerUserId) && ownerUserId
           ? { userId: ownerUserId }
           : undefined,
+        toolContext.analyzeImage,
       ),
     onResult: (delivery) =>
       agentCoordinator.deliverAttachedTaskResult(
@@ -277,24 +278,22 @@ export async function bootstrap(): Promise<void> {
       ownerFeaturesAllowed,
       ownerUserId,
       sessionKey,
-      tools: (analyzeImage, requesterUserId) =>
-        createDiscordAgentTools(
-          {
-            channelApi: discordService,
-            channelId,
-            discordUserDirectory,
-            ownerFeaturesAllowed,
-            ownerMemoryStore,
-            ownerUserId,
-            requesterUserId,
-            scheduledTaskStore,
-            tts,
-            userMemoryStore,
-            watchCheckRunner,
-            attachedTasks: attachedAgentCoordinator,
-          },
-          analyzeImage,
-        ),
+      tools: (toolContext) =>
+        createDiscordAgentTools({
+          analyzeImage: toolContext.analyzeImage,
+          channelApi: discordService,
+          channelId,
+          discordUserDirectory,
+          ownerFeaturesAllowed,
+          ownerMemoryStore,
+          ownerUserId,
+          requesterUserId: toolContext.requesterId,
+          scheduledTaskStore,
+          tts,
+          userMemoryStore,
+          watchCheckRunner,
+          attachedTasks: attachedAgentCoordinator,
+        }),
     });
   const userMemoryCoordinator =
     userMemoryConfig?.enabled === true && userMemoryStore && userMemoryDirectory
@@ -326,21 +325,19 @@ export async function bootstrap(): Promise<void> {
           createVoiceChatAgent: (channelId, sessionKey, speak) =>
             DiscordAgent.create(voiceChatAgentFactory, channelId, voiceSystemPrompt, {
               sessionKey,
-              tools: (analyzeImage, requesterUserId) =>
-                createDiscordAgentTools(
-                  {
-                    channelApi: discordService,
-                    channelId,
-                    discordUserDirectory,
-                    ownerFeaturesAllowed: false,
-                    requesterUserId,
-                    speak,
-                    userMemoryStore,
-                    watchCheckRunner,
-                    attachedTasks: attachedAgentCoordinator,
-                  },
-                  analyzeImage,
-                ),
+              tools: (toolContext) =>
+                createDiscordAgentTools({
+                  analyzeImage: toolContext.analyzeImage,
+                  channelApi: discordService,
+                  channelId,
+                  discordUserDirectory,
+                  ownerFeaturesAllowed: false,
+                  requesterUserId: toolContext.requesterId,
+                  speak,
+                  userMemoryStore,
+                  watchCheckRunner,
+                  attachedTasks: attachedAgentCoordinator,
+                }),
             }),
           logger,
           discordUserDirectory,

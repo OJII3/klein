@@ -4,7 +4,7 @@ import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { Logger } from "pino";
 
 import type { AgentEvent } from "@agents/core/agent-event";
-import type { AgentFactory } from "@agents/core/agent-factory";
+import type { AgentFactory, AgentToolContext } from "@agents/core/agent-factory";
 import type { AgentRuntime } from "@agents/core/agent-runtime";
 import type {
   AttachedTaskControl,
@@ -53,6 +53,7 @@ export interface AttachedAgentCoordinatorOptions {
     conversationKey: ConversationKey,
     accessScope: string,
     taskId: string,
+    toolContext: AgentToolContext,
   ) => readonly ToolDefinition[];
   readonly onResult: (delivery: AttachedTaskDelivery) => Promise<void>;
   readonly onTaskClosed?: (task: ClosedAttachedTask) => Promise<void>;
@@ -147,7 +148,7 @@ export class AttachedAgentCoordinator implements AttachedTaskControl {
     const id = `attached-${randomUUID()}`;
     const runtime = await this.options.factory.create(
       { systemPrompt: this.options.systemPrompt },
-      this.options.createTools(conversationKey, input.accessScope, id),
+      (toolContext) => this.options.createTools(conversationKey, input.accessScope, id, toolContext),
       {
         role: { kind: "attached", taskId: id },
         sessionKey: id,
@@ -380,7 +381,8 @@ export class AttachedAgentCoordinator implements AttachedTaskControl {
 
     const runtime = await this.options.factory.create(
       { systemPrompt: this.options.systemPrompt },
-      this.options.createTools(task.conversationKey, task.accessScope, task.id),
+      (toolContext) =>
+        this.options.createTools(task.conversationKey, task.accessScope, task.id, toolContext),
       {
         role: { kind: "attached", taskId: task.id },
         sessionKey: task.id,

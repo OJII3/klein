@@ -1,7 +1,20 @@
 import type { AgentDefinition } from "./agent-definition";
 import type { AgentRole } from "./agent-role";
-import type { AgentRuntime } from "./agent-runtime";
+import type { AgentPrompt, AgentRuntime } from "./agent-runtime";
 import type { AgentTool } from "./agent-tool";
+
+export type AgentImageAnalyzer = (prompt: AgentPrompt) => Promise<string>;
+
+export interface AgentToolContext {
+  /** Analyzes images via the configured image model, when available. */
+  readonly analyzeImage?: AgentImageAnalyzer;
+  /** Returns the requester id for the currently executing turn, if any. */
+  readonly requesterId: () => string | undefined;
+}
+
+export type AgentToolsFactory<TTool extends AgentTool = AgentTool> = (
+  context: AgentToolContext,
+) => readonly TTool[];
 
 export interface AgentCreationOptions {
   readonly role: AgentRole;
@@ -13,13 +26,13 @@ export interface AgentCreationOptions {
 }
 
 /**
- * Creates an agent runtime. The tool type stays generic so the runtime adapter
- * receives its own tool shape, while the core layer sees only {@link AgentTool}.
+ * Creates an agent runtime. The factory passes runtime capabilities and
+ * turn-scoped state via {@link AgentToolContext} when building tools.
  */
 export interface AgentFactory<TTool extends AgentTool = AgentTool> {
   create(
     definition: AgentDefinition,
-    tools: readonly TTool[],
+    createTools: AgentToolsFactory<TTool>,
     options: AgentCreationOptions,
   ): Promise<AgentRuntime>;
 }

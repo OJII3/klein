@@ -289,7 +289,7 @@ test("real Pi keeps accepting steer while a spoken tool blocks the next model ca
     sessionMode: "new",
   }).create(
     { systemPrompt: "Reply using discord_speak.", toolNames: ["discord_speak"] },
-    [
+    () => [
       createDiscordSpeakTool(async () => {
         notifySpeak();
         await playback;

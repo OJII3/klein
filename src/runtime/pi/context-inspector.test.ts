@@ -183,17 +183,16 @@ test("inspects turns and raw context from a persisted session JSONL in turn-star
       sessionKey: "discord-channel:ch-session",
       ownerFeaturesAllowed: false,
       ownerUserId: "owner-1",
-      tools: (analyzeImage) =>
-        createDiscordAgentTools(
-          {
-            channelApi,
-            channelId: "ch-session",
-            ownerFeaturesAllowed: false,
-            ownerUserId: "owner-1",
-            watchCheckRunner: new QuickJsWatchCheckRunner({ tools: [] }),
-          },
-          analyzeImage,
-        ),
+      tools: (toolContext) =>
+        createDiscordAgentTools({
+          analyzeImage: toolContext.analyzeImage,
+          channelApi,
+          channelId: "ch-session",
+          ownerFeaturesAllowed: false,
+          ownerUserId: "owner-1",
+          requesterUserId: toolContext.requesterId,
+          watchCheckRunner: new QuickJsWatchCheckRunner({ tools: [] }),
+        }),
     },
   );
 
@@ -369,17 +368,16 @@ test("records a 👎 feedback case, inspects original trace + raw context, and r
       sessionKey: "discord-channel:ch-feedback",
       ownerFeaturesAllowed: false,
       ownerUserId: "owner-1",
-      tools: (analyzeImage) =>
-        createDiscordAgentTools(
-          {
-            channelApi,
-            channelId: "ch-feedback",
-            ownerFeaturesAllowed: false,
-            ownerUserId: "owner-1",
-            watchCheckRunner: new QuickJsWatchCheckRunner({ tools: [] }),
-          },
-          analyzeImage,
-        ),
+      tools: (toolContext) =>
+        createDiscordAgentTools({
+          analyzeImage: toolContext.analyzeImage,
+          channelApi,
+          channelId: "ch-feedback",
+          ownerFeaturesAllowed: false,
+          ownerUserId: "owner-1",
+          requesterUserId: toolContext.requesterId,
+          watchCheckRunner: new QuickJsWatchCheckRunner({ tools: [] }),
+        }),
     },
   );
 

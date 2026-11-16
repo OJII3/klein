@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import pino from "pino";
 
-import type { AgentCreationOptions, AgentFactory } from "@agents/core/agent-factory";
+import type {
+  AgentCreationOptions,
+  AgentFactory,
+  AgentToolContext,
+} from "@agents/core/agent-factory";
 import type { AgentRuntime } from "@agents/core/agent-runtime";
 import {
   ATTACHED_TASK_IDLE_CLOSE_MS,
@@ -39,6 +43,7 @@ interface Harness {
   readonly roles: AgentCreationOptions["role"][];
   readonly resumeSessions: (boolean | undefined)[];
   readonly toolTaskIds: string[];
+  readonly receivedToolContexts: AgentToolContext[];
   readonly store: MemoryTaskStore;
   readonly taskCoordinator: TaskCoordinator;
 }
@@ -51,6 +56,7 @@ function createHarness(
     readonly hasOwnedWatches?: (task: AttachedTaskReference) => Promise<boolean>;
     readonly onResult?: (delivery: AttachedTaskDelivery) => Promise<void>;
     readonly onTaskClosed?: (task: ClosedAttachedTask) => Promise<void>;
+    readonly toolContext?: AgentToolContext;
   },
 ): Harness {
   const prompts: string[] = [];
@@ -60,11 +66,13 @@ function createHarness(
   const roles: AgentCreationOptions["role"][] = [];
   const resumeSessions: (boolean | undefined)[] = [];
   const toolTaskIds: string[] = [];
+  const receivedToolContexts: AgentToolContext[] = [];
   const taskCoordinator = new TaskCoordinator();
   const factory: AgentFactory = {
-    async create(_definition, _tools, creationOptions) {
+    async create(_definition, createTools, creationOptions) {
       roles.push(creationOptions.role);
       resumeSessions.push(creationOptions.resumeSession);
+      createTools(options?.toolContext ?? { requesterId: () => undefined });
       if (createRuntime) return createRuntime(creationOptions);
       return {
         async prompt(turn) {
@@ -91,8 +99,9 @@ function createHarness(
     taskCoordinator,
     ...(options?.idleCloseMs !== undefined ? { idleCloseMs: options.idleCloseMs } : {}),
     ...(options?.hasOwnedWatches ? { hasOwnedWatches: options.hasOwnedWatches } : {}),
-    createTools: (_conversationKey, _accessScope, taskId) => {
+    createTools: (_conversationKey, _accessScope, taskId, toolContext) => {
       toolTaskIds.push(taskId);
+      receivedToolContexts.push(toolContext);
       return [];
     },
     onResult: async (delivery) => {
@@ -113,6 +122,7 @@ function createHarness(
     roles,
     resumeSessions,
     toolTaskIds,
+    receivedToolContexts,
     store,
     taskCoordinator,
   };
@@ -684,4 +694,40 @@ test("closeIdleTasks closes failed and restored interrupted tasks after timeout"
   assert.deepEqual(harness.coordinator.list("channel-1"), []);
   assert.equal(store.tasks.has("attached-interrupted"), false);
   assert.equal(store.tasks.has(failedTaskId), false);
+});
+
+test("forwards AgentToolContext to createTools for started and restored tasks", async () => {
+  const store = new MemoryTaskStore();
+  await store.save({
+    id: "attached-restored",
+    channelId: "channel-1",
+    accessScope: "public",
+    ownerFeaturesAllowed: false,
+    prompt: "restored",
+    status: "idle",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    closeAfterResult: false,
+  });
+  const analyzeImage = async () => "解析結果";
+  const toolContext: AgentToolContext = {
+    analyzeImage,
+    requesterId: () => undefined,
+  };
+  const harness = createHarness(undefined, store, { toolContext });
+  await harness.coordinator.load();
+
+  await harness.coordinator.start({
+    channelId: "channel-1",
+    accessScope: "public",
+    ownerFeaturesAllowed: false,
+    prompt: "new task",
+  });
+  assert.equal(await harness.coordinator.send("attached-restored", "follow-up"), true);
+  await waitFor(() => harness.deliveries.length === 2);
+  await harness.taskCoordinator.waitForCompletion();
+
+  assert.equal(harness.receivedToolContexts.length, 2);
+  assert.equal(harness.receivedToolContexts[0], toolContext);
+  assert.equal(harness.receivedToolContexts[1], toolContext);
 });
