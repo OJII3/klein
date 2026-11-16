@@ -41,6 +41,24 @@ import {
 } from "./pi-agent-runtime";
 import { createTempDir } from "../../testing/temp-dir";
 
+const discordAsk = {
+  name: "discord_ask",
+  surface: true,
+  surfaceOutcome: "Asked a question in Discord.",
+} as const;
+const discordSend = {
+  name: "discord_send",
+  surface: true,
+  primarySurface: true,
+  surfaceOutcome: "Sent a message to Discord.",
+} as const;
+const discordSpeak = {
+  name: "discord_speak",
+  surface: true,
+  primarySurface: true,
+  surfaceOutcome: "Spoke in the Discord voice channel.",
+} as const;
+
 test("records completed turn outcomes while preserving the active turn after sending", async () => {
   const oldCall = fauxAssistantMessage([
     { type: "text", text: "Old reasoning text" },
@@ -72,7 +90,9 @@ test("records completed turn outcomes while preserving the active turn after sen
     result,
     { role: "user", content: "Steering input", timestamp: 4 },
   ];
-  const handler = registerExtension(createAssistantTextContextExtension()).get("context")!;
+  const handler = registerExtension(createAssistantTextContextExtension([discordSend])).get(
+    "context",
+  )!;
   const filtered = (await handler(
     { type: "context", messages } as never,
     {} as ExtensionContext,
@@ -82,7 +102,10 @@ test("records completed turn outcomes while preserving the active turn after sen
     messages[0],
     { ...oldCall, content: oldCall.content.filter((block) => block.type !== "text") },
     messages[2],
-    { ...oldEnd, content: [{ type: "text", text: "Sent a message to Discord." }] },
+    {
+      ...oldEnd,
+      content: [{ type: "text", text: "Sent a message to Discord." }],
+    },
     messages[4],
     {
       ...silentEnd,
@@ -96,7 +119,11 @@ test("records completed turn outcomes while preserving the active turn after sen
 });
 
 for (const { toolNames, errors, expected } of [
-  { toolNames: [], errors: [], expected: "I didn't use discord_send, so I stayed silent." },
+  {
+    toolNames: [],
+    errors: [],
+    expected: "I didn't use discord_send, so I stayed silent.",
+  },
   {
     toolNames: ["discord_read"],
     errors: [false],
@@ -107,11 +134,25 @@ for (const { toolNames, errors, expected } of [
     errors: [true],
     expected: "I didn't use discord_send, so I stayed silent.",
   },
-  { toolNames: ["discord_send"], errors: [false], expected: "Sent a message to Discord." },
+  {
+    toolNames: ["discord_send"],
+    errors: [false],
+    expected: "Sent a message to Discord.",
+  },
   {
     toolNames: ["discord_send", "discord_send"],
     errors: [false, true],
     expected: "Sent a message to Discord.",
+  },
+  {
+    toolNames: ["discord_speak"],
+    errors: [false],
+    expected: "Spoke in the Discord voice channel.",
+  },
+  {
+    toolNames: ["discord_speak"],
+    errors: [true],
+    expected: "I didn't use discord_send, so I stayed silent.",
   },
 ]) {
   test(`summarizes completed assistant text (${JSON.stringify({ toolNames, errors })})`, async () => {
@@ -141,7 +182,9 @@ for (const { toolNames, errors, expected } of [
     ]);
     messages.push(end, { role: "user", content: "Next request", timestamp: 4 });
     const original = structuredClone(messages);
-    const handler = registerExtension(createAssistantTextContextExtension()).get("context")!;
+    const handler = registerExtension(
+      createAssistantTextContextExtension([discordAsk, discordSend, discordSpeak]),
+    ).get("context")!;
     const filtered = (await handler(
       { type: "context", messages } as never,
       {} as ExtensionContext,
@@ -155,8 +198,114 @@ for (const { toolNames, errors, expected } of [
   });
 }
 
+test("normalizes completed turns from the surface tools the role holds", async () => {
+  await using temp = await createTempDir("klein-surface-normalization-");
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  const provider = fauxProvider({ tokensPerSecond: 100_000 });
+  const model = provider.getModel();
+  const modelRuntime = await ModelRuntime.create({
+    credentials: new InMemoryCredentialStore(),
+    modelsPath: null,
+    refreshOnCreate: false,
+  });
+  modelRuntime.registerNativeProvider(provider.provider);
+  const factory = createPiAgentFactory({
+    agentDir: temp.path,
+    llm: { provider: model.provider, model: model.id },
+    logger: pino({ level: "silent" }),
+    modelRuntime,
+    sessionMode: "new",
+  });
+  const runtime = await factory.create(
+    { systemPrompt: "Speak when a reply is needed." },
+    () => [
+      {
+        name: "discord_speak",
+        label: "Speak in Discord Voice Channel",
+        description: "Speak in the current Discord voice channel.",
+        parameters: {
+          type: "object",
+          properties: { text: { type: "string" } },
+          required: ["text"],
+        } as never,
+        surface: true,
+        primarySurface: true,
+        surfaceOutcome: "Spoke in the Discord voice channel.",
+        async execute() {
+          return { content: [{ type: "text" as const, text: "ok" }], details: {} };
+        },
+      },
+    ],
+    { role: { kind: "conversation" }, sessionKey: "surface-normalization" },
+  );
+
+  try {
+    const requests: TranscriptContext[] = [];
+    provider.setResponses([
+      fauxAssistantMessage([fauxToolCall("discord_speak", { text: "hello" })]),
+      fauxAssistantMessage("Finished speaking"),
+      (context) => {
+        requests.push(context);
+        return fauxAssistantMessage("Finished the silent turn");
+      },
+      (context) => {
+        requests.push(context);
+        return fauxAssistantMessage("done");
+      },
+    ]);
+
+    await runtime.prompt({
+      event: {
+        id: "voice-event-1",
+        type: "message",
+        source: "test",
+        occurredAt: "2026-10-14T09:30:42.123Z",
+        content: [{ type: "text", text: "first request" }],
+      },
+      context: {},
+    });
+    await runtime.prompt({
+      event: {
+        id: "voice-event-2",
+        type: "message",
+        source: "test",
+        occurredAt: "2026-10-14T09:30:43.123Z",
+        content: [{ type: "text", text: "second request" }],
+      },
+      context: {},
+    });
+    await runtime.prompt({
+      event: {
+        id: "voice-event-3",
+        type: "message",
+        source: "test",
+        occurredAt: "2026-10-14T09:30:44.123Z",
+        content: [{ type: "text", text: "third request" }],
+      },
+      context: {},
+    });
+
+    const assistantTexts = (context: TranscriptContext) =>
+      context.messages
+        .filter((message) => message.role === "assistant")
+        .flatMap((message) => message.content.filter((block) => block.type === "text"))
+        .map((block) => block.text);
+    assert.deepEqual(assistantTexts(requests[0]!), ["Spoke in the Discord voice channel."]);
+    assert.deepEqual(assistantTexts(requests[1]!), [
+      "Spoke in the Discord voice channel.",
+      "I didn't use discord_speak, so I stayed silent.",
+    ]);
+  } finally {
+    runtime.dispose();
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+  }
+});
+
 test("preserves an active turn without completed history or a user boundary", async () => {
-  const handler = registerExtension(createAssistantTextContextExtension()).get("context")!;
+  const handler = registerExtension(createAssistantTextContextExtension([discordSend])).get(
+    "context",
+  )!;
   const call = fauxAssistantMessage([
     { type: "text", text: "Current text" },
     fauxToolCall("discord_send", { content: "reply" }),

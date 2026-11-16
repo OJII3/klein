@@ -164,6 +164,24 @@ test("marks the Discord surface tools so the core layer can reject them", () => 
     .map((tool) => tool.name)
     .sort();
   assert.deepEqual(surfaceNames, ["discord_ask", "discord_send", "discord_speak", "discord_voice"]);
+
+  const primarySurfaceNames = [...withSpeak, ...withVoice]
+    .filter((tool) => (tool as AgentTool).primarySurface === true)
+    .map((tool) => tool.name)
+    .sort();
+  assert.deepEqual(primarySurfaceNames, ["discord_send", "discord_speak"]);
+
+  const surfaceOutcomes = Object.fromEntries(
+    [...withSpeak, ...withVoice]
+      .filter((tool) => (tool as AgentTool).surfaceOutcome !== undefined)
+      .map((tool) => [tool.name, (tool as AgentTool).surfaceOutcome]),
+  );
+  assert.deepEqual(surfaceOutcomes, {
+    discord_ask: "Asked a question in Discord.",
+    discord_send: "Sent a message to Discord.",
+    discord_speak: "Spoke in the Discord voice channel.",
+    discord_voice: "Sent a voice message to Discord.",
+  });
 });
 
 test("passes the message author as the turn's requester and clears it for events", async () => {
