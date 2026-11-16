@@ -81,9 +81,7 @@ function createHarness(
             .map((block) => block.text)
             .join("\n");
           prompts.push(text);
-        },
-        lastAssistantText() {
-          return `result for ${prompts.at(-1)}`;
+          return `result for ${text}`;
         },
         dispose() {
           disposed.push(creationOptions.sessionKey);
@@ -335,6 +333,7 @@ test("aborts a running worker on dispose, marks it interrupted, and lets taskCoo
       await new Promise<void>((resolve) => {
         releasePrompt = resolve;
       });
+      return undefined;
     },
     async abort() {
       aborted = true;
@@ -371,6 +370,7 @@ test("deletes closeAfterResult tasks on dispose instead of keeping them interrup
       await new Promise<void>((resolve) => {
         releasePrompt = resolve;
       });
+      return undefined;
     },
     async abort() {
       releasePrompt?.();
@@ -430,6 +430,7 @@ test("aborts a running worker on close, runs onTaskClosed, and prevents stale pe
       await new Promise<void>((resolve) => {
         releasePrompt = resolve;
       });
+      return undefined;
     },
     async abort() {
       aborted = true;
@@ -570,8 +571,7 @@ test("closeIdleTasks skips running tasks, watch-check failures, and tasks receiv
     async (creationOptions) => {
       if (creationOptions.sessionKey === failWatchCheckFor) {
         return {
-          async prompt() {},
-          lastAssistantText() {
+          async prompt() {
             return "ok";
           },
           dispose() {},
@@ -589,8 +589,6 @@ test("closeIdleTasks skips running tasks, watch-check failures, and tasks receiv
               releaseRunning = resolve;
             });
           }
-        },
-        lastAssistantText() {
           return "done";
         },
         dispose() {},

@@ -169,7 +169,7 @@ export class PiAgentRuntime implements AgentRuntime {
     }
   }
 
-  prompt(turn: AgentTurn): Promise<void> {
+  prompt(turn: AgentTurn): Promise<string | undefined> {
     const prompt = createPiEventPrompt(turn.event);
     const traceId = turn.event.id;
     const queuedAt = performance.now();
@@ -188,6 +188,7 @@ export class PiAgentRuntime implements AgentRuntime {
       try {
         this.recordTurnContext(turn.context);
         await this.runPrompt(prompt);
+        return this.assistantText === "caller" ? readLastAssistantText(this.session) : undefined;
       } catch (error) {
         failed = true;
         throw error;
@@ -414,10 +415,6 @@ export class PiAgentRuntime implements AgentRuntime {
     if (!summaryBody) throw new Error("Handoff summarization returned an empty summary");
 
     return formatHandoffSummary(summaryBody);
-  }
-
-  lastAssistantText(): string | undefined {
-    return this.assistantText === "caller" ? readLastAssistantText(this.session) : undefined;
   }
 
   dispose(): void {

@@ -15,7 +15,9 @@ import {
   type ConversationKey,
 } from "./channel-session-state-store";
 
-export interface ChannelSessionManagerDependencies {
+export interface ChannelSessionManagerDependencies<
+  TAgent extends ConversationAgent = ConversationAgent,
+> {
   readonly accessPolicy?: DiscordAccessPolicy;
   readonly channelSessionStateStore?: ChannelSessionStateStore;
   readonly createAgent: (
@@ -23,21 +25,21 @@ export interface ChannelSessionManagerDependencies {
     sessionKey: string,
     handoffContext?: string,
     ownerFeaturesAllowed?: boolean,
-  ) => Promise<ConversationAgent>;
+  ) => Promise<TAgent>;
   readonly channelApi: DiscordChannelApi;
   readonly logger: Logger;
   readonly ownerUserId?: string;
 }
 
-export class ChannelSessionManager {
-  private readonly agents = new Map<string, Promise<ConversationAgent>>();
+export class ChannelSessionManager<TAgent extends ConversationAgent = ConversationAgent> {
+  private readonly agents = new Map<string, Promise<TAgent>>();
   private readonly agentSessionKeys = new Map<string, string>();
   private readonly channelOperations = new Map<string, Promise<void>>();
   private readonly inMemoryChannelStates = new Map<string, ChannelSessionState>();
   private readonly latestInboundAt = new Map<string, number>();
   private rotationCheckRunning = false;
 
-  constructor(private readonly dependencies: ChannelSessionManagerDependencies) {}
+  constructor(private readonly dependencies: ChannelSessionManagerDependencies<TAgent>) {}
 
   recordInbound(conversationKey: ConversationKey): void {
     this.latestInboundAt.set(serializeConversationKey(conversationKey), Date.now());
@@ -108,7 +110,7 @@ export class ChannelSessionManager {
   async runTurn(
     conversationKey: ConversationKey,
     accessScope: string,
-    turn: (agent: ConversationAgent, state: ChannelSessionState) => Promise<void>,
+    turn: (agent: TAgent, state: ChannelSessionState) => Promise<void>,
     details: { readonly channelName?: string } = {},
   ): Promise<void> {
     const now = Date.now();
@@ -213,10 +215,7 @@ export class ChannelSessionManager {
     return this.dependencies.channelSessionStateStore?.save(state) ?? Promise.resolve();
   }
 
-  getAgent(
-    conversationKey: ConversationKey,
-    state: ChannelSessionState,
-  ): Promise<ConversationAgent> {
+  getAgent(conversationKey: ConversationKey, state: ChannelSessionState): Promise<TAgent> {
     const key = serializeConversationKey(conversationKey);
     const existing = this.agents.get(key);
     if (existing && this.agentSessionKeys.get(key) === state.sessionKey) return existing;

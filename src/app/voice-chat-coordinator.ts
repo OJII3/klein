@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Logger } from "pino";
 
-import { DiscordAgent } from "@agents/discord/discord-agent";
+import type { DiscordConversationAgent } from "@agents/discord/discord-agent";
 import type { DiscordUserDirectory } from "@modules/discord/application/discord-user-directory";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import type {
@@ -19,7 +19,7 @@ export interface VoiceChatCoordinatorDependencies {
     channelId: string,
     sessionKey: string,
     speak: (text: string, toolCallId?: string) => Promise<void>,
-  ) => Promise<DiscordAgent>;
+  ) => Promise<DiscordConversationAgent>;
   readonly logger: Logger;
   readonly discordUserDirectory?: DiscordUserDirectory;
   readonly reactionSelector?: VoiceReactionSelector;
@@ -287,7 +287,7 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
         }
 
         const reactionController = startReaction(text, message.id);
-        if (processing) {
+        if (processing && typeof agent.steerMessage === "function") {
           logger.info(
             {
               event: "voice_chat_transcript_steer_started",

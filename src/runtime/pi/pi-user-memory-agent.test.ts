@@ -100,3 +100,51 @@ test("restores the previous file when the agent writes invalid markdown", async 
   await assert.rejects(agent.process(userId, memory, []), /Front matter is missing/u);
   assert.equal(await readFile(filePath, "utf8"), original);
 });
+
+test("prompts StandaloneAgentFactory directly with text and sandboxed tools", async () => {
+  await using temp = await createTempDir("klein-user-memory-agent-");
+  const { directory, memory } = await createMemory(temp.path);
+  let receivedPrompt = "";
+  let receivedToolNames: string[] = [];
+  let disposed = false;
+  const updated: UserMemory = {
+    ...memory,
+    summary: "Bunが好きなユーザー",
+  };
+  const agent = new PiUserMemoryAgent({
+    directory,
+    sessionId: "user-memory-test",
+    factory: {
+      async create(definition, tools, options) {
+        assert.equal(definition.systemPrompt, USER_MEMORY_AGENT_SYSTEM_PROMPT);
+        assert.equal(options.sessionKey, "user-memory-test");
+        receivedToolNames = tools.map((tool) => tool.name).sort();
+        return {
+          async prompt(text) {
+            receivedPrompt = text;
+            await writeFile(join(directory, `${userId}.md`), renderUserMemory(updated), "utf8");
+            return "updated";
+          },
+          dispose() {
+            disposed = true;
+          },
+        };
+      },
+    },
+  });
+
+  const result = await agent.process(userId, memory, [
+    {
+      id: "message-1",
+      channelId: "channel-1",
+      channelName: "雑談",
+      occurredAt: "2026-11-11T03:00:00.000Z",
+      content: "Alice:\nBunが好き",
+    },
+  ]);
+
+  assert.deepEqual(receivedToolNames, ["edit", "read", "write"]);
+  assert.match(receivedPrompt, /^Update the memory file "123456789012345678\.md"/u);
+  assert.equal(result?.summary, "Bunが好きなユーザー");
+  assert.equal(disposed, true);
+});

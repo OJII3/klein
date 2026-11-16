@@ -328,11 +328,10 @@ export class AttachedAgentCoordinator implements AttachedTaskControl {
     const execution = (async (): Promise<string | undefined> => {
       const runtime = await this.ensureRuntime(task);
       if (task.closed) return undefined;
-      await runtime.prompt({
+      return runtime.prompt({
         event: createAttachedPromptEvent(task.id, text),
         context: {},
       });
-      return runtime.lastAssistantText?.();
     })();
     task.activeExecution = execution.then(
       () => undefined,

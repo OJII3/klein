@@ -1,16 +1,14 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
 import type { CreateAgentSessionOptions } from "@earendil-works/pi-coding-agent";
 
-import type {
-  AgentCreationOptions,
-  AgentFactory,
-  AgentToolsFactory,
-} from "@agents/core/agent-factory";
 import type { AgentDefinition } from "@agents/core/agent-definition";
-import type { AgentRuntime } from "@agents/core/agent-runtime";
-import type { AgentTurn } from "@agents/core/agent-turn";
+import type {
+  StandaloneAgent,
+  StandaloneAgentCreationOptions,
+  StandaloneAgentFactory,
+} from "@agents/core/standalone-agent";
 import type { PiTool } from "./pi-tool";
-import type { PiSession, PiStandaloneSessionRunner } from "./pi-standalone-session-runner";
+import type { PiStandaloneSessionRunner } from "./pi-standalone-session-runner";
 
 type ThinkingLevel = NonNullable<CreateAgentSessionOptions["thinkingLevel"]>;
 
@@ -22,32 +20,20 @@ export interface PiMinimalAgentFactoryOptions {
 }
 
 /**
- * Creates standalone agents on the minimal Pi session profile. The factory
- * implements the core AgentFactory interface, so standalone agents use the
- * same AgentRuntime contract as conversation and attached agents while keeping
- * the minimal session configuration.
+ * Creates standalone agents on the minimal Pi session profile. Implements
+ * {@link StandaloneAgentFactory} so standalone agents receive plain prompts
+ * directly without wrapping them in event metadata or turn contexts.
  */
 export function createPiMinimalAgentFactory(
   options: PiMinimalAgentFactoryOptions,
-): AgentFactory<PiTool> {
+): StandaloneAgentFactory<PiTool> {
   return {
     async create(
       definition: AgentDefinition,
-      createTools: AgentToolsFactory<PiTool>,
-      creation: AgentCreationOptions,
-    ): Promise<AgentRuntime> {
-      if (creation.role.kind !== "standalone") {
-        throw new Error("The minimal agent factory only creates standalone agents");
-      }
-      if (creation.initialContext) {
-        throw new Error("The minimal agent factory does not support initial context");
-      }
-
-      const turnState: { requesterId?: string } = {};
-      const tools = createTools({
-        requesterId: () => turnState.requesterId,
-      });
-      const session = await options.runner.createSession({
+      tools: readonly PiTool[],
+      creation: StandaloneAgentCreationOptions,
+    ): Promise<StandaloneAgent> {
+      return options.runner.createSession({
         cwd: options.cwd,
         model: options.model,
         sessionId: creation.sessionKey,
@@ -56,38 +42,6 @@ export function createPiMinimalAgentFactory(
         toolNames: definition.toolNames ?? tools.map((tool) => tool.name),
         tools,
       });
-      return new PiMinimalAgentRuntime(session, turnState);
     },
   };
-}
-
-class PiMinimalAgentRuntime implements AgentRuntime {
-  private lastText: string | undefined;
-
-  constructor(
-    private readonly session: PiSession,
-    private readonly turnState: { requesterId?: string },
-  ) {}
-
-  async prompt(turn: AgentTurn): Promise<void> {
-    this.lastText = undefined;
-    const text = turn.event.content
-      .filter((block) => block.type === "text")
-      .map((block) => block.text)
-      .join("\n\n");
-    this.turnState.requesterId = turn.context.requesterId;
-    try {
-      this.lastText = await this.session.prompt(text);
-    } finally {
-      this.turnState.requesterId = undefined;
-    }
-  }
-
-  lastAssistantText(): string | undefined {
-    return this.lastText;
-  }
-
-  dispose(): void {
-    this.session.dispose();
-  }
 }

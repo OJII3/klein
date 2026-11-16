@@ -10,8 +10,7 @@ import {
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 
-import type { AgentEvent } from "@agents/core/agent-event";
-import type { AgentFactory } from "@agents/core/agent-factory";
+import type { StandaloneAgentFactory } from "@agents/core/standalone-agent";
 import type {
   UserMemory,
   UserMemoryMessage,
@@ -69,7 +68,7 @@ export type UserMemoryAgentSessionFactory = (
 export interface PiUserMemoryAgentOptions {
   readonly directory: string;
   readonly sessionId?: string;
-  readonly factory?: AgentFactory;
+  readonly factory?: StandaloneAgentFactory;
   readonly sessionFactory?: UserMemoryAgentSessionFactory;
 }
 
@@ -88,16 +87,11 @@ export class PiUserMemoryAgent implements UserMemoryProcessor {
         if (!options.factory) {
           throw new Error("PiUserMemoryAgent requires a factory or a sessionFactory");
         }
-        const runtime = await options.factory.create(
+        return options.factory.create(
           { systemPrompt: USER_MEMORY_AGENT_SYSTEM_PROMPT },
-          () => createSandboxedTools(sessionOptions.directory, sessionOptions.fileName),
-          { role: { kind: "standalone" }, sessionKey: sessionId },
+          createSandboxedTools(sessionOptions.directory, sessionOptions.fileName),
+          { sessionKey: sessionId },
         );
-        return {
-          prompt: (text) =>
-            runtime.prompt({ event: createStandalonePromptEvent(text), context: {} }),
-          dispose: () => runtime.dispose(),
-        };
       });
   }
 
@@ -192,14 +186,4 @@ ${messageBatch || "(empty)"}
 </messages>
 
 Use read, write, or edit on "${fileName}". If nothing durable should change, leave the file untouched and reply "no change".`;
-}
-
-function createStandalonePromptEvent(text: string): AgentEvent {
-  return {
-    id: `standalone:${randomUUID()}`,
-    occurredAt: new Date().toISOString(),
-    type: "standalone.prompt",
-    source: "standalone",
-    content: [{ type: "text", text }],
-  };
 }
