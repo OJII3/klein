@@ -1,5 +1,13 @@
 import { formatDiscordMessage, type DiscordMessage } from "@modules/discord/domain/discord-message";
-import type { AgentTurn, AgentTurnContext } from "../core/agent-turn";
+import type { AgentTurn } from "../core/agent-turn";
+
+/** Discord-specific reference material for one turn. */
+export interface DiscordTurnContext {
+  readonly ownerMemory?: string;
+  readonly userMemory?: string;
+  readonly guildMemory?: string;
+  readonly channelRule?: string;
+}
 
 export interface DiscordMessageAgentTurnOptions {
   readonly botMessageGuidance?: string;
@@ -11,7 +19,7 @@ export interface DiscordMessageAgentTurnOptions {
 
 export function createDiscordMessageAgentTurn(
   message: DiscordMessage,
-  context: AgentTurnContext = {},
+  context: DiscordTurnContext = {},
   options: DiscordMessageAgentTurnOptions = {},
 ): AgentTurn {
   if (
@@ -38,8 +46,21 @@ export function createDiscordMessageAgentTurn(
       ],
     },
     context: {
-      ...context,
-      requesterUserId: message.author.bot ? undefined : message.author.id,
+      ...(context.ownerMemory ? { ownerMemory: context.ownerMemory } : {}),
+      ...(context.userMemory ? { userMemory: context.userMemory } : {}),
+      ...(context.guildMemory || context.channelRule
+        ? {
+            blocks: [
+              ...(context.guildMemory
+                ? [{ name: "guild-memory", content: context.guildMemory }]
+                : []),
+              ...(context.channelRule
+                ? [{ name: "channel-rule", content: context.channelRule }]
+                : []),
+            ],
+          }
+        : {}),
+      ...(message.author.bot ? {} : { requesterId: message.author.id }),
     },
   };
 }

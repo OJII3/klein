@@ -1,13 +1,13 @@
-import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
+import { defineSurfaceTool } from "./surface-tool";
 
 export function createDiscordSendTool(
   channelApi: Pick<DiscordChannelApi, "sendMessage" | "sendTyping">,
   channelId: Parameters<DiscordChannelApi["sendMessage"]>[0],
 ) {
-  return defineTool({
+  return defineSurfaceTool({
     name: "discord_send",
     label: "Send Discord Message",
     exposure: "model-only",

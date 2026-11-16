@@ -16,12 +16,12 @@ import {
   type CreateAgentSessionOptions,
   type ExtensionFactory,
   type ModelRuntime,
-  type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import type { Logger } from "pino";
 
 import { assertSurfaceToolsAllowed } from "@agents/core/agent-role";
 import { withOpenCodeSessionHeader } from "./pi-model-runtime";
+import type { PiTool } from "./pi-tool";
 import { readLastAssistantText } from "./pi-assistant-text";
 import { PiRuntimeTrace } from "./pi-runtime-trace";
 import type { PiUsageReporter } from "./pi-usage-reporter";
@@ -48,7 +48,7 @@ export interface PiSessionOptions {
   readonly systemPrompt: string;
   readonly thinkingLevel?: ThinkingLevel;
   readonly toolNames: readonly string[];
-  readonly tools: readonly ToolDefinition[];
+  readonly tools: readonly PiTool[];
   readonly extensions?: readonly ExtensionFactory[];
 }
 
@@ -78,10 +78,7 @@ export class PiStandaloneSessionRunner {
 
   async createSession(options: PiSessionOptions): Promise<PiSession> {
     const role = { kind: "standalone" } as const;
-    assertSurfaceToolsAllowed(role, [
-      ...options.toolNames,
-      ...options.tools.map((tool) => tool.name),
-    ]);
+    assertSurfaceToolsAllowed(role, options.tools);
     const settingsManager = SettingsManager.create(options.cwd, this.options.agentDir);
     const resourceLoader = new DefaultResourceLoader({
       cwd: options.cwd,

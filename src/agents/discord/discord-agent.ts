@@ -6,7 +6,10 @@ import type { ConversationAgent } from "../core/conversation-agent";
 import type { AgentFactory } from "../core/agent-factory";
 import type { AgentRuntime } from "../core/agent-runtime";
 import { formatDiscordMessage, type DiscordMessage } from "@modules/discord/domain/discord-message";
-import { createDiscordMessageAgentTurn } from "./discord-message-agent-turn";
+import {
+  createDiscordMessageAgentTurn,
+  type DiscordTurnContext,
+} from "./discord-message-agent-turn";
 import { BOT_MESSAGE_GUIDANCE } from "./prompt-policy";
 import type { DiscordImageAnalysis } from "./tools/discord-read";
 
@@ -80,7 +83,7 @@ export class DiscordAgent implements ConversationAgent {
   }
 
   prompt(turn: AgentTurn): Promise<void> {
-    this.turnState.requesterUserId = turn.context.requesterUserId;
+    this.turnState.requesterUserId = turn.context.requesterId;
     return this.runtime.prompt(this.withContextAccess(turn)).then(() => undefined);
   }
 
@@ -89,22 +92,22 @@ export class DiscordAgent implements ConversationAgent {
   }
 
   steer(turn: AgentTurn): Promise<void> {
-    this.turnState.requesterUserId = turn.context.requesterUserId;
+    this.turnState.requesterUserId = turn.context.requesterId;
     const next = this.withContextAccess(turn);
     return (this.runtime.steer ? this.runtime.steer(next) : this.runtime.prompt(next)).then(
       () => undefined,
     );
   }
 
-  promptMessage(message: DiscordMessage, context: AgentTurnContext = {}): Promise<void> {
+  promptMessage(message: DiscordMessage, context: DiscordTurnContext = {}): Promise<void> {
     return this.prompt(this.createMessageTurn(message, context));
   }
 
-  steerMessage(message: DiscordMessage, context: AgentTurnContext = {}): Promise<void> {
+  steerMessage(message: DiscordMessage, context: DiscordTurnContext = {}): Promise<void> {
     return this.steer(this.createMessageTurn(message, context));
   }
 
-  private createMessageTurn(message: DiscordMessage, context: AgentTurnContext): AgentTurn {
+  private createMessageTurn(message: DiscordMessage, context: DiscordTurnContext): AgentTurn {
     return createDiscordMessageAgentTurn(message, context, {
       botMessageGuidance: BOT_MESSAGE_GUIDANCE,
       ownerValidation:

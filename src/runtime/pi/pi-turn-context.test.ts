@@ -19,8 +19,10 @@ test("renders turn context in a stable order", () => {
     renderTurnContext({
       ownerMemory: "owner context",
       userMemory: "user context",
-      guildMemory: "guild context",
-      channelRule: "channel rule",
+      blocks: [
+        { name: "guild-memory", content: "guild context" },
+        { name: "channel-rule", content: "channel rule" },
+      ],
     }),
     [
       "<owner-memory>\nowner context\n</owner-memory>",

@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { createPiEventPrompt } from "./pi-event-prompt";
 
-test("formats event time to the minute and keeps trace IDs and image data internal", () => {
+test("formats event time to the minute and keeps event IDs and image data internal", () => {
   const prompt = createPiEventPrompt({
     id: "event-1",
     occurredAt: "2026-10-14T09:30:42.123Z",
@@ -18,7 +18,7 @@ test("formats event time to the minute and keeps trace IDs and image data intern
   });
 
   assert.equal(prompt.traceId, "event-1");
-  assert.equal(prompt.messageId, undefined);
+  assert.equal(prompt.eventId, "event-1");
   assert.deepEqual(prompt.images, [
     { data: "c2VjcmV0", mimeType: "image/png" },
     { data: "c2FtcGxl", mimeType: "image/jpeg" },
@@ -35,7 +35,7 @@ test("formats event time to the minute and keeps trace IDs and image data intern
   assert.ok(!prompt.text.includes("c2FtcGxl"));
 });
 
-test("exposes the source message ID for Discord events without adding it to the text", () => {
+test("exposes the source event ID without adding it to the text", () => {
   const prompt = createPiEventPrompt({
     id: "message-123",
     occurredAt: "2026-10-14T09:30:42.123Z",
@@ -44,7 +44,7 @@ test("exposes the source message ID for Discord events without adding it to the 
     content: [{ type: "text", text: "本文" }],
   });
 
-  assert.equal(prompt.messageId, "message-123");
+  assert.equal(prompt.eventId, "message-123");
   assert.ok(!prompt.text.includes("message-123"));
 });
 
