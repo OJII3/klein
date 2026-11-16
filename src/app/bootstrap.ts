@@ -80,6 +80,7 @@ import { isOwnerAccessScope } from "@shared/access";
 
 const DISCORD_USAGE_STATUS_REFRESH_INTERVAL_MS = 60 * 60 * 1_000;
 const CHANNEL_CONTEXT_ROTATION_CHECK_INTERVAL_MS = 60 * 1_000;
+const ATTACHED_TASK_IDLE_CHECK_INTERVAL_MS = 60 * 1_000;
 const SCHEDULED_TASK_CHECK_INTERVAL_MS = 10 * 1_000;
 
 export async function bootstrap(): Promise<void> {
@@ -226,6 +227,14 @@ export async function bootstrap(): Promise<void> {
     logger,
     store: new FileAttachedTaskStore(resolve(agentDir, "attached-tasks")),
     taskCoordinator,
+    hasOwnedWatches: async ({ id, channelId, accessScope }) => {
+      const watches = await scheduledTaskStore.listForScope(
+        "watch",
+        channelId,
+        accessScope as ScheduledTaskAccessScope,
+      );
+      return watches.some((watch) => watch.ownerTaskId === id);
+    },
     createTools: (conversationKey, accessScope, taskId) =>
       createAttachedWorkerTools(
         discordService,
@@ -443,6 +452,7 @@ export async function bootstrap(): Promise<void> {
 
   let usageStatusInterval: ReturnType<typeof setInterval> | undefined;
   let contextRotationInterval: ReturnType<typeof setInterval> | undefined;
+  let attachedTaskCleanupInterval: ReturnType<typeof setInterval> | undefined;
   let scheduledTaskCheckInterval: ReturnType<typeof setInterval> | undefined;
   let shuttingDown = false;
   const shutdown = async (signal: string): Promise<void> => {
@@ -457,6 +467,10 @@ export async function bootstrap(): Promise<void> {
     if (contextRotationInterval) {
       clearInterval(contextRotationInterval);
       contextRotationInterval = undefined;
+    }
+    if (attachedTaskCleanupInterval) {
+      clearInterval(attachedTaskCleanupInterval);
+      attachedTaskCleanupInterval = undefined;
     }
     if (scheduledTaskCheckInterval) {
       clearInterval(scheduledTaskCheckInterval);
@@ -536,6 +550,23 @@ export async function bootstrap(): Promise<void> {
   contextRotationInterval = setInterval(
     runChannelContextRotationCheck,
     CHANNEL_CONTEXT_ROTATION_CHECK_INTERVAL_MS,
+  );
+  const runAttachedTaskIdleCleanup = (): void => {
+    void taskCoordinator
+      .run(async () => {
+        await attachedAgentCoordinator.closeIdleTasks();
+      })
+      .catch((error: unknown) => {
+        logger.error(
+          { err: error, event: "attached_task_idle_cleanup_failed" },
+          "Failed to close idle attached tasks",
+        );
+      });
+  };
+  runAttachedTaskIdleCleanup();
+  attachedTaskCleanupInterval = setInterval(
+    runAttachedTaskIdleCleanup,
+    ATTACHED_TASK_IDLE_CHECK_INTERVAL_MS,
   );
   void agentCoordinator.deliverDueTasks();
   scheduledTaskCheckInterval = setInterval(() => {
