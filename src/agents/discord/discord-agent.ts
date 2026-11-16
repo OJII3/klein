@@ -52,12 +52,7 @@ export class DiscordAgent implements ConversationAgent {
       },
     );
 
-    return new DiscordAgent(
-      runtime,
-      channelId,
-      options.ownerUserId,
-      ownerFeaturesAllowed,
-    );
+    return new DiscordAgent(runtime, channelId, options.ownerUserId, ownerFeaturesAllowed);
   }
 
   prompt(turn: AgentTurn): Promise<void> {

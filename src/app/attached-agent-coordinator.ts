@@ -148,7 +148,8 @@ export class AttachedAgentCoordinator implements AttachedTaskControl {
     const id = `attached-${randomUUID()}`;
     const runtime = await this.options.factory.create(
       { systemPrompt: this.options.systemPrompt },
-      (toolContext) => this.options.createTools(conversationKey, input.accessScope, id, toolContext),
+      (toolContext) =>
+        this.options.createTools(conversationKey, input.accessScope, id, toolContext),
       {
         role: { kind: "attached", taskId: id },
         sessionKey: id,

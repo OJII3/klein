@@ -508,7 +508,12 @@ test("exposes the configured image analyzer through tool context", async () => {
     sessionMode: "new",
   });
 
-  let capturedAnalyzeImage: ((prompt: { text: string; images: readonly { data: string; mimeType: string }[] }) => Promise<string>) | undefined;
+  let capturedAnalyzeImage:
+    | ((prompt: {
+        text: string;
+        images: readonly { data: string; mimeType: string }[];
+      }) => Promise<string>)
+    | undefined;
   const runtime = await factory.create(
     { systemPrompt: "system" },
     (toolContext) => {
@@ -684,7 +689,11 @@ test("updates requesterId only when a steered message begins its turn", async ()
           name: "probe_requester",
           label: "Probe Requester",
           description: "Records the active requester id",
-          parameters: { type: "object", properties: { label: { type: "string" } }, required: ["label"] } as never,
+          parameters: {
+            type: "object",
+            properties: { label: { type: "string" } },
+            required: ["label"],
+          } as never,
           async execute(_toolCallId, params: { label: string }) {
             requestersObservedInTool.push({
               label: params.label,
@@ -771,7 +780,11 @@ test("updates requesterId only when a steered message begins its turn", async ()
           name: "probe_requester",
           label: "Probe Requester",
           description: "Records the active requester id",
-          parameters: { type: "object", properties: { label: { type: "string" } }, required: ["label"] } as never,
+          parameters: {
+            type: "object",
+            properties: { label: { type: "string" } },
+            required: ["label"],
+          } as never,
           async execute(_toolCallId, params: { label: string }) {
             eventSteerRequesters.push({
               label: params.label,
