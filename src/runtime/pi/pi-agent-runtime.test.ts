@@ -6,11 +6,19 @@ import { join, resolve } from "node:path";
 import {
   SettingsManager,
   SessionManager,
+  ModelRuntime,
   type ContextEvent,
   type ExtensionAPI,
   type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
+import {
+  fauxAssistantMessage,
+  fauxProvider,
+  fauxToolCall,
+  InMemoryCredentialStore,
+  type TranscriptContext,
+} from "@earendil-works/pi-ai";
+import pino from "pino";
 import { createPiEventPrompt } from "./pi-event-prompt";
 import type { AgentEvent } from "@agents/core/agent-event";
 import { ImageAnalysisError } from "@agents/core/image-analysis";
@@ -24,6 +32,7 @@ import {
 
 import {
   createAssistantTextContextExtension,
+  createPiAgentFactory,
   createPiSessionManager,
   createResourceLoader,
   PiAgentRuntime,
@@ -507,6 +516,97 @@ test("reports image analysis as unavailable without an analyzer", () => {
     },
   );
   runtime.dispose();
+});
+
+test("exposes assistant text only when the role sends it to the caller", () => {
+  const session = {
+    messages: [
+      { role: "user", content: "hello" },
+      { role: "assistant", content: [{ type: "text", text: "result" }] },
+    ],
+    dispose() {},
+  };
+
+  const caller = new PiAgentRuntime(
+    session as never,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    "caller",
+  );
+  assert.equal(caller.lastAssistantText(), "result");
+
+  const conversation = new PiAgentRuntime(session as never);
+  assert.equal(conversation.lastAssistantText(), undefined);
+});
+
+test("keeps caller assistant text for attached agents", async () => {
+  await using temp = await createTempDir("klein-attached-runtime-");
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  const provider = fauxProvider({ tokensPerSecond: 100_000 });
+  const model = provider.getModel();
+  const modelRuntime = await ModelRuntime.create({
+    credentials: new InMemoryCredentialStore(),
+    modelsPath: null,
+    refreshOnCreate: false,
+  });
+  modelRuntime.registerNativeProvider(provider.provider);
+  const factory = createPiAgentFactory({
+    agentDir: temp.path,
+    llm: { provider: model.provider, model: model.id },
+    logger: pino({ level: "silent" }),
+    modelRuntime,
+    sessionMode: "new",
+  });
+  const runtime = await factory.create({ systemPrompt: "You are an attached worker." }, [], {
+    role: { kind: "attached", taskId: "task-1" },
+    sessionKey: "task-1",
+  });
+
+  try {
+    const requests: TranscriptContext[] = [];
+    provider.setResponses([
+      fauxAssistantMessage("first result"),
+      (context) => {
+        requests.push(context);
+        return fauxAssistantMessage("second result");
+      },
+    ]);
+
+    await runtime.prompt({
+      event: {
+        id: "attached-event-1",
+        type: "attached.prompt",
+        source: "attached",
+        occurredAt: "2026-10-14T09:30:42.123Z",
+        content: [{ type: "text", text: "first task" }],
+      },
+      context: {},
+    });
+    assert.equal(runtime.lastAssistantText?.(), "first result");
+
+    await runtime.prompt({
+      event: {
+        id: "attached-event-2",
+        type: "attached.prompt",
+        source: "attached",
+        occurredAt: "2026-10-14T09:30:43.123Z",
+        content: [{ type: "text", text: "second task" }],
+      },
+      context: {},
+    });
+
+    const assistantTexts = requests[0]!.messages
+      .filter((message) => message.role === "assistant")
+      .flatMap((message) => message.content.filter((block) => block.type === "text"))
+      .map((block) => block.text);
+    assert.deepEqual(assistantTexts, ["first result"]);
+  } finally {
+    runtime.dispose();
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+  }
 });
 
 test("resolves a configured built-in model", () => {
