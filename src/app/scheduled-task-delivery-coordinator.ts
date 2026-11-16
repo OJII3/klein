@@ -204,7 +204,7 @@ export class ScheduledTaskDeliveryCoordinator {
     const store = this.dependencies.scheduledTaskStore;
     if (!store) return;
     await this.dependencies.attachedTasks.start({
-      channelId: task.channelId,
+      conversationKey: { kind: "discord", channelId: task.channelId },
       accessScope: task.accessScope,
       ownerFeaturesAllowed: isOwnerAccessScope(task.accessScope, this.dependencies.ownerUserId),
       prompt: buildReminderPrompt(task),
@@ -308,7 +308,14 @@ export class ScheduledTaskDeliveryCoordinator {
     const { watch, event } = triggered;
     let sent: boolean;
     try {
-      sent = await this.dependencies.attachedTasks.send(ownerTaskId, buildEventText(event));
+      sent = await this.dependencies.attachedTasks.send(
+        {
+          conversationKey: { kind: "discord", channelId: watch.channelId },
+          accessScope: watch.accessScope,
+        },
+        ownerTaskId,
+        buildEventText(event),
+      );
     } catch (error) {
       await this.failWatchDelivery(watch, error);
       this.dependencies.logger.warn(

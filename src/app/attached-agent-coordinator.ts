@@ -10,9 +10,11 @@ import type {
   AttachedTaskControl,
   AttachedTaskInfo,
   AttachedTaskResult,
+  AttachedTaskScope,
   AttachedTaskStartInput,
   AttachedTaskStatus,
 } from "@agents/core/attached-agent";
+import { isSameConversationKey } from "@shared/conversation-key";
 import type { AttachedTaskStore } from "./attached-task-store";
 import type { ConversationKey } from "./channel-session-state-store";
 import type { TaskCoordinator } from "./task-coordinator";
@@ -144,7 +146,7 @@ export class AttachedAgentCoordinator implements AttachedTaskControl {
       throw new Error("AttachedAgentCoordinator has been disposed");
     }
 
-    const conversationKey = { kind: "discord", channelId: input.channelId } as const;
+    const { conversationKey } = input;
     const id = `attached-${randomUUID()}`;
     const runtime = await this.options.factory.create(
       { systemPrompt: this.options.systemPrompt },
@@ -185,31 +187,36 @@ export class AttachedAgentCoordinator implements AttachedTaskControl {
     }
     this.enqueue(task, input.prompt);
     this.logger.info(
-      { event: "attached_task_started", taskId: id, channelId: input.channelId },
+      {
+        event: "attached_task_started",
+        taskId: id,
+        conversationKey,
+        accessScope: input.accessScope,
+      },
       "Started attached task",
     );
     return id;
   }
 
-  async send(taskId: string, message: string): Promise<boolean> {
+  async send(scope: AttachedTaskScope, taskId: string, message: string): Promise<boolean> {
     if (this.disposed) return false;
     const task = this.tasks.get(taskId);
-    if (!task || task.closed) return false;
+    if (!task || task.closed || !matchesScope(task, scope)) return false;
     this.enqueue(task, message);
     return true;
   }
 
-  async close(taskId: string): Promise<boolean> {
+  async close(scope: AttachedTaskScope, taskId: string): Promise<boolean> {
     if (this.disposed) return false;
     const task = this.tasks.get(taskId);
-    if (!task) return false;
+    if (!task || task.closed || !matchesScope(task, scope)) return false;
     await this.closeTask(task, "manual");
     return true;
   }
 
-  list(channelId: string): readonly AttachedTaskInfo[] {
+  list(scope: AttachedTaskScope): readonly AttachedTaskInfo[] {
     return [...this.tasks.values()]
-      .filter((task) => task.conversationKey.channelId === channelId)
+      .filter((task) => matchesScope(task, scope))
       .map(({ id, prompt, status, createdAt, updatedAt }) => ({
         id,
         prompt,
@@ -488,6 +495,13 @@ export class AttachedAgentCoordinator implements AttachedTaskControl {
       );
     }
   }
+}
+
+function matchesScope(task: AttachedTask, scope: AttachedTaskScope): boolean {
+  return (
+    isSameConversationKey(task.conversationKey, scope.conversationKey) &&
+    task.accessScope === scope.accessScope
+  );
 }
 
 function isIdleTaskDue(task: AttachedTask, now: number, idleCloseMs: number): boolean {

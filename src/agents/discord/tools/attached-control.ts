@@ -1,7 +1,7 @@
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
-import type { AttachedTaskControl } from "@agents/core/attached-agent";
+import type { AttachedTaskControl, AttachedTaskScope } from "@agents/core/attached-agent";
 
 /**
  * Conversation-side controls for attached tasks. The attached agent itself
@@ -13,6 +13,10 @@ export function createAttachedControlTools(
   accessScope: string,
   ownerFeaturesAllowed: boolean,
 ) {
+  const scope: AttachedTaskScope = {
+    conversationKey: { kind: "discord", channelId },
+    accessScope,
+  };
   return [
     defineTool({
       name: "worker_start",
@@ -25,8 +29,7 @@ export function createAttachedControlTools(
       exposure: "deferred",
       async execute(_toolCallId, params) {
         const taskId = await target.start({
-          channelId,
-          accessScope,
+          ...scope,
           ownerFeaturesAllowed,
           prompt: params.prompt,
         });
@@ -52,7 +55,7 @@ export function createAttachedControlTools(
       }),
       exposure: "deferred",
       async execute(_toolCallId, params) {
-        const sent = await target.send(params.taskId, params.message);
+        const sent = await target.send(scope, params.taskId, params.message);
         return {
           content: [
             {
@@ -73,7 +76,7 @@ export function createAttachedControlTools(
       parameters: Type.Object({ taskId: Type.String({ minLength: 1 }) }),
       exposure: "deferred",
       async execute(_toolCallId, params) {
-        const closed = await target.close(params.taskId);
+        const closed = await target.close(scope, params.taskId);
         return {
           content: [
             {
@@ -94,7 +97,7 @@ export function createAttachedControlTools(
       parameters: Type.Object({}),
       exposure: "deferred",
       async execute() {
-        const tasks = target.list(channelId);
+        const tasks = target.list(scope);
         return {
           content: [
             {

@@ -1,3 +1,5 @@
+import type { ConversationKey } from "@shared/conversation-key";
+
 /**
  * `interrupted` marks a task whose prompt was still running when the process
  * stopped. The task is restored, but its prompt is not re-run automatically.
@@ -20,10 +22,13 @@ export interface AttachedTaskResult {
   readonly error?: string;
 }
 
-export interface AttachedTaskStartInput {
-  readonly channelId: string;
-  /** The access scope of the conversation that started the task. */
+export interface AttachedTaskScope {
+  readonly conversationKey: ConversationKey;
+  /** The access scope of the conversation that owns the task. */
   readonly accessScope: string;
+}
+
+export interface AttachedTaskStartInput extends AttachedTaskScope {
   /** Whether the conversation allows owner-only tools for this task. */
   readonly ownerFeaturesAllowed: boolean;
   readonly prompt: string;
@@ -42,7 +47,7 @@ export interface AttachedTaskStartInput {
  */
 export interface AttachedTaskControl {
   start(input: AttachedTaskStartInput): Promise<string>;
-  send(taskId: string, message: string): Promise<boolean>;
-  close(taskId: string): Promise<boolean>;
-  list(channelId: string): readonly AttachedTaskInfo[];
+  send(scope: AttachedTaskScope, taskId: string, message: string): Promise<boolean>;
+  close(scope: AttachedTaskScope, taskId: string): Promise<boolean>;
+  list(scope: AttachedTaskScope): readonly AttachedTaskInfo[];
 }
