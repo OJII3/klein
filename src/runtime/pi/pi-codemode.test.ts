@@ -167,7 +167,12 @@ for (const restricted of [false, true]) {
             context.messages
               .filter((message) => message.role === "assistant")
               .flatMap((message) => message.content.filter((block) => block.type === "text")),
-            [{ type: "text", text: "Sent something to the conversation." }],
+            [
+              {
+                type: "text",
+                text: "Used discord_send to send something to the conversation.",
+              },
+            ],
           );
           return fauxAssistantMessage("No further reply needed");
         },
@@ -191,11 +196,11 @@ for (const restricted of [false, true]) {
               .filter((message) => message.role === "assistant")
               .flatMap((message) => message.content.filter((block) => block.type === "text")),
             [
-              { type: "text", text: "Sent something to the conversation." },
               {
                 type: "text",
-                text: "I didn't send anything to the conversation, so I stayed silent.",
+                text: "Used discord_send to send something to the conversation.",
               },
+              { type: "text", text: "I didn't use discord_send, so I stayed silent." },
             ],
           );
           return fauxAssistantMessage("No further reply needed");

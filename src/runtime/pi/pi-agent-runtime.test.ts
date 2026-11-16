@@ -73,7 +73,7 @@ test("records completed turn outcomes while preserving the active turn after sen
     { role: "user", content: "Steering input", timestamp: 4 },
   ];
   const handler = registerExtension(
-    createAssistantTextContextExtension(new Set(["discord_send"])),
+    createAssistantTextContextExtension(new Set(["discord_send"]), "discord_send"),
   ).get("context")!;
   const filtered = (await handler(
     { type: "context", messages } as never,
@@ -84,13 +84,14 @@ test("records completed turn outcomes while preserving the active turn after sen
     messages[0],
     { ...oldCall, content: oldCall.content.filter((block) => block.type !== "text") },
     messages[2],
-    { ...oldEnd, content: [{ type: "text", text: "Sent something to the conversation." }] },
+    {
+      ...oldEnd,
+      content: [{ type: "text", text: "Used discord_send to send something to the conversation." }],
+    },
     messages[4],
     {
       ...silentEnd,
-      content: [
-        { type: "text", text: "I didn't send anything to the conversation, so I stayed silent." },
-      ],
+      content: [{ type: "text", text: "I didn't use discord_send, so I stayed silent." }],
     },
     ...messages.slice(6),
   ]);
@@ -103,33 +104,37 @@ for (const { toolNames, errors, expected } of [
   {
     toolNames: [],
     errors: [],
-    expected: "I didn't send anything to the conversation, so I stayed silent.",
+    expected: "I didn't use discord_send, so I stayed silent.",
   },
   {
     toolNames: ["discord_read"],
     errors: [false],
-    expected: "I didn't send anything to the conversation, so I stayed silent.",
+    expected: "I didn't use discord_send, so I stayed silent.",
   },
   {
     toolNames: ["discord_send"],
     errors: [true],
-    expected: "I didn't send anything to the conversation, so I stayed silent.",
+    expected: "I didn't use discord_send, so I stayed silent.",
   },
-  { toolNames: ["discord_send"], errors: [false], expected: "Sent something to the conversation." },
+  {
+    toolNames: ["discord_send"],
+    errors: [false],
+    expected: "Used discord_send to send something to the conversation.",
+  },
   {
     toolNames: ["discord_send", "discord_send"],
     errors: [false, true],
-    expected: "Sent something to the conversation.",
+    expected: "Used discord_send to send something to the conversation.",
   },
   {
     toolNames: ["discord_speak"],
     errors: [false],
-    expected: "Sent something to the conversation.",
+    expected: "Used discord_speak to send something to the conversation.",
   },
   {
     toolNames: ["discord_speak"],
     errors: [true],
-    expected: "I didn't send anything to the conversation, so I stayed silent.",
+    expected: "I didn't use discord_send, so I stayed silent.",
   },
 ]) {
   test(`summarizes completed assistant text (${JSON.stringify({ toolNames, errors })})`, async () => {
@@ -160,7 +165,10 @@ for (const { toolNames, errors, expected } of [
     messages.push(end, { role: "user", content: "Next request", timestamp: 4 });
     const original = structuredClone(messages);
     const handler = registerExtension(
-      createAssistantTextContextExtension(new Set(["discord_send", "discord_speak"])),
+      createAssistantTextContextExtension(
+        new Set(["discord_ask", "discord_send", "discord_speak"]),
+        "discord_send",
+      ),
     ).get("context")!;
     const filtered = (await handler(
       { type: "context", messages } as never,
@@ -206,6 +214,7 @@ test("normalizes completed turns from the surface tools the role holds", async (
           required: ["text"],
         } as never,
         surface: true,
+        primarySurface: true,
         async execute() {
           return { content: [{ type: "text" as const, text: "ok" }], details: {} };
         },
@@ -265,10 +274,12 @@ test("normalizes completed turns from the surface tools the role holds", async (
         .filter((message) => message.role === "assistant")
         .flatMap((message) => message.content.filter((block) => block.type === "text"))
         .map((block) => block.text);
-    assert.deepEqual(assistantTexts(requests[0]!), ["Sent something to the conversation."]);
+    assert.deepEqual(assistantTexts(requests[0]!), [
+      "Used discord_speak to send something to the conversation.",
+    ]);
     assert.deepEqual(assistantTexts(requests[1]!), [
-      "Sent something to the conversation.",
-      "I didn't send anything to the conversation, so I stayed silent.",
+      "Used discord_speak to send something to the conversation.",
+      "I didn't use discord_speak, so I stayed silent.",
     ]);
   } finally {
     runtime.dispose();
@@ -279,7 +290,7 @@ test("normalizes completed turns from the surface tools the role holds", async (
 
 test("preserves an active turn without completed history or a user boundary", async () => {
   const handler = registerExtension(
-    createAssistantTextContextExtension(new Set(["discord_send"])),
+    createAssistantTextContextExtension(new Set(["discord_send"]), "discord_send"),
   ).get("context")!;
   const call = fauxAssistantMessage([
     { type: "text", text: "Current text" },

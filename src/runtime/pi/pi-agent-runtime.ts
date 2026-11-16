@@ -444,6 +444,7 @@ export function createResourceLoader(
   options?: {
     readonly normalizeAssistantText?: boolean;
     readonly surfaceToolNames?: ReadonlySet<string>;
+    readonly primarySurfaceToolName?: string;
     readonly backgroundCompactionLeadTokens?: number;
     readonly extraExtensions?: readonly ExtensionFactory[];
   },
@@ -458,7 +459,12 @@ export function createResourceLoader(
       wrap(createCodemodeExtension({ mode: "on", models: false })),
       ...(options?.normalizeAssistantText === false
         ? []
-        : [createAssistantTextContextExtension(options?.surfaceToolNames)]),
+        : [
+            createAssistantTextContextExtension(
+              options?.surfaceToolNames,
+              options?.primarySurfaceToolName,
+            ),
+          ]),
       createTurnContextExtension(),
       wrap(createToolSearchExtension()),
       wrap(
@@ -512,6 +518,7 @@ export function createResourceLoader(
 export function normalizeCompletedAssistantText<TMessage extends Message>(
   messages: readonly TMessage[],
   surfaceToolNames: ReadonlySet<string>,
+  primarySurfaceToolName?: string,
 ): TMessage[] {
   let completedTurnIndex = -1;
   let seenUser = false;
@@ -529,14 +536,14 @@ export function normalizeCompletedAssistantText<TMessage extends Message>(
   }
 
   const normalized: TMessage[] = [];
-  let sentMessage = false;
+  const usedSurfaceTools = new Set<string>();
   for (const [index, message] of messages.entries()) {
     if (
       message.role === "toolResult" &&
       surfaceToolNames.has(message.toolName) &&
       !message.isError
     ) {
-      sentMessage = true;
+      usedSurfaceTools.add(message.toolName);
     }
     if (message.role !== "assistant" || index > completedTurnIndex) {
       normalized.push(message);
@@ -550,19 +557,37 @@ export function normalizeCompletedAssistantText<TMessage extends Message>(
       // Record the completed outcome so silence is not mistaken for a pending reply.
       content.push({
         type: "text",
-        text: sentMessage
-          ? "Sent something to the conversation."
-          : "I didn't send anything to the conversation, so I stayed silent.",
+        text: summarizeSurfaceOutcome(usedSurfaceTools, primarySurfaceToolName),
       });
-      sentMessage = false;
+      usedSurfaceTools.clear();
     }
     if (content.length > 0) normalized.push({ ...message, content });
   }
   return normalized;
 }
 
+function summarizeSurfaceOutcome(
+  usedSurfaceTools: ReadonlySet<string>,
+  primarySurfaceToolName: string | undefined,
+): string {
+  if (usedSurfaceTools.size > 0) {
+    return `Used ${formatToolNames([...usedSurfaceTools])} to send something to the conversation.`;
+  }
+  if (primarySurfaceToolName !== undefined) {
+    return `I didn't use ${primarySurfaceToolName}, so I stayed silent.`;
+  }
+  return "I didn't send anything to the conversation, so I stayed silent.";
+}
+
+function formatToolNames(names: readonly string[]): string {
+  if (names.length <= 1) return names[0] ?? "";
+  if (names.length === 2) return `${names[0]} and ${names[1]}`;
+  return `${names.slice(0, -1).join(", ")}, and ${names.at(-1)}`;
+}
+
 export function createAssistantTextContextExtension(
   surfaceToolNames: ReadonlySet<string> = new Set(),
+  primarySurfaceToolName?: string,
 ): ExtensionFactory {
   return (pi) => {
     pi.on("context", (event) => {
@@ -570,6 +595,7 @@ export function createAssistantTextContextExtension(
         messages: normalizeCompletedAssistantText(
           event.messages as unknown as readonly Message[],
           surfaceToolNames,
+          primarySurfaceToolName,
         ) as unknown as typeof event.messages,
       };
     });
@@ -669,9 +695,11 @@ export function createPiAgentFactory({
       ].filter((tool) => authorization.allowsTool(tool.name));
       assertSurfaceToolsAllowed(options.role, customTools);
       const policy = resolveAgentPolicy(options.role);
-      const surfaceToolNames = new Set(
-        customTools.filter((tool) => tool.surface === true).map((tool) => tool.name),
-      );
+      const surfaceTools = customTools.filter((tool) => tool.surface === true);
+      const surfaceToolNames = new Set(surfaceTools.map((tool) => tool.name));
+      const primarySurfaceToolName = surfaceTools.find(
+        (tool) => tool.primarySurface === true,
+      )?.name;
       const hasWatchAdd = customTools.some((tool) => tool.name === "watch_add");
       const systemPrompt = [
         definition.systemPrompt,
@@ -691,6 +719,7 @@ export function createPiAgentFactory({
         {
           normalizeAssistantText: policy.assistantText === "none",
           surfaceToolNames,
+          primarySurfaceToolName,
           backgroundCompactionLeadTokens: llm.compaction?.backgroundTokens,
           extraExtensions,
         },
