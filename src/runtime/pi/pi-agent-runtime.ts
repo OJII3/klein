@@ -15,6 +15,7 @@ import {
   convertToLlm,
   getLatestCompactionEntry,
   serializeConversation,
+  type AgentSessionEvent,
   type CreateAgentSessionOptions,
   type ExtensionFactory,
 } from "@earendil-works/pi-coding-agent";
@@ -22,7 +23,12 @@ import type { Api, AssistantMessage, Message, Model } from "@earendil-works/pi-a
 import webAccessExtension from "pi-web-access";
 
 import type { AgentDefinition } from "@agents/core/agent-definition";
-import type { AgentFactory, AgentCreationOptions } from "@agents/core/agent-factory";
+import type {
+  AgentCreationOptions,
+  AgentFactory,
+  AgentToolContext,
+  AgentToolsFactory,
+} from "@agents/core/agent-factory";
 import {
   assertSurfaceToolsAllowed,
   resolveAgentPolicy,
@@ -31,7 +37,7 @@ import {
 } from "@agents/core/agent-role";
 import type { AgentTurn, AgentTurnContext } from "@agents/core/agent-turn";
 import type { AgentPrompt, AgentRuntime } from "@agents/core/agent-runtime";
-import { ImageAnalysisError, toImageAnalysisFailure } from "@agents/core/image-analysis";
+import { toImageAnalysisFailure } from "@agents/core/image-analysis";
 import type { SessionMode } from "@app/cli-options";
 import type { WatchToolCatalog } from "@modules/scheduling/application/watch-tool";
 import { renderWatchToolSection } from "@modules/scheduling/application/watch-tool";
@@ -134,8 +140,19 @@ export function createPiSessionManager(
     : SessionManager.create(cwd, sessionDir);
 }
 
+interface PiTurnState {
+  requesterId?: string;
+}
+
+interface PendingInputRequester {
+  readonly text: string;
+  readonly requesterId: string | undefined;
+}
+
 export class PiAgentRuntime implements AgentRuntime {
   private queue: Promise<void> = Promise.resolve();
+  private readonly pendingInputs: PendingInputRequester[] = [];
+  private readonly unsubscribeSession?: () => void;
 
   constructor(
     private readonly session: AgentSession,
@@ -144,8 +161,12 @@ export class PiAgentRuntime implements AgentRuntime {
     private readonly modelRuntime?: ModelRuntime,
     private readonly onDispose?: () => void,
     private readonly assistantText: AgentPolicy["assistantText"] = "none",
+    private readonly turnState: PiTurnState = {},
   ) {
     trace?.attach(session);
+    if (typeof session.subscribe === "function") {
+      this.unsubscribeSession = session.subscribe((event) => this.onSessionEvent(event));
+    }
   }
 
   prompt(turn: AgentTurn): Promise<void> {
@@ -161,6 +182,8 @@ export class PiAgentRuntime implements AgentRuntime {
         traceId,
         queueWaitMs: Math.round(startedAt - queuedAt),
       });
+      this.turnState.requesterId = turn.context.requesterId;
+      this.pendingInputs.push({ text: prompt.text, requesterId: turn.context.requesterId });
       let failed = false;
       try {
         this.recordTurnContext(turn.context);
@@ -169,6 +192,8 @@ export class PiAgentRuntime implements AgentRuntime {
         failed = true;
         throw error;
       } finally {
+        this.pendingInputs.length = 0;
+        this.turnState.requesterId = undefined;
         this.trace?.removeInput(traceId);
         this.trace?.log("pi_prompt_completed", {
           traceId,
@@ -192,19 +217,31 @@ export class PiAgentRuntime implements AgentRuntime {
     const startedAt = performance.now();
     this.trace?.registerInput(prompt.text, traceId);
     this.trace?.log("pi_steer_started", { traceId });
+    const pending: PendingInputRequester = {
+      text: prompt.text,
+      requesterId: turn.context.requesterId,
+    };
+    this.pendingInputs.push(pending);
     try {
       const disposition = await this.session.steer(
         prompt.text,
         prompt.images.map((image) => ({ type: "image", ...image })),
         { source: "rpc" },
       );
-      if (disposition !== "queued") this.trace?.removeInput(traceId);
+      if (disposition !== "queued") {
+        this.removePendingInput(pending);
+        this.trace?.removeInput(traceId);
+      } else if (!this.unsubscribeSession) {
+        this.removePendingInput(pending);
+        this.turnState.requesterId = turn.context.requesterId;
+      }
       this.trace?.log("pi_steer_completed", {
         traceId,
         disposition,
         durationMs: Math.round(performance.now() - startedAt),
       });
     } catch (error) {
+      this.removePendingInput(pending);
       this.trace?.removeInput(traceId);
       this.trace?.log("pi_steer_failed", { traceId });
       throw error;
@@ -224,6 +261,35 @@ export class PiAgentRuntime implements AgentRuntime {
     );
 
     return run;
+  }
+
+  private onSessionEvent(event: AgentSessionEvent): void {
+    switch (event.type) {
+      case "message_start": {
+        if (event.message.role !== "user") break;
+        const text = extractUserMessageText(event.message.content);
+        const matchedIndex = this.findPendingInputIndex(text);
+        if (matchedIndex !== -1) {
+          const [matched] = this.pendingInputs.splice(matchedIndex, 1);
+          this.turnState.requesterId = matched?.requesterId;
+        }
+        break;
+      }
+      case "agent_settled":
+        this.pendingInputs.length = 0;
+        break;
+    }
+  }
+
+  private findPendingInputIndex(text: string): number {
+    const exactIndex = this.pendingInputs.findIndex((entry) => entry.text === text);
+    if (exactIndex !== -1) return exactIndex;
+    return this.pendingInputs.findIndex((entry) => text.startsWith(entry.text));
+  }
+
+  private removePendingInput(target: PendingInputRequester): void {
+    const index = this.pendingInputs.indexOf(target);
+    if (index !== -1) this.pendingInputs.splice(index, 1);
   }
 
   private async runPrompt(prompt: AgentPrompt): Promise<void> {
@@ -288,18 +354,6 @@ export class PiAgentRuntime implements AgentRuntime {
       customType: "klein-image-analysis",
       display: false,
     });
-  }
-
-  analyzeImage(prompt: AgentPrompt): Promise<string> {
-    this.ensureSessionAvailable();
-    if (!this.imageAnalyzer) {
-      throw new ImageAnalysisError(
-        { reason: "unavailable", retryable: false },
-        "Image analysis is not configured",
-      );
-    }
-
-    return this.imageAnalyzer.analyze(prompt);
   }
 
   compactForHandoff(): Promise<string> {
@@ -367,6 +421,9 @@ export class PiAgentRuntime implements AgentRuntime {
   }
 
   dispose(): void {
+    this.unsubscribeSession?.();
+    this.pendingInputs.length = 0;
+    this.turnState.requesterId = undefined;
     this.onDispose?.();
     this.trace?.dispose();
     this.session.dispose();
@@ -546,17 +603,62 @@ export function createPiAgentFactory({
   return {
     async create(
       definition: AgentDefinition,
-      tools: readonly PiTool[],
+      createTools: AgentToolsFactory<PiTool>,
       options: AgentCreationOptions,
     ): Promise<AgentRuntime> {
+      const trace = new PiRuntimeTrace(
+        logger.child({
+          component: "pi-runtime",
+          role: options.role.kind,
+          sessionKey: options.sessionKey,
+        }),
+        { usageReporter },
+      );
+      const sessionManager = createPiSessionManager(
+        agentDir,
+        options.sessionKey,
+        options.resumeSession === true ? "resume" : sessionMode,
+        process.cwd(),
+        options.role,
+      );
+      const sessionId = sessionManager.getSessionId();
+      const model = withOpenCodeSessionHeader(
+        withContextWindowRatio(
+          resolveConfiguredModel(llm.provider, llm.model, modelRuntime),
+          llm.contextWindowRatio,
+        ),
+        sessionId,
+      );
+      const sessionImageModel = imageModel
+        ? withOpenCodeSessionHeader(imageModel, sessionId)
+        : undefined;
+      const imageAnalyzer = sessionImageModel
+        ? new PiImageAnalyzer(modelRuntime, sessionImageModel, llm.image?.thinkingLevel)
+        : undefined;
+      const turnState: PiTurnState = {};
+      const toolContext: AgentToolContext = {
+        ...(imageAnalyzer
+          ? {
+              analyzeImage: (prompt) => {
+                if (trace.isSessionBlocked()) {
+                  throw new Error("Pi session is blocked after the provider returned HTTP 400");
+                }
+                return imageAnalyzer.analyze(prompt);
+              },
+            }
+          : {}),
+        requesterId: () => turnState.requesterId,
+      };
+
       const authorization = new ToolAuthorization(
         options.ownerFeaturesAllowed === true,
         permissions,
         skillReadTool ? new Set([skillReadTool.name]) : undefined,
       );
-      const customTools: PiTool[] = [...tools, ...(skillReadTool ? [skillReadTool] : [])].filter(
-        (tool) => authorization.allowsTool(tool.name),
-      );
+      const customTools: PiTool[] = [
+        ...createTools(toolContext),
+        ...(skillReadTool ? [skillReadTool] : []),
+      ].filter((tool) => authorization.allowsTool(tool.name));
       assertSurfaceToolsAllowed(options.role, customTools);
       const policy = resolveAgentPolicy(options.role);
       const hasWatchAdd = customTools.some((tool) => tool.name === "watch_add");
@@ -566,14 +668,6 @@ export function createPiAgentFactory({
       ]
         .filter(Boolean)
         .join("\n\n");
-      const trace = new PiRuntimeTrace(
-        logger.child({
-          component: "pi-runtime",
-          role: options.role.kind,
-          sessionKey: options.sessionKey,
-        }),
-        { usageReporter },
-      );
       const settingsManager = SettingsManager.create(process.cwd(), agentDir);
       const resourceLoader = createResourceLoader(
         agentDir,
@@ -594,25 +688,6 @@ export function createPiAgentFactory({
       settingsManager.applyOverrides({
         defaultTools: [...DEFAULT_EXTENSION_TOOL_NAMES, ...customTools.map((tool) => tool.name)],
       });
-
-      const sessionManager = createPiSessionManager(
-        agentDir,
-        options.sessionKey,
-        options.resumeSession === true ? "resume" : sessionMode,
-        process.cwd(),
-        options.role,
-      );
-      const sessionId = sessionManager.getSessionId();
-      const model = withOpenCodeSessionHeader(
-        withContextWindowRatio(
-          resolveConfiguredModel(llm.provider, llm.model, modelRuntime),
-          llm.contextWindowRatio,
-        ),
-        sessionId,
-      );
-      const sessionImageModel = imageModel
-        ? withOpenCodeSessionHeader(imageModel, sessionId)
-        : undefined;
 
       const { session } = await createAgentSession({
         agentDir,
@@ -652,10 +727,6 @@ export function createPiAgentFactory({
         });
       }
 
-      const imageAnalyzer = sessionImageModel
-        ? new PiImageAnalyzer(session.modelRuntime, sessionImageModel, llm.image?.thinkingLevel)
-        : undefined;
-
       const onSessionDispose = onSessionCreated?.(session, options);
 
       return new PiAgentRuntime(
@@ -665,9 +736,22 @@ export function createPiAgentFactory({
         modelRuntime,
         typeof onSessionDispose === "function" ? onSessionDispose : undefined,
         policy.assistantText,
+        turnState,
       );
     },
   };
+}
+
+function extractUserMessageText(
+  content: string | readonly { readonly type: string; readonly text?: string }[],
+): string {
+  if (typeof content === "string") return content;
+  return content
+    .filter((part): part is { readonly type: "text"; readonly text: string } => {
+      return part.type === "text" && typeof part.text === "string";
+    })
+    .map((part) => part.text)
+    .join("\n");
 }
 
 function isCompactionTooSmall(error: unknown): boolean {

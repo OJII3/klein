@@ -1,5 +1,6 @@
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 
+import type { AgentImageAnalyzer } from "@agents/core/agent-factory";
 import type { AttachedTaskControl } from "@agents/core/attached-agent";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
 import type { DiscordUserResolver } from "@modules/discord/domain/discord-user";
@@ -14,13 +15,14 @@ import { createReminderTools } from "../tools/reminder";
 import { createUserMemoryTools } from "../tools/user-memory";
 import { createWatchTools } from "../tools/watch";
 import { createDiscordAskTool } from "./tools/discord-ask";
-import { createDiscordReadTool, type DiscordImageAnalysis } from "./tools/discord-read";
+import { createDiscordImageAnalysis, createDiscordReadTool } from "./tools/discord-read";
 import { createDiscordSendTool } from "./tools/discord-send";
 import { createDiscordSpeakTool } from "./tools/discord-speak";
 import { createDiscordVoiceTool } from "./tools/discord-voice";
 import { createAttachedControlTools } from "./tools/attached-control";
 
 export interface DiscordAgentToolsOptions {
+  readonly analyzeImage?: AgentImageAnalyzer;
   readonly channelApi: Pick<
     DiscordChannelApi,
     "readMessage" | "sendMessage" | "sendChoices" | "sendTyping" | "sendAudio"
@@ -45,7 +47,6 @@ export interface DiscordAgentToolsOptions {
  */
 export function createDiscordAgentTools(
   options: DiscordAgentToolsOptions,
-  analyzeImage: DiscordImageAnalysis,
 ): readonly ToolDefinition[] {
   const ownerFeaturesAllowed = options.ownerFeaturesAllowed && !!options.ownerUserId;
   const accessScope = ownerFeaturesAllowed
@@ -55,7 +56,7 @@ export function createDiscordAgentTools(
     createDiscordReadTool(
       options.channelApi,
       options.channelId,
-      analyzeImage,
+      createDiscordImageAnalysis(options.analyzeImage),
       ownerFeaturesAllowed ? { userId: options.ownerUserId! } : undefined,
     ),
     ...(options.requesterUserId

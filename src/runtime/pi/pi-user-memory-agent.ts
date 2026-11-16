@@ -90,7 +90,7 @@ export class PiUserMemoryAgent implements UserMemoryProcessor {
         }
         const runtime = await options.factory.create(
           { systemPrompt: USER_MEMORY_AGENT_SYSTEM_PROMPT },
-          createSandboxedTools(sessionOptions.directory, sessionOptions.fileName),
+          () => createSandboxedTools(sessionOptions.directory, sessionOptions.fileName),
           { role: { kind: "standalone" }, sessionKey: sessionId },
         );
         return {

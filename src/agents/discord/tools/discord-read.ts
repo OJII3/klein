@@ -1,6 +1,7 @@
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
+import type { AgentImageAnalyzer } from "@agents/core/agent-factory";
 import { toImageAnalysisFailure, type ImageAnalysisFailure } from "@agents/core/image-analysis";
 import { formatDiscordMessage, type DiscordMessage } from "@modules/discord/domain/discord-message";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
@@ -9,6 +10,19 @@ export type DiscordImageAnalysis = (
   message: DiscordMessage,
   focus?: string,
 ) => Promise<string | undefined>;
+
+export function createDiscordImageAnalysis(
+  analyzeImage?: AgentImageAnalyzer,
+): DiscordImageAnalysis | undefined {
+  if (!analyzeImage) return undefined;
+
+  return (message, focus) =>
+    analyzeImage({
+      text: formatDiscordMessage(message),
+      images: message.images.map(({ data, mimeType }) => ({ data, mimeType })),
+      ...(focus ? { focus } : {}),
+    });
+}
 
 export function createDiscordReadTool(
   channelApi: Pick<DiscordChannelApi, "readMessage">,

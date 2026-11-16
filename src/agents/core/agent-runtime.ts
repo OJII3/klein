@@ -19,7 +19,6 @@ export interface AgentRuntime {
   prompt(turn: AgentTurn): Promise<void>;
   steer?(turn: AgentTurn): Promise<void>;
   abort?(): Promise<void>;
-  analyzeImage?(prompt: AgentPrompt): Promise<string>;
   compactForHandoff?(): Promise<string>;
   /** The assistant text from the most recent completed turn, if any. */
   lastAssistantText?(): string | undefined;

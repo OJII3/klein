@@ -39,10 +39,18 @@ function createHarness() {
 test("creates a standalone session from the agent definition", async () => {
   const harness = createHarness();
   const tool = { name: "read" } as ToolDefinition;
-  const runtime = await harness.factory.create({ systemPrompt: "system" }, [tool], {
-    role: { kind: "standalone" },
-    sessionKey: "memory-1",
-  });
+  let capturedRequesterId: (() => string | undefined) | undefined;
+  const runtime = await harness.factory.create(
+    { systemPrompt: "system" },
+    (toolContext) => {
+      capturedRequesterId = toolContext.requesterId;
+      return [tool];
+    },
+    {
+      role: { kind: "standalone" },
+      sessionKey: "memory-1",
+    },
+  );
 
   assert.equal(harness.created.length, 1);
   assert.equal(harness.created[0]?.sessionId, "memory-1");
@@ -58,10 +66,11 @@ test("creates a standalone session from the agent definition", async () => {
       source: "standalone",
       content: [{ type: "text", text: "hello" }],
     },
-    context: {},
+    context: { requesterId: "user-1" },
   });
   assert.equal(runtime.lastAssistantText?.(), "result for hello");
   assert.deepEqual(harness.prompts, ["hello"]);
+  assert.equal(capturedRequesterId?.(), undefined);
 
   runtime.dispose();
   assert.deepEqual(harness.disposed, ["memory-1"]);
@@ -70,7 +79,7 @@ test("creates a standalone session from the agent definition", async () => {
 test("rejects roles other than standalone", async () => {
   const harness = createHarness();
   await assert.rejects(
-    harness.factory.create({ systemPrompt: "system" }, [], {
+    harness.factory.create({ systemPrompt: "system" }, () => [], {
       role: { kind: "attached", taskId: "task-1" },
       sessionKey: "task-1",
     }),

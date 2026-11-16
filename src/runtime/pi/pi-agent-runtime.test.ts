@@ -478,49 +478,371 @@ test("accepts non-Discord events through prompt and steer", async () => {
   runtime.dispose();
 });
 
-test("exposes the configured image analyzer to tools", async () => {
-  let receivedPrompt: { text: string; images: readonly unknown[] } | undefined;
-  const runtime = new PiAgentRuntime(
-    {
-      async prompt() {},
-      dispose() {},
-    } as never,
-    {
-      async analyze(prompt) {
-        receivedPrompt = prompt;
-        return "画像解析結果";
-      },
+test("exposes the configured image analyzer through tool context", async () => {
+  await using temp = await createTempDir("klein-image-tool-context-");
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  const mainProvider = fauxProvider({ tokensPerSecond: 100_000 });
+  const imageProvider = fauxProvider({
+    provider: "faux-vision",
+    models: [{ id: "faux-vision", input: ["text", "image"] }],
+    tokensPerSecond: 100_000,
+  });
+  const mainModel = mainProvider.getModel();
+  const imageModel = imageProvider.getModel();
+  const modelRuntime = await ModelRuntime.create({
+    credentials: new InMemoryCredentialStore(),
+    modelsPath: null,
+    refreshOnCreate: false,
+  });
+  modelRuntime.registerNativeProvider(mainProvider.provider);
+  modelRuntime.registerNativeProvider(imageProvider.provider);
+  const factory = createPiAgentFactory({
+    agentDir: temp.path,
+    llm: {
+      provider: mainModel.provider,
+      model: mainModel.id,
+      image: { provider: imageModel.provider, model: imageModel.id },
     },
+    logger: pino({ level: "silent" }),
+    modelRuntime,
+    sessionMode: "new",
+  });
+
+  let capturedAnalyzeImage:
+    | ((prompt: {
+        text: string;
+        images: readonly { data: string; mimeType: string }[];
+      }) => Promise<string>)
+    | undefined;
+  const runtime = await factory.create(
+    { systemPrompt: "system" },
+    (toolContext) => {
+      capturedAnalyzeImage = toolContext.analyzeImage;
+      return [];
+    },
+    { role: { kind: "conversation" }, sessionKey: "image-tool-context" },
   );
 
-  const result = await runtime.analyzeImage({
-    text: "メッセージ本文",
-    images: [{ data: "c2VjcmV0", mimeType: "image/png" }],
+  try {
+    assert.ok(capturedAnalyzeImage);
+    const imageRequests: TranscriptContext[] = [];
+    imageProvider.setResponses([
+      (context) => {
+        imageRequests.push(context);
+        return fauxAssistantMessage("画像解析結果");
+      },
+    ]);
+
+    const result = await capturedAnalyzeImage({
+      text: "メッセージ本文",
+      images: [{ data: "c2VjcmV0", mimeType: "image/png" }],
+    });
+
+    assert.equal(result, "画像解析結果");
+    assert.equal(imageRequests.length, 1);
+  } finally {
+    runtime.dispose();
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+  }
+});
+
+test("omits analyzeImage from tool context when no image model is configured", async () => {
+  await using temp = await createTempDir("klein-no-image-tool-context-");
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  const provider = fauxProvider({ tokensPerSecond: 100_000 });
+  const model = provider.getModel();
+  const modelRuntime = await ModelRuntime.create({
+    credentials: new InMemoryCredentialStore(),
+    modelsPath: null,
+    refreshOnCreate: false,
+  });
+  modelRuntime.registerNativeProvider(provider.provider);
+  const factory = createPiAgentFactory({
+    agentDir: temp.path,
+    llm: { provider: model.provider, model: model.id },
+    logger: pino({ level: "silent" }),
+    modelRuntime,
+    sessionMode: "new",
   });
 
-  assert.equal(result, "画像解析結果");
-  assert.deepEqual(receivedPrompt, {
-    text: "メッセージ本文",
-    images: [{ data: "c2VjcmV0", mimeType: "image/png" }],
+  let hasAnalyzeImage = true;
+  const runtime = await factory.create(
+    { systemPrompt: "system" },
+    (toolContext) => {
+      hasAnalyzeImage = toolContext.analyzeImage !== undefined;
+      return [];
+    },
+    { role: { kind: "conversation" }, sessionKey: "no-image-tool-context" },
+  );
+
+  try {
+    assert.equal(hasAnalyzeImage, false);
+  } finally {
+    runtime.dispose();
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+  }
+});
+
+test("keeps queued prompt turns from overwriting the active turn requester", async () => {
+  const observedRequesters: Array<string | undefined> = [];
+  let releaseFirstPrompt!: () => void;
+  let notifyFirstStarted!: () => void;
+  const firstStarted = new Promise<void>((resolve) => {
+    notifyFirstStarted = resolve;
   });
+  const firstPromptGate = new Promise<void>((resolve) => {
+    releaseFirstPrompt = resolve;
+  });
+  const turnState: { requesterId?: string } = {};
+  let callIndex = 0;
+  const runtime = new PiAgentRuntime(
+    {
+      sessionManager: createSessionManagerStub(),
+      async prompt() {
+        const current = callIndex;
+        callIndex += 1;
+        if (current === 0) {
+          notifyFirstStarted();
+          await firstPromptGate;
+        }
+        observedRequesters.push(turnState.requesterId);
+      },
+      dispose() {},
+    } as never,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    "none",
+    turnState,
+  );
+
+  const first = runtime.prompt({
+    event: {
+      id: "event-1",
+      type: "discord.message",
+      source: "discord",
+      occurredAt: "2026-10-14T09:30:42.123Z",
+      content: [{ type: "text", text: "first" }],
+    },
+    context: { requesterId: "user-1" },
+  });
+  await firstStarted;
+  const second = runtime.prompt({
+    event: {
+      id: "event-2",
+      type: "discord.message",
+      source: "discord",
+      occurredAt: "2026-10-14T09:30:43.123Z",
+      content: [{ type: "text", text: "second" }],
+    },
+    context: { requesterId: "user-2" },
+  });
+
+  assert.equal(turnState.requesterId, "user-1");
+  releaseFirstPrompt();
+  await Promise.all([first, second]);
+
+  assert.deepEqual(observedRequesters, ["user-1", "user-2"]);
+  assert.equal(turnState.requesterId, undefined);
   runtime.dispose();
 });
 
-test("reports image analysis as unavailable without an analyzer", () => {
-  const runtime = new PiAgentRuntime({
-    async prompt() {},
-    dispose() {},
-  } as never);
+test("updates requesterId only when a steered message begins its turn", async () => {
+  await using temp = await createTempDir("klein-steer-requester-");
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  const provider = fauxProvider({ tokensPerSecond: 100_000 });
+  const model = provider.getModel();
+  const modelRuntime = await ModelRuntime.create({
+    credentials: new InMemoryCredentialStore(),
+    modelsPath: null,
+    refreshOnCreate: false,
+  });
+  modelRuntime.registerNativeProvider(provider.provider);
+  const factory = createPiAgentFactory({
+    agentDir: temp.path,
+    llm: { provider: model.provider, model: model.id },
+    logger: pino({ level: "silent" }),
+    modelRuntime,
+    sessionMode: "new",
+  });
 
-  assert.throws(
-    () => runtime.analyzeImage({ text: "x", images: [] }),
-    (error: unknown) => {
-      assert.ok(error instanceof ImageAnalysisError);
-      assert.deepEqual(error.failure, { reason: "unavailable", retryable: false });
-      return true;
+  let getRequesterId!: () => string | undefined;
+  let notifyFirstToolStarted!: () => void;
+  let releaseFirstTool!: () => void;
+  const firstToolStarted = new Promise<void>((resolve) => {
+    notifyFirstToolStarted = resolve;
+  });
+  const firstToolGate = new Promise<void>((resolve) => {
+    releaseFirstTool = resolve;
+  });
+  const requestersObservedInTool: Array<{ label: string; requesterId: string | undefined }> = [];
+
+  const runtime = await factory.create(
+    { systemPrompt: "Call probe_requester.", toolNames: ["probe_requester"] },
+    (toolContext) => {
+      getRequesterId = toolContext.requesterId;
+      return [
+        {
+          name: "probe_requester",
+          label: "Probe Requester",
+          description: "Records the active requester id",
+          parameters: {
+            type: "object",
+            properties: { label: { type: "string" } },
+            required: ["label"],
+          } as never,
+          async execute(_toolCallId, params: { label: string }) {
+            requestersObservedInTool.push({
+              label: params.label,
+              requesterId: toolContext.requesterId(),
+            });
+            if (params.label === "first") {
+              notifyFirstToolStarted();
+              await firstToolGate;
+              requestersObservedInTool.push({
+                label: "first-after-steer-call",
+                requesterId: toolContext.requesterId(),
+              });
+            }
+            return {
+              content: [{ type: "text", text: "ok" }],
+              details: {},
+            };
+          },
+        },
+      ];
     },
+    { role: { kind: "conversation" }, sessionKey: "steer-requester" },
   );
-  runtime.dispose();
+
+  try {
+    provider.setResponses([
+      fauxAssistantMessage([fauxToolCall("probe_requester", { label: "first" })]),
+      fauxAssistantMessage([fauxToolCall("probe_requester", { label: "second" })]),
+      fauxAssistantMessage([fauxToolCall("probe_requester", { label: "third-event" })]),
+      fauxAssistantMessage("done"),
+    ]);
+
+    const processing = runtime.prompt({
+      event: {
+        id: "turn-1",
+        type: "discord.message",
+        source: "discord",
+        occurredAt: "2026-10-14T09:30:42.123Z",
+        content: [{ type: "text", text: "first message" }],
+      },
+      context: { requesterId: "user-1" },
+    });
+
+    await firstToolStarted;
+    assert.ok(runtime.steer);
+    await runtime.steer({
+      event: {
+        id: "turn-2",
+        type: "discord.message",
+        source: "discord",
+        occurredAt: "2026-10-14T09:30:43.123Z",
+        content: [{ type: "text", text: "second message" }],
+      },
+      context: { requesterId: "user-2" },
+    });
+    assert.equal(getRequesterId(), "user-1");
+
+    releaseFirstTool();
+    await processing;
+
+    assert.deepEqual(requestersObservedInTool, [
+      { label: "first", requesterId: "user-1" },
+      { label: "first-after-steer-call", requesterId: "user-1" },
+      { label: "second", requesterId: "user-2" },
+      { label: "third-event", requesterId: "user-2" },
+    ]);
+    assert.equal(getRequesterId(), undefined);
+
+    // Steering with an event that has no requester clears requesterId when delivered.
+    let notifyEventToolStarted!: () => void;
+    let releaseEventTool!: () => void;
+    const eventToolStarted = new Promise<void>((resolve) => {
+      notifyEventToolStarted = resolve;
+    });
+    const eventToolGate = new Promise<void>((resolve) => {
+      releaseEventTool = resolve;
+    });
+    const eventSteerRequesters: Array<{ label: string; requesterId: string | undefined }> = [];
+
+    const runtime2 = await factory.create(
+      { systemPrompt: "Call probe_requester.", toolNames: ["probe_requester"] },
+      (toolContext) => [
+        {
+          name: "probe_requester",
+          label: "Probe Requester",
+          description: "Records the active requester id",
+          parameters: {
+            type: "object",
+            properties: { label: { type: "string" } },
+            required: ["label"],
+          } as never,
+          async execute(_toolCallId, params: { label: string }) {
+            eventSteerRequesters.push({
+              label: params.label,
+              requesterId: toolContext.requesterId(),
+            });
+            if (params.label === "first") {
+              notifyEventToolStarted();
+              await eventToolGate;
+            }
+            return { content: [{ type: "text", text: "ok" }], details: {} };
+          },
+        },
+      ],
+      { role: { kind: "conversation" }, sessionKey: "steer-requester-clear" },
+    );
+
+    try {
+      provider.setResponses([
+        fauxAssistantMessage([fauxToolCall("probe_requester", { label: "first" })]),
+        fauxAssistantMessage([fauxToolCall("probe_requester", { label: "after-steer-event" })]),
+        fauxAssistantMessage("done"),
+      ]);
+      const p2 = runtime2.prompt({
+        event: {
+          id: "turn-a",
+          type: "discord.message",
+          source: "discord",
+          occurredAt: "2026-10-14T09:30:44.123Z",
+          content: [{ type: "text", text: "user message" }],
+        },
+        context: { requesterId: "user-1" },
+      });
+      await eventToolStarted;
+      await runtime2.steer!({
+        event: {
+          id: "turn-b",
+          type: "reminder.due",
+          source: "reminder",
+          occurredAt: "2026-10-14T09:30:45.123Z",
+          content: [{ type: "text", text: "reminder" }],
+        },
+        context: {},
+      });
+      releaseEventTool();
+      await p2;
+
+      assert.deepEqual(eventSteerRequesters, [
+        { label: "first", requesterId: "user-1" },
+        { label: "after-steer-event", requesterId: undefined },
+      ]);
+    } finally {
+      runtime2.dispose();
+    }
+  } finally {
+    runtime.dispose();
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+  }
 });
 
 test("exposes assistant text only when the role sends it to the caller", () => {
@@ -564,7 +886,7 @@ test("keeps caller assistant text for attached agents", async () => {
     modelRuntime,
     sessionMode: "new",
   });
-  const runtime = await factory.create({ systemPrompt: "You are an attached worker." }, [], {
+  const runtime = await factory.create({ systemPrompt: "You are an attached worker." }, () => [], {
     role: { kind: "attached", taskId: "task-1" },
     sessionKey: "task-1",
   });

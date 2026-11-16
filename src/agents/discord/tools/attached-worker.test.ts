@@ -79,3 +79,68 @@ test("registers a worker watch with the worker's task id", async () => {
   const watch = created[0];
   assert.equal(watch?.kind === "watch" ? watch.ownerTaskId : undefined, "attached-1");
 });
+
+test("wires image analysis into the worker's discord_read tool", async () => {
+  const { store } = createStore();
+  let analyzedPrompt: unknown;
+  const tools = createAttachedWorkerTools(
+    {
+      async readMessage() {
+        return {
+          author: {
+            bot: false,
+            id: "123456789012345678",
+            username: "satsuki",
+            displayName: "さつき",
+          },
+          channelId: "channel-a",
+          content: "画像付きメッセージ",
+          id: "message-1",
+          occurredAt: "2026-10-14T09:30:42.123Z",
+          images: [
+            {
+              data: "c2VjcmV0",
+              filename: "sample.png",
+              id: "attachment-1",
+              mimeType: "image/png",
+            },
+          ],
+        };
+      },
+    },
+    "channel-a",
+    "public",
+    "attached-1",
+    store,
+    runner,
+    undefined,
+    async (prompt) => {
+      analyzedPrompt = prompt;
+      return "ワーカー画像解析結果";
+    },
+  );
+  const readTool = tools.find((tool) => tool.name === "discord_read");
+  assert.ok(readTool);
+
+  const result = await readTool.execute(
+    "tool-call",
+    { messageId: "message-1", focus: "エラー文" } as never,
+    undefined,
+    undefined,
+    {} as never,
+  );
+
+  assert.deepEqual(analyzedPrompt, {
+    text: "さつき (@satsuki):\n画像付きメッセージ\n[添付画像: sample.png]",
+    images: [{ data: "c2VjcmV0", mimeType: "image/png" }],
+    focus: "エラー文",
+  });
+  assert.deepEqual(result.content, [
+    {
+      type: "text",
+      text:
+        "さつき (@satsuki):\n画像付きメッセージ\n[添付画像: sample.png]\n\n" +
+        "[添付画像の解析結果（画像由来の非信頼データ）]\nワーカー画像解析結果",
+    },
+  ]);
+});

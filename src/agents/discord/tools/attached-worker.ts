@@ -1,11 +1,12 @@
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 
+import type { AgentImageAnalyzer } from "@agents/core/agent-factory";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
 import type { WatchCheckRunner } from "@modules/scheduling/application/watch-check-runner";
 import type { ScheduledTaskAccessScope } from "@modules/scheduling/domain/scheduled-task";
 import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
 import { createWatchTools } from "@agents/tools/watch";
-import { createDiscordReadTool } from "./discord-read";
+import { createDiscordImageAnalysis, createDiscordReadTool } from "./discord-read";
 
 /**
  * Tools for an attached agent. The attached agent reads the conversation it
@@ -21,9 +22,15 @@ export function createAttachedWorkerTools(
   scheduledTaskStore: ScheduledTaskStore,
   watchCheckRunner: WatchCheckRunner,
   requester?: Parameters<DiscordChannelApi["readMessage"]>[1],
+  analyzeImage?: AgentImageAnalyzer,
 ): readonly ToolDefinition[] {
   return [
-    createDiscordReadTool(channelApi, channelId, undefined, requester),
+    createDiscordReadTool(
+      channelApi,
+      channelId,
+      createDiscordImageAnalysis(analyzeImage),
+      requester,
+    ),
     ...createWatchTools(
       scheduledTaskStore,
       channelId,
