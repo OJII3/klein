@@ -211,6 +211,7 @@ test("normalizes completed turns from the surface tools the role holds", async (
   modelRuntime.registerNativeProvider(provider.provider);
   const factory = createPiAgentFactory({
     agentDir: temp.path,
+    characterName: "クライン",
     llm: { provider: model.provider, model: model.id },
     logger: pino({ level: "silent" }),
     modelRuntime,
@@ -647,6 +648,7 @@ test("exposes the configured image analyzer through tool context", async () => {
   modelRuntime.registerNativeProvider(imageProvider.provider);
   const factory = createPiAgentFactory({
     agentDir: temp.path,
+    characterName: "クライン",
     llm: {
       provider: mainModel.provider,
       model: mainModel.id,
@@ -709,6 +711,7 @@ test("omits analyzeImage from tool context when no image model is configured", a
   modelRuntime.registerNativeProvider(provider.provider);
   const factory = createPiAgentFactory({
     agentDir: temp.path,
+    characterName: "クライン",
     llm: { provider: model.provider, model: model.id },
     logger: pino({ level: "silent" }),
     modelRuntime,
@@ -812,6 +815,7 @@ test("updates requesterId only when a steered message begins its turn", async ()
   modelRuntime.registerNativeProvider(provider.provider);
   const factory = createPiAgentFactory({
     agentDir: temp.path,
+    characterName: "クライン",
     llm: { provider: model.provider, model: model.id },
     logger: pino({ level: "silent" }),
     modelRuntime,
@@ -1044,6 +1048,7 @@ test("keeps caller assistant text for attached agents", async () => {
   modelRuntime.registerNativeProvider(provider.provider);
   const factory = createPiAgentFactory({
     agentDir: temp.path,
+    characterName: "クライン",
     llm: { provider: model.provider, model: model.id },
     logger: pino({ level: "silent" }),
     modelRuntime,

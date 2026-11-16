@@ -87,7 +87,7 @@ export {
 
 export interface PiAgentFactoryOptions {
   readonly agentDir: string;
-  readonly characterName?: string;
+  readonly characterName: string;
   readonly permissions?: ToolPermissions;
   readonly skillsDirectory?: string;
   readonly modelRuntime: ModelRuntime;
@@ -384,6 +384,10 @@ export class PiAgentRuntime implements AgentRuntime {
     if (!model || !this.modelRuntime) {
       throw new Error("Cannot summarize handoff without a configured model runtime");
     }
+    const characterName = this.characterName?.trim();
+    if (!characterName) {
+      throw new Error("Cannot summarize handoff without a character name");
+    }
 
     const userMessages = this.session.sessionManager
       .buildSessionContext()
@@ -392,7 +396,7 @@ export class PiAgentRuntime implements AgentRuntime {
     const response = await this.modelRuntime.completeSimple(
       model,
       {
-        systemPrompt: buildHandoffSummarySystemPrompt(this.characterName),
+        systemPrompt: buildHandoffSummarySystemPrompt(characterName),
         messages: [
           {
             role: "user",
@@ -417,7 +421,7 @@ export class PiAgentRuntime implements AgentRuntime {
     const summaryBody = extractTextContent(response.content);
     if (!summaryBody) throw new Error("Handoff summarization returned an empty summary");
 
-    return formatHandoffSummary(summaryBody, this.characterName);
+    return formatHandoffSummary(summaryBody, characterName);
   }
 
   dispose(): void {
@@ -488,8 +492,14 @@ export function createResourceLoader(
         ),
       ),
       createBackgroundCompactionExtension(settingsManager, {
-        characterName: options?.characterName,
-        handoffInstructions: HANDOFF_COMPACTION_INSTRUCTIONS,
+        ...(options?.characterName?.trim()
+          ? {
+              handoff: {
+                instructions: HANDOFF_COMPACTION_INSTRUCTIONS,
+                characterName: options.characterName.trim(),
+              },
+            }
+          : {}),
         leadTokens: options?.backgroundCompactionLeadTokens,
         logger,
       }),
@@ -627,6 +637,11 @@ export function createPiAgentFactory({
   extraExtensions,
   onSessionCreated,
 }: PiAgentFactoryOptions): AgentFactory<PiTool> {
+  const resolvedCharacterName = characterName.trim();
+  if (!resolvedCharacterName) {
+    throw new Error("characterName is required");
+  }
+
   // Pi's MCP extension resolves config, credentials, and logs through this environment variable.
   process.env.PI_CODING_AGENT_DIR = resolve(agentDir);
 
@@ -716,7 +731,7 @@ export function createPiAgentFactory({
         trace,
         authorization,
         {
-          characterName,
+          characterName: resolvedCharacterName,
           normalizeAssistantText: policy.assistantText === "none",
           surfaceTools,
           backgroundCompactionLeadTokens: llm.compaction?.backgroundTokens,
@@ -777,7 +792,7 @@ export function createPiAgentFactory({
         typeof onSessionDispose === "function" ? onSessionDispose : undefined,
         policy.assistantText,
         turnState,
-        characterName,
+        resolvedCharacterName,
       );
     },
   };

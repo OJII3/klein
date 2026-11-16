@@ -1,14 +1,13 @@
-export const DEFAULT_HANDOFF_CHARACTER_NAME = "クライン";
-
-function resolveHandoffCharacterName(characterName?: string): string {
-  const trimmed = characterName?.trim();
-  return trimmed ? trimmed : DEFAULT_HANDOFF_CHARACTER_NAME;
+function requireHandoffCharacterName(characterName: string): string {
+  const trimmed = characterName.trim();
+  if (!trimmed) {
+    throw new Error("Handoff character name is required");
+  }
+  return trimmed;
 }
 
-export function buildHandoffSummarySystemPrompt(
-  characterName = DEFAULT_HANDOFF_CHARACTER_NAME,
-): string {
-  const resolvedName = resolveHandoffCharacterName(characterName);
+export function buildHandoffSummarySystemPrompt(characterName: string): string {
+  const resolvedName = requireHandoffCharacterName(characterName);
   return `あなたは${resolvedName}の次セッション向け引き継ぎメモを作ります。
 日本語で、ユーザーが次に話しかけられた時に必要な情報だけを短く残してください。
 ユーザーの好み・継続中の話題・未解決の依頼や質問だけを最大10項目でまとめてください。
@@ -84,11 +83,8 @@ export function extractHandoffSource(
   };
 }
 
-export function formatHandoffSummary(
-  summary: string,
-  characterName = DEFAULT_HANDOFF_CHARACTER_NAME,
-): string {
-  const resolvedName = resolveHandoffCharacterName(characterName);
+export function formatHandoffSummary(summary: string, characterName: string): string {
+  const resolvedName = requireHandoffCharacterName(characterName);
   let summaryChars = 0;
   const bullets = summary
     .split("\n")

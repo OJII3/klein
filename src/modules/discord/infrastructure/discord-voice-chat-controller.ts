@@ -26,7 +26,7 @@ export const VOICE_COMMAND = new SlashCommandBuilder()
 
 export interface DiscordVoiceChatControllerOptions {
   readonly asr: AsrClient;
-  readonly characterName?: string;
+  readonly characterName: string;
   readonly language: string;
   readonly reactionPresets?: readonly VoiceReactionPreset[];
   readonly conversationFactory: VoiceChatConversationFactory;
@@ -56,12 +56,18 @@ function isSendableChannel(value: unknown): value is SendableChannel {
 export class DiscordVoiceChatController {
   private readonly sessions = new Map<string, ActiveVoiceChat>();
   private readonly logger?: Logger;
+  private readonly characterName: string;
 
   constructor(
     private readonly accessPolicy: DiscordAccessPolicy,
     logger: Logger | undefined,
     private readonly options: DiscordVoiceChatControllerOptions,
   ) {
+    const characterName = options.characterName.trim();
+    if (!characterName) {
+      throw new Error("characterName is required");
+    }
+    this.characterName = characterName;
     this.logger = logger?.child({ component: "discord-voice-chat-controller" });
   }
 
@@ -261,10 +267,6 @@ export class DiscordVoiceChatController {
       0x747f8d,
       guildId,
     );
-  }
-
-  private get characterName(): string {
-    return this.options.characterName?.trim() || "クライン";
   }
 
   private async sendAnnouncement(

@@ -60,10 +60,9 @@ export async function loadProfile(
     content = await readFile(paths.profileFile, "utf8");
   } catch (error) {
     if (isNodeError(error) && error.code === "ENOENT") {
-      return {
-        ...paths,
-        characterName: paths.displayName,
-      };
+      throw new Error(`Profile metadata was not found: ${paths.profileFile}`, {
+        cause: error,
+      });
     }
 
     throw new Error(`Failed to read profile metadata: ${paths.profileFile}`, {

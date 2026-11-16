@@ -38,6 +38,7 @@ test("formats at most ten bullets within 800 characters", () => {
     ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven"]
       .map((item) => `- ${item.repeat(100)}`)
       .join("\n"),
+    "クライン",
   );
   const handoffBullets = summary.split("## 引き継ぎ\n")[1]!;
 
@@ -55,9 +56,7 @@ test("uses the provided character name in handoff system prompt and Goal", () =>
   assert.equal(summary, "## Goal\n月見ヤチヨとして振る舞う\n\n## 引き継ぎ\n- 継続中の話題");
 });
 
-test("falls back to クライン when character name is omitted or blank", () => {
-  assert.match(buildHandoffSummarySystemPrompt(), /^あなたはクラインの/);
-  assert.match(buildHandoffSummarySystemPrompt("   "), /^あなたはクラインの/);
-  assert.match(formatHandoffSummary("- 継続"), /^## Goal\nクラインとして振る舞う\n/);
-  assert.match(formatHandoffSummary("- 継続", "   "), /^## Goal\nクラインとして振る舞う\n/);
+test("rejects blank character names", () => {
+  assert.throws(() => buildHandoffSummarySystemPrompt("   "), /Handoff character name is required/);
+  assert.throws(() => formatHandoffSummary("- 継続", "   "), /Handoff character name is required/);
 });

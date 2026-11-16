@@ -144,6 +144,7 @@ test("inspects turns and raw context from a persisted session JSONL in turn-star
   let sessionFilePath: string | undefined;
   const factory = createPiAgentFactory({
     agentDir,
+    characterName: "クライン",
     llm: {
       provider: "opencode-go",
       model: "deepseek-v4.1-flash",
@@ -347,6 +348,7 @@ test("records a 👎 feedback case, inspects original trace + raw context, and r
 
   const factory = createPiAgentFactory({
     agentDir,
+    characterName: "クライン",
     llm: {
       provider: "opencode-go",
       model: "deepseek-v4.1-flash",

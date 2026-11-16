@@ -26,8 +26,10 @@ import {
 export const BACKGROUND_COMPACTION_LEAD_TOKENS = 32_768;
 
 export interface BackgroundCompactionOptions {
-  readonly characterName?: string;
-  readonly handoffInstructions?: string;
+  readonly handoff?: {
+    readonly instructions: string;
+    readonly characterName: string;
+  };
   readonly leadTokens?: number;
   readonly logger?: Logger;
   readonly summarize?: BackgroundCompactionSummarizer;
@@ -155,11 +157,16 @@ export function createBackgroundCompactionExtension(
       const pending = state.pending;
 
       if (
-        options.handoffInstructions !== undefined &&
-        event.customInstructions === options.handoffInstructions
+        options.handoff !== undefined &&
+        event.customInstructions === options.handoff.instructions
       ) {
         if (pending) cancelPending(state, pending);
-        return summarizeHandoff(event.preparation, context, event.signal, options.characterName)
+        return summarizeHandoff(
+          event.preparation,
+          context,
+          event.signal,
+          options.handoff.characterName,
+        )
           .then((compaction) => (compaction ? { compaction } : { cancel: true }))
           .catch((error: unknown) => {
             logger?.error(
@@ -202,7 +209,7 @@ async function summarizeHandoff(
   preparation: BackgroundCompactionPreparation,
   context: ExtensionContext,
   signal: AbortSignal,
-  characterName?: string,
+  characterName: string,
 ): Promise<CompactionResult | undefined> {
   const model = context.model;
   if (!model) throw new Error("Cannot summarize handoff without a configured model");

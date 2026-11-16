@@ -45,12 +45,12 @@ test("loads bundled klein and yachiyo character names from profile.json", async 
   assert.equal(yachiyo.characterName, "月見ヤチヨ");
 });
 
-test("falls back to displayName when profile.json does not exist", async () => {
-  await using temp = await createTempDir("klein-profile-fallback-");
-  const loaded = await loadProfile("moon-guide", temp.path);
-
-  assert.equal(loaded.displayName, "Moon Guide");
-  assert.equal(loaded.characterName, "Moon Guide");
+test("throws when profile.json does not exist", async () => {
+  await using temp = await createTempDir("klein-profile-missing-");
+  await assert.rejects(
+    () => loadProfile("moon-guide", temp.path),
+    /Profile metadata was not found/,
+  );
 });
 
 test("loads trimmed character name from profile.json", async () => {

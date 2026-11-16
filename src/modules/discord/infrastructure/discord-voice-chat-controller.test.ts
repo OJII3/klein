@@ -70,7 +70,7 @@ function createController(
     }): Promise<VoiceChatConversation>;
   },
   policy = createDiscordAccessPolicy({ default: "allow", directMessages: "deny" }),
-  characterName?: string,
+  characterName = "クライン",
 ) {
   return new DiscordVoiceChatController(policy, undefined, {
     asr: {} as AsrClient,

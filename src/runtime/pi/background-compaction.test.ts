@@ -96,8 +96,10 @@ test("uses characterName in handoff compaction prompt and summary", async () => 
   const capturedSystemPrompts: string[] = [];
   const handlers = registerExtension(
     createBackgroundCompactionExtension(createTestSettings(), {
-      characterName: "月見ヤチヨ",
-      handoffInstructions: "handoff",
+      handoff: {
+        instructions: "handoff",
+        characterName: "月見ヤチヨ",
+      },
     }),
   );
   const firstKeptEntryId = sessionManager.getBranch()[1]!.id;
