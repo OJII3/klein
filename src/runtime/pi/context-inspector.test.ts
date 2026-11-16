@@ -235,7 +235,7 @@ test("inspects turns and raw context from a persisted session JSONL in turn-star
     assert.ok(req.providerPayload !== undefined);
     assert.ok(
       req.contextWithSystem.some(
-        (m) => m.role === "assistant" && m.text === "Sent a message to Discord.",
+        (m) => m.role === "assistant" && m.text === "Sent a reply to the conversation.",
       ),
     );
     assert.ok(

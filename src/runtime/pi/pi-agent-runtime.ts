@@ -443,6 +443,7 @@ export function createResourceLoader(
   authorization?: ToolAuthorization,
   options?: {
     readonly normalizeAssistantText?: boolean;
+    readonly surfaceToolNames?: ReadonlySet<string>;
     readonly backgroundCompactionLeadTokens?: number;
     readonly extraExtensions?: readonly ExtensionFactory[];
   },
@@ -455,7 +456,9 @@ export function createResourceLoader(
     extensionFactories: [
       webAccessExtension,
       wrap(createCodemodeExtension({ mode: "on", models: false })),
-      ...(options?.normalizeAssistantText === false ? [] : [createAssistantTextContextExtension()]),
+      ...(options?.normalizeAssistantText === false
+        ? []
+        : [createAssistantTextContextExtension(options?.surfaceToolNames)]),
       createTurnContextExtension(),
       wrap(createToolSearchExtension()),
       wrap(
@@ -503,11 +506,12 @@ export function createResourceLoader(
 
 /**
  * Replaces the visible text of completed assistant turns with the outcome the model actually produced, so a turn that
- * wrote text without calling a channel tool is not mistaken for a reply on the next request. The active turn is kept
+ * wrote text without calling a surface tool is not mistaken for a reply on the next request. The active turn is kept
  * intact because a tool call continues it, including when a user steers it.
  */
 export function normalizeCompletedAssistantText<TMessage extends Message>(
   messages: readonly TMessage[],
+  surfaceToolNames: ReadonlySet<string>,
 ): TMessage[] {
   let completedTurnIndex = -1;
   let seenUser = false;
@@ -527,7 +531,11 @@ export function normalizeCompletedAssistantText<TMessage extends Message>(
   const normalized: TMessage[] = [];
   let sentMessage = false;
   for (const [index, message] of messages.entries()) {
-    if (message.role === "toolResult" && message.toolName === "discord_send" && !message.isError) {
+    if (
+      message.role === "toolResult" &&
+      surfaceToolNames.has(message.toolName) &&
+      !message.isError
+    ) {
       sentMessage = true;
     }
     if (message.role !== "assistant" || index > completedTurnIndex) {
@@ -543,8 +551,8 @@ export function normalizeCompletedAssistantText<TMessage extends Message>(
       content.push({
         type: "text",
         text: sentMessage
-          ? "Sent a message to Discord."
-          : "I didn't use discord_send, so I stayed silent.",
+          ? "Sent a reply to the conversation."
+          : "I didn't send a reply to the conversation, so I stayed silent.",
       });
       sentMessage = false;
     }
@@ -553,12 +561,15 @@ export function normalizeCompletedAssistantText<TMessage extends Message>(
   return normalized;
 }
 
-export function createAssistantTextContextExtension(): ExtensionFactory {
+export function createAssistantTextContextExtension(
+  surfaceToolNames: ReadonlySet<string> = new Set(),
+): ExtensionFactory {
   return (pi) => {
     pi.on("context", (event) => {
       return {
         messages: normalizeCompletedAssistantText(
           event.messages as unknown as readonly Message[],
+          surfaceToolNames,
         ) as unknown as typeof event.messages,
       };
     });
@@ -658,6 +669,9 @@ export function createPiAgentFactory({
       ].filter((tool) => authorization.allowsTool(tool.name));
       assertSurfaceToolsAllowed(options.role, customTools);
       const policy = resolveAgentPolicy(options.role);
+      const surfaceToolNames = new Set(
+        customTools.filter((tool) => tool.surface === true).map((tool) => tool.name),
+      );
       const hasWatchAdd = customTools.some((tool) => tool.name === "watch_add");
       const systemPrompt = [
         definition.systemPrompt,
@@ -676,6 +690,7 @@ export function createPiAgentFactory({
         authorization,
         {
           normalizeAssistantText: policy.assistantText === "none",
+          surfaceToolNames,
           backgroundCompactionLeadTokens: llm.compaction?.backgroundTokens,
           extraExtensions,
         },
