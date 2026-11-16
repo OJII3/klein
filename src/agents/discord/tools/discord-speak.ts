@@ -20,6 +20,6 @@ export function createDiscordSpeakTool(
         };
       },
     },
-    { primary: true },
+    { primary: true, outcome: "Spoke in the Discord voice channel." },
   );
 }

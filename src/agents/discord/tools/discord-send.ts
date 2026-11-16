@@ -33,6 +33,6 @@ export function createDiscordSendTool(
         };
       },
     },
-    { primary: true },
+    { primary: true, outcome: "Sent a message to Discord." },
   );
 }

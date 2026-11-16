@@ -9,11 +9,12 @@ import type { TSchema } from "typebox";
  */
 export function defineSurfaceTool<TParams extends TSchema, TDetails = unknown>(
   tool: ToolDefinition<TParams, TDetails>,
-  options?: { readonly primary?: boolean },
+  options?: { readonly primary?: boolean; readonly outcome?: string },
 ) {
   return {
     ...defineTool(tool),
     surface: true as const,
     ...(options?.primary ? { primarySurface: true as const } : {}),
+    ...(options?.outcome ? { surfaceOutcome: options.outcome } : {}),
   };
 }

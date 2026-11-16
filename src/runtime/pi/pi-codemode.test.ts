@@ -170,7 +170,7 @@ for (const restricted of [false, true]) {
             [
               {
                 type: "text",
-                text: "Used discord_send to send something to the conversation.",
+                text: "Sent a message to Discord.",
               },
             ],
           );
@@ -198,7 +198,7 @@ for (const restricted of [false, true]) {
             [
               {
                 type: "text",
-                text: "Used discord_send to send something to the conversation.",
+                text: "Sent a message to Discord.",
               },
               { type: "text", text: "I didn't use discord_send, so I stayed silent." },
             ],

@@ -41,6 +41,24 @@ import {
 } from "./pi-agent-runtime";
 import { createTempDir } from "../../testing/temp-dir";
 
+const discordAsk = {
+  name: "discord_ask",
+  surface: true,
+  surfaceOutcome: "Asked a question in Discord.",
+} as const;
+const discordSend = {
+  name: "discord_send",
+  surface: true,
+  primarySurface: true,
+  surfaceOutcome: "Sent a message to Discord.",
+} as const;
+const discordSpeak = {
+  name: "discord_speak",
+  surface: true,
+  primarySurface: true,
+  surfaceOutcome: "Spoke in the Discord voice channel.",
+} as const;
+
 test("records completed turn outcomes while preserving the active turn after sending", async () => {
   const oldCall = fauxAssistantMessage([
     { type: "text", text: "Old reasoning text" },
@@ -72,9 +90,9 @@ test("records completed turn outcomes while preserving the active turn after sen
     result,
     { role: "user", content: "Steering input", timestamp: 4 },
   ];
-  const handler = registerExtension(
-    createAssistantTextContextExtension(new Set(["discord_send"]), "discord_send"),
-  ).get("context")!;
+  const handler = registerExtension(createAssistantTextContextExtension([discordSend])).get(
+    "context",
+  )!;
   const filtered = (await handler(
     { type: "context", messages } as never,
     {} as ExtensionContext,
@@ -86,7 +104,7 @@ test("records completed turn outcomes while preserving the active turn after sen
     messages[2],
     {
       ...oldEnd,
-      content: [{ type: "text", text: "Used discord_send to send something to the conversation." }],
+      content: [{ type: "text", text: "Sent a message to Discord." }],
     },
     messages[4],
     {
@@ -119,17 +137,17 @@ for (const { toolNames, errors, expected } of [
   {
     toolNames: ["discord_send"],
     errors: [false],
-    expected: "Used discord_send to send something to the conversation.",
+    expected: "Sent a message to Discord.",
   },
   {
     toolNames: ["discord_send", "discord_send"],
     errors: [false, true],
-    expected: "Used discord_send to send something to the conversation.",
+    expected: "Sent a message to Discord.",
   },
   {
     toolNames: ["discord_speak"],
     errors: [false],
-    expected: "Used discord_speak to send something to the conversation.",
+    expected: "Spoke in the Discord voice channel.",
   },
   {
     toolNames: ["discord_speak"],
@@ -165,10 +183,7 @@ for (const { toolNames, errors, expected } of [
     messages.push(end, { role: "user", content: "Next request", timestamp: 4 });
     const original = structuredClone(messages);
     const handler = registerExtension(
-      createAssistantTextContextExtension(
-        new Set(["discord_ask", "discord_send", "discord_speak"]),
-        "discord_send",
-      ),
+      createAssistantTextContextExtension([discordAsk, discordSend, discordSpeak]),
     ).get("context")!;
     const filtered = (await handler(
       { type: "context", messages } as never,
@@ -215,6 +230,7 @@ test("normalizes completed turns from the surface tools the role holds", async (
         } as never,
         surface: true,
         primarySurface: true,
+        surfaceOutcome: "Spoke in the Discord voice channel.",
         async execute() {
           return { content: [{ type: "text" as const, text: "ok" }], details: {} };
         },
@@ -274,11 +290,9 @@ test("normalizes completed turns from the surface tools the role holds", async (
         .filter((message) => message.role === "assistant")
         .flatMap((message) => message.content.filter((block) => block.type === "text"))
         .map((block) => block.text);
-    assert.deepEqual(assistantTexts(requests[0]!), [
-      "Used discord_speak to send something to the conversation.",
-    ]);
+    assert.deepEqual(assistantTexts(requests[0]!), ["Spoke in the Discord voice channel."]);
     assert.deepEqual(assistantTexts(requests[1]!), [
-      "Used discord_speak to send something to the conversation.",
+      "Spoke in the Discord voice channel.",
       "I didn't use discord_speak, so I stayed silent.",
     ]);
   } finally {
@@ -289,9 +303,9 @@ test("normalizes completed turns from the surface tools the role holds", async (
 });
 
 test("preserves an active turn without completed history or a user boundary", async () => {
-  const handler = registerExtension(
-    createAssistantTextContextExtension(new Set(["discord_send"]), "discord_send"),
-  ).get("context")!;
+  const handler = registerExtension(createAssistantTextContextExtension([discordSend])).get(
+    "context",
+  )!;
   const call = fauxAssistantMessage([
     { type: "text", text: "Current text" },
     fauxToolCall("discord_send", { content: "reply" }),

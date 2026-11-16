@@ -9,4 +9,6 @@ export interface AgentTool {
   readonly surface?: boolean;
   /** Whether this surface tool is the primary way the agent reaches the conversation. */
   readonly primarySurface?: boolean;
+  /** The outcome recorded when this surface tool completes a turn. */
+  readonly surfaceOutcome?: string;
 }
