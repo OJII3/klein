@@ -7,7 +7,6 @@ import type { AgentFactory, AgentToolContext } from "../core/agent-factory";
 import type { AgentRuntime } from "../core/agent-runtime";
 import type { AgentTool } from "../core/agent-tool";
 import { DiscordAgent } from "./discord-agent";
-import { createDiscordMessageAgentTurn } from "./discord-message-agent-turn";
 import { createDiscordAgentTools } from "./discord-tools";
 import type { AgentEvent } from "../core/agent-event";
 import type { AgentTurn } from "../core/agent-turn";
@@ -91,6 +90,7 @@ test("routes voice replies through discord_speak using the existing runtime prom
         undefined,
         {} as never,
       );
+      return undefined;
     },
     dispose() {},
   };
@@ -180,6 +180,7 @@ test("passes the message author as the turn's requester and clears it for events
       } finally {
         activeRequesterId = undefined;
       }
+      return undefined;
     },
     dispose() {},
   };
@@ -219,7 +220,9 @@ test("wires the runtime image analyzer into discord_read", async () => {
   let tools: readonly ToolDefinition[] = [];
   let analyzedPrompt: unknown;
   const runtime: AgentRuntime = {
-    async prompt() {},
+    async prompt() {
+      return undefined;
+    },
     dispose() {},
   };
   const agentFactory: AgentFactory = {
@@ -285,6 +288,7 @@ test("adds bot-specific conversation guidance only for bot messages", async () =
   const runtime: AgentRuntime = {
     async prompt(turn) {
       prompts.push(turn);
+      return undefined;
     },
     dispose() {},
   };
@@ -321,6 +325,7 @@ test("passes guild memory as turn context without merging it into the event", as
   const runtime: AgentRuntime = {
     async prompt(turn) {
       receivedTurn = turn;
+      return undefined;
     },
     dispose() {},
   };
@@ -341,30 +346,6 @@ test("passes guild memory as turn context without merging it into the event", as
   agent.dispose();
 });
 
-test("does not inject owner memory into a public agent turn", async () => {
-  let receivedTurn: AgentTurn | undefined;
-  const runtime: AgentRuntime = {
-    async prompt(turn) {
-      receivedTurn = turn;
-    },
-    dispose() {},
-  };
-  const agentFactory: AgentFactory = {
-    async create() {
-      return runtime;
-    },
-  };
-  const agent = await DiscordAgent.create(agentFactory, message.channelId, "system prompt");
-
-  await agent.prompt(
-    createDiscordMessageAgentTurn(message, { ownerMemory: "private owner memory" }),
-  );
-
-  assert.equal(receivedTurn?.context.ownerMemory, undefined);
-  assert.doesNotMatch(eventText(receivedTurn?.event), /private owner memory/u);
-  agent.dispose();
-});
-
 test("binds private reads to the owner and refuses other authors or channels", async () => {
   const prompts: AgentTurn[] = [];
   let tools: readonly ToolDefinition[] = [];
@@ -376,6 +357,7 @@ test("binds private reads to the owner and refuses other authors or channels", a
       return {
         async prompt(turn) {
           prompts.push(turn);
+          return undefined;
         },
         async steer(turn) {
           prompts.push(turn);
@@ -461,7 +443,12 @@ test("keeps reminders across session rotation and isolates channel and access sc
       {
         async create(_definition, createTools) {
           tools = createTools({ requesterId: () => undefined }) as readonly ToolDefinition[];
-          return { async prompt() {}, dispose() {} };
+          return {
+            async prompt() {
+              return undefined;
+            },
+            dispose() {},
+          };
         },
       },
       channelId,

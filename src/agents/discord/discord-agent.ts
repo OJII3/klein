@@ -20,7 +20,12 @@ export interface DiscordAgentCreateOptions {
   readonly tools?: (context: AgentToolContext) => readonly ToolDefinition[];
 }
 
-export class DiscordAgent implements ConversationAgent {
+export interface DiscordConversationAgent extends ConversationAgent {
+  promptMessage(message: DiscordMessage, context?: DiscordTurnContext): Promise<void>;
+  steerMessage?(message: DiscordMessage, context?: DiscordTurnContext): Promise<void>;
+}
+
+export class DiscordAgent implements DiscordConversationAgent {
   private constructor(
     private readonly runtime: AgentRuntime,
     private readonly channelId: string,
@@ -56,7 +61,7 @@ export class DiscordAgent implements ConversationAgent {
   }
 
   prompt(turn: AgentTurn): Promise<void> {
-    return this.runtime.prompt(this.withContextAccess(turn)).then(() => undefined);
+    return this.runtime.prompt(turn).then(() => undefined);
   }
 
   promptEvent(event: AgentEvent, context: AgentTurnContext = {}): Promise<void> {
@@ -64,8 +69,7 @@ export class DiscordAgent implements ConversationAgent {
   }
 
   steer(turn: AgentTurn): Promise<void> {
-    const next = this.withContextAccess(turn);
-    return (this.runtime.steer ? this.runtime.steer(next) : this.runtime.prompt(next)).then(
+    return (this.runtime.steer ? this.runtime.steer(turn) : this.runtime.prompt(turn)).then(
       () => undefined,
     );
   }
@@ -88,20 +92,11 @@ export class DiscordAgent implements ConversationAgent {
     });
   }
 
-  private withContextAccess(turn: AgentTurn): AgentTurn {
-    if (this.ownerFeaturesAllowed) return turn;
-
-    return {
-      event: turn.event,
-      context: { ...turn.context, ownerMemory: undefined },
-    };
-  }
-
   compactForHandoff(): Promise<string> | undefined {
     return this.runtime.compactForHandoff?.();
   }
 
-  abort(): Promise<void> | undefined {
+  abort(): Promise<void> {
     return this.runtime.abort?.() ?? Promise.resolve();
   }
 

@@ -2,9 +2,7 @@ import type { Logger } from "pino";
 
 import type { AgentEvent } from "@agents/core/agent-event";
 import type { AttachedTaskControl, AttachedTaskResult } from "@agents/core/attached-agent";
-import type { ConversationAgent } from "@agents/core/conversation-agent";
-import { createDiscordMessageAgentTurn } from "@agents/discord/discord-message-agent-turn";
-import { BOT_MESSAGE_GUIDANCE } from "@agents/discord/prompt-policy";
+import type { DiscordConversationAgent } from "@agents/discord/discord-agent";
 import type { DiscordAccessPolicy } from "@modules/discord/domain/discord-access-policy";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import type { DiscordOperatingState } from "@modules/discord/domain/discord-operating-state";
@@ -39,7 +37,7 @@ export interface AgentCoordinatorDependencies {
     sessionKey: string,
     handoffContext?: string,
     ownerFeaturesAllowed?: boolean,
-  ) => Promise<ConversationAgent>;
+  ) => Promise<DiscordConversationAgent>;
   readonly discordUserDirectory?: DiscordUserDirectory;
   readonly channelSessionStateStore?: ChannelSessionStateStore;
   readonly channelRuleStore?: DiscordChannelRuleStore;
@@ -56,7 +54,7 @@ export interface AgentCoordinatorDependencies {
 
 export class AgentCoordinator {
   private readonly logger: Logger;
-  private readonly sessionManager: ChannelSessionManager;
+  private readonly sessionManager: ChannelSessionManager<DiscordConversationAgent>;
   private readonly sessionSpeakers = new SessionSpeakerTracker();
   private readonly scheduledTaskDeliveryCoordinator: ScheduledTaskDeliveryCoordinator;
 
@@ -226,18 +224,12 @@ export class AgentCoordinator {
           const ownerMemory = ownerFeaturesAllowed
             ? await this.dependencies.ownerMemoryStore?.getContext(query)
             : undefined;
-          const turn = createDiscordMessageAgentTurn(
-            message,
-            { ownerMemory, userMemory, guildMemory, channelRule },
-            {
-              botMessageGuidance: BOT_MESSAGE_GUIDANCE,
-              ownerValidation:
-                ownerFeaturesAllowed && this.dependencies.ownerUserId
-                  ? { userId: this.dependencies.ownerUserId, channelId: message.channelId }
-                  : undefined,
-            },
-          );
-          await agent.prompt(turn);
+          await agent.promptMessage(message, {
+            ownerMemory,
+            userMemory,
+            guildMemory,
+            channelRule,
+          });
           logger.debug(
             {
               durationMs: Date.now() - startedAt,

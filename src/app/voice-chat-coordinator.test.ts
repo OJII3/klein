@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { Logger } from "pino";
 
-import type { DiscordAgent } from "@agents/discord/discord-agent";
+import type { DiscordConversationAgent } from "@agents/discord/discord-agent";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import { VoiceChatCoordinator } from "./voice-chat-coordinator";
 
@@ -27,6 +27,22 @@ function createLogger(): Logger {
   return logger as unknown as Logger;
 }
 
+function createFakeVoiceAgent(
+  overrides: Pick<DiscordConversationAgent, "promptMessage"> &
+    Partial<Pick<DiscordConversationAgent, "steerMessage" | "abort" | "dispose">>,
+): DiscordConversationAgent {
+  return {
+    async prompt() {},
+    async promptEvent() {},
+    async steer() {},
+    compactForHandoff() {
+      return undefined;
+    },
+    dispose() {},
+    ...overrides,
+  };
+}
+
 test("creates an isolated LLM session for each VC conversation", async () => {
   const sessionKeys: string[] = [];
   const promptedMessages: unknown[] = [];
@@ -36,7 +52,7 @@ test("creates an isolated LLM session for each VC conversation", async () => {
     createVoiceChatAgent: async (channelId, sessionKey, speak) => {
       assert.equal(channelId, context.channelId);
       sessionKeys.push(sessionKey);
-      return {
+      return createFakeVoiceAgent({
         dispose: () => {
           disposeCount += 1;
         },
@@ -44,7 +60,7 @@ test("creates an isolated LLM session for each VC conversation", async () => {
           promptedMessages.push(message);
           await speak(`返答: ${message.content}`);
         },
-      } as unknown as DiscordAgent;
+      });
     },
     logger: createLogger(),
   });
@@ -105,9 +121,8 @@ test("serializes voice turns and speaks an error response after LLM failures", a
   let releaseFirst: (() => void) | undefined;
   const coordinator = new VoiceChatCoordinator({
     createVoiceChatAgent: async (_channelId, _sessionKey, speak) =>
-      ({
-        dispose: () => undefined,
-        promptMessage: async (message: { content: string }) => {
+      createFakeVoiceAgent({
+        promptMessage: async (message) => {
           started.push(message.content);
           if (message.content === "一つ目") {
             await new Promise<void>((resolve) => {
@@ -117,7 +132,7 @@ test("serializes voice turns and speaks an error response after LLM failures", a
           if (message.content === "失敗") throw new Error("LLM failed");
           await speak(`返答: ${message.content}`);
         },
-      }) as unknown as DiscordAgent,
+      }),
     logger: createLogger(),
   });
   const conversation = await coordinator.create({
@@ -153,13 +168,12 @@ test("selects and plays a preset reaction while the LLM is preparing its answer"
   let reactionSignal: AbortSignal | undefined;
   const coordinator = new VoiceChatCoordinator({
     createVoiceChatAgent: async () =>
-      ({
-        dispose: () => undefined,
+      createFakeVoiceAgent({
         promptMessage: async () =>
           new Promise<void>((resolve) => {
             releasePrompt = resolve;
           }),
-      }) as unknown as DiscordAgent,
+      }),
     logger: createLogger(),
     reactionSelector: {
       select: async (input) => {
@@ -201,13 +215,12 @@ test("keeps reaction selection parallel and carries the last played preset into 
   const playedWaiters: Array<() => void> = [];
   const coordinator = new VoiceChatCoordinator({
     createVoiceChatAgent: async () =>
-      ({
-        dispose: () => undefined,
+      createFakeVoiceAgent({
         promptMessage: async () =>
           new Promise<void>((resolve) => {
             prompts.push(resolve);
           }),
-      }) as unknown as DiscordAgent,
+      }),
     logger: createLogger(),
     reactionSelector: {
       select: async (input) => {
@@ -255,13 +268,12 @@ test("does not wait for a selector that ignores cancellation", async () => {
   });
   const coordinator = new VoiceChatCoordinator({
     createVoiceChatAgent: async () =>
-      ({
-        dispose: () => undefined,
+      createFakeVoiceAgent({
         promptMessage: async () =>
           new Promise<void>((resolve) => {
             releasePrompt = resolve;
           }),
-      }) as unknown as DiscordAgent,
+      }),
     logger: createLogger(),
     reactionSelector: {
       select: async () => {
@@ -294,13 +306,12 @@ test("speech start cancels a pending reaction decision", async () => {
   });
   const coordinator = new VoiceChatCoordinator({
     createVoiceChatAgent: async () =>
-      ({
-        dispose: () => undefined,
+      createFakeVoiceAgent({
         promptMessage: async () =>
           new Promise<void>((resolve) => {
             releasePrompt = resolve;
           }),
-      }) as unknown as DiscordAgent,
+      }),
     logger: createLogger(),
     reactionSelector: {
       select: async (_input, signal) => {
@@ -349,8 +360,7 @@ test("preserves ASR request IDs for prompted and steered transcripts", async () 
   const coordinator = new VoiceChatCoordinator({
     logger: logger as unknown as Logger,
     createVoiceChatAgent: async () =>
-      ({
-        dispose: () => undefined,
+      createFakeVoiceAgent({
         promptMessage: async (message: DiscordMessage) => {
           prompted.push(message);
           await new Promise<void>((resolve) => {
@@ -360,7 +370,7 @@ test("preserves ASR request IDs for prompted and steered transcripts", async () 
         steerMessage: async (message: DiscordMessage) => {
           steered.push(message);
         },
-      }) as unknown as DiscordAgent,
+      }),
   });
   const conversation = await coordinator.create({ ...context, speak: async () => undefined });
   await conversation.handleTranscript("private first transcript", "asr-first");

@@ -16,11 +16,9 @@ export interface AgentPrompt {
 }
 
 export interface AgentRuntime {
-  prompt(turn: AgentTurn): Promise<void>;
+  prompt(turn: AgentTurn): Promise<string | undefined>;
   steer?(turn: AgentTurn): Promise<void>;
   abort?(): Promise<void>;
   compactForHandoff?(): Promise<string>;
-  /** The assistant text from the most recent completed turn, if any. */
-  lastAssistantText?(): string | undefined;
   dispose(): void;
 }

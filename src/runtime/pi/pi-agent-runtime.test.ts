@@ -845,13 +845,27 @@ test("updates requesterId only when a steered message begins its turn", async ()
   }
 });
 
-test("exposes assistant text only when the role sends it to the caller", () => {
+test("returns assistant text from prompt only when the role sends it to the caller", async () => {
   const session = {
     messages: [
       { role: "user", content: "hello" },
       { role: "assistant", content: [{ type: "text", text: "result" }] },
     ],
+    sessionManager: {
+      appendCustomEntry() {},
+    },
+    async prompt() {},
     dispose() {},
+  };
+  const turn = {
+    event: {
+      id: "event-1",
+      type: "attached.prompt",
+      source: "attached",
+      occurredAt: "2026-10-14T09:30:42.123Z",
+      content: [{ type: "text" as const, text: "hello" }],
+    },
+    context: {},
   };
 
   const caller = new PiAgentRuntime(
@@ -862,10 +876,10 @@ test("exposes assistant text only when the role sends it to the caller", () => {
     undefined,
     "caller",
   );
-  assert.equal(caller.lastAssistantText(), "result");
+  assert.equal(await caller.prompt(turn), "result");
 
   const conversation = new PiAgentRuntime(session as never);
-  assert.equal(conversation.lastAssistantText(), undefined);
+  assert.equal(await conversation.prompt(turn), undefined);
 });
 
 test("keeps caller assistant text for attached agents", async () => {
@@ -901,7 +915,7 @@ test("keeps caller assistant text for attached agents", async () => {
       },
     ]);
 
-    await runtime.prompt({
+    const firstOutput = await runtime.prompt({
       event: {
         id: "attached-event-1",
         type: "attached.prompt",
@@ -911,7 +925,7 @@ test("keeps caller assistant text for attached agents", async () => {
       },
       context: {},
     });
-    assert.equal(runtime.lastAssistantText?.(), "first result");
+    assert.equal(firstOutput, "first result");
 
     await runtime.prompt({
       event: {
