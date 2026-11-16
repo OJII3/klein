@@ -33,6 +33,7 @@ for (const restricted of [false, true]) {
     const factory = createPiAgentFactory({
       permissions: restricted ? { tools: { overrides: { discord_read: "owner" } } } : undefined,
       agentDir,
+      characterName: "クライン",
       llm: { provider: model.provider, model: model.id },
       logger: pino({ level: "silent" }),
       modelRuntime,

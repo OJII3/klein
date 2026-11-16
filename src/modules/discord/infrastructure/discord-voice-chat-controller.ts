@@ -26,6 +26,7 @@ export const VOICE_COMMAND = new SlashCommandBuilder()
 
 export interface DiscordVoiceChatControllerOptions {
   readonly asr: AsrClient;
+  readonly characterName: string;
   readonly language: string;
   readonly reactionPresets?: readonly VoiceReactionPreset[];
   readonly conversationFactory: VoiceChatConversationFactory;
@@ -55,12 +56,18 @@ function isSendableChannel(value: unknown): value is SendableChannel {
 export class DiscordVoiceChatController {
   private readonly sessions = new Map<string, ActiveVoiceChat>();
   private readonly logger?: Logger;
+  private readonly characterName: string;
 
   constructor(
     private readonly accessPolicy: DiscordAccessPolicy,
     logger: Logger | undefined,
     private readonly options: DiscordVoiceChatControllerOptions,
   ) {
+    const characterName = options.characterName.trim();
+    if (!characterName) {
+      throw new Error("characterName is required");
+    }
+    this.characterName = characterName;
     this.logger = logger?.child({ component: "discord-voice-chat-controller" });
   }
 
@@ -205,7 +212,7 @@ export class DiscordVoiceChatController {
       await this.sendAnnouncement(
         announcementChannel,
         "VCに参加しました",
-        `<#${voiceChannel.id}> にクラインが参加しました。\n開始した人: <@${interaction.user.id}>`,
+        `<#${voiceChannel.id}> に${this.characterName}が参加しました。\n開始した人: <@${interaction.user.id}>`,
         0x57f287,
         guildId,
       );
@@ -256,7 +263,7 @@ export class DiscordVoiceChatController {
     await this.sendAnnouncement(
       interaction.channel,
       "VCから退出しました",
-      `<#${active.voiceChannelId}> からクラインが退出しました。\n終了した人: <@${interaction.user.id}>`,
+      `<#${active.voiceChannelId}> から${this.characterName}が退出しました。\n終了した人: <@${interaction.user.id}>`,
       0x747f8d,
       guildId,
     );

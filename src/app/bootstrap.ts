@@ -16,7 +16,7 @@ import { createLogFilePath, createLogger, flushLogger } from "./logger";
 import { runMcpCommand } from "./mcp-cli";
 import { collectModelsInUse } from "./model-configuration";
 import { loadPromptFile } from "./prompt";
-import { resolveProfile } from "./profile";
+import { loadProfile } from "./profile";
 import { TaskCoordinator } from "./task-coordinator";
 import { VoiceChatCoordinator } from "./voice-chat-coordinator";
 import { DiscordAgent } from "@agents/discord/discord-agent";
@@ -86,7 +86,7 @@ const SCHEDULED_TASK_CHECK_INTERVAL_MS = 10 * 1_000;
 export async function bootstrap(): Promise<void> {
   const { sessionMode } = parseCliOptions(process.argv.slice(2));
   const config = await loadConfig();
-  const profile = resolveProfile(config.profile);
+  const profile = await loadProfile(config.profile);
   const logDirectory = resolveLogDirectory(config);
   const logger = createLogger({ filePath: createLogFilePath(logDirectory) });
   const piUsageReporter = createPiUsageReporterFromEnv({ logger });
@@ -194,6 +194,7 @@ export async function bootstrap(): Promise<void> {
   });
   const piAgentFactory = createPiAgentFactory({
     agentDir,
+    characterName: profile.characterName,
     llm: config.llm,
     skillsDirectory: profile.skillsDirectory,
     logger,
@@ -210,6 +211,7 @@ export async function bootstrap(): Promise<void> {
   const voiceChatAgentFactory = voiceChatConfig?.llm
     ? createPiAgentFactory({
         agentDir,
+        characterName: profile.characterName,
         llm: voiceChatConfig.llm,
         skillsDirectory: profile.skillsDirectory,
         logger,
@@ -353,6 +355,7 @@ export async function bootstrap(): Promise<void> {
     voiceChatConfig && voiceChatCoordinator
       ? {
           asr: new WebSocketAsrClient(voiceChatConfig.asrServerUrl),
+          characterName: profile.characterName,
           conversationFactory: voiceChatCoordinator,
           language: voiceChatConfig.language,
           tts,

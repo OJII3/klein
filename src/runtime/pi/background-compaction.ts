@@ -16,17 +16,20 @@ import { uuidv7, type ProviderHeaders } from "@earendil-works/pi-ai";
 import type { Logger } from "pino";
 import {
   buildHandoffSummaryPrompt,
+  buildHandoffSummarySystemPrompt,
   extractTextContent,
   formatHandoffSummary,
   HANDOFF_SUMMARY_MAX_TOKENS,
-  HANDOFF_SUMMARY_SYSTEM_PROMPT,
 } from "./handoff-summary";
 
 /** Start preparing a summary this many tokens before Pi's compaction threshold. */
 export const BACKGROUND_COMPACTION_LEAD_TOKENS = 32_768;
 
 export interface BackgroundCompactionOptions {
-  readonly handoffInstructions?: string;
+  readonly handoff?: {
+    readonly instructions: string;
+    readonly characterName: string;
+  };
   readonly leadTokens?: number;
   readonly logger?: Logger;
   readonly summarize?: BackgroundCompactionSummarizer;
@@ -154,11 +157,16 @@ export function createBackgroundCompactionExtension(
       const pending = state.pending;
 
       if (
-        options.handoffInstructions !== undefined &&
-        event.customInstructions === options.handoffInstructions
+        options.handoff !== undefined &&
+        event.customInstructions === options.handoff.instructions
       ) {
         if (pending) cancelPending(state, pending);
-        return summarizeHandoff(event.preparation, context, event.signal)
+        return summarizeHandoff(
+          event.preparation,
+          context,
+          event.signal,
+          options.handoff.characterName,
+        )
           .then((compaction) => (compaction ? { compaction } : { cancel: true }))
           .catch((error: unknown) => {
             logger?.error(
@@ -201,6 +209,7 @@ async function summarizeHandoff(
   preparation: BackgroundCompactionPreparation,
   context: ExtensionContext,
   signal: AbortSignal,
+  characterName: string,
 ): Promise<CompactionResult | undefined> {
   const model = context.model;
   if (!model) throw new Error("Cannot summarize handoff without a configured model");
@@ -212,7 +221,7 @@ async function summarizeHandoff(
   const response = await context.modelRegistry.complete(
     model,
     {
-      systemPrompt: HANDOFF_SUMMARY_SYSTEM_PROMPT,
+      systemPrompt: buildHandoffSummarySystemPrompt(characterName),
       messages: [
         {
           role: "user",
@@ -245,7 +254,7 @@ async function summarizeHandoff(
   if (!summaryBody) throw new Error("Handoff summarization returned an empty summary");
 
   return {
-    summary: formatHandoffSummary(summaryBody),
+    summary: formatHandoffSummary(summaryBody, characterName),
     firstKeptEntryId: preparation.firstKeptEntryId,
     tokensBefore: preparation.tokensBefore,
     usage: response.usage,

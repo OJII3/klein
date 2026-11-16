@@ -211,6 +211,7 @@ test("normalizes completed turns from the surface tools the role holds", async (
   modelRuntime.registerNativeProvider(provider.provider);
   const factory = createPiAgentFactory({
     agentDir: temp.path,
+    characterName: "クライン",
     llm: { provider: model.provider, model: model.id },
     logger: pino({ level: "silent" }),
     modelRuntime,
@@ -647,6 +648,7 @@ test("exposes the configured image analyzer through tool context", async () => {
   modelRuntime.registerNativeProvider(imageProvider.provider);
   const factory = createPiAgentFactory({
     agentDir: temp.path,
+    characterName: "クライン",
     llm: {
       provider: mainModel.provider,
       model: mainModel.id,
@@ -709,6 +711,7 @@ test("omits analyzeImage from tool context when no image model is configured", a
   modelRuntime.registerNativeProvider(provider.provider);
   const factory = createPiAgentFactory({
     agentDir: temp.path,
+    characterName: "クライン",
     llm: { provider: model.provider, model: model.id },
     logger: pino({ level: "silent" }),
     modelRuntime,
@@ -812,6 +815,7 @@ test("updates requesterId only when a steered message begins its turn", async ()
   modelRuntime.registerNativeProvider(provider.provider);
   const factory = createPiAgentFactory({
     agentDir: temp.path,
+    characterName: "クライン",
     llm: { provider: model.provider, model: model.id },
     logger: pino({ level: "silent" }),
     modelRuntime,
@@ -1044,6 +1048,7 @@ test("keeps caller assistant text for attached agents", async () => {
   modelRuntime.registerNativeProvider(provider.provider);
   const factory = createPiAgentFactory({
     agentDir: temp.path,
+    characterName: "クライン",
     llm: { provider: model.provider, model: model.id },
     logger: pino({ level: "silent" }),
     modelRuntime,
@@ -1351,6 +1356,46 @@ test("starts background compaction at the documented default lead", () => {
   assert.equal(BACKGROUND_COMPACTION_LEAD_TOKENS, 32_768);
   assert.equal(shouldStartBackgroundCompaction(threshold - 1, contextWindow, reserveTokens), false);
   assert.equal(shouldStartBackgroundCompaction(threshold, contextWindow, reserveTokens), true);
+});
+
+test("compactForHandoff formats Goal and summary prompt with characterName", async () => {
+  const sessionManager = SessionManager.inMemory();
+  appendTestConversation(sessionManager);
+  const capturedSystemPrompts: string[] = [];
+  const runtime = new PiAgentRuntime(
+    {
+      model: { provider: "test", id: "test-model" },
+      sessionManager,
+      async compact() {
+        throw new Error("Nothing to compact (session too small)");
+      },
+      dispose() {},
+    } as never,
+    undefined,
+    undefined,
+    {
+      async completeSimple(_model: unknown, context: { systemPrompt: string }) {
+        capturedSystemPrompts.push(context.systemPrompt);
+        return {
+          stopReason: "stop",
+          content: [{ type: "text", text: "- テスト項目" }],
+        };
+      },
+    } as never,
+    undefined,
+    "none",
+    {},
+    "月見ヤチヨ",
+  );
+
+  const summary = await runtime.compactForHandoff();
+
+  assert.match(
+    capturedSystemPrompts[0] ?? "",
+    /^あなたは月見ヤチヨの次セッション向け引き継ぎメモを作ります。/,
+  );
+  assert.equal(summary, "## Goal\n月見ヤチヨとして振る舞う\n\n## 引き継ぎ\n- テスト項目");
+  runtime.dispose();
 });
 
 function createSessionManagerStub() {

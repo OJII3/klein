@@ -91,6 +91,68 @@ test("cancels background work after an edit even below the compaction threshold"
   assert.equal(backgroundSignal?.aborted, true);
 });
 
+test("uses characterName in handoff compaction prompt and summary", async () => {
+  const sessionManager = createTestSession();
+  const capturedSystemPrompts: string[] = [];
+  const handlers = registerExtension(
+    createBackgroundCompactionExtension(createTestSettings(), {
+      handoff: {
+        instructions: "handoff",
+        characterName: "月見ヤチヨ",
+      },
+    }),
+  );
+  const firstKeptEntryId = sessionManager.getBranch()[1]!.id;
+  const context = {
+    ...createTestContext(sessionManager),
+    model: { provider: "test", id: "test-model" },
+    modelRegistry: {
+      complete: async (_model: unknown, input: { systemPrompt: string }) => {
+        capturedSystemPrompts.push(input.systemPrompt);
+        return {
+          stopReason: "stop",
+          content: [{ type: "text", text: "- 継続する話題" }],
+          usage: {
+            input: 10,
+            output: 5,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 15,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+          },
+        };
+      },
+    },
+  } as unknown as ExtensionContext;
+
+  const result = await (handlers.get("session_before_compact")?.(
+    {
+      customInstructions: "handoff",
+      preparation: {
+        firstKeptEntryId,
+        messagesToSummarize: [],
+        turnPrefixMessages: [],
+        isSplitTurn: false,
+        tokensBefore: 1000,
+        fileOps: { read: new Set(), written: new Set(), edited: new Set() },
+        settings: createTestSettings().getCompactionSettings(),
+      },
+      branchEntries: sessionManager.getBranch(),
+      signal: new AbortController().signal,
+    } as never,
+    context,
+  ) as Promise<{ compaction?: { summary: string } }>);
+
+  assert.match(
+    capturedSystemPrompts[0] ?? "",
+    /^あなたは月見ヤチヨの次セッション向け引き継ぎメモを作ります。/,
+  );
+  assert.equal(
+    result?.compaction?.summary,
+    "## Goal\n月見ヤチヨとして振る舞う\n\n## 引き継ぎ\n- 継続する話題",
+  );
+});
+
 function createTestSettings(): SettingsManager {
   return SettingsManager.inMemory({
     compaction: { enabled: true, reserveTokens: 100, keepRecentTokens: 150 },

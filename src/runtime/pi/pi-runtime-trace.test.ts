@@ -283,6 +283,7 @@ test("real Pi keeps accepting steer while a spoken tool blocks the next model ca
   });
   const runtime = await createPiAgentFactory({
     agentDir,
+    characterName: "クライン",
     llm: { provider: model.provider, model: model.id },
     logger,
     modelRuntime,

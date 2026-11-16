@@ -16,15 +16,19 @@ function createInteraction(
     parentId?: string;
     userId?: string;
     userIsBot?: boolean;
+    sentMessages?: unknown[];
   } = {},
 ) {
   const replies: string[] = [];
+  const sentMessages = options.sentMessages ?? [];
   const interaction = {
     channel: {
       id: options.channelId ?? "channel-123",
       isThread: () => options.isThread ?? false,
       parentId: options.parentId ?? null,
-      send: async () => undefined,
+      send: async (message: unknown) => {
+        sentMessages.push(message);
+      },
     },
     channelId: options.channelId ?? "channel-123",
     deferReply: async () => undefined,
@@ -45,7 +49,7 @@ function createInteraction(
     reply: async ({ content }: { content: string }) => replies.push(content),
     user: { id: options.userId ?? "user-123", bot: options.userIsBot ?? false },
   } as unknown as ChatInputCommandInteraction;
-  return { interaction, replies };
+  return { interaction, replies, sentMessages };
 }
 
 function createController(
@@ -66,9 +70,11 @@ function createController(
     }): Promise<VoiceChatConversation>;
   },
   policy = createDiscordAccessPolicy({ default: "allow", directMessages: "deny" }),
+  characterName = "クライン",
 ) {
   return new DiscordVoiceChatController(policy, undefined, {
     asr: {} as AsrClient,
+    characterName,
     conversationFactory,
     language: "ja",
     tts: { synthesize: async () => new Uint8Array() },
@@ -211,6 +217,36 @@ test("owner VC access rejects other users and bots and accepts the owner", async
     assert.equal(createCalls, 0);
     await controller.handleCommand(createInteraction("join").interaction);
     assert.equal(createCalls, 1);
+  } finally {
+    DiscordVoiceCaptureSession.prototype.start = originalStart;
+    await controller.stop();
+  }
+});
+
+test("uses characterName in VC join and leave announcements", async () => {
+  const originalStart = DiscordVoiceCaptureSession.prototype.start;
+  DiscordVoiceCaptureSession.prototype.start = async () => undefined;
+  const controller = createController(
+    {
+      create: async () => ({
+        handleTranscript: async () => undefined,
+        stop: async () => undefined,
+      }),
+    },
+    undefined,
+    "月見ヤチヨ",
+  );
+  const sentMessages: unknown[] = [];
+  const { interaction: join } = createInteraction("join", { sentMessages });
+  const { interaction: leave } = createInteraction("leave", { sentMessages });
+
+  try {
+    await controller.handleCommand(join);
+    await controller.handleCommand(leave);
+
+    assert.equal(sentMessages.length, 2);
+    assert.match(JSON.stringify(sentMessages[0]), /月見ヤチヨが参加しました/);
+    assert.match(JSON.stringify(sentMessages[1]), /月見ヤチヨが退出しました/);
   } finally {
     DiscordVoiceCaptureSession.prototype.start = originalStart;
     await controller.stop();

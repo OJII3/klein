@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { extractHandoffSource, formatHandoffSummary } from "./handoff-summary";
+import {
+  buildHandoffSummarySystemPrompt,
+  extractHandoffSource,
+  formatHandoffSummary,
+} from "./handoff-summary";
 
 test("extracts user messages and carries forward the previous compaction summary", () => {
   const result = extractHandoffSource([
@@ -34,6 +38,7 @@ test("formats at most ten bullets within 800 characters", () => {
     ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven"]
       .map((item) => `- ${item.repeat(100)}`)
       .join("\n"),
+    "クライン",
   );
   const handoffBullets = summary.split("## 引き継ぎ\n")[1]!;
 
@@ -41,4 +46,17 @@ test("formats at most ten bullets within 800 characters", () => {
   assert.ok(handoffBullets.length <= 800);
   assert.match(handoffBullets, /^- /);
   assert.doesNotMatch(handoffBullets, /eleven/);
+});
+
+test("uses the provided character name in handoff system prompt and Goal", () => {
+  const prompt = buildHandoffSummarySystemPrompt("月見ヤチヨ");
+  const summary = formatHandoffSummary("- 継続中の話題", "月見ヤチヨ");
+
+  assert.match(prompt, /^あなたは月見ヤチヨの次セッション向け引き継ぎメモを作ります。/);
+  assert.equal(summary, "## Goal\n月見ヤチヨとして振る舞う\n\n## 引き継ぎ\n- 継続中の話題");
+});
+
+test("rejects blank character names", () => {
+  assert.throws(() => buildHandoffSummarySystemPrompt("   "), /Handoff character name is required/);
+  assert.throws(() => formatHandoffSummary("- 継続", "   "), /Handoff character name is required/);
 });

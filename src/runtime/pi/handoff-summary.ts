@@ -1,10 +1,21 @@
-export const HANDOFF_SUMMARY_SYSTEM_PROMPT = `あなたはクラインの次セッション向け引き継ぎメモを作ります。
+function requireHandoffCharacterName(characterName: string): string {
+  const trimmed = characterName.trim();
+  if (!trimmed) {
+    throw new Error("Handoff character name is required");
+  }
+  return trimmed;
+}
+
+export function buildHandoffSummarySystemPrompt(characterName: string): string {
+  const resolvedName = requireHandoffCharacterName(characterName);
+  return `あなたは${resolvedName}の次セッション向け引き継ぎメモを作ります。
 日本語で、ユーザーが次に話しかけられた時に必要な情報だけを短く残してください。
 ユーザーの好み・継続中の話題・未解決の依頼や質問だけを最大10項目でまとめてください。
 会話本文、引用、assistantの返信・説明・検索結果・送信文は引き継がないでください。
 assistantが過去に述べた内容を、ユーザーが確認した事実や決定として扱わないでください。
 Goalの文は呼び出し側で固定するため、出力には箇条書きだけを含めてください。
 固有名詞、コード、識別子以外に日本語以外の言語を使わないでください。`;
+}
 
 export const HANDOFF_SUMMARY_MAX_TOKENS = 10_000;
 
@@ -72,7 +83,8 @@ export function extractHandoffSource(
   };
 }
 
-export function formatHandoffSummary(summary: string): string {
+export function formatHandoffSummary(summary: string, characterName: string): string {
+  const resolvedName = requireHandoffCharacterName(characterName);
   let summaryChars = 0;
   const bullets = summary
     .split("\n")
@@ -92,7 +104,7 @@ export function formatHandoffSummary(summary: string): string {
 
   return [
     "## Goal",
-    "クラインとして振る舞う",
+    `${resolvedName}として振る舞う`,
     "",
     "## 引き継ぎ",
     ...(bullets.length > 0 ? bullets : ["- 継続事項なし"]),

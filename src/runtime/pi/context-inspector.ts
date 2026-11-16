@@ -35,7 +35,7 @@ import {
 
 import { DiscordAgent } from "@agents/discord/discord-agent";
 import { createDiscordAgentTools } from "@agents/discord/discord-tools";
-import { resolveProfile } from "@app/profile";
+import { loadProfile } from "@app/profile";
 import { loadPromptFile } from "@app/prompt";
 import { DiscordUserDirectory } from "@modules/discord/application/discord-user-directory";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
@@ -1204,7 +1204,7 @@ async function executeSessionSlice(
   }
 
   const profileName = options.profile ?? "klein";
-  const profileConfig = resolveProfile(profileName);
+  const profileConfig = await loadProfile(profileName);
   const systemPrompt =
     options.systemPromptOverride ??
     (await loadPromptFile(options.systemPromptFile ?? profileConfig.systemPromptFile));
@@ -1368,6 +1368,7 @@ async function executeSessionSlice(
 
     const factory = createPiAgentFactory({
       agentDir,
+      characterName: profileConfig.characterName,
       llm: {
         provider: resolvedModel.provider,
         model: resolvedModel.id,
