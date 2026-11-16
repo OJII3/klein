@@ -2,13 +2,10 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
+import { serializeConversationKey, type ConversationKey } from "@shared/conversation-key";
 import { DISCORD_CHANNEL_SESSION_KEY_PREFIX } from "@shared/discord-channel-session-key";
 
-export type ConversationKey = { readonly kind: "discord"; readonly channelId: string };
-
-export function serializeConversationKey(key: ConversationKey): string {
-  return `discord:${encodeURIComponent(key.channelId)}`;
-}
+export { serializeConversationKey, type ConversationKey };
 
 export function createConversationSessionKey(
   key: ConversationKey,

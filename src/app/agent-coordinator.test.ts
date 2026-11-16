@@ -8,7 +8,11 @@ import type { AgentRuntime } from "@agents/core/agent-runtime";
 import type { AgentEvent } from "@agents/core/agent-event";
 import type { AgentTurn } from "@agents/core/agent-turn";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
-import type { AttachedTaskControl, AttachedTaskStartInput } from "@agents/core/attached-agent";
+import type {
+  AttachedTaskControl,
+  AttachedTaskScope,
+  AttachedTaskStartInput,
+} from "@agents/core/attached-agent";
 
 import {
   createDiscordAccessPolicy,
@@ -34,7 +38,11 @@ import { createTempDir } from "../testing/temp-dir";
 interface TestHarness {
   readonly agentCoordinator: AgentCoordinator;
   readonly attachedStarts: AttachedTaskStartInput[];
-  readonly attachedSends: { readonly taskId: string; readonly message: string }[];
+  readonly attachedSends: {
+    readonly scope: AttachedTaskScope;
+    readonly taskId: string;
+    readonly message: string;
+  }[];
   readonly channelLocationCalls: string[];
   readonly createdSessionKeys: string[];
   readonly prompts: Map<string, AgentTurn[]>;
@@ -64,14 +72,14 @@ function createHarness(
   const prompts = new Map<string, AgentTurn[]>();
   const ownerFeaturesAllowed: boolean[] = [];
   const attachedStarts: AttachedTaskStartInput[] = [];
-  const attachedSends: { taskId: string; message: string }[] = [];
+  const attachedSends: { scope: AttachedTaskScope; taskId: string; message: string }[] = [];
   const attachedTasks: AttachedTaskControl = {
     async start(input) {
       attachedStarts.push(input);
       return `attached-${attachedStarts.length}`;
     },
-    async send(taskId, message) {
-      attachedSends.push({ taskId, message });
+    async send(scope, taskId, message) {
+      attachedSends.push({ scope, taskId, message });
       return attachedSendResult;
     },
     async close() {
@@ -552,7 +560,10 @@ test("starts a reminder worker and keeps the conversation session for conversati
     assert.deepEqual(harness.createdSessionKeys, []);
     assert.equal(reminders.getStored(), undefined);
     assert.equal(harness.attachedStarts.length, 1);
-    assert.equal(harness.attachedStarts[0]?.channelId, "test-channel");
+    assert.deepEqual(harness.attachedStarts[0]?.conversationKey, {
+      kind: "discord",
+      channelId: "test-channel",
+    });
     assert.equal(harness.attachedStarts[0]?.accessScope, "public");
     assert.equal(harness.attachedStarts[0]?.closeAfterResult, true);
     assert.match(harness.attachedStarts[0]?.prompt ?? "", /定例会が始まります/u);
@@ -652,7 +663,10 @@ for (const { scope, access, owner, delivered } of [
       assert.equal(harness.attachedStarts.length, delivered ? 1 : 0);
       assert.equal(reminders.getStored() === undefined, delivered);
       if (delivered) {
-        assert.equal(harness.attachedStarts[0]?.channelId, "test-channel");
+        assert.deepEqual(harness.attachedStarts[0]?.conversationKey, {
+          kind: "discord",
+          channelId: "test-channel",
+        });
         assert.equal(harness.attachedStarts[0]?.accessScope, scope);
         assert.equal(harness.attachedStarts[0]?.ownerFeaturesAllowed, scope.startsWith("owner:"));
       }
@@ -744,8 +758,16 @@ test("resumes the worker that registered a watch instead of the conversation", a
   try {
     await harness.agentCoordinator.deliverDueTasks(Date.parse("2026-10-14T00:05:00.000Z"));
     assert.deepEqual(
-      harness.attachedSends.map((send) => send.taskId),
-      ["attached-1"],
+      harness.attachedSends.map((send) => ({ scope: send.scope, taskId: send.taskId })),
+      [
+        {
+          scope: {
+            conversationKey: { kind: "discord", channelId: "test-channel" },
+            accessScope: "owner:123",
+          },
+          taskId: "attached-1",
+        },
+      ],
     );
     assert.match(harness.attachedSends[0]?.message ?? "", /changed/u);
     assert.equal(harness.prompts.size, 0);
