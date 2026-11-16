@@ -23,7 +23,12 @@ import webAccessExtension from "pi-web-access";
 
 import type { AgentDefinition } from "@agents/core/agent-definition";
 import type { AgentFactory, AgentCreationOptions } from "@agents/core/agent-factory";
-import { assertSurfaceToolsAllowed, type AgentRole } from "@agents/core/agent-role";
+import {
+  assertSurfaceToolsAllowed,
+  resolveAgentPolicy,
+  type AgentPolicy,
+  type AgentRole,
+} from "@agents/core/agent-role";
 import type { AgentTurn, AgentTurnContext } from "@agents/core/agent-turn";
 import type { AgentPrompt, AgentRuntime } from "@agents/core/agent-runtime";
 import { ImageAnalysisError, toImageAnalysisFailure } from "@agents/core/image-analysis";
@@ -138,6 +143,7 @@ export class PiAgentRuntime implements AgentRuntime {
     private readonly trace?: PiRuntimeTrace,
     private readonly modelRuntime?: ModelRuntime,
     private readonly onDispose?: () => void,
+    private readonly assistantText: AgentPolicy["assistantText"] = "none",
   ) {
     trace?.attach(session);
   }
@@ -359,7 +365,7 @@ export class PiAgentRuntime implements AgentRuntime {
   }
 
   lastAssistantText(): string | undefined {
-    return readLastAssistantText(this.session);
+    return this.assistantText === "caller" ? readLastAssistantText(this.session) : undefined;
   }
 
   dispose(): void {
@@ -558,7 +564,7 @@ export function createPiAgentFactory({
         options.role,
         customTools.map((tool) => tool.name),
       );
-      const hasDiscordSend = customTools.some((tool) => tool.name === "discord_send");
+      const policy = resolveAgentPolicy(options.role);
       const hasWatchAdd = customTools.some((tool) => tool.name === "watch_add");
       const systemPrompt = [
         definition.systemPrompt,
@@ -584,7 +590,7 @@ export function createPiAgentFactory({
         trace,
         authorization,
         {
-          normalizeAssistantText: hasDiscordSend,
+          normalizeAssistantText: policy.assistantText === "none",
           backgroundCompactionLeadTokens: llm.compaction?.backgroundTokens,
           extraExtensions,
         },
@@ -664,6 +670,7 @@ export function createPiAgentFactory({
         trace,
         modelRuntime,
         typeof onSessionDispose === "function" ? onSessionDispose : undefined,
+        policy.assistantText,
       );
     },
   };
