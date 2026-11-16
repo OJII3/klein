@@ -31,6 +31,12 @@ export interface AttachedTaskDelivery {
   readonly result: AttachedTaskResult;
 }
 
+export interface ClosedAttachedTask {
+  readonly id: string;
+  readonly channelId: string;
+  readonly accessScope: string;
+}
+
 export interface AttachedAgentCoordinatorOptions {
   readonly factory: AgentFactory;
   readonly systemPrompt: string;
@@ -43,6 +49,7 @@ export interface AttachedAgentCoordinatorOptions {
     taskId: string,
   ) => readonly ToolDefinition[];
   readonly onResult: (delivery: AttachedTaskDelivery) => Promise<void>;
+  readonly onTaskClosed?: (task: ClosedAttachedTask) => Promise<void>;
 }
 
 interface AttachedTask {
@@ -58,6 +65,9 @@ interface AttachedTask {
   runtime?: AgentRuntime;
   readonly closeAfterResult: boolean;
   queue: Promise<void>;
+  /** Tracks runtime creation and prompt execution (excluding `onResult`), so close/dispose can abort without deadlocking on conversation locks. */
+  activeExecution?: Promise<void>;
+  storageQueue: Promise<void>;
   closed: boolean;
 }
 
@@ -74,6 +84,8 @@ interface AttachedTask {
 export class AttachedAgentCoordinator implements AttachedTaskControl {
   private readonly tasks = new Map<string, AttachedTask>();
   private readonly logger: Logger;
+  private disposed = false;
+  private disposePromise: Promise<void> | undefined;
 
   constructor(private readonly options: AttachedAgentCoordinatorOptions) {
     this.logger = options.logger.child({ component: "attached-agent-coordinator" });
@@ -82,6 +94,16 @@ export class AttachedAgentCoordinator implements AttachedTaskControl {
   /** Restores the tasks saved by a previous process. Call once before serving prompts. */
   async load(): Promise<void> {
     for (const stored of await this.options.store.list()) {
+      if (stored.closeAfterResult) {
+        await this.deleteStoredTask(stored.id);
+        await this.notifyTaskClosed({
+          id: stored.id,
+          channelId: stored.channelId,
+          accessScope: stored.accessScope,
+        });
+        continue;
+      }
+
       const status: AttachedTaskStatus =
         stored.status === "running" ? "interrupted" : stored.status;
       const task: AttachedTask = {
@@ -95,6 +117,7 @@ export class AttachedAgentCoordinator implements AttachedTaskControl {
         updatedAt: stored.updatedAt,
         closeAfterResult: stored.closeAfterResult,
         queue: Promise.resolve(),
+        storageQueue: Promise.resolve(),
         closed: false,
       };
       this.tasks.set(task.id, task);
@@ -107,6 +130,10 @@ export class AttachedAgentCoordinator implements AttachedTaskControl {
   }
 
   async start(input: AttachedTaskStartInput): Promise<string> {
+    if (this.disposed) {
+      throw new Error("AttachedAgentCoordinator has been disposed");
+    }
+
     const conversationKey = { kind: "discord", channelId: input.channelId } as const;
     const id = `attached-${randomUUID()}`;
     const runtime = await this.options.factory.create(
@@ -118,6 +145,10 @@ export class AttachedAgentCoordinator implements AttachedTaskControl {
         ownerFeaturesAllowed: input.ownerFeaturesAllowed,
       },
     );
+    if (this.disposed) {
+      runtime.dispose();
+      throw new Error("AttachedAgentCoordinator has been disposed");
+    }
 
     const now = new Date().toISOString();
     const task: AttachedTask = {
@@ -132,10 +163,14 @@ export class AttachedAgentCoordinator implements AttachedTaskControl {
       runtime,
       closeAfterResult: input.closeAfterResult ?? false,
       queue: Promise.resolve(),
+      storageQueue: Promise.resolve(),
       closed: false,
     };
     this.tasks.set(id, task);
     await this.persist(task);
+    if (this.disposed || task.closed) {
+      return id;
+    }
     this.enqueue(task, input.prompt);
     this.logger.info(
       { event: "attached_task_started", taskId: id, channelId: input.channelId },
@@ -145,6 +180,7 @@ export class AttachedAgentCoordinator implements AttachedTaskControl {
   }
 
   async send(taskId: string, message: string): Promise<boolean> {
+    if (this.disposed) return false;
     const task = this.tasks.get(taskId);
     if (!task || task.closed) return false;
     this.enqueue(task, message);
@@ -152,6 +188,7 @@ export class AttachedAgentCoordinator implements AttachedTaskControl {
   }
 
   async close(taskId: string): Promise<boolean> {
+    if (this.disposed) return false;
     const task = this.tasks.get(taskId);
     if (!task) return false;
     await this.closeTask(task);
@@ -171,14 +208,37 @@ export class AttachedAgentCoordinator implements AttachedTaskControl {
   }
 
   /** Stops the runtimes but keeps the saved tasks so the next process can restore them. */
-  async dispose(): Promise<void> {
-    for (const task of this.tasks.values()) {
+  dispose(): Promise<void> {
+    if (this.disposePromise) return this.disposePromise;
+    this.disposePromise = this.performDispose();
+    return this.disposePromise;
+  }
+
+  private async performDispose(): Promise<void> {
+    this.disposed = true;
+    const tasks = [...this.tasks.values()];
+    for (const task of tasks) {
       task.closed = true;
-      task.runtime?.dispose();
-      if (task.status === "running") {
+    }
+
+    await Promise.allSettled(tasks.map((task) => task.runtime?.abort?.()));
+    await Promise.allSettled(tasks.map((task) => task.activeExecution));
+
+    for (const task of tasks) {
+      this.disposeRuntime(task);
+      if (task.closeAfterResult) {
+        await this.enqueueStorage(task, () => this.deleteStoredTask(task.id));
+        await this.notifyTaskClosed({
+          id: task.id,
+          channelId: task.conversationKey.channelId,
+          accessScope: task.accessScope,
+        });
+      } else if (task.status === "running") {
         task.status = "interrupted";
         task.updatedAt = new Date().toISOString();
-        await this.persist(task);
+        await this.enqueueStorage(task, () => this.saveTask(task));
+      } else {
+        await task.storageQueue;
       }
     }
     this.tasks.clear();
@@ -200,29 +260,44 @@ export class AttachedAgentCoordinator implements AttachedTaskControl {
     task.status = "running";
     task.updatedAt = new Date().toISOString();
     await this.persist(task);
+    if (task.closed) return;
 
     let result: AttachedTaskResult;
-    try {
+    const execution = (async (): Promise<string | undefined> => {
       const runtime = await this.ensureRuntime(task);
+      if (task.closed) return undefined;
       await runtime.prompt({
         event: createAttachedPromptEvent(task.id, text),
         context: {},
       });
-      const output = runtime.lastAssistantText?.();
+      return runtime.lastAssistantText?.();
+    })();
+    task.activeExecution = execution.then(
+      () => undefined,
+      () => undefined,
+    );
+
+    try {
+      const output = await execution;
+      if (task.closed) return;
       result = { taskId: task.id, status: "completed", text: output ?? "(no text returned)" };
     } catch (error) {
+      if (task.closed) return;
       const message = error instanceof Error ? error.message : String(error);
       this.logger.warn(
         { err: error, event: "attached_task_failed", taskId: task.id },
         "Attached task failed",
       );
       result = { taskId: task.id, status: "failed", text: "", error: message };
+    } finally {
+      task.activeExecution = undefined;
     }
 
     if (task.closed) return;
     task.status = result.status === "completed" ? "idle" : "failed";
     task.updatedAt = new Date().toISOString();
     await this.persist(task);
+    if (task.closed) return;
 
     try {
       await this.options.onResult({
@@ -237,7 +312,7 @@ export class AttachedAgentCoordinator implements AttachedTaskControl {
       );
     }
 
-    if (task.closeAfterResult) await this.closeTask(task);
+    if (task.closeAfterResult && !task.closed) await this.closeTask(task);
   }
 
   private async ensureRuntime(task: AttachedTask): Promise<AgentRuntime> {
@@ -253,6 +328,10 @@ export class AttachedAgentCoordinator implements AttachedTaskControl {
         resumeSession: true,
       },
     );
+    if (task.closed || this.disposed) {
+      runtime.dispose();
+      throw new Error(`Attached task ${task.id} was closed while restoring runtime`);
+    }
     task.runtime = runtime;
     return runtime;
   }
@@ -260,20 +339,45 @@ export class AttachedAgentCoordinator implements AttachedTaskControl {
   private async closeTask(task: AttachedTask): Promise<void> {
     if (task.closed) return;
     task.closed = true;
-    task.runtime?.dispose();
     this.tasks.delete(task.id);
-    try {
-      await this.options.store.delete(task.id);
-    } catch (error) {
-      this.logger.warn(
-        { err: error, event: "attached_task_delete_failed", taskId: task.id },
-        "Failed to delete attached task",
-      );
-    }
+
+    await Promise.allSettled([task.runtime?.abort?.()]);
+    await Promise.allSettled([task.activeExecution]);
+    this.disposeRuntime(task);
+
+    await this.enqueueStorage(task, () => this.deleteStoredTask(task.id));
+    await this.notifyTaskClosed({
+      id: task.id,
+      channelId: task.conversationKey.channelId,
+      accessScope: task.accessScope,
+    });
     this.logger.info({ event: "attached_task_closed", taskId: task.id }, "Closed attached task");
   }
 
+  private disposeRuntime(task: AttachedTask): void {
+    const runtime = task.runtime;
+    if (!runtime) return;
+    task.runtime = undefined;
+    runtime.dispose();
+  }
+
   private async persist(task: AttachedTask): Promise<void> {
+    await this.enqueueStorage(task, async () => {
+      if (task.closed) return;
+      await this.saveTask(task);
+    });
+  }
+
+  private enqueueStorage(task: AttachedTask, operation: () => Promise<void>): Promise<void> {
+    const next = task.storageQueue.then(operation, operation);
+    task.storageQueue = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    return next;
+  }
+
+  private async saveTask(task: AttachedTask): Promise<void> {
     try {
       await this.options.store.save({
         id: task.id,
@@ -290,6 +394,29 @@ export class AttachedAgentCoordinator implements AttachedTaskControl {
       this.logger.warn(
         { err: error, event: "attached_task_persist_failed", taskId: task.id },
         "Failed to persist attached task",
+      );
+    }
+  }
+
+  private async deleteStoredTask(taskId: string): Promise<void> {
+    try {
+      await this.options.store.delete(taskId);
+    } catch (error) {
+      this.logger.warn(
+        { err: error, event: "attached_task_delete_failed", taskId },
+        "Failed to delete attached task",
+      );
+    }
+  }
+
+  private async notifyTaskClosed(task: ClosedAttachedTask): Promise<void> {
+    if (!this.options.onTaskClosed) return;
+    try {
+      await this.options.onTaskClosed(task);
+    } catch (error) {
+      this.logger.warn(
+        { err: error, event: "attached_task_close_hook_failed", taskId: task.id },
+        "Failed to run attached task close hook",
       );
     }
   }

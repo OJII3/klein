@@ -782,6 +782,9 @@ test("delivers a worker watch to the conversation when the worker is gone", asyn
     const events = harness.prompts.get("test-channel:owner:123");
     assert.equal(events?.[0]?.event.type, "watch.triggered");
     assert.match(eventText(events?.[0]?.event), /changed/u);
+    const stored = watches.getStored();
+    assert.ok(stored?.kind === "watch");
+    assert.equal(stored.ownerTaskId, undefined);
   } finally {
     await harness.agentCoordinator.dispose();
   }

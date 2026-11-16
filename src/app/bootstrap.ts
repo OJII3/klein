@@ -72,6 +72,7 @@ import { PiToolUsageReader } from "@modules/webui/infrastructure/pi-tool-usage-r
 import { Sbv2Tts } from "@modules/tts/infrastructure/sbv2-tts";
 import { WebSocketAsrClient } from "@modules/asr/infrastructure/websocket-asr-client";
 import { FileScheduledTaskStore } from "@modules/scheduling/infrastructure/file-scheduled-task-store";
+import type { ScheduledTaskAccessScope } from "@modules/scheduling/domain/scheduled-task";
 import { QuickJsWatchCheckRunner } from "@modules/scheduling/application/quickjs-watch-check-runner";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import type { DiscordReactionEvent } from "@modules/discord/domain/discord-reaction";
@@ -243,6 +244,18 @@ export async function bootstrap(): Promise<void> {
         delivery.accessScope,
         delivery.result,
       ),
+    onTaskClosed: async ({ id, channelId, accessScope }) => {
+      const watches = await scheduledTaskStore.listForScope(
+        "watch",
+        channelId,
+        accessScope as ScheduledTaskAccessScope,
+      );
+      for (const watch of watches) {
+        if (watch.ownerTaskId !== id) continue;
+        const { ownerTaskId: _ownerTaskId, ...rest } = watch;
+        await scheduledTaskStore.update(rest);
+      }
+    },
   });
   const createDiscordAgent = (
     channelId: string,
@@ -451,11 +464,11 @@ export async function bootstrap(): Promise<void> {
     }
     await webUi?.stop();
     discordService.stopAccepting();
+    await attachedAgentCoordinator.dispose();
     await Promise.all([memoryCoordinator?.flush(), userMemoryCoordinator?.flush()]);
     memoryCoordinator?.dispose();
     userMemoryCoordinator?.dispose();
     await taskCoordinator.waitForCompletion();
-    await attachedAgentCoordinator.dispose();
     await discordService.stop();
     await agentCoordinator.dispose();
     await evalFeedbackObserver.flush();
