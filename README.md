@@ -28,6 +28,7 @@ Session history and rotation state are stored in `<runtime.agentDir>/sessions` a
 
 Profiles live in `config/<profile>/` and define the agent's personality and skills:
 
+- `profile.json` — optional metadata such as `{"name": "クライン"}` used for rotation handoff goals and voice chat announcements (falls back to the profile display name)
 - `SOUL.md` — text chat prompt
 - `SOUL.voice.md` — voice chat prompt
 - `skills/` — profile-specific skills

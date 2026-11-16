@@ -26,6 +26,7 @@ export const VOICE_COMMAND = new SlashCommandBuilder()
 
 export interface DiscordVoiceChatControllerOptions {
   readonly asr: AsrClient;
+  readonly characterName?: string;
   readonly language: string;
   readonly reactionPresets?: readonly VoiceReactionPreset[];
   readonly conversationFactory: VoiceChatConversationFactory;
@@ -205,7 +206,7 @@ export class DiscordVoiceChatController {
       await this.sendAnnouncement(
         announcementChannel,
         "VCに参加しました",
-        `<#${voiceChannel.id}> にクラインが参加しました。\n開始した人: <@${interaction.user.id}>`,
+        `<#${voiceChannel.id}> に${this.characterName}が参加しました。\n開始した人: <@${interaction.user.id}>`,
         0x57f287,
         guildId,
       );
@@ -256,10 +257,14 @@ export class DiscordVoiceChatController {
     await this.sendAnnouncement(
       interaction.channel,
       "VCから退出しました",
-      `<#${active.voiceChannelId}> からクラインが退出しました。\n終了した人: <@${interaction.user.id}>`,
+      `<#${active.voiceChannelId}> から${this.characterName}が退出しました。\n終了した人: <@${interaction.user.id}>`,
       0x747f8d,
       guildId,
     );
+  }
+
+  private get characterName(): string {
+    return this.options.characterName?.trim() || "クライン";
   }
 
   private async sendAnnouncement(

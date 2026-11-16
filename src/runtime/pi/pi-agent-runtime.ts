@@ -47,10 +47,10 @@ import { createFxtwitterFetchExtension } from "./fxtwitter-fetch";
 import { readLastAssistantText } from "./pi-assistant-text";
 import {
   buildHandoffSummaryPrompt,
+  buildHandoffSummarySystemPrompt,
   extractTextContent,
   formatHandoffSummary,
   HANDOFF_SUMMARY_MAX_TOKENS,
-  HANDOFF_SUMMARY_SYSTEM_PROMPT,
 } from "./handoff-summary";
 import { createPiEventPrompt } from "./pi-event-prompt";
 import {
@@ -87,6 +87,7 @@ export {
 
 export interface PiAgentFactoryOptions {
   readonly agentDir: string;
+  readonly characterName?: string;
   readonly permissions?: ToolPermissions;
   readonly skillsDirectory?: string;
   readonly modelRuntime: ModelRuntime;
@@ -163,6 +164,7 @@ export class PiAgentRuntime implements AgentRuntime {
     private readonly onDispose?: () => void,
     private readonly assistantText: AgentPolicy["assistantText"] = "none",
     private readonly turnState: PiTurnState = {},
+    private readonly characterName?: string,
   ) {
     trace?.attach(session);
     if (typeof session.subscribe === "function") {
@@ -390,7 +392,7 @@ export class PiAgentRuntime implements AgentRuntime {
     const response = await this.modelRuntime.completeSimple(
       model,
       {
-        systemPrompt: HANDOFF_SUMMARY_SYSTEM_PROMPT,
+        systemPrompt: buildHandoffSummarySystemPrompt(this.characterName),
         messages: [
           {
             role: "user",
@@ -415,7 +417,7 @@ export class PiAgentRuntime implements AgentRuntime {
     const summaryBody = extractTextContent(response.content);
     if (!summaryBody) throw new Error("Handoff summarization returned an empty summary");
 
-    return formatHandoffSummary(summaryBody);
+    return formatHandoffSummary(summaryBody, this.characterName);
   }
 
   dispose(): void {
@@ -443,6 +445,7 @@ export function createResourceLoader(
   trace?: PiRuntimeTrace,
   authorization?: ToolAuthorization,
   options?: {
+    readonly characterName?: string;
     readonly normalizeAssistantText?: boolean;
     readonly surfaceTools?: readonly AgentTool[];
     readonly backgroundCompactionLeadTokens?: number;
@@ -485,6 +488,7 @@ export function createResourceLoader(
         ),
       ),
       createBackgroundCompactionExtension(settingsManager, {
+        characterName: options?.characterName,
         handoffInstructions: HANDOFF_COMPACTION_INSTRUCTIONS,
         leadTokens: options?.backgroundCompactionLeadTokens,
         logger,
@@ -611,6 +615,7 @@ export function withContextWindowRatio(model: Model<Api>, ratio?: number): Model
 
 export function createPiAgentFactory({
   agentDir,
+  characterName,
   llm,
   logger,
   modelRuntime,
@@ -711,6 +716,7 @@ export function createPiAgentFactory({
         trace,
         authorization,
         {
+          characterName,
           normalizeAssistantText: policy.assistantText === "none",
           surfaceTools,
           backgroundCompactionLeadTokens: llm.compaction?.backgroundTokens,
@@ -771,6 +777,7 @@ export function createPiAgentFactory({
         typeof onSessionDispose === "function" ? onSessionDispose : undefined,
         policy.assistantText,
         turnState,
+        characterName,
       );
     },
   };
