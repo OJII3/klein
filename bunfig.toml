@@ -1,4 +1,5 @@
 [install]
+linker = "hoisted"
 minimumReleaseAge = 259200 # 3day
 
 [fmt]
