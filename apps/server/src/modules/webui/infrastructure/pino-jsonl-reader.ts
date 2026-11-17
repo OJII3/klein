@@ -3,8 +3,12 @@ import { basename, resolve } from "node:path";
 
 import { isFileNotFound, isRecord, parseJson } from "@shared/type-guards";
 
-import type { PinoViewerEvent, ViewerPage } from "../domain/viewer-event";
-import type { ViewerLogQuery, ViewerLogReader } from "../ports/viewer-readers";
+import type {
+  PinoViewerEvent,
+  ViewerLogQuery,
+  ViewerLogReader,
+  ViewerPage,
+} from "@klein/webui-api";
 
 const PinoLevelLabels: Readonly<Record<number, string>> = {
   10: "trace",

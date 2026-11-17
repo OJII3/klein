@@ -254,7 +254,7 @@ function parseIntOption(raw: string, flagName: string): number {
 function printUsage(): void {
   console.log(
     [
-      "Usage: bun scripts/inspect-context.ts <command> [options]",
+      "Usage: bun apps/server/scripts/inspect-context.ts <command> [options]",
       "",
       "Commands:",
       "  cases       List recorded negative-feedback (👎) candidate cases",

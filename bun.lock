@@ -4,12 +4,22 @@
   "workspaces": {
     "": {
       "name": "klein",
+      "devDependencies": {
+        "@types/node": "^26.6.6",
+        "@types/turndown": "^5.0.6",
+        "oxlint": "^1.93.0",
+        "oxlint-tsgolint": "^7.0.2007",
+      },
+    },
+    "apps/server": {
+      "name": "@klein/server",
       "dependencies": {
         "@discordjs/voice": "^0.19.2",
         "@earendil-works/pi-ai": "^1.5.2",
         "@earendil-works/pi-codemode": "1.5.2",
         "@earendil-works/pi-coding-agent": "^1.5.2",
         "@elysia/static": "^1.4.12",
+        "@klein/webui-api": "workspace:*",
         "@snazzah/davey": "^0.1.12",
         "discord.js": "^14.28.1",
         "elysia": "^1.4.31",
@@ -26,14 +36,13 @@
       "devDependencies": {
         "@types/node": "^26.6.6",
         "@types/turndown": "^5.0.6",
-        "oxlint": "^1.93.0",
-        "oxlint-tsgolint": "^7.0.2007",
       },
     },
-    "web": {
+    "apps/web": {
       "name": "@klein/web",
       "dependencies": {
         "@elysia/eden": "^1.4.10",
+        "@klein/webui-api": "workspace:*",
         "preact": "^11.1.1",
       },
       "devDependencies": {
@@ -42,6 +51,12 @@
         "daisyui": "^5.7.50",
         "tailwindcss": "^4.3.4",
         "vite": "^8.3.5",
+      },
+    },
+    "packages/webui-api": {
+      "name": "@klein/webui-api",
+      "dependencies": {
+        "elysia": "^1.4.31",
       },
     },
   },
@@ -188,7 +203,11 @@
 
     "@jridgewell/trace-mapping": ["@jridgewell/trace-mapping@0.3.31", "", { "dependencies": { "@jridgewell/resolve-uri": "^3.1.0", "@jridgewell/sourcemap-codec": "^1.4.14" } }, "sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw=="],
 
-    "@klein/web": ["@klein/web@workspace:web"],
+    "@klein/server": ["@klein/server@workspace:apps/server"],
+
+    "@klein/web": ["@klein/web@workspace:apps/web"],
+
+    "@klein/webui-api": ["@klein/webui-api@workspace:packages/webui-api"],
 
     "@mixmark-io/domino": ["@mixmark-io/domino@2.2.0", "", {}, "sha512-Y28PR25bHXUg88kCV7nivXrP2Nj2RueZ3/l/jdx6J9f8J4nsEGcgX0Qe6lt7Pa+J79+kPiJU3LguR6O/6zrLOw=="],
 

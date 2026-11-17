@@ -1,7 +1,5 @@
 import { Elysia } from "elysia";
-import type { Logger } from "pino";
 
-import { MemoryEntryNotFoundError } from "@modules/memory/domain/memory";
 import {
   LogsQuerySchema,
   MemoryGuildEntryParamsSchema,
@@ -11,9 +9,11 @@ import {
   MemoryUserParamsSchema,
   SessionParamsSchema,
   SessionQuerySchema,
-} from "../domain/api-schema";
-import type { ViewerLogQuery } from "../ports/viewer-readers";
-import type { WebUiDependencies } from "../ports/webui";
+} from "./api-schema";
+import type { ViewerLogQuery } from "./viewer-readers";
+import type { WebUiDependencies, WebUiLogger } from "./webui";
+
+export type WebUiApp = ReturnType<typeof createWebUiApp>;
 
 const LOG_LEVELS = new Set(["trace", "debug", "info", "warn", "error", "fatal"]);
 
@@ -194,7 +194,7 @@ export function createWebUiApp(dependencies: WebUiDependencies) {
           await dependencies.memoryEditor.deleteEntry({ type: "owner" }, params.entryId);
           return { deleted: true };
         } catch (error) {
-          if (error instanceof MemoryEntryNotFoundError) {
+          if (isMemoryNotFound(dependencies, error)) {
             set.status = 404;
             return { error: "Memory entry not found" };
           }
@@ -247,7 +247,7 @@ export function createWebUiApp(dependencies: WebUiDependencies) {
           );
           return { deleted: true };
         } catch (error) {
-          if (error instanceof MemoryEntryNotFoundError) {
+          if (isMemoryNotFound(dependencies, error)) {
             set.status = 404;
             return { error: "Memory entry not found" };
           }
@@ -298,9 +298,14 @@ function parseLimit(value: number | string | undefined): number | undefined {
   return limit;
 }
 
+function isMemoryNotFound(dependencies: WebUiDependencies, error: unknown): boolean {
+  if (dependencies.isMemoryEntryNotFoundError?.(error)) return true;
+  return error instanceof Error && error.name === "MemoryEntryNotFoundError";
+}
+
 function handleRouteError(
   set: { status?: number | string },
-  logger: Logger | undefined,
+  logger: WebUiLogger | undefined,
   error: unknown,
   message: string,
 ): { error: string } {

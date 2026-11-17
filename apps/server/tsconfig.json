@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "paths": {
+      "@app/*": ["./src/app/*"],
+      "@agents/*": ["./src/agents/*"],
+      "@modules/*": ["./src/modules/*"],
+      "@runtime/*": ["./src/runtime/*"],
+      "@shared/*": ["./src/shared/*"]
+    }
+  },
+  "include": ["src/**/*.ts", "scripts/build.ts"]
+}

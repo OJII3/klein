@@ -1,4 +1,6 @@
-import { copyFile } from "node:fs/promises";
+import { copyFile, mkdir } from "node:fs/promises";
+import { createRequire } from "node:module";
+import { dirname, resolve } from "node:path";
 
 interface BunBuildOptions {
   readonly entrypoints: readonly string[];
@@ -15,10 +17,16 @@ declare const Bun: {
   build(options: BunBuildOptions): Promise<unknown>;
 };
 
+const packageRoot = resolve(dirname(new URL(import.meta.url).pathname), "..");
+const repoRoot = resolve(packageRoot, "../..");
+const outdir = resolve(repoRoot, "dist");
+
+await mkdir(outdir, { recursive: true });
+
 await Bun.build({
-  entrypoints: ["src/app/bootstrap.ts"],
+  entrypoints: [resolve(packageRoot, "src/app/bootstrap.ts")],
   target: "bun",
-  outdir: "dist",
+  outdir,
   naming: "klein",
   minify: true,
   define: { "process.env.NODE_ENV": JSON.stringify("production") },
@@ -27,6 +35,8 @@ await Bun.build({
 });
 
 // The bundled ONNX Runtime Web code loads its WASM runtime next to the bundle.
+const require = createRequire(import.meta.url);
+const onnxRuntimeDist = resolve(dirname(require.resolve("onnxruntime-web/package.json")), "dist");
 for (const asset of ["ort-wasm-simd-threaded.mjs", "ort-wasm-simd-threaded.wasm"]) {
-  await copyFile(`node_modules/onnxruntime-web/dist/${asset}`, `dist/${asset}`);
+  await copyFile(resolve(onnxRuntimeDist, asset), resolve(outdir, asset));
 }

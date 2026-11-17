@@ -1,13 +1,19 @@
-import type { Logger } from "pino";
-
-import type { MemoryScopeEditor, MemoryScopeReader } from "@modules/memory/domain/memory";
-import type { UserMemoryEditor, UserMemoryReader } from "@modules/user-memory/domain/user-memory";
+import type {
+  MemoryScopeEditor,
+  MemoryScopeReader,
+  UserMemoryEditor,
+  UserMemoryReader,
+} from "./memory";
 import type {
   ChannelNameReader,
   ToolUsageReader,
   ViewerLogReader,
   ViewerSessionReader,
 } from "./viewer-readers";
+
+export interface WebUiLogger {
+  error(object: unknown, message?: string): void;
+}
 
 export interface WebUiDependencies {
   readonly displayName: string;
@@ -16,8 +22,9 @@ export interface WebUiDependencies {
   readonly memoryEditor?: MemoryScopeEditor;
   readonly userMemory?: UserMemoryReader;
   readonly userMemoryEditor?: UserMemoryEditor;
+  readonly isMemoryEntryNotFoundError?: (error: unknown) => boolean;
   readonly pinoLogs: ViewerLogReader;
   readonly piSessions: ViewerSessionReader;
   readonly toolUsage: ToolUsageReader;
-  readonly logger?: Logger;
+  readonly logger?: WebUiLogger;
 }

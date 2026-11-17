@@ -8,12 +8,14 @@ import {
   type SessionInfo,
 } from "@earendil-works/pi-coding-agent";
 
-import type { ViewerPage, ViewerSessionDetail, ViewerSessionSummary } from "../domain/viewer-event";
 import type {
   ChannelNameReader,
+  ViewerPage,
+  ViewerSessionDetail,
   ViewerSessionQuery,
   ViewerSessionReader,
-} from "../ports/viewer-readers";
+  ViewerSessionSummary,
+} from "@klein/webui-api";
 import {
   decodeSessionCursor,
   decodeSessionListCursor,

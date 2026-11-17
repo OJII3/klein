@@ -1,8 +1,5 @@
 [install]
 minimumReleaseAge = 259200 # 3day
 
-[test]
-root = "src"
-
 [fmt]
 printWidth = 100

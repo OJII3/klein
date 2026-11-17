@@ -1,46 +1,49 @@
 import { treaty } from "@elysia/eden";
 
-import type { WebUiApp } from "@klein/webui/infrastructure/elysia-webui-app";
+import type {
+  McpServerUsageStat,
+  MemoryEntry,
+  MemoryEntryScope,
+  MemoryKind,
+  MemoryScope,
+  MemoryScopeSummary,
+  PiViewerEvent,
+  PinoViewerEvent,
+  ToolUsageReport,
+  ToolUsageStat,
+  UserMemory,
+  UserMemorySectionKey,
+  UserMemorySummary,
+  ViewerLogQuery,
+  ViewerPage,
+  ViewerSessionDetail,
+  ViewerSessionQuery,
+  ViewerSessionSummary,
+  WebUiApp,
+} from "@klein/webui-api";
 
-export interface PinoLog {
-  source: "pino";
-  id: string;
-  timestamp: string;
-  level: number | string;
-  kind: string;
-  summary: string;
-  attributes: Record<string, unknown>;
-}
+export type {
+  McpServerUsageStat,
+  MemoryEntry,
+  MemoryEntryScope,
+  MemoryKind,
+  MemoryScope,
+  MemoryScopeSummary,
+  ToolUsageReport,
+  ToolUsageStat,
+  UserMemory,
+  UserMemorySectionKey,
+  UserMemorySummary,
+};
 
-export interface LogsResponse {
-  items: PinoLog[];
-  nextCursor: string | null;
-}
-
-export interface LogsQuery {
-  limit?: number;
-  cursor?: string;
-  level?: string;
-  q?: string;
-  channelId?: string;
-  event?: string;
-}
-
-export interface SessionSummary {
-  id: string;
-  channelKey: string;
-  channelId?: string;
-  channelName?: string;
-  created: string;
-  modified: string;
-  messageCount: number;
-  firstMessage: string;
-}
-
-export interface SessionsResponse {
-  items: SessionSummary[];
-  nextCursor: string | null;
-}
+export type PinoLog = PinoViewerEvent;
+export type LogsResponse = ViewerPage<PinoViewerEvent>;
+export type LogsQuery = ViewerLogQuery;
+export type SessionSummary = ViewerSessionSummary;
+export type SessionsResponse = ViewerPage<ViewerSessionSummary>;
+export type PiSessionEvent = PiViewerEvent;
+export type SessionDetailResponse = ViewerSessionDetail;
+export type SessionQuery = ViewerSessionQuery;
 
 export interface ChannelSummary {
   channelId: string;
@@ -55,85 +58,9 @@ export interface MetaResponse {
   displayName: string;
 }
 
-export interface PiSessionEvent {
-  source: "pi";
-  id: string;
-  timestamp: string;
-  sessionId: string;
-  kind: string;
-  role?: string;
-  parentId?: string | null;
-  errorMessage?: string;
-  content?: unknown;
-}
-
-export interface SessionDetailResponse {
-  session: SessionSummary;
-  items: PiSessionEvent[];
-  nextCursor: string | null;
-}
-
-export interface SessionQuery {
-  limit?: number;
-  cursor?: string;
-}
-
-export type MemoryKind = "fact" | "rule" | "decision" | "procedure" | "temporary";
-
-export type MemoryEntryScope =
-  | { type: "owner" }
-  | { type: "guild" }
-  | { type: "channel"; channelId: string }
-  | { type: "thread"; channelId: string; threadId: string };
-
-export interface MemoryEntry {
-  id: string;
-  kind: MemoryKind;
-  scope: MemoryEntryScope;
-  title: string;
-  content: string;
-  createdAt: string;
-  updatedAt: string;
-  sourceMessageIds: readonly string[];
-}
-
-export type MemoryScope = { type: "owner" } | { type: "guild"; guildId: string };
-
 export type UserMemoryScope = { type: "user"; userId: string };
 
 export type MemorySelection = MemoryScope | UserMemoryScope;
-
-export interface MemoryScopeSummary {
-  scope: MemoryScope;
-  entryCount: number;
-  updatedAt: string | null;
-}
-
-export type UserMemorySectionKey = "facts" | "history" | "inCommon" | "strengthening";
-
-export interface UserMemory {
-  discordId: string;
-  displayName: string;
-  nickname?: string;
-  firstName?: string;
-  lastName?: string;
-  summary: string;
-  impression: number;
-  updatedAt: string;
-  facts: string;
-  history: string;
-  inCommon: string;
-  strengthening: string;
-}
-
-export interface UserMemorySummary {
-  userId: string;
-  discordId: string;
-  displayName: string;
-  summary: string;
-  impression: number;
-  updatedAt: string;
-}
 
 export interface MemoryScopesResponse {
   enabled: boolean;
@@ -149,29 +76,6 @@ export interface UserMemoryResponse {
 export interface MemoryDetailResponse {
   scope: MemoryScope;
   entries: readonly MemoryEntry[];
-}
-
-export interface ToolUsageStat {
-  name: string;
-  calls: number;
-  errors: number;
-  lastCalledAt: string | null;
-}
-
-export interface McpServerUsageStat {
-  name: string;
-  calls: number;
-  errors: number;
-  toolCount: number;
-  lastCalledAt: string | null;
-}
-
-export interface ToolUsageReport {
-  totalCalls: number;
-  totalErrors: number;
-  sessionCount: number;
-  tools: readonly ToolUsageStat[];
-  mcpServers: readonly McpServerUsageStat[];
 }
 
 const apiOrigin = typeof window === "undefined" ? "http://127.0.0.1:4310" : window.location.origin;

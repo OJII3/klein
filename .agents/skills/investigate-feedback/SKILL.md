@@ -9,7 +9,7 @@ description: Discordで👎リアクションが付いた応答や過去のPiセ
 
 ## 使うコマンド
 
-すべての調査は `scripts/inspect-context.ts` 経由で行う。
+すべての調査は `apps/server/scripts/inspect-context.ts` 経由で行う。
 
 1. `👎` 候補の一覧を取得する（外部 API 呼び出しなし）
 

@@ -3,8 +3,12 @@ import { open, stat } from "node:fs/promises";
 import { parseSessionEntries, type FileEntry } from "@earendil-works/pi-coding-agent";
 import { isFileNotFound } from "@shared/type-guards";
 
-import type { McpServerUsageStat, ToolUsageReport, ToolUsageStat } from "../domain/tool-usage";
-import type { ToolUsageReader } from "../ports/viewer-readers";
+import type {
+  McpServerUsageStat,
+  ToolUsageReader,
+  ToolUsageReport,
+  ToolUsageStat,
+} from "@klein/webui-api";
 import { listPiSessionFiles } from "./pi-session-files";
 
 interface ToolCounter {

@@ -2,7 +2,7 @@ import type { SessionEntry, SessionInfo } from "@earendil-works/pi-coding-agent"
 
 import { parseDiscordChannelId } from "@shared/discord-channel-session-key";
 import { isRecord } from "@shared/type-guards";
-import type { PiViewerEvent, ViewerSessionSummary } from "../domain/viewer-event";
+import type { PiViewerEvent, ViewerSessionSummary } from "@klein/webui-api";
 
 const FIRST_MESSAGE_MAX_LENGTH = 240;
 const EVENT_SUMMARY_MAX_LENGTH = 500;

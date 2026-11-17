@@ -2,13 +2,15 @@ import { resolve } from "node:path";
 import { readFile } from "node:fs/promises";
 
 import { staticPlugin } from "@elysia/static";
+import type { Logger } from "pino";
 
-import { createWebUiApp } from "./webui-api";
-import type { WebUiDependencies } from "../ports/webui";
+import { createWebUiApp, type WebUiApp, type WebUiDependencies } from "@klein/webui-api";
+
+import { MemoryEntryNotFoundError } from "@modules/memory/domain/memory";
 import { startCloudflareTunnel, type CloudflareTunnel } from "./cloudflare-tunnel";
 
 export { createWebUiApp };
-export type { WebUiDependencies };
+export type { WebUiApp, WebUiDependencies };
 
 export interface WebUiServerOptions extends WebUiDependencies {
   readonly host: string;
@@ -16,13 +18,12 @@ export interface WebUiServerOptions extends WebUiDependencies {
   readonly staticDirectory: string;
   readonly cloudflaredEnabled?: boolean;
   readonly tunnelToken?: string;
+  readonly logger?: Logger;
 }
 
 export interface WebUiServer {
   readonly stop: () => Promise<void>;
 }
-
-export type WebUiApp = ReturnType<typeof createWebUiApp>;
 
 const IMMUTABLE_ASSET_CACHE_CONTROL = "public, max-age=31536000, immutable";
 // Never reuse the HTML document: behind Cloudflare Access a cached document can
@@ -39,7 +40,11 @@ export async function createWebUiServerApp(options: WebUiServerOptions) {
     prefix: "/",
   });
   const indexHtml = await readFile(resolve(options.staticDirectory, "index.html"));
-  return createWebUiApp(options)
+  return createWebUiApp({
+    ...options,
+    isMemoryEntryNotFoundError:
+      options.isMemoryEntryNotFoundError ?? ((error) => error instanceof MemoryEntryNotFoundError),
+  })
     .onAfterHandle(({ request, set }) => {
       const { pathname } = new URL(request.url);
       // Vite fingerprints everything under /assets, so those are immutable.

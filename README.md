@@ -55,7 +55,7 @@ Select one with `"profile"` in `config/config.jsonc` (default: `klein`). The Web
 
 - **Voice chat** — local Silero VAD (ONNX Runtime Web WASM) plus WebSocket ASR. See [`docs/voice-chat-asr-protocol.md`](docs/voice-chat-asr-protocol.md).
 - **TTS** — external Style-Bert-VITS2 server via `features.tts.serverUrl`; provides the `discord_voice` tool and voice chat output. See [`docs/sbv2-tts-protocol.md`](docs/sbv2-tts-protocol.md).
-- **Voice reactions** — `features.voiceChat.reactions` plays short acknowledgments while the full answer is generated. Generate presets with `bun scripts/generate-voice-presets.ts [manifest-path]`.
+- **Voice reactions** — `features.voiceChat.reactions` plays short acknowledgments while the full answer is generated. Generate presets with `bun apps/server/scripts/generate-voice-presets.ts [manifest-path]`.
 
 ### Memory
 

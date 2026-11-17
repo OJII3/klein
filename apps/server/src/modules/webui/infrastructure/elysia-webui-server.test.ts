@@ -3,8 +3,9 @@ import { mkdir, writeFile } from "node:fs/promises";
 import test from "node:test";
 import { join } from "node:path";
 
+import type { WebUiDependencies } from "@klein/webui-api";
+
 import { createWebUiServerApp } from "./elysia-webui-app";
-import type { WebUiDependencies } from "../ports/webui";
 import { createTempDir } from "../../../testing/temp-dir";
 
 const dependencies = {

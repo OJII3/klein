@@ -3,8 +3,8 @@ import type {
   ViewerPage,
   ViewerSessionDetail,
   ViewerSessionSummary,
-} from "../domain/viewer-event";
-import type { ToolUsageReport } from "../domain/tool-usage";
+} from "./viewer-event";
+import type { ToolUsageReport } from "./tool-usage";
 
 export interface ViewerLogQuery {
   readonly limit?: number;
