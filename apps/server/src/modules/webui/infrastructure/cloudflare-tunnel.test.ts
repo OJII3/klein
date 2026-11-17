@@ -176,9 +176,14 @@ test("serves local HTTP when cloudflared is disabled and releases the listener w
 
       const index = await fetch(`http://127.0.0.1:${address.port}/`);
       assert.equal(index.headers.get("cache-control"), "no-store");
+      assert.equal(await index.text(), "<html>Klein</html>");
 
-      const view = await fetch(`http://127.0.0.1:${address.port}/sessions`);
-      assert.equal(view.headers.get("cache-control"), "no-store");
+      // A rebuild replaces index.html while the process keeps running. The
+      // next request must serve the new document instead of a startup copy.
+      await writeFile(join(directory, "index.html"), "<html>Klein rebuilt</html>");
+      const rebuilt = await fetch(`http://127.0.0.1:${address.port}/sessions`);
+      assert.equal(rebuilt.headers.get("cache-control"), "no-store");
+      assert.equal(await rebuilt.text(), "<html>Klein rebuilt</html>");
 
       const asset = await fetch(`http://127.0.0.1:${address.port}/assets/app.js`);
       assert.equal(asset.headers.get("cache-control"), "public, max-age=31536000, immutable");

@@ -12,6 +12,8 @@ export default defineConfig({
   },
   build: {
     outDir: "../../dist/web",
-    emptyOutDir: true,
+    // Keep the previous hashed assets. A document cached by a browser or the
+    // Cloudflare edge must still find the chunks it references after a rebuild.
+    emptyOutDir: false,
   },
 });

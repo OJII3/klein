@@ -39,7 +39,6 @@ export async function createWebUiServerApp(options: WebUiServerOptions) {
     indexHTML: true,
     prefix: "/",
   });
-  const indexHtml = await readFile(resolve(options.staticDirectory, "index.html"));
   return createWebUiApp({
     ...options,
     isMemoryEntryNotFoundError:
@@ -53,7 +52,7 @@ export async function createWebUiServerApp(options: WebUiServerOptions) {
         ? IMMUTABLE_ASSET_CACHE_CONTROL
         : HTML_CACHE_CONTROL;
     })
-    .get("/*", ({ request, set }) => {
+    .get("/*", async ({ request, set }) => {
       const { pathname } = new URL(request.url);
       // Unknown API and asset paths stay 404s. Every other GET is an SPA route,
       // so the client router owns which paths exist.
@@ -61,7 +60,9 @@ export async function createWebUiServerApp(options: WebUiServerOptions) {
         set.status = 404;
         return { error: "Not found" };
       }
-      return new Response(indexHtml, {
+      // Read on every request: a running process must serve the index that
+      // matches the assets currently on disk, even after a rebuild.
+      return new Response(await readFile(resolve(options.staticDirectory, "index.html")), {
         headers: {
           "cache-control": HTML_CACHE_CONTROL,
           "content-type": "text/html; charset=utf-8",
