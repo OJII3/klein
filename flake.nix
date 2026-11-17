@@ -25,7 +25,6 @@
             packages = [
               pkgs.bun
               pkgs.cloudflared
-              pkgs.google-cloud-sdk
             ];
             shellHook = ''
               bun --version > .bun-version
