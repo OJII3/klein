@@ -7,7 +7,7 @@ Pi-based communication agent for Discord.
 Requires [Nix](https://nixos.org/) with flakes enabled, or Bun 1.4.4+.
 
 ```sh
-nix develop          # optional: provides Bun, cloudflared, and gcloud
+nix develop          # optional: provides Bun and cloudflared
 bun install
 
 cp config/config.example.json config/config.jsonc
