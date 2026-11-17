@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import {
   ActionRowBuilder,
   ButtonBuilder,
@@ -10,14 +9,30 @@ import {
 } from "discord.js";
 import type { Logger } from "pino";
 
-import type { DiscordAccess } from "../domain/discord-access-policy";
+import {
+  DiscordChannelAccessService,
+  type DiscordChannelAccessPresentation,
+} from "../application/discord-channel-access-service";
+import {
+  createDiscordChannelAccessButtonId,
+  type DiscordChannelAccessNoticeOutcome,
+  type DiscordChannelAccessRejection,
+  type DiscordChannelAccessRequest,
+  type PendingDiscordAccessRequest,
+} from "../domain/discord-access-request";
 import type { DiscordAccessRequestStore } from "../ports/discord-access-request-store";
 import type { DiscordAccessRuleStore } from "../ports/discord-access-rule-store";
 
-const REQUEST_BUTTON_PREFIX = "channel-access";
+export type { DiscordChannelAccessRequest } from "../domain/discord-access-request";
+
 const PENDING_ACCENT_COLOR = 0xfee75c;
 const ALLOW_ACCENT_COLOR = 0x57f287;
 const DENY_ACCENT_COLOR = 0xed4245;
+const REJECTION_MESSAGES: Readonly<Record<DiscordChannelAccessRejection, string>> = {
+  "owner-only": "この操作を実行できるのはオーナーだけです。",
+  expired: "このリクエストは既に処理済みか、期限切れです。",
+  "rule-update-failed": "アクセスルールを更新できませんでした。",
+};
 
 interface SendableTextChannel {
   send(payload: {
@@ -35,20 +50,6 @@ interface EditableMessage {
 
 interface FetchableMessageChannel {
   messages: { fetch(messageId: string): Promise<Message> };
-}
-
-export interface DiscordChannelAccessRequest {
-  readonly guildId: string;
-  readonly channelId: string;
-  readonly threadId?: string;
-  readonly pendingChannelId: string;
-  readonly channelName?: string;
-  readonly requesterUserId: string;
-}
-
-interface PendingAccessRequest extends DiscordChannelAccessRequest {
-  readonly requestId: string;
-  pendingMessageId?: string;
 }
 
 function isSendableTextChannel(value: unknown): value is SendableTextChannel {
@@ -86,22 +87,22 @@ function createContainer(text: string, accentColor: number): ContainerBuilder {
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(text));
 }
 
-function createButtonId(action: "allow" | "deny", requestId: string): string {
-  return `${REQUEST_BUTTON_PREFIX}:${action}:${requestId}`;
-}
-
-function parseButtonId(
-  customId: string,
-): { action: "allow" | "deny"; requestId: string } | undefined {
-  const [prefix, action, requestId] = customId.split(":");
-  if (prefix !== REQUEST_BUTTON_PREFIX || !requestId) return undefined;
-  if (action !== "allow" && action !== "deny") return undefined;
-  return { action, requestId };
-}
-
-function locationKey(request: DiscordChannelAccessRequest): string {
-  return `${request.guildId}:${request.channelId}:${request.threadId ?? ""}`;
-}
+const NOTICE_TEXTS: Readonly<
+  Record<DiscordChannelAccessNoticeOutcome, { text: string; accentColor: number }>
+> = {
+  allowed: {
+    text: "### 許可されました\nこのチャンネルが許可されました。もう一度メンションしてください。",
+    accentColor: ALLOW_ACCENT_COLOR,
+  },
+  denied: {
+    text: "### 拒否されました\nこのチャンネルは許可されませんでした。",
+    accentColor: DENY_ACCENT_COLOR,
+  },
+  "owner-unreachable": {
+    text: "### 確認できませんでした\nオーナーに確認できなかったため、このチャンネルでは返信できません。",
+    accentColor: DENY_ACCENT_COLOR,
+  },
+};
 
 export interface DiscordChannelAccessClient {
   readonly channels: { fetch(id: string): Promise<unknown> };
@@ -132,159 +133,63 @@ export interface DiscordChannelAccessButtonInteraction {
  * Asks the owner whether a channel that the bot was mentioned in may be allowed.
  * The pending notice stays in the channel and is updated once the owner decides.
  */
-export class DiscordChannelAccessRequester {
-  private readonly pendingByLocation = new Map<string, PendingAccessRequest>();
-  private readonly pendingByRequestId = new Map<string, PendingAccessRequest>();
+export class DiscordChannelAccessRequester implements DiscordChannelAccessPresentation {
+  private readonly service: DiscordChannelAccessService;
 
   constructor(
     private readonly client: DiscordChannelAccessClient,
-    private readonly accessRuleStore: DiscordAccessRuleStore,
-    private readonly accessRequestStore: DiscordAccessRequestStore,
+    accessRuleStore: DiscordAccessRuleStore,
+    accessRequestStore: DiscordAccessRequestStore,
     private readonly ownerUserId: string | undefined,
     private readonly logger?: Logger,
   ) {
-    for (const request of accessRequestStore.list()) {
-      const pending: PendingAccessRequest = { ...request };
-      this.pendingByLocation.set(locationKey(pending), pending);
-      this.pendingByRequestId.set(pending.requestId, pending);
-    }
+    this.service = new DiscordChannelAccessService({
+      accessRuleStore,
+      accessRequestStore,
+      ownerUserId,
+      logger,
+    });
   }
 
-  async request(request: DiscordChannelAccessRequest): Promise<void> {
-    if (!this.ownerUserId) return;
-    const key = locationKey(request);
-    if (this.pendingByLocation.has(key)) return;
-
-    const pending: PendingAccessRequest = {
-      ...request,
-      requestId: randomUUID(),
-    };
-    this.pendingByLocation.set(key, pending);
-    this.pendingByRequestId.set(pending.requestId, pending);
-
-    try {
-      const pendingMessage = await this.sendPendingMessage(pending);
-      pending.pendingMessageId = pendingMessage?.id;
-    } catch (error) {
-      this.logger?.warn(
-        {
-          err: error,
-          event: "discord_channel_access_pending_message_failed",
-          guildId: request.guildId,
-          channelId: request.channelId,
-          threadId: request.threadId,
-        },
-        "Failed to post the pending Discord channel access notice",
-      );
-    }
-
-    try {
-      await this.sendOwnerMessage(pending);
-    } catch (error) {
-      await this.remove(pending);
-      this.logger?.warn(
-        {
-          err: error,
-          event: "discord_channel_access_request_failed",
-          guildId: request.guildId,
-          channelId: request.channelId,
-          threadId: request.threadId,
-        },
-        "Failed to ask the owner about Discord channel access",
-      );
-      await this.updatePendingMessage(
-        pending,
-        "### 確認できませんでした\nオーナーに確認できなかったため、このチャンネルでは返信できません。",
-        DENY_ACCENT_COLOR,
-      );
-      return;
-    }
-
-    await this.save(pending);
+  request(request: DiscordChannelAccessRequest): Promise<void> {
+    return this.service.request(request, this);
   }
 
   /** Returns true when the interaction was one of this requester's buttons. */
   async handleButton(interaction: DiscordChannelAccessButtonInteraction): Promise<boolean> {
-    const parsed = parseButtonId(interaction.customId);
-    if (!parsed) return false;
-
-    if (!this.ownerUserId || interaction.user.id !== this.ownerUserId) {
-      await interaction.reply({
-        content: "この操作を実行できるのはオーナーだけです。",
-        flags: MessageFlags.Ephemeral,
-      });
-      return true;
-    }
-
-    const pending = this.pendingByRequestId.get(parsed.requestId);
-    if (!pending) {
-      await interaction.reply({
-        content: "このリクエストは既に処理済みか、期限切れです。",
-        flags: MessageFlags.Ephemeral,
-      });
-      return true;
-    }
-
-    const access: DiscordAccess = parsed.action === "allow" ? "allow" : "deny";
-    try {
-      await this.accessRuleStore.setAccess(
-        {
-          guildId: pending.guildId,
-          channelId: pending.channelId,
-          ...(pending.threadId ? { threadId: pending.threadId } : {}),
-        },
-        access,
-      );
-    } catch (error) {
-      this.logger?.error(
-        {
-          err: error,
-          event: "discord_channel_access_update_failed",
-          guildId: pending.guildId,
-          channelId: pending.channelId,
-          threadId: pending.threadId,
-        },
-        "Failed to update Discord channel access",
-      );
-      await interaction.reply({
-        content: "アクセスルールを更新できませんでした。",
-        flags: MessageFlags.Ephemeral,
-      });
-      return true;
-    }
-
-    await this.remove(pending);
-
-    const allowed = access === "allow";
-    await interaction.update({
-      components: [
-        createContainer(
-          [
-            allowed ? "### 許可しました" : "### 拒否しました",
-            ...this.describeLocation(pending),
-            "",
-            allowed ? "このチャンネルを許可しました。" : "このチャンネルは許可しませんでした。",
-          ].join("\n"),
-          allowed ? ALLOW_ACCENT_COLOR : DENY_ACCENT_COLOR,
-        ),
-      ],
-      flags: MessageFlags.IsComponentsV2,
+    const result = await this.service.handleButton({
+      customId: interaction.customId,
+      userId: interaction.user.id,
     });
-    await this.updatePendingMessage(
-      pending,
-      allowed
-        ? "### 許可されました\nこのチャンネルが許可されました。もう一度メンションしてください。"
-        : "### 拒否されました\nこのチャンネルは許可されませんでした。",
-      allowed ? ALLOW_ACCENT_COLOR : DENY_ACCENT_COLOR,
-    );
-    return true;
+
+    switch (result.kind) {
+      case "ignored":
+        return false;
+      case "rejected":
+        await interaction.reply({
+          content: REJECTION_MESSAGES[result.reason],
+          flags: MessageFlags.Ephemeral,
+        });
+        return true;
+      case "decided": {
+        const allowed = result.access === "allow";
+        await interaction.update({
+          components: [this.createDecisionContainer(result.request, allowed)],
+          flags: MessageFlags.IsComponentsV2,
+        });
+        await this.updatePendingNotice(result.request, allowed ? "allowed" : "denied");
+        return true;
+      }
+      default:
+        return false;
+    }
   }
 
-  private async sendPendingMessage(pending: PendingAccessRequest): Promise<Message | undefined> {
+  async postPendingNotice(pending: PendingDiscordAccessRequest): Promise<{ messageId?: string }> {
     const channel = await this.client.channels.fetch(pending.pendingChannelId);
-    if (!isSendableTextChannel(channel)) return undefined;
+    if (!isSendableTextChannel(channel)) return {};
 
-    return channel.send({
+    const message = await channel.send({
       components: [
         createContainer(
           [
@@ -297,20 +202,11 @@ export class DiscordChannelAccessRequester {
       ],
       flags: MessageFlags.IsComponentsV2,
     });
+
+    return { messageId: message.id };
   }
 
-  private describeLocation(pending: PendingAccessRequest): string[] {
-    const guildName = this.client.guilds.cache.get(pending.guildId)?.name;
-    const location = pending.channelName ? `#${pending.channelName}` : pending.channelId;
-    const channelKind = pending.threadId ? "スレッド" : "チャンネル";
-    return [
-      `サーバー: ${guildName ?? pending.guildId}`,
-      `${channelKind}: ${location}`,
-      `リクエスト元: <@${pending.requesterUserId}>`,
-    ];
-  }
-
-  private async sendOwnerMessage(pending: PendingAccessRequest): Promise<void> {
+  async sendOwnerRequest(pending: PendingDiscordAccessRequest): Promise<void> {
     if (!this.ownerUserId) return;
     const owner = await this.client.users.fetch(this.ownerUserId);
 
@@ -327,11 +223,11 @@ export class DiscordChannelAccessRequester {
         ).addActionRowComponents(
           new ActionRowBuilder<ButtonBuilder>().addComponents(
             new ButtonBuilder()
-              .setCustomId(createButtonId("allow", pending.requestId))
+              .setCustomId(createDiscordChannelAccessButtonId("allow", pending.requestId))
               .setLabel("許可")
               .setStyle(ButtonStyle.Success),
             new ButtonBuilder()
-              .setCustomId(createButtonId("deny", pending.requestId))
+              .setCustomId(createDiscordChannelAccessButtonId("deny", pending.requestId))
               .setLabel("拒否")
               .setStyle(ButtonStyle.Danger),
           ),
@@ -341,19 +237,20 @@ export class DiscordChannelAccessRequester {
     });
   }
 
-  private async updatePendingMessage(
-    pending: PendingAccessRequest,
-    text: string,
-    accentColor: number,
+  async updatePendingNotice(
+    pending: PendingDiscordAccessRequest,
+    outcome: DiscordChannelAccessNoticeOutcome,
   ): Promise<void> {
     if (!pending.pendingMessageId) return;
+
     try {
       const channel = await this.client.channels.fetch(pending.pendingChannelId);
       if (!hasMessageFetch(channel)) return;
       const message = await channel.messages.fetch(pending.pendingMessageId);
       if (!isEditableMessage(message)) return;
+      const notice = NOTICE_TEXTS[outcome];
       await message.edit({
-        components: [createContainer(text, accentColor)],
+        components: [createContainer(notice.text, notice.accentColor)],
         flags: MessageFlags.IsComponentsV2,
       });
     } catch (error) {
@@ -369,39 +266,29 @@ export class DiscordChannelAccessRequester {
     }
   }
 
-  private async save(pending: PendingAccessRequest): Promise<void> {
-    try {
-      await this.accessRequestStore.save(pending);
-    } catch (error) {
-      this.logger?.warn(
-        {
-          err: error,
-          event: "discord_channel_access_request_persist_failed",
-          requestId: pending.requestId,
-        },
-        "Failed to persist a Discord channel access request",
-      );
-    }
+  private createDecisionContainer(
+    pending: PendingDiscordAccessRequest,
+    allowed: boolean,
+  ): ContainerBuilder {
+    return createContainer(
+      [
+        allowed ? "### 許可しました" : "### 拒否しました",
+        ...this.describeLocation(pending),
+        "",
+        allowed ? "このチャンネルを許可しました。" : "このチャンネルは許可しませんでした。",
+      ].join("\n"),
+      allowed ? ALLOW_ACCENT_COLOR : DENY_ACCENT_COLOR,
+    );
   }
 
-  private async remove(pending: PendingAccessRequest): Promise<void> {
-    this.forget(pending);
-    try {
-      await this.accessRequestStore.remove(pending.requestId);
-    } catch (error) {
-      this.logger?.warn(
-        {
-          err: error,
-          event: "discord_channel_access_request_remove_failed",
-          requestId: pending.requestId,
-        },
-        "Failed to remove a persisted Discord channel access request",
-      );
-    }
-  }
-
-  private forget(pending: PendingAccessRequest): void {
-    this.pendingByLocation.delete(locationKey(pending));
-    this.pendingByRequestId.delete(pending.requestId);
+  private describeLocation(pending: PendingDiscordAccessRequest): string[] {
+    const guildName = this.client.guilds.cache.get(pending.guildId)?.name;
+    const location = pending.channelName ? `#${pending.channelName}` : pending.channelId;
+    const channelKind = pending.threadId ? "スレッド" : "チャンネル";
+    return [
+      `サーバー: ${guildName ?? pending.guildId}`,
+      `${channelKind}: ${location}`,
+      `リクエスト元: <@${pending.requesterUserId}>`,
+    ];
   }
 }
