@@ -7,10 +7,7 @@ import {
   type DiscordMessage,
   type DiscordUser,
 } from "@modules/discord/domain/discord-message";
-import type {
-  UserMemoryIdentity,
-  UserMemoryMessage,
-} from "../domain/user-memory";
+import type { UserMemoryIdentity, UserMemoryMessage } from "../domain/user-memory";
 import type { UserMemoryProcessor } from "../ports/user-memory-processor";
 import type { UserMemoryStore } from "../ports/user-memory-store";
 

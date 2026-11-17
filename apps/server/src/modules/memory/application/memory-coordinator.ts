@@ -13,11 +13,7 @@ import {
   type MemoryMessage,
 } from "../domain/memory";
 import type { MemoryProcessor } from "../ports/memory-processor";
-import type {
-  GuildMemoryEditor,
-  GuildMemoryReader,
-  GuildMemoryStore,
-} from "../ports/memory-store";
+import type { GuildMemoryEditor, GuildMemoryReader, GuildMemoryStore } from "../ports/memory-store";
 
 export interface MemoryCoordinatorOptions {
   readonly store: GuildMemoryStore;

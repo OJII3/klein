@@ -1,8 +1,4 @@
-import {
-  hasUserMemoryContent,
-  type UserMemory,
-  type UserMemoryIdentity,
-} from "./user-memory";
+import { hasUserMemoryContent, type UserMemory, type UserMemoryIdentity } from "./user-memory";
 import { renderUserMemory } from "./user-memory-format";
 
 /**

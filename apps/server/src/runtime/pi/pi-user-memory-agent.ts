@@ -11,14 +11,8 @@ import {
 
 import type { AgentTool } from "@agents/core/agent-tool";
 import type { StandaloneAgentFactory } from "@agents/core/standalone-agent";
-import type {
-  UserMemory,
-  UserMemoryMessage,
-} from "@modules/user-memory/domain/user-memory";
-import {
-  parseUserMemory,
-  renderUserMemory,
-} from "@modules/user-memory/domain/user-memory-format";
+import type { UserMemory, UserMemoryMessage } from "@modules/user-memory/domain/user-memory";
+import { parseUserMemory, renderUserMemory } from "@modules/user-memory/domain/user-memory-format";
 import type { UserMemoryProcessor } from "@modules/user-memory/ports/user-memory-processor";
 
 export const USER_MEMORY_AGENT_SYSTEM_PROMPT = `You are Klein's background user-memory curator.

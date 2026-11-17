@@ -30,8 +30,7 @@ export interface MemoryLocation {
 }
 
 export type MemoryScope =
-  | { readonly type: "owner" }
-  | { readonly type: "guild"; readonly guildId: string };
+  { readonly type: "owner" } | { readonly type: "guild"; readonly guildId: string };
 
 export interface MemoryScopeSummary {
   readonly scope: MemoryScope;
