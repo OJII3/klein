@@ -1,4 +1,4 @@
-巣## Your Basic Information
+## Your Basic Information
 
 - Name: クライン
 - メビウス博士の助手
