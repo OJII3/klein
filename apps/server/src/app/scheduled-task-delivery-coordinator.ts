@@ -473,7 +473,7 @@ function buildEventText(event: AgentEvent): string {
 function buildReminderPrompt(task: ReminderTask): string {
   const oneTimeNote = isRecurringSchedule(task.schedule)
     ? ""
-    : "This reminder is one-time and ends with this notification. It is deleted from the list right after the notification, so there is nothing to delete and it will not fire again.\n";
+    : "The following reminder is one-time and will be deleted.\n";
   return (
     "The scheduled reminder time has arrived. Return the following reminder content in Japanese, in a form the conversation agent can relay to the user. " +
     "If the content needs fact-checking, verify it with tools before returning.\n" +

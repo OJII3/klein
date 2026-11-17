@@ -624,8 +624,7 @@ test("tells a one-time reminder worker that the reminder ends with this notifica
   try {
     await harness.agentCoordinator.deliverDueTasks(Date.parse("2026-10-14T00:02:00.000Z"));
     const prompt = harness.attachedStarts[0]?.prompt ?? "";
-    assert.match(prompt, /This reminder is one-time and ends with this notification/u);
-    assert.match(prompt, /nothing to delete and it will not fire again/u);
+    assert.match(prompt, /The following reminder is one-time and will be deleted\./u);
   } finally {
     await harness.agentCoordinator.dispose();
   }
