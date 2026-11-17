@@ -60,6 +60,62 @@
     "react/react-in-jsx-scope": "off",
     "jsx-a11y/control-has-associated-label": ["error", { "ignoreElements": ["td", "th"] }]
   },
+  "overrides": [
+    {
+      "files": ["apps/server/src/modules/*/domain/**/*.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["**/ports/**", "**/application/**", "**/infrastructure/**"],
+                "message": "domain layer must not import ports, application, or infrastructure"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["apps/server/src/modules/*/ports/**/*.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["**/application/**", "**/infrastructure/**"],
+                "message": "ports layer must not import application or infrastructure"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["apps/server/src/modules/*/application/**/*.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["**/infrastructure/**"],
+                "message": "application layer must not import infrastructure"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["apps/server/src/modules/*/application/**/*.test.ts"],
+      "rules": {
+        "no-restricted-imports": "off"
+      }
+    }
+  ],
   "ignorePatterns": ["dist/**", "**/node_modules/**"],
   "env": {
     "builtin": true
