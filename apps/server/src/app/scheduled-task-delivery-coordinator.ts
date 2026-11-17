@@ -17,7 +17,7 @@ import type {
   WatchTask,
 } from "@modules/scheduling/domain/scheduled-task";
 import { normalizeWatchOutput, truncateWatchOutput } from "@modules/scheduling/domain/watch-output";
-import type { WatchCheckRunner } from "@modules/scheduling/application/watch-check-runner";
+import type { WatchCheckRunner } from "@modules/scheduling/ports/watch-check-runner";
 import { isOwnerAccessScope, PUBLIC_ACCESS_SCOPE } from "@shared/access";
 import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
 import type { TaskCoordinator } from "./task-coordinator";

@@ -46,9 +46,13 @@ import { loadVoiceReactionPresets } from "@modules/discord/infrastructure/voice-
 import { FileDiscordAccessRuleStore } from "@modules/discord/infrastructure/file-discord-access-rule-store";
 import { FileDiscordAccessRequestStore } from "@modules/discord/infrastructure/file-discord-access-request-store";
 import { FileDiscordChannelRuleStore } from "@modules/discord/infrastructure/file-discord-channel-rule-store";
+import { FileDiscordUserStore } from "@modules/discord/infrastructure/file-discord-user-store";
 import { MemoryCoordinator } from "@modules/memory/application/memory-coordinator";
 import { resolveMemoryConfig } from "@modules/memory/application/memory-config";
-import { JsonMemoryStore } from "@modules/memory/infrastructure/json-memory-store";
+import {
+  JsonGuildMemoryStore,
+  JsonMemoryStore,
+} from "@modules/memory/infrastructure/json-memory-store";
 import {
   createWebUiMemoryAccessor,
   OwnerMemoryStore,
@@ -58,7 +62,7 @@ import { UserMemoryCoordinator } from "@modules/user-memory/application/user-mem
 import { resolveUserMemoryConfig } from "@modules/user-memory/application/user-memory-config";
 import { createGetMonthlyUsageLimit } from "@modules/usage/application/get-monthly-usage-limit";
 import { formatMonthlyUsageStatus } from "@modules/usage/application/format-monthly-usage-status";
-import { resolveUsageProvider } from "@modules/usage/application/resolve-usage-provider";
+import { resolveUsageProvider } from "@modules/usage/infrastructure/resolve-usage-provider";
 import {
   resolveLogDirectory,
   resolveWebUiConfig,
@@ -71,7 +75,7 @@ import { PiToolUsageReader } from "@modules/webui/infrastructure/pi-tool-usage-r
 import { Sbv2Tts } from "@modules/tts/infrastructure/sbv2-tts";
 import { WebSocketAsrClient } from "@modules/asr/infrastructure/websocket-asr-client";
 import { FileScheduledTaskStore } from "@modules/scheduling/infrastructure/file-scheduled-task-store";
-import { QuickJsWatchCheckRunner } from "@modules/scheduling/application/quickjs-watch-check-runner";
+import { QuickJsWatchCheckRunner } from "@modules/scheduling/infrastructure/quickjs-watch-check-runner";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import type { DiscordReactionEvent } from "@modules/discord/domain/discord-reaction";
 import { isOwnerAccessScope, parseAccessScope } from "@shared/access";
@@ -106,7 +110,7 @@ export async function bootstrapApplication(): Promise<void> {
   const agentDir = resolve(config.runtime.agentDir);
   await migratePiDurableStorage({ agentDir, logger });
   const discordUserDirectory = new DiscordUserDirectory(
-    resolve(agentDir, "discord-users.json"),
+    new FileDiscordUserStore(resolve(agentDir, "discord-users.json")),
     logger,
   );
   await discordUserDirectory.load();
@@ -374,7 +378,7 @@ export async function bootstrapApplication(): Promise<void> {
   const memorySessionId = `memory-${randomUUID()}`;
   const memoryCoordinator = memoryConfig.enabled
     ? new MemoryCoordinator({
-        filePath: memoryConfig.filePath,
+        store: new JsonGuildMemoryStore(memoryConfig.filePath),
         idleSeconds: memoryConfig.idleSeconds,
         logger,
         maxBatchAgeSeconds: memoryConfig.maxBatchAgeSeconds,

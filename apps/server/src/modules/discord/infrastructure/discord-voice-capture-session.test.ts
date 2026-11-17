@@ -13,9 +13,9 @@ import {
   type DiscordGatewayAdapterCreator,
 } from "@discordjs/voice";
 
-import type { AsrConnection, AsrRequest } from "@modules/asr/domain/asr-client";
+import type { AsrConnection, AsrRequest } from "@modules/asr/ports/asr-client";
 import type { VoiceReactionPreset } from "@modules/discord/ports/voice-reaction-selector";
-import type { VadEvent } from "@modules/vad/domain/vad-stream";
+import type { VadEvent } from "@modules/vad/application/vad-stream";
 import { createTempDir } from "../../../testing/temp-dir";
 import {
   DiscordVoiceCaptureSession,

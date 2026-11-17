@@ -4,6 +4,7 @@ import test from "node:test";
 
 import { createStubExtensionToolContext } from "@agents/testing/test-stubs";
 import { DiscordUserDirectory } from "@modules/discord/application/discord-user-directory";
+import { FileDiscordUserStore } from "@modules/discord/infrastructure/file-discord-user-store";
 import { MarkdownUserMemoryStore } from "@modules/user-memory/infrastructure/markdown-user-memory-store";
 import { isRecord } from "@shared/type-guards";
 import { createTempDir } from "../../testing/temp-dir";
@@ -27,7 +28,9 @@ function findTool(tools: ReturnType<typeof createUserMemoryTools>, name: string)
 
 function createTools(tempPath: string) {
   const store = new MarkdownUserMemoryStore(join(tempPath, "memory"));
-  const users = new DiscordUserDirectory(join(tempPath, "discord-users.json"));
+  const users = new DiscordUserDirectory(
+    new FileDiscordUserStore(join(tempPath, "discord-users.json")),
+  );
   users.remember({
     bot: false,
     displayName: "Alice",

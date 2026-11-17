@@ -6,8 +6,9 @@ import pino from "pino";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import { TaskCoordinator } from "@app/task-coordinator";
 
-import type { UserMemory, UserMemoryMessage, UserMemoryProcessor } from "../domain/user-memory";
+import type { UserMemory, UserMemoryMessage } from "../domain/user-memory";
 import { MarkdownUserMemoryStore } from "../infrastructure/markdown-user-memory-store";
+import type { UserMemoryProcessor } from "../ports/user-memory-processor";
 import { UserMemoryCoordinator } from "./user-memory-coordinator";
 import { createTempDir } from "../../../testing/temp-dir";
 

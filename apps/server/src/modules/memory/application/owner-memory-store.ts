@@ -1,19 +1,21 @@
 import {
   MemoryEntryNotFoundError,
-  type GuildMemoryEditor,
-  type GuildMemoryReader,
   type MemoryApplyResult,
   type MemoryDocument,
   type MemoryEntry,
   type MemoryKind,
   type MemoryOperation,
   type MemoryScope,
-  type MemoryScopeEditor,
-  type MemoryScopeReader,
   type MemoryScopeSummary,
-  type MemoryStore,
 } from "../domain/memory";
-import { renderOwnerMemoryContext } from "../infrastructure/memory-context-renderer";
+import { renderOwnerMemoryContext } from "../domain/memory-context-renderer";
+import type {
+  GuildMemoryEditor,
+  GuildMemoryReader,
+  MemoryScopeEditor,
+  MemoryScopeReader,
+  MemoryStore,
+} from "../ports/memory-store";
 import { selectMemoryEntries } from "./memory-context-selector";
 
 const DEFAULT_RECENT_FALLBACK_LIMIT = 5;

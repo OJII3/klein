@@ -4,7 +4,8 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { createTempDir } from "../../../testing/temp-dir";
-import { MarkdownUserMemoryStore, renderUserMemory } from "./markdown-user-memory-store";
+import { renderUserMemory } from "../domain/user-memory-format";
+import { MarkdownUserMemoryStore } from "./markdown-user-memory-store";
 
 const userId = "123456789012345678";
 const username = "alice";

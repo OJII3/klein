@@ -39,11 +39,12 @@ import { loadProfile } from "@app/profile";
 import { loadPromptFile } from "@app/prompt";
 import { DiscordUserDirectory } from "@modules/discord/application/discord-user-directory";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
+import { FileDiscordUserStore } from "@modules/discord/infrastructure/file-discord-user-store";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
 import { OwnerMemoryStore } from "@modules/memory/application/owner-memory-store";
 import { JsonMemoryStore } from "@modules/memory/infrastructure/json-memory-store";
-import { QuickJsWatchCheckRunner } from "@modules/scheduling/application/quickjs-watch-check-runner";
 import { FileScheduledTaskStore } from "@modules/scheduling/infrastructure/file-scheduled-task-store";
+import { QuickJsWatchCheckRunner } from "@modules/scheduling/infrastructure/quickjs-watch-check-runner";
 import { MarkdownUserMemoryStore } from "@modules/user-memory/infrastructure/markdown-user-memory-store";
 import { parseDiscordChannelId } from "@shared/discord-channel-session-key";
 import { isRecord, parseJson } from "@shared/type-guards";
@@ -1372,7 +1373,7 @@ async function executeSessionSlice(
     );
     const userMemoryStore = new MarkdownUserMemoryStore(join(sliceRoot, "user-memory"));
     const discordUserDirectory = new DiscordUserDirectory(
-      join(sliceRoot, "discord-users.json"),
+      new FileDiscordUserStore(join(sliceRoot, "discord-users.json")),
       pino({ level: "silent" }),
     );
 

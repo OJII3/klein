@@ -13,7 +13,7 @@ import {
 import { Readable } from "node:stream";
 
 import type { VoiceReactionPreset } from "@modules/discord/ports/voice-reaction-selector";
-import type { TextToSpeech } from "@modules/tts/infrastructure/sbv2-tts";
+import type { TextToSpeech } from "@modules/tts/ports/text-to-speech";
 
 export interface VoiceLogger {
   child(bindings: Record<string, unknown>): VoiceLogger;

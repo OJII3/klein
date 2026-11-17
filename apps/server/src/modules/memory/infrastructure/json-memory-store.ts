@@ -12,8 +12,8 @@ import {
   type MemoryEntryScope,
   type MemoryKind,
   type MemoryOperation,
-  type MemoryStore,
 } from "../domain/memory";
+import type { GuildMemoryStore, MemoryStore } from "../ports/memory-store";
 
 const MEMORY_GUILD_ID_TOKEN = "{guildId}";
 
@@ -112,6 +112,22 @@ export class JsonMemoryStore implements MemoryStore {
       await unlink(temporaryPath).catch(() => undefined);
     }
   }
+}
+
+export class JsonGuildMemoryStore implements GuildMemoryStore {
+  constructor(private readonly filePathPattern: string) {}
+
+  forGuild(guildId: string): MemoryStore {
+    return new JsonMemoryStore(resolveMemoryFilePath(this.filePathPattern, guildId));
+  }
+
+  listGuildIds(): Promise<string[]> {
+    return listMemoryGuildIds(this.filePathPattern);
+  }
+}
+
+export function resolveMemoryFilePath(filePath: string, guildId: string): string {
+  return filePath.replaceAll(MEMORY_GUILD_ID_TOKEN, guildId);
 }
 
 function emptyApplyResult(): MemoryApplyResult {

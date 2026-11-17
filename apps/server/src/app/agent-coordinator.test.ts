@@ -29,7 +29,7 @@ import type {
   WatchTask,
 } from "@modules/scheduling/domain/scheduled-task";
 import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
-import type { WatchCheckRunner } from "@modules/scheduling/application/watch-check-runner";
+import type { WatchCheckRunner } from "@modules/scheduling/ports/watch-check-runner";
 import { TaskCoordinator } from "./task-coordinator";
 import { AgentCoordinator, type AgentCoordinatorDependencies } from "./agent-coordinator";
 import { ChannelSessionStateStore, getChannelRotationBucket } from "./channel-session-state-store";

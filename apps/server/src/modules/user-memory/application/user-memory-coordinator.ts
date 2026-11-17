@@ -10,9 +10,9 @@ import {
 import type {
   UserMemoryIdentity,
   UserMemoryMessage,
-  UserMemoryProcessor,
-  UserMemoryStore,
 } from "../domain/user-memory";
+import type { UserMemoryProcessor } from "../ports/user-memory-processor";
+import type { UserMemoryStore } from "../ports/user-memory-store";
 
 const DEFAULT_IDLE_SECONDS = 180;
 const DEFAULT_MAX_BATCH_AGE_SECONDS = 1_800;

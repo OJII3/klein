@@ -10,9 +10,9 @@ import {
   MemoryEntryNotFoundError,
   type MemoryMessage,
   type MemoryOperation,
-  type MemoryProcessor,
 } from "../domain/memory";
-import { JsonMemoryStore } from "../infrastructure/json-memory-store";
+import { JsonGuildMemoryStore, JsonMemoryStore } from "../infrastructure/json-memory-store";
+import type { MemoryProcessor } from "../ports/memory-processor";
 import { MemoryCoordinator } from "./memory-coordinator";
 import { createTempDir } from "../../../testing/temp-dir";
 
@@ -39,7 +39,7 @@ test("batches recent guild messages and keeps guild memory files separate", asyn
   };
   const taskCoordinator = new TaskCoordinator();
   const coordinator = new MemoryCoordinator({
-    filePath: join(directory, "{guildId}", "MEMORY.json"),
+    store: new JsonGuildMemoryStore(join(directory, "{guildId}", "MEMORY.json")),
     idleSeconds: 0.01,
     logger: pino({ level: "silent" }),
     maxBatchAgeSeconds: 1,
@@ -112,7 +112,7 @@ test("flushes pending guild memory when asked", async () => {
   };
   const taskCoordinator = new TaskCoordinator();
   const coordinator = new MemoryCoordinator({
-    filePath: join(temp.path, "{guildId}", "MEMORY.json"),
+    store: new JsonGuildMemoryStore(join(temp.path, "{guildId}", "MEMORY.json")),
     idleSeconds: 60,
     logger: pino({ level: "silent" }),
     maxBatchAgeSeconds: 60,
@@ -135,7 +135,7 @@ test("deletes a persisted memory entry for a guild", async () => {
   const directory = temp.path;
   const taskCoordinator = new TaskCoordinator();
   const coordinator = new MemoryCoordinator({
-    filePath: join(directory, "{guildId}", "MEMORY.json"),
+    store: new JsonGuildMemoryStore(join(directory, "{guildId}", "MEMORY.json")),
     idleSeconds: 1,
     logger: pino({ level: "silent" }),
     maxBatchAgeSeconds: 1,

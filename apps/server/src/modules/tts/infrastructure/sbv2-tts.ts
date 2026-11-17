@@ -1,6 +1,4 @@
-export interface TextToSpeech {
-  synthesize(text: string): Promise<Uint8Array>;
-}
+import type { TextToSpeech } from "../ports/text-to-speech";
 
 export class Sbv2Tts implements TextToSpeech {
   constructor(private readonly serverUrl: string) {}

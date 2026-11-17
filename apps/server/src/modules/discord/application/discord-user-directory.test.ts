@@ -4,6 +4,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { createTempDir } from "../../../testing/temp-dir";
+import { FileDiscordUserStore } from "../infrastructure/file-discord-user-store";
 import { DiscordUserDirectory } from "./discord-user-directory";
 
 const alice = {
@@ -22,7 +23,9 @@ const bob = {
 
 test("remembers users and resolves usernames case-insensitively", async () => {
   await using temp = await createTempDir("klein-discord-users-");
-  const directory = new DiscordUserDirectory(join(temp.path, "discord-users.json"));
+  const directory = new DiscordUserDirectory(
+    new FileDiscordUserStore(join(temp.path, "discord-users.json")),
+  );
 
   directory.remember(alice);
   directory.remember(bob);
@@ -42,12 +45,12 @@ test("persists users across directory instances", async () => {
   await using temp = await createTempDir("klein-discord-users-");
   const filePath = join(temp.path, "discord-users.json");
 
-  const first = new DiscordUserDirectory(filePath);
+  const first = new DiscordUserDirectory(new FileDiscordUserStore(filePath));
   first.remember(alice);
   first.remember(bob);
   await first.flush();
 
-  const second = new DiscordUserDirectory(filePath);
+  const second = new DiscordUserDirectory(new FileDiscordUserStore(filePath));
   await second.load();
 
   assert.equal(second.resolve("alice")?.id, alice.id);
@@ -57,7 +60,7 @@ test("persists users across directory instances", async () => {
 test("keeps the numeric ID when a username changes", async () => {
   await using temp = await createTempDir("klein-discord-users-");
   const filePath = join(temp.path, "discord-users.json");
-  const directory = new DiscordUserDirectory(filePath);
+  const directory = new DiscordUserDirectory(new FileDiscordUserStore(filePath));
 
   directory.remember(alice);
   await directory.flush();
@@ -71,7 +74,7 @@ test("keeps the numeric ID when a username changes", async () => {
   assert.equal(directory.resolve("alice_new")?.id, alice.id);
   assert.equal(directory.resolve("alice_new")?.firstSeenAt, firstSeenAt);
 
-  const reloaded = new DiscordUserDirectory(filePath);
+  const reloaded = new DiscordUserDirectory(new FileDiscordUserStore(filePath));
   await reloaded.load();
   assert.equal(reloaded.resolve("alice"), undefined);
   assert.equal(reloaded.resolve("alice_new")?.id, alice.id);
@@ -100,7 +103,7 @@ test("ignores invalid users and invalid stored entries", async () => {
     "utf8",
   );
 
-  const directory = new DiscordUserDirectory(filePath);
+  const directory = new DiscordUserDirectory(new FileDiscordUserStore(filePath));
   await directory.load();
 
   assert.equal(directory.resolve("alice"), undefined);

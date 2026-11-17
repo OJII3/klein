@@ -1,7 +1,7 @@
 import { Type } from "typebox";
 
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
-import type { TextToSpeech } from "@modules/tts/infrastructure/sbv2-tts";
+import type { TextToSpeech } from "@modules/tts/ports/text-to-speech";
 import { defineSurfaceTool } from "./surface-tool";
 
 export function createDiscordVoiceTool(

@@ -1,9 +1,9 @@
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
-import type { DiscordUserResolver } from "@modules/discord/domain/discord-user";
-import type { UserMemoryStore } from "@modules/user-memory/domain/user-memory";
-import { renderUserMemory } from "@modules/user-memory/infrastructure/markdown-user-memory-store";
+import type { DiscordUserResolver } from "@modules/discord/ports/discord-user-resolver";
+import { renderUserMemory } from "@modules/user-memory/domain/user-memory-format";
+import type { UserMemoryStore } from "@modules/user-memory/ports/user-memory-store";
 
 const discordIdSchema = Type.String({ minLength: 1, maxLength: 100 });
 

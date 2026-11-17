@@ -5,11 +5,11 @@ import {
   InMemoryScheduledTaskStore,
   createStubExtensionToolContext,
 } from "@agents/testing/test-stubs";
+import type { WatchTask } from "@modules/scheduling/domain/scheduled-task";
 import {
   WatchCheckError,
   type WatchCheckRunner,
-} from "@modules/scheduling/application/watch-check-runner";
-import type { WatchTask } from "@modules/scheduling/domain/scheduled-task";
+} from "@modules/scheduling/ports/watch-check-runner";
 import { isRecord } from "@shared/type-guards";
 import { createWatchTools } from "./watch";
 

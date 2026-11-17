@@ -1,14 +1,14 @@
 import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
 import type { CreateAgentSessionOptions } from "@earendil-works/pi-coding-agent";
 
-import { renderMemoryContext } from "@modules/memory/infrastructure/memory-context-renderer";
+import { renderMemoryContext } from "@modules/memory/domain/memory-context-renderer";
 import type {
   MemoryDocument,
   MemoryEntryScope,
   MemoryMessage,
   MemoryOperation,
-  MemoryProcessor,
 } from "@modules/memory/domain/memory";
+import type { MemoryProcessor } from "@modules/memory/ports/memory-processor";
 import type { CompleteSimple } from "./pi-standalone-session-runner";
 
 type ThinkingLevel = NonNullable<CreateAgentSessionOptions["thinkingLevel"]>;

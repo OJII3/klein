@@ -4,7 +4,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { JsonMemoryStore, listMemoryGuildIds, renderMemoryDocument } from "./json-memory-store";
-import { renderMemoryContext } from "./memory-context-renderer";
+import { renderMemoryContext } from "../domain/memory-context-renderer";
 import { createTempDir } from "../../../testing/temp-dir";
 
 test("applies memory operations to a JSON file", async () => {

@@ -1,10 +1,4 @@
-import type { DiscordUser } from "./discord-message";
-
 const DISCORD_USERNAME_MAX_LENGTH = 100;
-
-export interface DiscordUserResolver {
-  resolve(username: string): DiscordUser | undefined;
-}
 
 export function normalizeDiscordUsername(value: string): string {
   return value.trim().replace(/^@+/u, "").trim().toLowerCase();
