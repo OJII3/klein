@@ -181,6 +181,8 @@ test("serves local HTTP when cloudflared is disabled and releases the listener w
       // A rebuild replaces index.html while the process keeps running. The
       // next request must serve the new document instead of a startup copy.
       await writeFile(join(directory, "index.html"), "<html>Klein rebuilt</html>");
+      const rebuiltRoot = await fetch(`http://127.0.0.1:${address.port}/`);
+      assert.equal(await rebuiltRoot.text(), "<html>Klein rebuilt</html>");
       const rebuilt = await fetch(`http://127.0.0.1:${address.port}/sessions`);
       assert.equal(rebuilt.headers.get("cache-control"), "no-store");
       assert.equal(await rebuilt.text(), "<html>Klein rebuilt</html>");

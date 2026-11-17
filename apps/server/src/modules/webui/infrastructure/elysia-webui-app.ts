@@ -36,9 +36,20 @@ export async function createWebUiServerApp(options: WebUiServerOptions) {
     assets: resolve(options.staticDirectory),
     alwaysStatic: true,
     bunFullstack: false,
-    indexHTML: true,
+    // The SPA entry point is served below so that every request reads the
+    // current index.html instead of a copy cached at startup.
+    indexHTML: false,
     prefix: "/",
   });
+  // Read on every request: a running process must serve the index that matches
+  // the assets currently on disk, even after a rebuild.
+  const serveIndex = async () =>
+    new Response(await readFile(resolve(options.staticDirectory, "index.html")), {
+      headers: {
+        "cache-control": HTML_CACHE_CONTROL,
+        "content-type": "text/html; charset=utf-8",
+      },
+    });
   return createWebUiApp({
     ...options,
     isMemoryEntryNotFoundError:
@@ -52,6 +63,7 @@ export async function createWebUiServerApp(options: WebUiServerOptions) {
         ? IMMUTABLE_ASSET_CACHE_CONTROL
         : HTML_CACHE_CONTROL;
     })
+    .get("/", serveIndex)
     .get("/*", async ({ request, set }) => {
       const { pathname } = new URL(request.url);
       // Unknown API and asset paths stay 404s. Every other GET is an SPA route,
@@ -60,14 +72,7 @@ export async function createWebUiServerApp(options: WebUiServerOptions) {
         set.status = 404;
         return { error: "Not found" };
       }
-      // Read on every request: a running process must serve the index that
-      // matches the assets currently on disk, even after a rebuild.
-      return new Response(await readFile(resolve(options.staticDirectory, "index.html")), {
-        headers: {
-          "cache-control": HTML_CACHE_CONTROL,
-          "content-type": "text/html; charset=utf-8",
-        },
-      });
+      return serveIndex();
     })
     .use(staticApp);
 }
