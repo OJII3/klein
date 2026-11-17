@@ -551,6 +551,12 @@ const dueReminder: ReminderTask = {
   nextRunAt: "2026-10-14T00:01:00.000Z",
 };
 
+const repeatingReminder: ReminderTask = {
+  ...dueReminder,
+  id: "reminder-2",
+  schedule: { type: "every", minutes: 10 },
+};
+
 const dueWatch: WatchTask = {
   kind: "watch",
   id: "watch-1",
@@ -607,6 +613,30 @@ test("starts a reminder worker and keeps the conversation session for conversati
       harness.prompts.get(sessionKey.slice("discord-channel:".length))?.[0]?.event.type,
       "discord.message",
     );
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+test("tells a one-time reminder worker that the reminder ends with this notification", async () => {
+  const reminders = createScheduledTaskStore(dueReminder);
+  const harness = createHarness(undefined, reminders.store);
+  try {
+    await harness.agentCoordinator.deliverDueTasks(Date.parse("2026-10-14T00:02:00.000Z"));
+    const prompt = harness.attachedStarts[0]?.prompt ?? "";
+    assert.match(prompt, /このリマインダーは一度きりで、この通知で終了する/u);
+    assert.match(prompt, /削除の必要も、再通知もない/u);
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+test("does not describe a repeating reminder as one-time to its worker", async () => {
+  const reminders = createScheduledTaskStore(repeatingReminder);
+  const harness = createHarness(undefined, reminders.store);
+  try {
+    await harness.agentCoordinator.deliverDueTasks(Date.parse("2026-10-14T00:02:00.000Z"));
+    assert.doesNotMatch(harness.attachedStarts[0]?.prompt ?? "", /一度きり/u);
   } finally {
     await harness.agentCoordinator.dispose();
   }
