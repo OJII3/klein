@@ -16,10 +16,11 @@ import {
   getLatestCompactionEntry,
   serializeConversation,
   type AgentSessionEvent,
+  type ContextEvent,
   type CreateAgentSessionOptions,
   type ExtensionFactory,
 } from "@earendil-works/pi-coding-agent";
-import type { Api, AssistantMessage, Message, Model } from "@earendil-works/pi-ai";
+import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
 import webAccessExtension from "pi-web-access";
 
 import type { AgentDefinition } from "@agents/core/agent-definition";
@@ -69,6 +70,7 @@ import {
   ensureConfiguredModels,
   resolveConfiguredImageModel,
   resolveConfiguredModel,
+  toApiModel,
   withOpenCodeSessionHeader,
 } from "./pi-model-runtime";
 import type { PiTool } from "./pi-tool";
@@ -128,12 +130,14 @@ const DEFAULT_EXTENSION_TOOL_NAMES = [
   "tool_search",
 ] as const;
 
+const DEFAULT_AGENT_ROLE: AgentRole = { kind: "conversation" };
+
 export function createPiSessionManager(
   agentDir: string,
   sessionKey: string,
   sessionMode: SessionMode,
   cwd = process.cwd(),
-  role: AgentRole = { kind: "conversation" },
+  role: AgentRole = DEFAULT_AGENT_ROLE,
 ): SessionManager {
   const sessionDir = resolve(agentDir, "sessions", role.kind, encodeURIComponent(sessionKey));
 
@@ -151,25 +155,47 @@ interface PendingInputRequester {
   readonly requesterId: string | undefined;
 }
 
+export interface PiRuntimeSession {
+  readonly model: AgentSession["model"];
+  readonly isStreaming: boolean;
+  readonly messages: AgentSession["messages"];
+  readonly sessionManager: Pick<
+    SessionManager,
+    "appendCustomEntry" | "getBranch" | "buildSessionContext" | "getSessionId"
+  >;
+  readonly settingsManager: Pick<
+    SettingsManager,
+    "getHttpIdleTimeoutMs" | "getProviderRetrySettings"
+  >;
+  readonly thinkingLevel: AgentSession["thinkingLevel"];
+  readonly steeringMode: AgentSession["steeringMode"];
+  readonly cacheWarmingStatus?: AgentSession["cacheWarmingStatus"];
+  prompt: AgentSession["prompt"];
+  steer: AgentSession["steer"];
+  sendCustomMessage: AgentSession["sendCustomMessage"];
+  compact: AgentSession["compact"];
+  abort: AgentSession["abort"];
+  dispose: AgentSession["dispose"];
+  subscribe: AgentSession["subscribe"];
+}
+
 export class PiAgentRuntime implements AgentRuntime {
   private queue: Promise<void> = Promise.resolve();
   private readonly pendingInputs: PendingInputRequester[] = [];
   private readonly unsubscribeSession?: () => void;
 
   constructor(
-    private readonly session: AgentSession,
+    private readonly session: PiRuntimeSession,
     private readonly imageAnalyzer?: ImageAnalyzer,
     private readonly trace?: PiRuntimeTrace,
-    private readonly modelRuntime?: ModelRuntime,
+    private readonly modelRuntime?: Pick<ModelRuntime, "completeSimple">,
     private readonly onDispose?: () => void,
     private readonly assistantText: AgentPolicy["assistantText"] = "none",
     private readonly turnState: PiTurnState = {},
     private readonly characterName?: string,
   ) {
     trace?.attach(session);
-    if (typeof session.subscribe === "function") {
-      this.unsubscribeSession = session.subscribe((event) => this.onSessionEvent(event));
-    }
+    this.unsubscribeSession = session.subscribe((event) => this.onSessionEvent(event));
   }
 
   prompt(turn: AgentTurn): Promise<string | undefined> {
@@ -229,7 +255,11 @@ export class PiAgentRuntime implements AgentRuntime {
     try {
       const disposition = await this.session.steer(
         prompt.text,
-        prompt.images.map((image) => ({ type: "image", ...image })),
+        prompt.images.map((image) => ({
+          type: "image" as const,
+          data: image.data,
+          mimeType: image.mimeType,
+        })),
         { source: "rpc" },
       );
       if (disposition !== "queued") {
@@ -281,6 +311,28 @@ export class PiAgentRuntime implements AgentRuntime {
       }
       case "agent_settled":
         this.pendingInputs.length = 0;
+        break;
+      case "agent_start":
+      case "turn_start":
+      case "turn_end":
+      case "message_update":
+      case "message_end":
+      case "tool_execution_start":
+      case "tool_execution_update":
+      case "tool_execution_end":
+      case "agent_end":
+      case "queue_update":
+      case "compaction_start":
+      case "compaction_end":
+      case "auto_retry_start":
+      case "auto_retry_end":
+      case "bash_execution_update":
+      case "session_info_changed":
+      case "thinking_level_changed":
+      case "entry_appended":
+      case "summarization_retry_scheduled":
+      case "summarization_retry_attempt_start":
+      case "summarization_retry_finished":
         break;
     }
   }
@@ -380,7 +432,7 @@ export class PiAgentRuntime implements AgentRuntime {
   }
 
   private async summarizeCurrentContextForHandoff(previousSummary?: string): Promise<string> {
-    const model = this.session.model;
+    const model = this.session.model ? toApiModel(this.session.model) : undefined;
     if (!model || !this.modelRuntime) {
       throw new Error("Cannot summarize handoff without a configured model runtime");
     }
@@ -524,7 +576,9 @@ export function createResourceLoader(
  * wrote text without calling a surface tool is not mistaken for a reply on the next request. The active turn is kept
  * intact because a tool call continues it, including when a user steers it.
  */
-export function normalizeCompletedAssistantText<TMessage extends Message>(
+type AgentMessage = ContextEvent["messages"][number];
+
+export function normalizeCompletedAssistantText<TMessage extends AgentMessage>(
   messages: readonly TMessage[],
   surfaceTools: readonly AgentTool[],
 ): TMessage[] {
@@ -538,7 +592,8 @@ export function normalizeCompletedAssistantText<TMessage extends Message>(
   let completedTurnIndex = -1;
   let seenUser = false;
   for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index]!;
+    const message = messages[index];
+    if (!message) continue;
     if (message.role === "user") seenUser = true;
     if (
       seenUser &&
@@ -605,10 +660,7 @@ export function createAssistantTextContextExtension(
   return (pi) => {
     pi.on("context", (event) => {
       return {
-        messages: normalizeCompletedAssistantText(
-          event.messages as unknown as readonly Message[],
-          surfaceTools,
-        ) as unknown as typeof event.messages,
+        messages: normalizeCompletedAssistantText(event.messages, surfaceTools),
       };
     });
   };

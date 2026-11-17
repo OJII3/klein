@@ -279,8 +279,12 @@ export class AttachedAgentCoordinator implements AttachedTaskControl {
       task.closed = true;
     }
 
-    await Promise.allSettled(tasks.map((task) => task.runtime?.abort?.()));
-    await Promise.allSettled(tasks.map((task) => task.activeExecution));
+    await Promise.allSettled(
+      tasks.flatMap((task) => (task.runtime?.abort ? [task.runtime.abort()] : [])),
+    );
+    await Promise.allSettled(
+      tasks.flatMap((task) => (task.activeExecution ? [task.activeExecution] : [])),
+    );
 
     for (const task of tasks) {
       this.disposeRuntime(task);
@@ -304,20 +308,21 @@ export class AttachedAgentCoordinator implements AttachedTaskControl {
 
   private enqueue(task: AttachedTask, text: string): void {
     task.pendingPrompts += 1;
-    task.queue = task.queue
-      .then(async () => {
-        try {
-          await this.options.taskCoordinator.run(() => this.runPrompt(task, text));
-        } finally {
-          task.pendingPrompts = Math.max(0, task.pendingPrompts - 1);
-        }
-      })
-      .catch((error: unknown) => {
-        this.logger.error(
-          { err: error, event: "attached_task_queue_failed", taskId: task.id },
-          "Attached task queue failed",
-        );
-      });
+    const previous = task.queue;
+    const run = async (): Promise<void> => {
+      await previous;
+      try {
+        await this.options.taskCoordinator.run(() => this.runPrompt(task, text));
+      } finally {
+        task.pendingPrompts = Math.max(0, task.pendingPrompts - 1);
+      }
+    };
+    task.queue = run().catch((error: unknown) => {
+      this.logger.error(
+        { err: error, event: "attached_task_queue_failed", taskId: task.id },
+        "Attached task queue failed",
+      );
+    });
   }
 
   private async runPrompt(task: AttachedTask, text: string): Promise<void> {

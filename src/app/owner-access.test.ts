@@ -13,7 +13,6 @@ import {
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import { DiscordOperatingState } from "@modules/discord/domain/discord-operating-state";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
-import type { MemoryCoordinator } from "@modules/memory/application/memory-coordinator";
 import type { OwnerMemoryStore } from "@modules/memory/application/owner-memory-store";
 import { AgentCoordinator } from "./agent-coordinator";
 import { ChannelSessionStateStore, getChannelRotationBucket } from "./channel-session-state-store";
@@ -35,7 +34,7 @@ function createHarness(
   store: ChannelSessionStateStore,
   channelRule: { access: DiscordAccess },
   options: {
-    readonly ownerMemoryStore?: OwnerMemoryStore;
+    readonly ownerMemoryStore?: Pick<OwnerMemoryStore, "getContext">;
   } = {},
 ) {
   const creations: AgentCreationOptions[] = [];
@@ -43,8 +42,8 @@ function createHarness(
   const remembered: DiscordMessage[] = [];
   let disposed = 0;
   const factory: AgentFactory = {
-    async create(_definition, _tools, options) {
-      creations.push(options);
+    async create(_definition, _tools, creationOptions) {
+      creations.push(creationOptions);
       return {
         async prompt(turn) {
           prompts.push(turn);
@@ -59,12 +58,20 @@ function createHarness(
       };
     },
   };
-  const service = {
+  const service: DiscordChannelApi = {
+    async getChannelLocation(channelId) {
+      return { guildId: "guild", channelId };
+    },
+    async sendTyping() {},
     async sendMessage() {},
+    async sendChoices() {
+      throw new Error("Unexpected choice send");
+    },
+    async sendAudio() {},
     async readMessage() {
       return message;
     },
-  } as unknown as DiscordChannelApi;
+  };
   const coordinator = new AgentCoordinator({
     accessPolicy: createDiscordAccessPolicy(
       {
@@ -109,7 +116,7 @@ function createHarness(
       enqueue(input: DiscordMessage) {
         remembered.push(input);
       },
-    } as unknown as MemoryCoordinator,
+    },
     ownerMemoryStore: options.ownerMemoryStore,
     logger: pino({ level: "silent" }),
     operatingState: new DiscordOperatingState(),
@@ -226,12 +233,12 @@ test("fetches and injects ownerMemory only for owner-allowed turns", async () =>
   await using temp = await createTempDir("klein-owner-");
   const store = new ChannelSessionStateStore(temp.path);
   let ownerMemoryQueries = 0;
-  const ownerMemoryStore = {
+  const ownerMemoryStore: Pick<OwnerMemoryStore, "getContext"> = {
     async getContext() {
       ownerMemoryQueries += 1;
       return "private owner memory";
     },
-  } as unknown as OwnerMemoryStore;
+  };
   const rule: { access: DiscordAccess } = { access: "allow" };
   const harness = createHarness(store, rule, { ownerMemoryStore });
 

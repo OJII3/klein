@@ -1,12 +1,9 @@
 import type { ContextEvent, ExtensionFactory, SessionEntry } from "@earendil-works/pi-coding-agent";
 
 import type { AgentTurnContext } from "@agents/core/agent-turn";
+import { isRecord } from "@shared/type-guards";
 
 export const TURN_CONTEXT_CUSTOM_TYPE = "klein-turn-context";
-
-interface TurnContextEntryData {
-  readonly content?: string;
-}
 
 export function renderTurnContext(context: AgentTurnContext): string | undefined {
   const formatted = [
@@ -33,7 +30,7 @@ export function createTurnContextExtension(): ExtensionFactory {
         .findLast(
           (entry) => entry.type === "custom" && entry.customType === TURN_CONTEXT_CUSTOM_TYPE,
         );
-      if (!latest) return;
+      if (!latest) return undefined;
 
       const messages = event.messages.filter(
         (message) =>
@@ -61,6 +58,8 @@ export function createTurnContextExtension(): ExtensionFactory {
 
 function readTurnContextEntry(entry: SessionEntry): string | undefined {
   if (entry.type !== "custom" || entry.customType !== TURN_CONTEXT_CUSTOM_TYPE) return undefined;
-  const data = entry.data as TurnContextEntryData | undefined;
-  return typeof data?.content === "string" && data.content.length > 0 ? data.content : undefined;
+  if (!isRecord(entry.data)) return undefined;
+  return typeof entry.data.content === "string" && entry.data.content.length > 0
+    ? entry.data.content
+    : undefined;
 }

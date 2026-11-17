@@ -52,7 +52,12 @@ function formatScope(scope: MemoryEntryScope, includeIds: boolean): string {
       return includeIds ? `channel:${scope.channelId}` : "channel";
     case "thread":
       return includeIds ? `thread:${scope.threadId} (channel:${scope.channelId})` : "thread";
-    default:
+    case "guild":
+    case "owner":
       return scope.type;
+    default: {
+      const exhaustive: never = scope;
+      throw new Error(`Unsupported memory scope: ${String(exhaustive)}`);
+    }
   }
 }

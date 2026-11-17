@@ -121,10 +121,15 @@ export function levelLabel(level: number | string): string {
 export function stringify(value: unknown): string {
   if (typeof value === "string") return value;
   if (value === undefined || value === null) return "—";
-  try {
-    return JSON.stringify(value, null, 2) ?? String(value);
-  } catch {
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
     return String(value);
+  }
+  if (typeof value === "symbol") return value.toString();
+  if (typeof value === "function") return value.name ? `[Function: ${value.name}]` : "[Function]";
+  try {
+    return JSON.stringify(value, null, 2) ?? Object.prototype.toString.call(value);
+  } catch {
+    return value instanceof Error ? value.toString() : Object.prototype.toString.call(value);
   }
 }
 

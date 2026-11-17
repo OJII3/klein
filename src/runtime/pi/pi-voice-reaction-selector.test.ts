@@ -1,17 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { ClassifierApi, ClassifierModel } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
 
 import type { VoiceReactionPreset } from "@modules/discord/ports/voice-reaction-selector";
+import { createStubClassifierModel, createStubClassifierResult } from "./pi-test-helpers";
 import {
   PiVoiceReactionSelector,
   VOICE_REACTION_CLASSIFICATION_INSTRUCTIONS,
 } from "./pi-voice-reaction-selector";
 
-const model = { id: "jev", provider: "test" } as ClassifierModel<ClassifierApi>;
+const model = createStubClassifierModel({ id: "jev", provider: "test" });
 const presets: VoiceReactionPreset[] = [
   { id: "ack", text: "うん、聞いてるよ", description: "話を受け止める", audioFile: "ack.ogg" },
   { id: "think", text: "ちょっと考えるね", description: "返答を考える", audioFile: "think.ogg" },
@@ -24,21 +24,16 @@ const presets: VoiceReactionPreset[] = [
 ];
 
 test("pi includes the configured Workers AI Clef Flash classifier", () => {
-  const model = builtinModels().getModelOfType(
+  const clefModel = builtinModels().getModelOfType(
     "classifier",
     "cloudflare-workers-ai",
     "@cf/cloudflare/clef-flash",
   );
 
-  assert.equal(model?.api, "cloudflare-workers-ai-system-one");
+  assert.equal(clefModel?.api, "cloudflare-workers-ai-system-one");
 });
 
-function result(choice: string, confidence = 0.9, stopReason = "stop") {
-  return {
-    answers: { reaction: { type: "choice", choice, confidence, probabilities: {} } },
-    stopReason,
-  } as never;
-}
+const result = createStubClassifierResult;
 
 test("classifies among actual preset phrases with transcript context and accepts low confidence", async () => {
   let call:
@@ -86,7 +81,11 @@ test("falls back to the first candidate for invalid and failed classifier result
   const responses = [result("unknown-id"), result("think", 1, "error")];
   const runtime: Pick<ModelRuntime, "classify"> = {
     async classify() {
-      return responses.shift() as never;
+      const next = responses.shift();
+      if (!next) {
+        throw new Error("Unexpected extra classify call");
+      }
+      return next;
     },
   };
   const selector = new PiVoiceReactionSelector(runtime, model, presets);
@@ -116,7 +115,9 @@ test("excludes the previous preset when alternatives exist and retains it for a 
   );
   assert.deepEqual(Object.keys(criteriaSeen[0] ?? {}), ["think", "empathy"]);
 
-  const singleSelector = new PiVoiceReactionSelector(runtime, model, [presets[0]!]);
+  const [firstPreset] = presets;
+  assert.ok(firstPreset);
+  const singleSelector = new PiVoiceReactionSelector(runtime, model, [firstPreset]);
   assert.equal(
     await singleSelector.select(
       { text: "続き", recentTranscripts: [], lastReaction: "ack" },

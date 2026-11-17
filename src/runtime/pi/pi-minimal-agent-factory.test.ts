@@ -1,14 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
-
 import { createPiMinimalAgentFactory } from "./pi-minimal-agent-factory";
-import type {
-  PiSession,
-  PiSessionOptions,
-  PiStandaloneSessionRunner,
-} from "./pi-standalone-session-runner";
+import type { PiSession, PiSessionOptions } from "./pi-standalone-session-runner";
+import { createStubModel, createStubToolDefinition } from "./pi-test-helpers";
 
 function createHarness() {
   const created: PiSessionOptions[] = [];
@@ -27,10 +22,10 @@ function createHarness() {
         },
       };
     },
-  } as unknown as PiStandaloneSessionRunner;
+  };
   const factory = createPiMinimalAgentFactory({
     runner,
-    model: {} as never,
+    model: createStubModel(),
     cwd: "/tmp",
   });
   return { factory, created, prompts, disposed };
@@ -38,7 +33,7 @@ function createHarness() {
 
 test("creates a standalone agent from the definition and prompts with plain text", async () => {
   const harness = createHarness();
-  const tool = { name: "read" } as ToolDefinition;
+  const tool = createStubToolDefinition({ name: "read" });
   const agent = await harness.factory.create({ systemPrompt: "system" }, [tool], {
     sessionKey: "memory-1",
   });

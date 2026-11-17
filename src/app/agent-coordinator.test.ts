@@ -20,12 +20,12 @@ import {
 } from "@modules/discord/domain/discord-access-policy";
 import { DiscordOperatingState } from "@modules/discord/domain/discord-operating-state";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
-import type { UserMemoryCoordinator } from "@modules/user-memory/application/user-memory-coordinator";
 import type { UserMemory } from "@modules/user-memory/domain/user-memory";
 
 import type {
   ReminderTask,
   ScheduledTask,
+  ScheduledTaskAccessScope,
   WatchTask,
 } from "@modules/scheduling/domain/scheduled-task";
 import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
@@ -60,13 +60,14 @@ function createHarness(
     | "userMemoryCoordinator"
     | "userMemoryStore"
   > = {},
-  watchCheckRunner: WatchCheckRunner = {
+  watchCheckRunner?: WatchCheckRunner,
+  attachedSendResult = false,
+): TestHarness {
+  const resolvedWatchCheckRunner: WatchCheckRunner = watchCheckRunner ?? {
     async run() {
       throw new Error("Unexpected watch check");
     },
-  },
-  attachedSendResult = false,
-): TestHarness {
+  };
   const channelLocationCalls: string[] = [];
   const createdSessionKeys: string[] = [];
   const prompts = new Map<string, AgentTurn[]>();
@@ -90,12 +91,12 @@ function createHarness(
     },
   };
   const agentFactory: AgentFactory = {
-    async create(_definition, _tools, options): Promise<AgentRuntime> {
-      createdSessionKeys.push(options.sessionKey);
-      ownerFeaturesAllowed.push(options.ownerFeaturesAllowed ?? false);
+    async create(_definition, _tools, creationOptions): Promise<AgentRuntime> {
+      createdSessionKeys.push(creationOptions.sessionKey);
+      ownerFeaturesAllowed.push(creationOptions.ownerFeaturesAllowed ?? false);
       if (createGate) await createGate;
 
-      const channelId = options.sessionKey.slice("discord-channel:".length);
+      const channelId = creationOptions.sessionKey.slice("discord-channel:".length);
       const channelPrompts: AgentTurn[] = [];
       prompts.set(channelId, channelPrompts);
 
@@ -131,11 +132,11 @@ function createHarness(
     agentCoordinator: new AgentCoordinator({
       ...options,
       attachedTasks,
-      createDiscordAgent: (channelId, sessionKey, handoffContext, ownerFeaturesAllowed) =>
+      createDiscordAgent: (channelId, sessionKey, handoffContext, allowOwnerFeatures) =>
         DiscordAgent.create(agentFactory, channelId, "system prompt", {
           sessionKey,
           handoffContext,
-          ownerFeaturesAllowed,
+          ownerFeaturesAllowed: allowOwnerFeatures,
           ownerUserId: options.ownerUserId,
           tools: () => [],
         }),
@@ -143,7 +144,7 @@ function createHarness(
       logger: pino({ level: "silent" }),
       operatingState: new DiscordOperatingState(),
       scheduledTaskStore,
-      watchCheckRunner,
+      watchCheckRunner: resolvedWatchCheckRunner,
       taskCoordinator: new TaskCoordinator(),
     }),
     attachedStarts,
@@ -212,7 +213,7 @@ test("asks user memory to observe each handled message", async () => {
       async observe(message: DiscordMessage) {
         observed.push(message.id);
       },
-    } as unknown as UserMemoryCoordinator,
+    },
   });
 
   try {
@@ -288,7 +289,11 @@ test("initializes every saved channel agent during startup", async () => {
   }));
   const channelSessionStateStore = {
     async getOrCreate(conversationKey: { kind: "discord"; channelId: string }) {
-      return states.find((state) => state.conversationKey.channelId === conversationKey.channelId)!;
+      const found = states.find(
+        (state) => state.conversationKey.channelId === conversationKey.channelId,
+      );
+      if (!found) throw new Error(`Missing state for ${conversationKey.channelId}`);
+      return found;
     },
     async list() {
       return states;
@@ -323,7 +328,11 @@ test("does not resume saved channel sessions after their access scope changes", 
   }));
   const channelSessionStateStore = {
     async getOrCreate(conversationKey: { kind: "discord"; channelId: string }) {
-      return states.find((state) => state.conversationKey.channelId === conversationKey.channelId)!;
+      const found = states.find(
+        (state) => state.conversationKey.channelId === conversationKey.channelId,
+      );
+      if (!found) throw new Error(`Missing state for ${conversationKey.channelId}`);
+      return found;
     },
     async list() {
       return states;
@@ -378,7 +387,7 @@ test("isolates Pi sessions between Discord channels", async () => {
       ),
     ]);
 
-    assert.deepEqual([...harness.createdSessionKeys].sort(), [
+    assert.deepEqual(harness.createdSessionKeys.toSorted(), [
       "discord-channel:channel-a",
       "discord-channel:channel-b",
     ]);
@@ -424,7 +433,7 @@ test("uses a separate Pi session for each Discord thread", async () => {
       }),
     );
 
-    assert.deepEqual([...harness.createdSessionKeys].sort(), [
+    assert.deepEqual(harness.createdSessionKeys.toSorted(), [
       "discord-channel:thread-a",
       "discord-channel:thread-b",
     ]);
@@ -448,7 +457,9 @@ test("does not create duplicate agents while a channel agent is initializing", a
       createMessage("channel-a", "message-b", "次のメッセージ"),
     );
 
-    await new Promise<void>((resolve) => setImmediate(resolve));
+    await new Promise<void>((resolve) => {
+      setImmediate(resolve);
+    });
     assert.deepEqual(harness.createdSessionKeys, ["discord-channel:channel-a"]);
 
     releaseCreation();
@@ -471,25 +482,45 @@ test("does not create duplicate agents while a channel agent is initializing", a
 
 function createScheduledTaskStore(initial: ScheduledTask) {
   let stored: ScheduledTask | undefined = initial;
-  const store = {
+  async function listForScope(
+    kind: "reminder",
+    channelId: string,
+    accessScope: ScheduledTaskAccessScope,
+  ): Promise<readonly ReminderTask[]>;
+  async function listForScope(
+    kind: "watch",
+    channelId: string,
+    accessScope: ScheduledTaskAccessScope,
+  ): Promise<readonly WatchTask[]>;
+  async function listForScope(
+    kind: ScheduledTask["kind"],
+    channelId: string,
+    accessScope: ScheduledTaskAccessScope,
+  ): Promise<readonly ScheduledTask[]>;
+  async function listForScope(
+    kind: ScheduledTask["kind"],
+    channelId: string,
+    accessScope: ScheduledTaskAccessScope,
+  ): Promise<readonly ScheduledTask[]> {
+    return stored &&
+      stored.kind === kind &&
+      stored.channelId === channelId &&
+      stored.accessScope === accessScope
+      ? [stored]
+      : [];
+  }
+  const store: ScheduledTaskStore = {
     async create(task: ScheduledTask) {
       stored = task;
     },
-    async listForScope(kind: ScheduledTask["kind"], channelId: string, accessScope: string) {
-      return stored &&
-        stored.kind === kind &&
-        stored.channelId === channelId &&
-        stored.accessScope === accessScope
-        ? [stored]
-        : [];
-    },
+    listForScope,
     async listDue(now: number) {
       return stored && Date.parse(stored.nextRunAt) <= now ? [stored] : [];
     },
     async delete(
       kind: ScheduledTask["kind"],
       channelId: string,
-      accessScope: string,
+      accessScope: ScheduledTaskAccessScope,
       taskId: string,
     ) {
       if (
@@ -505,7 +536,7 @@ function createScheduledTaskStore(initial: ScheduledTask) {
     async update(task: ScheduledTask) {
       stored = task;
     },
-  } as unknown as ScheduledTaskStore;
+  };
   return { store, getStored: () => stored };
 }
 

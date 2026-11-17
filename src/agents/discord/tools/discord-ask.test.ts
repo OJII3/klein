@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { createStubExtensionToolContext } from "@agents/testing/test-stubs";
 import { createDiscordAskTool } from "./discord-ask";
 
 test("posts the question with the triggering user as the answerer", async () => {
@@ -30,7 +31,7 @@ test("posts the question with the triggering user as the answerer", async () => 
     { question: "どちらにしますか？", options: ["A", "B"] },
     undefined,
     undefined,
-    {} as never,
+    await createStubExtensionToolContext(),
   );
 
   assert.deepEqual(sent, {
@@ -65,7 +66,7 @@ test("fails when the turn was not started by a Discord user", async () => {
       { question: "どちらにしますか？", options: ["A", "B"] },
       undefined,
       undefined,
-      {} as never,
+      await createStubExtensionToolContext(),
     ),
     /turn started by a Discord user/u,
   );

@@ -22,7 +22,7 @@ test("aggregates tool calls and MCP servers from Pi sessions", async () => {
   appendToolResult(sessionManager, "discord_send", false);
   appendToolResult(sessionManager, "mcp__docs__read_note", true);
   appendNestedToolResult(sessionManager, "codemode", [
-    { name: "mcp__docs__read_note", status: "ok" },
+    { id: "nested-1", name: "mcp__docs__read_note", status: "ok" },
   ]);
 
   const secondSessionManager = createPiSessionManager(
@@ -128,7 +128,7 @@ function toolResultLine(toolName: string): string {
 }
 
 function appendUserMessage(sessionManager: ReturnType<typeof createPiSessionManager>): void {
-  sessionManager.appendMessage({ content: "hello", role: "user", timestamp: Date.now() } as never);
+  sessionManager.appendMessage({ content: "hello", role: "user", timestamp: Date.now() });
 }
 
 function appendToolResult(
@@ -143,13 +143,13 @@ function appendToolResult(
     timestamp: Date.now(),
     toolCallId: "call-1",
     toolName,
-  } as never);
+  });
 }
 
 function appendNestedToolResult(
   sessionManager: ReturnType<typeof createPiSessionManager>,
   toolName: string,
-  calls: { name: string; status: "ok" | "error" | "unfinished" }[],
+  calls: { id: string; name: string; status: "ok" | "error" | "unfinished" }[],
 ): void {
   sessionManager.appendMessage({
     content: [],
@@ -159,5 +159,5 @@ function appendNestedToolResult(
     timestamp: Date.now(),
     toolCallId: "call-2",
     toolName,
-  } as never);
+  });
 }

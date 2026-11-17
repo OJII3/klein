@@ -54,7 +54,7 @@ export function ToolsView({ report, loading, error, onRetry }: ToolsViewProps) {
   );
 }
 
-function McpServerTable({ servers }: { servers: McpServerUsageStat[] }) {
+function McpServerTable({ servers }: { servers: readonly McpServerUsageStat[] }) {
   return (
     <div className="card overflow-hidden border border-base-300 bg-base-100">
       <SectionHeader count={`${servers.length} 台`} title="MCP サーバー" />

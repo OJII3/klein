@@ -77,7 +77,8 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
       const history = recentTranscripts.slice(-3);
       recentTranscripts.push(text);
       if (recentTranscripts.length > 3) recentTranscripts.shift();
-      if (!this.dependencies.reactionSelector || !playReaction) return reactionController;
+      const reactionSelector = this.dependencies.reactionSelector;
+      if (!reactionSelector || !playReaction) return reactionController;
 
       void (async () => {
         const selectionSignal = AbortSignal.any([
@@ -85,7 +86,7 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
           AbortSignal.timeout(600),
         ]);
         try {
-          const reaction = await this.dependencies.reactionSelector!.select(
+          const reaction = await reactionSelector.select(
             { text, recentTranscripts: history, lastReaction },
             selectionSignal,
           );
@@ -157,24 +158,45 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
     };
 
     const trackProcessing = (next: Promise<void>): Promise<void> => {
-      processing = next;
-      void next.finally(() => {
-        if (processing === next) processing = undefined;
+      const tracked = next.finally(() => {
+        if (processing === tracked) processing = undefined;
       });
-      return next;
+      processing = tracked;
+      return tracked;
+    };
+
+    const trackBackgroundProcessing = (next: Promise<void>): void => {
+      const tracked = next
+        .catch((error: unknown) => {
+          if (stopped) return;
+          logger.error(
+            {
+              channelId: context.channelId,
+              err: error,
+              event: "voice_chat_message_processing_failed",
+            },
+            "Failed to process a voice chat message",
+          );
+        })
+        .finally(() => {
+          if (processing === tracked) processing = undefined;
+        });
+      processing = tracked;
     };
 
     const processNextQueuedTranscript = (): void => {
       const queue = transcriptQueue;
       if (stopped || processing || !queue?.hasPending) return;
-      const message = queue.takeNext()!;
+      const message = queue.takeNext();
+      if (!message) return;
       const next = processTranscript(message, startReaction(message.content, message.id));
-      trackProcessing(next);
+      trackBackgroundProcessing(next);
       if (queue.hasPending) queue.scheduleDecision();
     };
 
     const performSteer = async (message: DiscordMessage): Promise<void> => {
-      if (typeof agent.steerMessage !== "function") return;
+      const steerMessage = agent.steerMessage?.bind(agent);
+      if (!steerMessage) return;
       const reactionController = startReaction(message.content, message.id);
       logger.info(
         {
@@ -185,9 +207,9 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
         "Steering the active voice response with a new transcript",
       );
       const steerStartedAt = performance.now();
-      const steer = agent
-        .steerMessage(message)
-        .then(() => {
+      const steer = (async (): Promise<void> => {
+        try {
+          await steerMessage(message);
           if (currentTranscript) {
             currentTranscript = {
               ...currentTranscript,
@@ -202,8 +224,7 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
             },
             "Enqueued a transcript to steer the active voice response",
           );
-        })
-        .catch((error: unknown) => {
+        } catch (error) {
           logger.error(
             {
               channelId: context.channelId,
@@ -215,7 +236,8 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
           );
           reactionController.abort();
           activeReaction?.abort();
-        });
+        }
+      })();
       pendingSteers.add(steer);
       void steer.finally(() => pendingSteers.delete(steer));
       await steer;
@@ -270,13 +292,16 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
               "Queued a voice transcript for classification",
             );
             transcriptQueue.scheduleDecision();
-            return Promise.resolve();
+            return;
           }
 
           const reactionController = startReaction(text, message.id);
           const next = processTranscript(message, reactionController);
-          trackProcessing(next);
-          return typeof agent.steerMessage === "function" ? Promise.resolve() : next;
+          if (typeof agent.steerMessage === "function") {
+            trackBackgroundProcessing(next);
+            return;
+          }
+          return trackProcessing(next);
         }
 
         if (processing && typeof agent.steerMessage !== "function") {
@@ -287,7 +312,8 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
         }
 
         const reactionController = startReaction(text, message.id);
-        if (processing && typeof agent.steerMessage === "function") {
+        const steerMessage = agent.steerMessage?.bind(agent);
+        if (processing && steerMessage) {
           logger.info(
             {
               event: "voice_chat_transcript_steer_started",
@@ -297,9 +323,9 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
             "Steering the active voice response with a new transcript",
           );
           const steerStartedAt = performance.now();
-          const steer = agent
-            .steerMessage(message)
-            .then(() => {
+          const steer = (async (): Promise<void> => {
+            try {
+              await steerMessage(message);
               logger.info(
                 {
                   event: "voice_chat_transcript_steered",
@@ -308,8 +334,7 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
                 },
                 "Enqueued a transcript to steer the active voice response",
               );
-            })
-            .catch((error: unknown) => {
+            } catch (error) {
               logger.error(
                 {
                   channelId: context.channelId,
@@ -320,15 +345,19 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
                 "Failed to steer the active voice response",
               );
               activeReaction?.abort();
-            });
+            }
+          })();
           pendingSteers.add(steer);
           void steer.finally(() => pendingSteers.delete(steer));
           return steer;
         }
 
         const next = processTranscript(message, reactionController);
-        trackProcessing(next);
-        return typeof agent.steerMessage === "function" ? Promise.resolve() : next;
+        if (steerMessage) {
+          trackBackgroundProcessing(next);
+          return;
+        }
+        return trackProcessing(next);
       },
       stop: () => {
         if (stopPromise) return stopPromise;

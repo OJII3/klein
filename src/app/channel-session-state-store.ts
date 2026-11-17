@@ -2,8 +2,13 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
-import { serializeConversationKey, type ConversationKey } from "@shared/conversation-key";
+import {
+  isConversationKey,
+  serializeConversationKey,
+  type ConversationKey,
+} from "@shared/conversation-key";
 import { DISCORD_CHANNEL_SESSION_KEY_PREFIX } from "@shared/discord-channel-session-key";
+import { isFileNotFound, isRecord, parseJson } from "@shared/type-guards";
 
 export { serializeConversationKey, type ConversationKey };
 
@@ -85,11 +90,11 @@ export class ChannelSessionStateStore {
     ): Promise<ChannelSessionState> => {
       try {
         const content = await readFile(getFilePath(conversationKey), "utf8");
-        const state = JSON.parse(content) as ChannelSessionState;
+        const state = parseJson(content);
         if (
-          state.conversationKey?.kind !== conversationKey.kind ||
-          state.conversationKey?.channelId !== conversationKey.channelId ||
-          !state.sessionKey
+          !isChannelSessionState(state) ||
+          state.conversationKey.kind !== conversationKey.kind ||
+          state.conversationKey.channelId !== conversationKey.channelId
         ) {
           throw new Error(
             `Invalid channel session state: ${serializeConversationKey(conversationKey)}`,
@@ -126,13 +131,13 @@ export class ChannelSessionStateStore {
         paths.map(async (path) => {
           const content = await readFile(path, "utf8");
           try {
-            return JSON.parse(content) as unknown;
+            return parseJson(content);
           } catch {
             return undefined;
           }
         }),
       );
-      return states.filter(isChannelSessionState);
+      return states.filter((state) => isChannelSessionState(state));
     };
 
     this.listChannelNames = async (): Promise<ReadonlyMap<string, string>> => {
@@ -157,21 +162,16 @@ export class ChannelSessionStateStore {
 export { ChannelSessionStateStore as FileChannelSessionStateStore };
 
 function isChannelSessionState(value: unknown): value is ChannelSessionState {
-  if (typeof value !== "object" || value === null) return false;
-  const state = value as Partial<ChannelSessionState>;
+  if (!isRecord(value)) return false;
   return (
-    state.conversationKey?.kind === "discord" &&
-    typeof state.conversationKey.channelId === "string" &&
-    state.conversationKey.channelId.length > 0 &&
-    typeof state.sessionKey === "string" &&
-    state.sessionKey.length > 0 &&
-    (state.channelName === undefined || typeof state.channelName === "string") &&
-    (state.lastActivityAt === null || typeof state.lastActivityAt === "number") &&
-    typeof state.lastRotationDate === "string" &&
-    typeof state.hasActivitySinceRotation === "boolean"
+    isConversationKey(value.conversationKey) &&
+    typeof value.sessionKey === "string" &&
+    value.sessionKey.length > 0 &&
+    (value.accessScope === undefined || typeof value.accessScope === "string") &&
+    (value.channelName === undefined || typeof value.channelName === "string") &&
+    (value.lastActivityAt === null || typeof value.lastActivityAt === "number") &&
+    typeof value.lastRotationDate === "string" &&
+    typeof value.hasActivitySinceRotation === "boolean" &&
+    (value.handoffContext === undefined || typeof value.handoffContext === "string")
   );
-}
-
-function isFileNotFound(error: unknown): boolean {
-  return error instanceof Error && "code" in error && error.code === "ENOENT";
 }

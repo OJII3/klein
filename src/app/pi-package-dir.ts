@@ -4,7 +4,8 @@ import { dirname } from "node:path";
 // The bundled build runs from dist/, where pi cannot find its own package.json and
 // falls back to an unrelated package version. pi.dev rejects unknown versions with
 // 404, so point pi at the installed package before it reads its version.
-if (!process.env.PI_PACKAGE_DIR) {
+export function configurePiPackageDir(): void {
+  if (process.env.PI_PACKAGE_DIR) return;
   try {
     const require = createRequire(import.meta.url);
     process.env.PI_PACKAGE_DIR = dirname(

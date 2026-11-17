@@ -26,7 +26,8 @@ export class PiVoiceReactionSelector implements VoiceReactionSelector {
     signal: AbortSignal,
   ): Promise<string | undefined> {
     if (signal.aborted) return undefined;
-    if (this.presets.length === 0) {
+    const firstPreset = this.presets[0];
+    if (!firstPreset) {
       throw new Error("At least one voice reaction preset is required");
     }
 
@@ -34,7 +35,7 @@ export class PiVoiceReactionSelector implements VoiceReactionSelector {
       input.lastReaction && this.presets.length > 1
         ? this.presets.filter((preset) => preset.id !== input.lastReaction)
         : this.presets;
-    const fallback = candidates[0]?.id ?? this.presets[0]!.id;
+    const fallback = candidates[0]?.id ?? firstPreset.id;
     const criteria = Object.fromEntries(
       candidates.map((preset) => [preset.id, `「${preset.text}」 — ${preset.description}`]),
     );

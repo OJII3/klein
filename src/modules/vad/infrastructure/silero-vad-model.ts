@@ -43,7 +43,7 @@ export class SileroVadModel implements VadFrameScorer {
     const probability = results.output?.data[0];
     const nextState = results.stateN?.data;
     if (typeof probability !== "number" || !(nextState instanceof Float32Array)) {
-      throw new Error("Silero VAD returned an invalid result");
+      throw new TypeError("Silero VAD returned an invalid result");
     }
     this.state = new Float32Array(nextState);
     this.context.set(frame.subarray(frame.length - this.context.length));

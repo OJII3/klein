@@ -2,6 +2,8 @@ import { mkdir, readFile, readdir, rename, stat, unlink, writeFile } from "node:
 import { randomUUID } from "node:crypto";
 import { basename, dirname, resolve, sep } from "node:path";
 
+import { isFileNotFound, isRecord, parseJson } from "@shared/type-guards";
+
 import {
   MEMORY_KINDS,
   type MemoryApplyResult,
@@ -27,7 +29,7 @@ export class JsonMemoryStore implements MemoryStore {
     try {
       content = await readFile(this.filePath, "utf8");
     } catch (error) {
-      if (isNodeError(error) && error.code === "ENOENT") return { entries: [] };
+      if (isFileNotFound(error)) return { entries: [] };
       throw new Error(`Failed to read memory file: ${this.filePath}`, { cause: error });
     }
 
@@ -119,7 +121,7 @@ function emptyApplyResult(): MemoryApplyResult {
 export function parseMemoryDocument(content: string): MemoryDocument {
   let value: unknown;
   try {
-    value = JSON.parse(content);
+    value = parseJson(content);
   } catch (error) {
     throw new Error("Memory file contains invalid JSON", { cause: error });
   }
@@ -128,7 +130,7 @@ export function parseMemoryDocument(content: string): MemoryDocument {
     throw new Error("Memory file contains an invalid document");
   }
 
-  const entries = value.entries.map(parseMemoryEntry);
+  const entries = value.entries.map((entry) => parseMemoryEntry(entry));
   const ids = new Set<string>();
   for (const entry of entries) {
     if (ids.has(entry.id))
@@ -141,7 +143,7 @@ export function parseMemoryDocument(content: string): MemoryDocument {
 
 export async function listMemoryGuildIds(filePath: string): Promise<string[]> {
   const guildIds = await listGuildIdsForPath(filePath);
-  return guildIds.sort((left, right) => left.localeCompare(right));
+  return guildIds.toSorted((left, right) => left.localeCompare(right));
 }
 
 export function renderMemoryDocument(document: MemoryDocument): string {
@@ -163,7 +165,7 @@ async function listGuildIdsForPath(filePath: string): Promise<string[]> {
   try {
     entries = await readdir(directory, { withFileTypes: true });
   } catch (error) {
-    if (isNodeError(error) && error.code === "ENOENT") return [];
+    if (isFileNotFound(error)) return [];
     throw error;
   }
 
@@ -185,7 +187,7 @@ async function listGuildIdsForPath(filePath: string): Promise<string[]> {
     try {
       if ((await stat(candidate)).isFile()) guildIds.push(guildId);
     } catch (error) {
-      if (!isNodeError(error) || error.code !== "ENOENT") throw error;
+      if (!isFileNotFound(error)) throw error;
     }
   }
 
@@ -246,17 +248,9 @@ function parseMemoryEntryScope(value: MemoryEntryScope): MemoryEntryScope {
 }
 
 function isMemoryKind(value: unknown): value is MemoryKind {
-  return typeof value === "string" && MEMORY_KINDS.includes(value as MemoryKind);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+  return typeof value === "string" && MEMORY_KINDS.some((kind) => kind === value);
 }
 
 function unique(values: readonly string[]): string[] {
   return [...new Set(values.filter((value) => value.length > 0))];
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && "code" in error;
 }

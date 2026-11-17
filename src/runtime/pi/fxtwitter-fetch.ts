@@ -34,7 +34,7 @@ export function rewriteFxtwitterFetchInput(input: Record<string, unknown>): void
   }
 
   if (Array.isArray(input.urls)) {
-    input.urls = input.urls.map((value) =>
+    input.urls = input.urls.map((value: unknown) =>
       typeof value === "string" ? (toFxTwitterApiUrl(value) ?? value) : value,
     );
   }
@@ -45,7 +45,7 @@ export function createFxtwitterFetchExtension(): ExtensionFactory {
     pi.on("tool_call", (event) => {
       if (event.toolName !== "fetch_content") return;
 
-      rewriteFxtwitterFetchInput(event.input as Record<string, unknown>);
+      rewriteFxtwitterFetchInput(event.input);
     });
   };
 }

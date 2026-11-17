@@ -56,6 +56,12 @@ interface CliOptions {
   readonly outPath?: string;
 }
 
+declare global {
+  interface Array<T> {
+    toSorted(compareFn?: (a: T, b: T) => number): T[];
+  }
+}
+
 interface DiscoveredSessionFile {
   readonly filePath: string;
   readonly sessionKey: string;
@@ -87,7 +93,7 @@ async function parseOptions(argv: readonly string[]): Promise<CliOptions> {
     process.exit(0);
   }
 
-  const rawCommand = args.shift()!;
+  const rawCommand = args.shift();
   if (
     rawCommand !== "cases" &&
     rawCommand !== "sessions" &&
@@ -95,7 +101,7 @@ async function parseOptions(argv: readonly string[]): Promise<CliOptions> {
     rawCommand !== "replay"
   ) {
     throw new Error(
-      `Unknown command: ${rawCommand} (expected one of: cases, sessions, show, replay)`,
+      `Unknown command: ${rawCommand ?? "<missing>"} (expected one of: cases, sessions, show, replay)`,
     );
   }
 
@@ -121,37 +127,49 @@ async function parseOptions(argv: readonly string[]): Promise<CliOptions> {
   let outPath: string | undefined;
 
   for (let i = 0; i < args.length; i += 1) {
-    const arg = args[i]!;
-    if (arg === "--profile" && args[i + 1]) {
-      profile = args[++i]!;
-    } else if (arg === "--provider" && args[i + 1]) {
-      provider = args[++i]!;
-    } else if (arg === "--model" && args[i + 1]) {
-      model = args[++i]!;
-    } else if (arg === "--thinking" && args[i + 1]) {
-      thinkingLevel = args[++i]! as ThinkingLevel;
-    } else if (arg === "--agent-dir" && args[i + 1]) {
-      agentDir = args[++i]!;
-    } else if (arg === "--sessions-dir" && args[i + 1]) {
-      sessionsDir = args[++i]!;
-    } else if (arg === "--case" && args[i + 1]) {
-      caseRef = args[++i]!;
-    } else if (arg === "--session" && args[i + 1]) {
-      session = args[++i]!;
-    } else if (arg === "--turn" && args[i + 1]) {
-      turn = parseIntOption(args[++i]!, "--turn");
+    const arg = args[i];
+    const next = args[i + 1];
+    if (arg === "--profile" && next) {
+      i += 1;
+      profile = next;
+    } else if (arg === "--provider" && next) {
+      i += 1;
+      provider = next;
+    } else if (arg === "--model" && next) {
+      i += 1;
+      model = next;
+    } else if (arg === "--thinking" && next) {
+      i += 1;
+      thinkingLevel = parseThinkingLevel(next);
+    } else if (arg === "--agent-dir" && next) {
+      i += 1;
+      agentDir = next;
+    } else if (arg === "--sessions-dir" && next) {
+      i += 1;
+      sessionsDir = next;
+    } else if (arg === "--case" && next) {
+      i += 1;
+      caseRef = next;
+    } else if (arg === "--session" && next) {
+      i += 1;
+      session = next;
+    } else if (arg === "--turn" && next) {
+      i += 1;
+      turn = parseIntOption(next, "--turn");
     } else if (arg === "--all-turns") {
       allTurns = true;
-    } else if (arg === "--max-turns" && args[i + 1]) {
-      maxTurns = parseIntOption(args[++i]!, "--max-turns");
-    } else if (arg === "--mode" && args[i + 1]) {
-      const value = args[++i]!;
-      if (value !== "turn-start" && value !== "pre-message") {
-        throw new Error(`Invalid --mode value: ${value} (expected turn-start or pre-message)`);
+    } else if (arg === "--max-turns" && next) {
+      i += 1;
+      maxTurns = parseIntOption(next, "--max-turns");
+    } else if (arg === "--mode" && next) {
+      i += 1;
+      if (next !== "turn-start" && next !== "pre-message") {
+        throw new Error(`Invalid --mode value: ${next} (expected turn-start or pre-message)`);
       }
-      mode = value;
-    } else if (arg === "--limit" && args[i + 1]) {
-      limit = parseIntOption(args[++i]!, "--limit");
+      mode = next;
+    } else if (arg === "--limit" && next) {
+      i += 1;
+      limit = parseIntOption(next, "--limit");
     } else if (arg === "--no-tools") {
       includeTools = false;
     } else if (arg === "--tools") {
@@ -160,14 +178,17 @@ async function parseOptions(argv: readonly string[]): Promise<CliOptions> {
       includeRawPayload = true;
     } else if (arg === "--judge") {
       judge = true;
-    } else if (arg === "--judge-provider" && args[i + 1]) {
-      judgeProvider = args[++i]!;
-    } else if (arg === "--judge-model" && args[i + 1]) {
-      judgeModel = args[++i]!;
+    } else if (arg === "--judge-provider" && next) {
+      i += 1;
+      judgeProvider = next;
+    } else if (arg === "--judge-model" && next) {
+      i += 1;
+      judgeModel = next;
     } else if (arg === "--json") {
       json = true;
-    } else if (arg === "--out" && args[i + 1]) {
-      outPath = args[++i]!;
+    } else if (arg === "--out" && next) {
+      i += 1;
+      outPath = next;
     } else if (arg === "--help" || arg === "-h") {
       printUsage();
       process.exit(0);
@@ -205,10 +226,27 @@ async function parseOptions(argv: readonly string[]): Promise<CliOptions> {
   };
 }
 
+function parseThinkingLevel(raw: string): ThinkingLevel {
+  switch (raw) {
+    case "off":
+    case "minimal":
+    case "low":
+    case "medium":
+    case "high":
+    case "xhigh":
+    case "max":
+      return raw;
+    default:
+      throw new Error(
+        `Invalid --thinking value: ${raw} (expected one of: off, minimal, low, medium, high, xhigh, max)`,
+      );
+  }
+}
+
 function parseIntOption(raw: string, flagName: string): number {
   const parsed = Number.parseInt(raw, 10);
   if (!Number.isFinite(parsed)) {
-    throw new Error(`Invalid integer for ${flagName}: ${raw}`);
+    throw new TypeError(`Invalid integer for ${flagName}: ${raw}`);
   }
   return parsed;
 }
@@ -315,6 +353,7 @@ async function runSessionsCommand(options: CliOptions): Promise<void> {
         const header = entries.find((entry) => entry.type === "session");
         const turns = extractSessionTurns(entries);
         const lastTurn = turns.at(-1);
+        const lastSent = lastTurn?.discordSendContents.at(-1);
         return {
           sessionId: header?.id ?? basename(item.filePath, ".jsonl"),
           sessionKey: item.sessionKey,
@@ -322,9 +361,7 @@ async function runSessionsCommand(options: CliOptions): Promise<void> {
           updatedAt: item.mtimeIso,
           turnCount: turns.length,
           lastUserPreview: lastTurn ? toPreview(extractEventBody(lastTurn.userText), 100) : "",
-          lastSentPreview: lastTurn?.discordSendContents.at(-1)
-            ? toPreview(lastTurn.discordSendContents.at(-1)!, 100)
-            : "",
+          lastSentPreview: lastSent ? toPreview(lastSent, 100) : "",
         };
       } catch {
         return {
@@ -433,7 +470,11 @@ async function runShowOrReplayCommand(options: CliOptions, isReplay: boolean): P
     return;
   }
 
-  const sessionTarget = await resolveSessionTarget(options.session!, options.sessionsDir);
+  const sessionRef = options.session;
+  if (!sessionRef) {
+    throw new Error(`${options.command} requires either --case <id|path> or --session <path|id>`);
+  }
+  const sessionTarget = await resolveSessionTarget(sessionRef, options.sessionsDir);
   const raw = await readFile(sessionTarget.filePath, "utf8");
   const entries = parseSessionEntries(raw);
   const ownerFeaturesAllowed = sessionTarget.sessionKey.startsWith("discord-dm:");
@@ -526,7 +567,11 @@ function buildPrefixStabilityReports(
 ): PrefixStabilityReport[] {
   const reports: PrefixStabilityReport[] = [];
   for (let i = 1; i < requests.length; i += 1) {
-    reports.push(comparePrefixStability(requests[i - 1]!, requests[i]!));
+    const previous = requests[i - 1];
+    const current = requests[i];
+    if (previous && current) {
+      reports.push(comparePrefixStability(previous, current));
+    }
   }
   return reports;
 }
@@ -568,7 +613,7 @@ async function emitShowOrReplayOutput(params: {
   }
 
   if (options.json) {
-    const analyses = requests.map(analyzeCapturedRequest);
+    const analyses = requests.map((request) => analyzeCapturedRequest(request));
     const prefixStability = buildPrefixStabilityReports(requests);
     const parsedJudge = judgeRaw !== undefined ? tryParseJson(judgeRaw) : undefined;
     const payload = {
@@ -644,7 +689,7 @@ async function discoverSessionFiles(sessionsDir: string): Promise<DiscoveredSess
     }
   }
 
-  return found.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  return found.toSorted((a, b) => b.mtimeMs - a.mtimeMs);
 }
 
 async function resolveSessionTarget(
@@ -752,12 +797,12 @@ function formatSessionsText(
 }
 
 function extractEventBody(userText: string): string {
-  const withoutMetadata = userText.replace(/<event-metadata>[\s\S]*?<\/event-metadata>/gu, "");
+  const withoutMetadata = userText.replaceAll(/<event-metadata>[\s\S]*?<\/event-metadata>/gu, "");
   return withoutMetadata.trim() || userText;
 }
 
 function toPreview(text: string, maxLength: number): string {
-  const singleLine = text.replace(/\s+/gu, " ").trim();
+  const singleLine = text.replaceAll(/\s+/gu, " ").trim();
   return singleLine.length <= maxLength ? singleLine : `${singleLine.slice(0, maxLength - 1)}…`;
 }
 

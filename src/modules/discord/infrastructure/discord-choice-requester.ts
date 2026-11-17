@@ -6,8 +6,6 @@ import {
   ContainerBuilder,
   MessageFlags,
   TextDisplayBuilder,
-  type ButtonInteraction,
-  type Client,
 } from "discord.js";
 import type { Logger } from "pino";
 
@@ -53,6 +51,43 @@ function parseChoiceButtonId(customId: string): { nonce: string; index: number }
   return { nonce, index };
 }
 
+export interface DiscordChoiceClient {
+  readonly channels: { fetch(id: string): Promise<unknown> };
+}
+
+export interface DiscordChoiceChannel {
+  readonly id: string;
+  readonly name?: string | null;
+  readonly parentId?: string | null;
+  isThread(): boolean;
+}
+
+export interface DiscordChoiceButtonInteraction {
+  readonly id: string;
+  readonly customId: string;
+  readonly user: {
+    readonly id: string;
+    readonly username: string;
+    readonly displayName: string;
+    readonly bot: boolean;
+  };
+  readonly guildId: string | null;
+  readonly channelId: string;
+  readonly channel: DiscordChoiceChannel | null;
+  readonly client: {
+    readonly user: {
+      readonly id: string;
+      readonly username: string;
+      readonly displayName: string;
+    } | null;
+  };
+  reply(options: { content: string; flags: MessageFlags.Ephemeral }): Promise<unknown>;
+  update(options: {
+    components: ContainerBuilder[];
+    flags: MessageFlags.IsComponentsV2;
+  }): Promise<unknown>;
+}
+
 /**
  * Posts a question with buttons and turns the pressed button into a message
  * from the user who answered. The answer enters the conversation through the
@@ -62,7 +97,7 @@ export class DiscordChoiceRequester {
   private readonly pending = new Map<string, PendingChoice>();
 
   constructor(
-    private readonly client: Client,
+    private readonly client: DiscordChoiceClient,
     private readonly accessPolicy: DiscordAccessPolicy,
     private readonly onAnswer: (message: DiscordMessage) => Promise<void>,
     private readonly logger?: Logger,
@@ -98,7 +133,7 @@ export class DiscordChoiceRequester {
   }
 
   /** Returns true when the interaction was one of this requester's buttons. */
-  async handleButton(interaction: ButtonInteraction): Promise<boolean> {
+  async handleButton(interaction: DiscordChoiceButtonInteraction): Promise<boolean> {
     const parsed = parseChoiceButtonId(interaction.customId);
     if (!parsed) return false;
 
@@ -192,7 +227,7 @@ export class DiscordChoiceRequester {
     }
   }
 
-  private canAnswer(interaction: ButtonInteraction): boolean {
+  private canAnswer(interaction: DiscordChoiceButtonInteraction): boolean {
     const channel = interaction.channel;
     const thread = channel?.isThread() ? channel : undefined;
     return this.accessPolicy.canReceive({
@@ -206,7 +241,7 @@ export class DiscordChoiceRequester {
 }
 
 function createAnswerMessage(
-  interaction: ButtonInteraction,
+  interaction: DiscordChoiceButtonInteraction,
   pending: PendingChoice,
   label: string,
 ): DiscordMessage {

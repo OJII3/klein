@@ -25,8 +25,8 @@ interface UseMemoryOptions {
 export function useMemory({ active, onUpdated, selectedScopeKey }: UseMemoryOptions) {
   const [enabled, setEnabled] = useState(false);
   const [userMemoryEnabled, setUserMemoryEnabled] = useState(false);
-  const [scopes, setScopes] = useState<MemoryScopeSummary[]>([]);
-  const [users, setUsers] = useState<UserMemorySummary[]>([]);
+  const [scopes, setScopes] = useState<readonly MemoryScopeSummary[]>([]);
+  const [users, setUsers] = useState<readonly UserMemorySummary[]>([]);
   const [scopesLoading, setScopesLoading] = useState(false);
   const [scopesError, setScopesError] = useState<string | null>(null);
   const selectedScope = useMemo(() => parseMemoryScopeKey(selectedScopeKey), [selectedScopeKey]);
@@ -48,7 +48,7 @@ export function useMemory({ active, onUpdated, selectedScopeKey }: UseMemoryOpti
     const firstUser = users[0];
     return firstUser ? { type: "user", userId: firstUser.userId } : null;
   }, [scopes, selectedScope, users]);
-  const [entries, setEntries] = useState<MemoryEntry[]>([]);
+  const [entries, setEntries] = useState<readonly MemoryEntry[]>([]);
   const [userMemory, setUserMemory] = useState<UserMemory | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
@@ -87,7 +87,7 @@ export function useMemory({ active, onUpdated, selectedScopeKey }: UseMemoryOpti
   }, [onUpdated]);
 
   useEffect(() => {
-    if (!active) return;
+    if (!active) return undefined;
 
     void load();
     const timer = window.setInterval(() => {
@@ -98,7 +98,7 @@ export function useMemory({ active, onUpdated, selectedScopeKey }: UseMemoryOpti
   }, [active, load]);
 
   useEffect(() => {
-    if (!active || !effectiveScope) return;
+    if (!active || !effectiveScope) return undefined;
 
     const scopeKey = memoryScopeKey(effectiveScope);
     const silent = detailScopeKeyRef.current === scopeKey;

@@ -5,7 +5,6 @@ import {
   AsrClientMessageSchema,
   AsrServerMessageSchema,
   type AsrClientMessage,
-  type AsrServerMessage,
 } from "./websocket-asr-protocol";
 
 const CONNECT_TIMEOUT_MS = 15_000;
@@ -13,6 +12,25 @@ const REQUEST_TIMEOUT_MS = 120_000;
 const MAX_BUFFERED_AUDIO_BYTES = 1_048_576;
 const MAX_REQUEST_AUDIO_BYTES = 30 * 16_000 * 2;
 const MAX_PENDING_REQUESTS = 8;
+
+export interface AsrWebSocket {
+  readonly readyState: number;
+  readonly bufferedAmount: number;
+  addEventListener(type: "open", listener: () => void, options?: { once?: boolean }): void;
+  addEventListener(type: "error", listener: () => void, options?: { once?: boolean }): void;
+  addEventListener(
+    type: "close",
+    listener: (event: { code: number }) => void,
+    options?: { once?: boolean },
+  ): void;
+  addEventListener(
+    type: "message",
+    listener: (event: { data: unknown }) => void,
+    options?: { once?: boolean },
+  ): void;
+  send(data: string | ArrayBuffer): void;
+  close(code?: number, reason?: string): void;
+}
 
 interface PendingRequest {
   resolve?: (result: { readonly text: string }) => void;
@@ -23,14 +41,17 @@ interface PendingRequest {
 }
 
 export class WebSocketAsrClient implements AsrClient {
-  constructor(private readonly serverUrl: string) {}
+  constructor(
+    private readonly serverUrl: string,
+    private readonly createSocket: (url: URL) => AsrWebSocket = (url) => new WebSocket(url),
+  ) {}
 
   async connect(): Promise<AsrConnection> {
     const url = new URL("/v1/asr", this.serverUrl);
     if (url.protocol !== "ws:" && url.protocol !== "wss:") {
       throw new Error("ASR server URL must use ws:// or wss://");
     }
-    const socket = new WebSocket(url);
+    const socket = this.createSocket(url);
     await new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(
         () => reject(new Error("Timed out connecting to ASR server")),
@@ -83,7 +104,7 @@ export class WebSocketAsrClient implements AsrClient {
     socket.addEventListener("message", (event) => {
       let message: unknown;
       try {
-        if (typeof event.data !== "string") throw new Error("non-text control frame");
+        if (typeof event.data !== "string") throw new TypeError("non-text control frame");
         message = JSON.parse(event.data);
       } catch (error) {
         failConnection(new Error("ASR server sent an invalid protocol message", { cause: error }));
@@ -95,7 +116,7 @@ export class WebSocketAsrClient implements AsrClient {
         socket.close(1002, "Unsupported protocol message");
         return;
       }
-      const response = message as AsrServerMessage;
+      const response = message;
       const request = requests.get(response.requestId);
       if (!request) return;
       if (!request.committed) {
@@ -201,7 +222,7 @@ export class WebSocketAsrClient implements AsrClient {
   }
 }
 
-function sendControl(socket: WebSocket, message: AsrClientMessage): void {
+function sendControl(socket: AsrWebSocket, message: AsrClientMessage): void {
   if (socket.readyState !== WebSocket.OPEN) throw new Error("ASR connection is not connected");
   if (!Check(AsrClientMessageSchema, message))
     throw new Error("Invalid ASR client protocol message");

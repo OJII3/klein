@@ -1,11 +1,8 @@
 import type { SessionEntry, SessionInfo } from "@earendil-works/pi-coding-agent";
 
 import { parseDiscordChannelId } from "@shared/discord-channel-session-key";
-import type {
-  PiViewerEvent,
-  PiViewerEventKind,
-  ViewerSessionSummary,
-} from "../domain/viewer-event";
+import { isRecord } from "@shared/type-guards";
+import type { PiViewerEvent, ViewerSessionSummary } from "../domain/viewer-event";
 
 const FIRST_MESSAGE_MAX_LENGTH = 240;
 const EVENT_SUMMARY_MAX_LENGTH = 500;
@@ -35,7 +32,7 @@ export function toViewerEvent(entry: SessionEntry, sessionId: string): PiViewerE
     id: entry.id,
     timestamp: entry.timestamp,
     sessionId,
-    kind: entry.type as PiViewerEventKind,
+    kind: entry.type,
     parentId: entry.parentId,
   };
 
@@ -115,6 +112,10 @@ export function toViewerEvent(entry: SessionEntry, sessionId: string): PiViewerE
       };
     case "session_info":
       return { ...base, summary: entry.name ?? "", content: entry.name };
+    default: {
+      const exhaustive: never = entry;
+      throw new Error(`Unsupported session entry: ${String(exhaustive)}`);
+    }
   }
 }
 
@@ -123,7 +124,7 @@ function extractText(content: unknown): string {
   if (!Array.isArray(content)) return "";
 
   return content
-    .filter(isRecord)
+    .filter((block) => isRecord(block))
     .filter((block) => block.type === "text" || block.type === "thinking")
     .map((block) => (typeof block.text === "string" ? block.text : ""))
     .filter((text) => text.length > 0)
@@ -146,8 +147,4 @@ function sanitizeContent(content: unknown): unknown {
 
 function truncate(value: string, maxLength: number): string {
   return value.length > maxLength ? `${value.slice(0, maxLength - 1)}…` : value;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

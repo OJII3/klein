@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 
+import { createStubExtensionToolContext } from "@agents/testing/test-stubs";
 import { createOwnerMemoryTools } from "@agents/tools/owner-memory";
+import { isRecord } from "@shared/type-guards";
 import type {
   MemoryApplyResult,
   MemoryDocument,
@@ -95,11 +97,12 @@ test("owner memory selection bounds pinned entries, total entries, and rendered 
 
 test("createOwnerMemoryTools executes list, add, update, and delete", async () => {
   const store = new OwnerMemoryStore(new FakeMemoryStore());
-  const tools = createOwnerMemoryTools(store, "communication:mail");
+  const tools: readonly ToolDefinition[] = createOwnerMemoryTools(store, "communication:mail");
+  const ctx = await createStubExtensionToolContext();
   const findTool = (name: string): ToolDefinition => {
     const tool = tools.find((item) => item.name === name);
     assert.ok(tool, `Expected tool ${name}`);
-    return tool as unknown as ToolDefinition;
+    return tool;
   };
 
   const addResult = await findTool("owner_memory_add").execute(
@@ -108,48 +111,54 @@ test("createOwnerMemoryTools executes list, add, update, and delete", async () =
       kind: "temporary",
       title: "A社からの返信待ち",
       content: "見積書の確認メールが到着している",
-    } as never,
+    },
     undefined,
     undefined,
-    {} as never,
+    ctx,
   );
-  const createdId = (addResult.details as { id: string }).id;
+  if (!isRecord(addResult.details) || typeof addResult.details.id !== "string") {
+    assert.fail("Expected string id in addResult.details");
+  }
+  const createdId = addResult.details.id;
   assert.ok(createdId.startsWith("mem_"));
 
   const listResult = await findTool("owner_memory_list").execute(
     "call-2",
-    { kind: "temporary" } as never,
+    { kind: "temporary" },
     undefined,
     undefined,
-    {} as never,
+    ctx,
   );
-  assert.equal((listResult.details as { count: number }).count, 1);
+  assert.ok(isRecord(listResult.details));
+  assert.equal(listResult.details.count, 1);
 
   const updateResult = await findTool("owner_memory_update").execute(
     "call-3",
-    { id: createdId, content: "見積書の確認メールに返信済み", kind: "fact" } as never,
+    { id: createdId, content: "見積書の確認メールに返信済み", kind: "fact" },
     undefined,
     undefined,
-    {} as never,
+    ctx,
   );
-  assert.equal((updateResult.details as { updated: boolean }).updated, true);
+  assert.ok(isRecord(updateResult.details));
+  assert.equal(updateResult.details.updated, true);
 
   const deleteResult = await findTool("owner_memory_delete").execute(
     "call-4",
-    { id: createdId } as never,
+    { id: createdId },
     undefined,
     undefined,
-    {} as never,
+    ctx,
   );
-  assert.equal((deleteResult.details as { deleted: boolean }).deleted, true);
+  assert.ok(isRecord(deleteResult.details));
+  assert.equal(deleteResult.details.deleted, true);
 });
 
 class FakeMemoryStore implements MemoryStore {
   private entries: MemoryEntry[];
   private nextId = 1;
 
-  constructor(document: MemoryDocument = { entries: [] }) {
-    this.entries = [...document.entries];
+  constructor(document?: MemoryDocument) {
+    this.entries = [...(document?.entries ?? [])];
   }
 
   async read(): Promise<MemoryDocument> {

@@ -101,14 +101,14 @@ function createEntry(
   kind: MemoryEntry["kind"],
   title: string,
   content: string,
-  scope: MemoryEntryScope = { type: "guild" },
+  scope?: MemoryEntryScope,
 ): MemoryEntry {
   return {
     content,
     createdAt: "2026-01-01T00:00:00.000Z",
     id,
     kind,
-    scope,
+    scope: scope ?? { type: "guild" },
     sourceMessageIds: [],
     title,
     updatedAt: "2026-01-01T00:00:00.000Z",

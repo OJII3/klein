@@ -9,18 +9,18 @@ import {
   TextInputStyle,
   TextDisplayBuilder,
   type ApplicationCommandDataResolvable,
-  type Channel,
-  type ChatInputCommandInteraction,
-  type Client,
-  type Interaction,
-  type ModalSubmitInteraction,
+  type InteractionReplyOptions,
 } from "discord.js";
 
 import type { DiscordOperatingMode } from "../domain/discord-operating-state";
 import type { DiscordAccess, DiscordAccessPolicy } from "../domain/discord-access-policy";
 import type { DiscordAccessRuleStore } from "../ports/discord-access-rule-store";
 import type { DiscordChannelRuleStore } from "../ports/discord-channel-rule-store";
-import { DiscordVoiceChatController, VOICE_COMMAND } from "./discord-voice-chat-controller";
+import {
+  DiscordVoiceChatController,
+  VOICE_COMMAND,
+  type VoiceChatCommandInteraction,
+} from "./discord-voice-chat-controller";
 
 const OPERATING_MODE_COMMAND = new SlashCommandBuilder()
   .setName("status")
@@ -60,7 +60,73 @@ function createChannelRuleComponentIds(nonce: string): { modalId: string; inputI
   };
 }
 
-async function fetchChannelName(client: Client, channelId: string): Promise<string | undefined> {
+export interface DiscordInteractionChannel {
+  readonly id: string;
+  readonly name?: string | null;
+  readonly parentId?: string | null;
+  isThread(): boolean;
+}
+
+export interface DiscordInteractionClient {
+  readonly channels: {
+    readonly cache: { get(id: string): DiscordInteractionChannel | undefined };
+    fetch(id: string): Promise<DiscordInteractionChannel | null>;
+  };
+}
+
+export interface DiscordChatInputInteraction extends VoiceChatCommandInteraction {
+  readonly id: string;
+  readonly commandName: string;
+  readonly client: DiscordInteractionClient;
+  readonly memberPermissions: { has(permission: bigint): boolean } | null;
+  isChatInputCommand(): boolean;
+  isModalSubmit(): boolean;
+  reply(options: InteractionReplyOptions): Promise<unknown>;
+  showModal(modal: ModalBuilder): Promise<unknown>;
+}
+
+export interface DiscordModalSubmitInteraction {
+  readonly id: string;
+  readonly customId: string;
+  readonly guildId: string | null;
+  readonly channelId: string | null;
+  readonly channel: DiscordInteractionChannel | null;
+  readonly client: DiscordInteractionClient;
+  readonly user: { readonly id: string; readonly bot: boolean };
+  readonly memberPermissions: { has(permission: bigint): boolean } | null;
+  readonly fields: { getTextInputValue(customId: string): string };
+  inGuild(): boolean;
+  isChatInputCommand(): boolean;
+  isModalSubmit(): boolean;
+  reply(options: InteractionReplyOptions): Promise<unknown>;
+}
+
+export interface DiscordOtherInteraction {
+  isChatInputCommand(): boolean;
+  isModalSubmit(): boolean;
+}
+
+export type DiscordHandlerInteraction =
+  DiscordChatInputInteraction | DiscordModalSubmitInteraction | DiscordOtherInteraction;
+
+function isModalSubmit(
+  interaction: DiscordHandlerInteraction,
+): interaction is DiscordModalSubmitInteraction {
+  return interaction.isModalSubmit() && "customId" in interaction && "fields" in interaction;
+}
+
+function isChatInputCommand(
+  interaction: DiscordHandlerInteraction,
+): interaction is DiscordChatInputInteraction {
+  return (
+    interaction.isChatInputCommand() && "commandName" in interaction && "options" in interaction
+  );
+}
+
+async function fetchChannelName(
+  client: DiscordInteractionClient,
+  channelId: string,
+): Promise<string | undefined> {
   const cached = client.channels.cache.get(channelId);
   const channel = cached ?? (await client.channels.fetch(channelId).catch(() => null));
   if (!channel) return undefined;
@@ -101,8 +167,8 @@ export class DiscordJsInteractionHandler {
     ];
   }
 
-  async handle(interaction: Interaction): Promise<void> {
-    if (interaction.isModalSubmit()) {
+  async handle(interaction: DiscordHandlerInteraction): Promise<void> {
+    if (isModalSubmit(interaction)) {
       if (!interaction.customId.startsWith(`${CHANNEL_RULE_MODAL_ID}:`)) return;
       if (!(await this.canUseCommandsInChannel(interaction))) {
         await interaction.reply({
@@ -114,7 +180,7 @@ export class DiscordJsInteractionHandler {
       await this.saveChannelRule(interaction);
       return;
     }
-    if (!interaction.isChatInputCommand()) return;
+    if (!isChatInputCommand(interaction)) return;
     if (!(await this.canUseCommandsInChannel(interaction))) {
       await interaction.reply({
         content: "このチャンネルではコマンドを利用できません。",
@@ -187,12 +253,12 @@ export class DiscordJsInteractionHandler {
   }
 
   private async canUseCommandsInChannel(
-    interaction: ChatInputCommandInteraction | ModalSubmitInteraction,
+    interaction: DiscordChatInputInteraction | DiscordModalSubmitInteraction,
   ): Promise<boolean> {
     const channelId = interaction.channelId;
     if (!channelId) return false;
 
-    let channel: Channel | null = interaction.channel;
+    let channel: DiscordInteractionChannel | null = interaction.channel;
     if (!channel && interaction.inGuild()) {
       channel = await interaction.client.channels.fetch(channelId).catch(() => null);
       if (!channel) return false;
@@ -208,7 +274,7 @@ export class DiscordJsInteractionHandler {
     });
   }
 
-  private async listAllowedChannels(interaction: ChatInputCommandInteraction): Promise<void> {
+  private async listAllowedChannels(interaction: DiscordChatInputInteraction): Promise<void> {
     if (!interaction.inGuild() || !interaction.guildId) {
       await interaction.reply({
         content: "このコマンドはサーバー内でのみ使用できます。",
@@ -275,8 +341,8 @@ export class DiscordJsInteractionHandler {
     });
   }
 
-  private async openChannelRuleEditor(interaction: ChatInputCommandInteraction): Promise<void> {
-    if (!interaction.inGuild()) {
+  private async openChannelRuleEditor(interaction: DiscordChatInputInteraction): Promise<void> {
+    if (!interaction.inGuild() || !interaction.guildId) {
       await interaction.reply({
         content: "このコマンドはサーバー内でのみ使用できます。",
       });
@@ -310,7 +376,7 @@ export class DiscordJsInteractionHandler {
     await interaction.showModal(modal);
   }
 
-  private async saveChannelRule(interaction: ModalSubmitInteraction): Promise<void> {
+  private async saveChannelRule(interaction: DiscordModalSubmitInteraction): Promise<void> {
     if (!interaction.inGuild()) {
       await interaction.reply({
         content: "この操作はサーバー内でのみ使用できます。",

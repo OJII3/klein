@@ -87,6 +87,13 @@ export function resolveConfiguredModel(
   return model;
 }
 
+export function toApiModel(
+  model: Omit<Model<Api>, "api" | "compat"> & { readonly api: unknown },
+): Model<Api> | undefined {
+  if (typeof model.api !== "string") return undefined;
+  return { ...model, api: model.api };
+}
+
 export function withOpenCodeSessionHeader(model: Model<Api>, sessionId: string): Model<Api> {
   if (model.provider !== "opencode" && model.provider !== "opencode-go") {
     return model;

@@ -32,7 +32,7 @@ export function useToolUsage({ active, onUpdated }: UseToolUsageOptions) {
   }, [onUpdated]);
 
   useEffect(() => {
-    if (!active) return;
+    if (!active) return undefined;
 
     void load();
     const timer = window.setInterval(() => void load(), 10000);

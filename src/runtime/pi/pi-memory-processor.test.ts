@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { resolveConfiguredModel } from "./pi-model-runtime";
 import { MEMORY_PROCESSING_SYSTEM_PROMPT, PiMemoryProcessor } from "./pi-memory-processor";
+import { createStubAssistantMessage } from "./pi-test-helpers";
 
 test("asks the configured model for structured memory operations", async () => {
   let received:
@@ -23,8 +24,7 @@ test("asks the configured model for structured memory operations", async () => {
         reasoning: options?.reasoning,
         systemPrompt: context.systemPrompt,
       };
-      return {
-        role: "assistant",
+      return createStubAssistantMessage({
         content: [
           {
             type: "text",
@@ -41,8 +41,7 @@ test("asks the configured model for structured memory operations", async () => {
             }),
           },
         ],
-        stopReason: "stop",
-      } as never;
+      });
     },
   );
 
@@ -94,20 +93,16 @@ test("asks the configured model for structured memory operations", async () => {
 test("accepts a fenced JSON response and rejects unsupported operations", async () => {
   const model = resolveConfiguredModel("opencode-go", "deepseek-v4.1-flash");
   const fencedProcessor = new PiMemoryProcessor(model, undefined, async () => {
-    return {
-      role: "assistant",
+    return createStubAssistantMessage({
       content: [{ type: "text", text: '```json\n{"operations":[{"type":"noop"}]}\n```' }],
-      stopReason: "stop",
-    } as never;
+    });
   });
   assert.deepEqual(await fencedProcessor.process({ entries: [] }, []), [{ type: "noop" }]);
 
   const invalidProcessor = new PiMemoryProcessor(model, undefined, async () => {
-    return {
-      role: "assistant",
+    return createStubAssistantMessage({
       content: [{ type: "text", text: '{"operations":[{"type":"merge"}]}' }],
-      stopReason: "stop",
-    } as never;
+    });
   });
   await assert.rejects(
     invalidProcessor.process({ entries: [] }, []),
@@ -119,8 +114,7 @@ test("parses scopes from the batch and rejects unknown channels", async () => {
   const model = resolveConfiguredModel("opencode-go", "deepseek-v4.1-flash");
   const respondWith = (scope: unknown) =>
     new PiMemoryProcessor(model, undefined, async () => {
-      return {
-        role: "assistant",
+      return createStubAssistantMessage({
         content: [
           {
             type: "text",
@@ -131,8 +125,7 @@ test("parses scopes from the batch and rejects unknown channels", async () => {
             }),
           },
         ],
-        stopReason: "stop",
-      } as never;
+      });
     });
   const messages = [{ channelId: "channel-1", content: "hello", id: "message-1" }];
 
@@ -159,8 +152,7 @@ test("parses scopes from the batch and rejects unknown channels", async () => {
 
   const existingScope = { channelId: "channel-9", type: "channel" as const };
   const updateProcessor = new PiMemoryProcessor(model, undefined, async () => {
-    return {
-      role: "assistant",
+    return createStubAssistantMessage({
       content: [
         {
           type: "text",
@@ -178,8 +170,7 @@ test("parses scopes from the batch and rejects unknown channels", async () => {
           }),
         },
       ],
-      stopReason: "stop",
-    } as never;
+    });
   });
   assert.deepEqual(
     await updateProcessor.process(

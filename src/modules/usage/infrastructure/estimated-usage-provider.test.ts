@@ -15,7 +15,7 @@ function appendAssistantMessage(
 ): void {
   sessionManager.appendMessage({
     role: "assistant",
-    content: "hello",
+    content: [{ type: "text", text: "hello" }],
     api: "mistral-conversations",
     provider,
     model: "deepseek-v4-1-flash-1017",
@@ -29,7 +29,7 @@ function appendAssistantMessage(
     },
     stopReason: "stop",
     timestamp,
-  } as never);
+  });
 }
 
 test("estimates the current month's provider spend from session usage", async () => {

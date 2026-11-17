@@ -1,31 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
+import {
+  InMemoryScheduledTaskStore,
+  createStubDiscordChannelApi,
+  createStubExtensionToolContext,
+} from "@agents/testing/test-stubs";
 import type { WatchCheckRunner } from "@modules/scheduling/application/watch-check-runner";
-import type { ScheduledTask } from "@modules/scheduling/domain/scheduled-task";
-import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
 import { createAttachedWorkerTools } from "./attached-worker";
-
-function createStore() {
-  const created: ScheduledTask[] = [];
-  const store = {
-    async create(task: ScheduledTask) {
-      created.push(task);
-    },
-    async listForScope() {
-      return [];
-    },
-    async listDue() {
-      return [];
-    },
-    async delete() {
-      return false;
-    },
-    async update() {},
-  } as unknown as ScheduledTaskStore;
-  return { store, created };
-}
 
 const runner: WatchCheckRunner = {
   async run() {
@@ -34,9 +16,9 @@ const runner: WatchCheckRunner = {
 };
 
 test("gives a worker the read tool and its own watch tools", () => {
-  const { store } = createStore();
+  const store = new InMemoryScheduledTaskStore();
   const tools = createAttachedWorkerTools(
-    {} as DiscordChannelApi,
+    createStubDiscordChannelApi(),
     "channel-a",
     "public",
     "attached-1",
@@ -51,9 +33,9 @@ test("gives a worker the read tool and its own watch tools", () => {
 });
 
 test("registers a worker watch with the worker's task id", async () => {
-  const { store, created } = createStore();
+  const store = new InMemoryScheduledTaskStore();
   const tools = createAttachedWorkerTools(
-    {} as DiscordChannelApi,
+    createStubDiscordChannelApi(),
     "channel-a",
     "public",
     "attached-1",
@@ -70,18 +52,18 @@ test("registers a worker watch with the worker's task id", async () => {
       schedule: { type: "every", minutes: 5 },
       script: "silent();",
       message: "在庫の変化を確認してください。",
-    } as never,
+    },
     undefined,
     undefined,
-    {} as never,
+    await createStubExtensionToolContext(),
   );
 
-  const watch = created[0];
+  const watch = store.created[0];
   assert.equal(watch?.kind === "watch" ? watch.ownerTaskId : undefined, "attached-1");
 });
 
 test("wires image analysis into the worker's discord_read tool", async () => {
-  const { store } = createStore();
+  const store = new InMemoryScheduledTaskStore();
   let analyzedPrompt: unknown;
   const tools = createAttachedWorkerTools(
     {
@@ -124,10 +106,10 @@ test("wires image analysis into the worker's discord_read tool", async () => {
 
   const result = await readTool.execute(
     "tool-call",
-    { messageId: "message-1", focus: "エラー文" } as never,
+    { messageId: "message-1", focus: "エラー文" },
     undefined,
     undefined,
-    {} as never,
+    await createStubExtensionToolContext(),
   );
 
   assert.deepEqual(analyzedPrompt, {

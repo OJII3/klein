@@ -2,38 +2,30 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  InMemoryScheduledTaskStore,
+  createStubExtensionToolContext,
+} from "@agents/testing/test-stubs";
+import {
   WatchCheckError,
   type WatchCheckRunner,
 } from "@modules/scheduling/application/watch-check-runner";
-import type { ScheduledTask, WatchTask } from "@modules/scheduling/domain/scheduled-task";
-import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
+import type { WatchTask } from "@modules/scheduling/domain/scheduled-task";
+import { isRecord } from "@shared/type-guards";
 import { createWatchTools } from "./watch";
 
-function createStore() {
-  let stored: WatchTask | undefined;
-  const deletedIds: string[] = [];
-  const store = {
-    async create(task: ScheduledTask) {
-      stored = task as WatchTask;
-    },
-    async listForScope(kind: ScheduledTask["kind"], channelId: string, accessScope: string) {
+function createSingleWatchStore() {
+  const store = new InMemoryScheduledTaskStore([], {
+    onListForScope(kind, channelId, accessScope) {
       assert.equal(kind, "watch");
       assert.equal(channelId, "channel-a");
       assert.equal(accessScope, "public");
-      return stored ? [stored] : [];
     },
-    async listDue() {
-      return [];
-    },
-    async delete(_kind: ScheduledTask["kind"], _channelId: string, _scope: string, id: string) {
-      deletedIds.push(id);
-      return true;
-    },
-    async update(task: ScheduledTask) {
-      stored = task as WatchTask;
-    },
-  } as unknown as ScheduledTaskStore;
-  return { store, getStored: () => stored, deletedIds };
+  });
+  const getStored = (): WatchTask | undefined => {
+    const first = [...store.tasks.values()][0];
+    return first?.kind === "watch" ? first : undefined;
+  };
+  return { store, getStored, deletedIds: store.deletedIds };
 }
 
 function createRunner() {
@@ -50,13 +42,19 @@ function createRunner() {
 }
 
 function textOf(result: { content: readonly unknown[] }): string {
-  const block = result.content[0] as { type: string; text: string } | undefined;
-  return block?.type === "text" ? block.text : "";
+  const block = result.content[0];
+  return isRecord(block) && block.type === "text" && typeof block.text === "string"
+    ? block.text
+    : "";
+}
+
+function unpackWatchTools(tools: ReturnType<typeof createWatchTools>) {
+  const [addTool, updateTool, listTool, getTool, deleteTool] = tools;
+  return { addTool, updateTool, listTool, getTool, deleteTool };
 }
 
 async function addWatch(tools: ReturnType<typeof createWatchTools>) {
-  const addTool = tools.find((tool) => tool.name === "watch_add");
-  assert.ok(addTool);
+  const { addTool } = unpackWatchTools(tools);
   return addTool.execute(
     "tool-call",
     {
@@ -65,53 +63,58 @@ async function addWatch(tools: ReturnType<typeof createWatchTools>) {
       script: "text(args[0]); silent();",
       args: ["--json"],
       message: "在庫の変化を確認してください。",
-    } as never,
+    },
     undefined,
     undefined,
-    {} as never,
+    await createStubExtensionToolContext(),
   );
 }
 
+async function listWatches(tools: ReturnType<typeof createWatchTools>) {
+  const { listTool } = unpackWatchTools(tools);
+  const result = await listTool.execute(
+    "tool-call",
+    {},
+    undefined,
+    undefined,
+    await createStubExtensionToolContext(),
+  );
+  return result.details.watches.map((watch) => watch.id);
+}
+
 test("provides watch add, update, get, list, and delete tools in the given scope", async () => {
-  const { store, getStored, deletedIds } = createStore();
+  const { store, getStored, deletedIds } = createSingleWatchStore();
   const { runner, runs } = createRunner();
   const tools = createWatchTools(store, "channel-a", "public", runner);
-  const updateTool = tools.find((tool) => tool.name === "watch_update");
-  const listTool = tools.find((tool) => tool.name === "watch_list");
-  const deleteTool = tools.find((tool) => tool.name === "watch_delete");
-  assert.ok(updateTool && listTool && deleteTool);
+  const { listTool, getTool, deleteTool } = unpackWatchTools(tools);
+  const ctx = await createStubExtensionToolContext();
 
   const addResult = await addWatch(tools);
   const created = getStored();
-  assert.equal(created?.kind, "watch");
-  assert.equal(created?.accessScope, "public");
-  assert.deepEqual(created?.args, ["--json"]);
-  assert.equal(created?.script, "text(args[0]); silent();");
-  assert.equal(created?.enabled, true);
+  if (!created) {
+    assert.fail("expected watch to be created");
+  }
+  assert.equal(created.kind, "watch");
+  assert.equal(created.accessScope, "public");
+  assert.deepEqual(created.args, ["--json"]);
+  assert.equal(created.script, "text(args[0]); silent();");
+  assert.equal(created.enabled, true);
   assert.deepEqual(runs, [{ script: "text(args[0]); silent();", args: ["--json"] }]);
   assert.match(textOf(addResult), /登録しました/u);
 
-  const listResult = await listTool.execute(
-    "tool-call",
-    {} as never,
-    undefined,
-    undefined,
-    {} as never,
-  );
-  const listed = (listResult.details as unknown as { watches: Record<string, unknown>[] }).watches;
-  assert.equal(listed instanceof Array, true);
+  const listResult = await listTool.execute("tool-call", {}, undefined, undefined, ctx);
+  const listed = listResult.details.watches;
+  assert.equal(Array.isArray(listed), true);
   assert.equal(listed[0]?.script, "text(args[0]); silent();");
   assert.equal(listed[0]?.enabled, true);
   assert.equal(listed[0]?.consecutiveFailures, 0);
 
-  const getTool = tools.find((tool) => tool.name === "watch_get");
-  assert.ok(getTool);
   const getResult = await getTool.execute(
     "tool-call",
-    { id: created!.id } as never,
+    { id: created.id },
     undefined,
     undefined,
-    {} as never,
+    ctx,
   );
   assert.match(textOf(getResult), /在庫監視/u);
   assert.match(textOf(getResult), /text\(args\[0\]\); silent\(\);/u);
@@ -121,39 +124,37 @@ test("provides watch add, update, get, list, and delete tools in the given scope
 
   const missingGetResult = await getTool.execute(
     "tool-call",
-    { id: "missing" } as never,
+    { id: "missing" },
     undefined,
     undefined,
-    {} as never,
+    ctx,
   );
   assert.match(textOf(missingGetResult), /ありません/u);
 
-  await deleteTool.execute(
-    "tool-call",
-    { id: created!.id } as never,
-    undefined,
-    undefined,
-    {} as never,
-  );
-  assert.deepEqual(deletedIds, [created!.id]);
+  await deleteTool.execute("tool-call", { id: created.id }, undefined, undefined, ctx);
+  assert.deepEqual(deletedIds, [created.id]);
 });
 
 test("updates a watch and can disable and re-enable it", async () => {
-  const { store, getStored } = createStore();
+  const { store, getStored } = createSingleWatchStore();
   const { runner, runs } = createRunner();
   const tools = createWatchTools(store, "channel-a", "public", runner);
-  const updateTool = tools.find((tool) => tool.name === "watch_update");
-  assert.ok(updateTool);
+  const { updateTool } = unpackWatchTools(tools);
+  const ctx = await createStubExtensionToolContext();
 
   await addWatch(tools);
-  const id = getStored()!.id;
+  const created = getStored();
+  if (!created) {
+    assert.fail("expected watch to be created");
+  }
+  const id = created.id;
 
   const disabledResult = await updateTool.execute(
     "tool-call",
-    { id, script: "text('updated'); silent();", enabled: false } as never,
+    { id, script: "text('updated'); silent();", enabled: false },
     undefined,
     undefined,
-    {} as never,
+    ctx,
   );
   const disabled = getStored();
   assert.equal(disabled?.script, "text('updated'); silent();");
@@ -163,29 +164,32 @@ test("updates a watch and can disable and re-enable it", async () => {
 
   const enabledResult = await updateTool.execute(
     "tool-call",
-    { id, enabled: true } as never,
+    { id, enabled: true },
     undefined,
     undefined,
-    {} as never,
+    ctx,
   );
   const enabled = getStored();
-  assert.equal(enabled?.enabled, true);
-  assert.ok(Date.parse(enabled!.nextRunAt) > Date.now());
+  if (!enabled) {
+    assert.fail("expected watch to remain stored");
+  }
+  assert.equal(enabled.enabled, true);
+  assert.ok(Date.parse(enabled.nextRunAt) > Date.now());
   assert.deepEqual(runs.at(-1), { script: "text('updated'); silent();", args: ["--json"] });
   assert.match(textOf(enabledResult), /次回:/u);
 
   const missingResult = await updateTool.execute(
     "tool-call",
-    { id: "missing", enabled: false } as never,
+    { id: "missing", enabled: false },
     undefined,
     undefined,
-    {} as never,
+    ctx,
   );
-  assert.equal((missingResult.details as { updated: boolean }).updated, false);
+  assert.equal(missingResult.details.updated, false);
 });
 
 test("does not register a watch when the dry run fails", async () => {
-  const { store, getStored } = createStore();
+  const { store, getStored } = createSingleWatchStore();
   const { runner, fail } = createRunner();
   fail("監視スクリプトが失敗しました: boom");
   const tools = createWatchTools(store, "channel-a", "public", runner);
@@ -195,72 +199,29 @@ test("does not register a watch when the dry run fails", async () => {
 });
 
 test("keeps a watch disabled when the dry run fails on re-enable", async () => {
-  const { store, getStored } = createStore();
+  const { store, getStored } = createSingleWatchStore();
   const { runner, fail } = createRunner();
   const tools = createWatchTools(store, "channel-a", "public", runner);
-  const updateTool = tools.find((tool) => tool.name === "watch_update");
-  assert.ok(updateTool);
+  const { updateTool } = unpackWatchTools(tools);
+  const ctx = await createStubExtensionToolContext();
 
   await addWatch(tools);
-  const id = getStored()!.id;
-  await updateTool.execute(
-    "tool-call",
-    { id, enabled: false } as never,
-    undefined,
-    undefined,
-    {} as never,
-  );
+  const created = getStored();
+  if (!created) {
+    assert.fail("expected watch to be created");
+  }
+  const id = created.id;
+  await updateTool.execute("tool-call", { id, enabled: false }, undefined, undefined, ctx);
 
   fail("監視スクリプトが失敗しました: boom");
   await assert.rejects(
-    updateTool.execute(
-      "tool-call",
-      { id, enabled: true } as never,
-      undefined,
-      undefined,
-      {} as never,
-    ),
+    updateTool.execute("tool-call", { id, enabled: true }, undefined, undefined, ctx),
     /監視を有効にしませんでした。.*boom/u,
   );
   const stored = getStored();
   assert.equal(stored?.enabled, false);
   assert.equal(stored?.lastStatus, undefined);
 });
-
-function createMultiStore(initial: readonly WatchTask[]) {
-  let watches = [...initial];
-  const store = {
-    async create(task: ScheduledTask) {
-      watches.push(task as WatchTask);
-    },
-    async listForScope(kind: ScheduledTask["kind"], channelId: string, accessScope: string) {
-      return watches.filter(
-        (watch) =>
-          watch.kind === kind && watch.channelId === channelId && watch.accessScope === accessScope,
-      );
-    },
-    async listDue() {
-      return [];
-    },
-    async delete(kind: ScheduledTask["kind"], channelId: string, accessScope: string, id: string) {
-      const before = watches.length;
-      watches = watches.filter(
-        (watch) =>
-          !(
-            watch.id === id &&
-            watch.kind === kind &&
-            watch.channelId === channelId &&
-            watch.accessScope === accessScope
-          ),
-      );
-      return watches.length !== before;
-    },
-    async update(task: ScheduledTask) {
-      watches = watches.map((watch) => (watch.id === task.id ? (task as WatchTask) : watch));
-    },
-  } as unknown as ScheduledTaskStore;
-  return { store, getWatches: () => watches };
-}
 
 const baseWatch: WatchTask = {
   kind: "watch",
@@ -279,7 +240,7 @@ const baseWatch: WatchTask = {
 };
 
 test("scopes worker watches to the worker that registered them", async () => {
-  const { store, getWatches } = createMultiStore([
+  const store = new InMemoryScheduledTaskStore([
     baseWatch,
     { ...baseWatch, id: "watch-worker-1", ownerTaskId: "attached-1" },
     { ...baseWatch, id: "watch-worker-2", ownerTaskId: "attached-2" },
@@ -287,13 +248,8 @@ test("scopes worker watches to the worker that registered them", async () => {
   const { runner } = createRunner();
   const workerTools = createWatchTools(store, "channel-a", "public", runner, "attached-1");
   const conversationTools = createWatchTools(store, "channel-a", "public", runner);
+  const ctx = await createStubExtensionToolContext();
 
-  const listWatches = async (tools: ReturnType<typeof createWatchTools>) => {
-    const tool = tools.find((candidate) => candidate.name === "watch_list");
-    assert.ok(tool);
-    const result = await tool.execute("tool-call", {} as never, undefined, undefined, {} as never);
-    return (result.details as { watches: { id: string }[] }).watches.map((watch) => watch.id);
-  };
   assert.deepEqual(await listWatches(workerTools), ["watch-worker-1"]);
   assert.deepEqual(await listWatches(conversationTools), [
     "watch-conversation",
@@ -301,51 +257,50 @@ test("scopes worker watches to the worker that registered them", async () => {
     "watch-worker-2",
   ]);
 
-  const findTool = (tools: ReturnType<typeof createWatchTools>, name: string) => {
-    const tool = tools.find((candidate) => candidate.name === name);
-    assert.ok(tool);
-    return tool;
-  };
-  const getResult = await findTool(workerTools, "watch_get").execute(
+  const worker = unpackWatchTools(workerTools);
+  const conversation = unpackWatchTools(conversationTools);
+
+  const getResult = await worker.getTool.execute(
     "tool-call",
-    { id: "watch-worker-2" } as never,
+    { id: "watch-worker-2" },
     undefined,
     undefined,
-    {} as never,
+    ctx,
   );
   assert.match(textOf(getResult), /ありません/u);
 
-  const updateResult = await findTool(workerTools, "watch_update").execute(
+  const updateResult = await worker.updateTool.execute(
     "tool-call",
-    { id: "watch-worker-2", enabled: false } as never,
+    { id: "watch-worker-2", enabled: false },
     undefined,
     undefined,
-    {} as never,
+    ctx,
   );
-  assert.equal((updateResult.details as { updated: boolean }).updated, false);
+  assert.equal(updateResult.details.updated, false);
 
-  const deleteResult = await findTool(workerTools, "watch_delete").execute(
+  const deleteResult = await worker.deleteTool.execute(
     "tool-call",
-    { id: "watch-worker-2" } as never,
+    { id: "watch-worker-2" },
     undefined,
     undefined,
-    {} as never,
+    ctx,
   );
-  assert.equal((deleteResult.details as { deleted: boolean }).deleted, false);
-  assert.equal(
-    getWatches().some((watch) => watch.id === "watch-worker-2"),
-    true,
-  );
+  assert.equal(deleteResult.details.deleted, false);
+  assert.equal(store.tasks.has("watch-worker-2"), true);
 
   await addWatch(workerTools);
-  assert.equal(getWatches().at(-1)?.ownerTaskId, "attached-1");
-
-  const conversationGetResult = await findTool(conversationTools, "watch_get").execute(
-    "tool-call",
-    { id: "watch-worker-2" } as never,
-    undefined,
-    undefined,
-    {} as never,
+  assert.equal(
+    [...store.tasks.values()].findLast((task): task is WatchTask => task.kind === "watch")
+      ?.ownerTaskId,
+    "attached-1",
   );
-  assert.equal((conversationGetResult.details as { found: boolean }).found, true);
+
+  const conversationGetResult = await conversation.getTool.execute(
+    "tool-call",
+    { id: "watch-worker-2" },
+    undefined,
+    undefined,
+    ctx,
+  );
+  assert.equal(conversationGetResult.details.found, true);
 });

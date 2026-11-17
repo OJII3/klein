@@ -33,6 +33,10 @@ export function resolveAgentPolicy(role: AgentRole): AgentPolicy {
       return { surface: "none", lifetime: "task", assistantText: "caller" };
     case "standalone":
       return { surface: "none", lifetime: "call", assistantText: "caller" };
+    default: {
+      const exhaustive: never = role;
+      throw new Error(`Unsupported agent role: ${String(exhaustive)}`);
+    }
   }
 }
 

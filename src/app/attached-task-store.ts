@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 
 import type { AttachedTaskScope, AttachedTaskStatus } from "@agents/core/attached-agent";
 import { isConversationKey } from "@shared/conversation-key";
+import { isFileNotFound, isRecord, parseJson } from "@shared/type-guards";
 
 /** The task metadata that outlives the process. The Pi session itself lives in `sessions/attached/`. */
 export interface StoredAttachedTask extends AttachedTaskScope {
@@ -47,13 +48,13 @@ export class FileAttachedTaskStore implements AttachedTaskStore {
       paths.map(async (path) => {
         const content = await readFile(path, "utf8");
         try {
-          return JSON.parse(content) as unknown;
+          return parseJson(content);
         } catch {
           return undefined;
         }
       }),
     );
-    return tasks.filter(isStoredAttachedTask);
+    return tasks.filter((task) => isStoredAttachedTask(task));
   }
 
   async save(task: StoredAttachedTask): Promise<void> {
@@ -78,25 +79,20 @@ export class FileAttachedTaskStore implements AttachedTaskStore {
 }
 
 function isStoredAttachedTask(value: unknown): value is StoredAttachedTask {
-  if (typeof value !== "object" || value === null) return false;
-  const task = value as Partial<StoredAttachedTask>;
+  if (!isRecord(value)) return false;
   return (
-    typeof task.id === "string" &&
-    task.id.length > 0 &&
-    isConversationKey(task.conversationKey) &&
-    typeof task.accessScope === "string" &&
-    typeof task.ownerFeaturesAllowed === "boolean" &&
-    typeof task.prompt === "string" &&
-    (task.status === "running" ||
-      task.status === "idle" ||
-      task.status === "failed" ||
-      task.status === "interrupted") &&
-    typeof task.createdAt === "string" &&
-    typeof task.updatedAt === "string" &&
-    typeof task.closeAfterResult === "boolean"
+    typeof value.id === "string" &&
+    value.id.length > 0 &&
+    isConversationKey(value.conversationKey) &&
+    typeof value.accessScope === "string" &&
+    typeof value.ownerFeaturesAllowed === "boolean" &&
+    typeof value.prompt === "string" &&
+    (value.status === "running" ||
+      value.status === "idle" ||
+      value.status === "failed" ||
+      value.status === "interrupted") &&
+    typeof value.createdAt === "string" &&
+    typeof value.updatedAt === "string" &&
+    typeof value.closeAfterResult === "boolean"
   );
-}
-
-function isFileNotFound(error: unknown): boolean {
-  return error instanceof Error && "code" in error && error.code === "ENOENT";
 }

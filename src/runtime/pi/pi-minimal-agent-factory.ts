@@ -13,7 +13,7 @@ import type { PiStandaloneSessionRunner } from "./pi-standalone-session-runner";
 type ThinkingLevel = NonNullable<CreateAgentSessionOptions["thinkingLevel"]>;
 
 export interface PiMinimalAgentFactoryOptions {
-  readonly runner: PiStandaloneSessionRunner;
+  readonly runner: Pick<PiStandaloneSessionRunner, "createSession">;
   readonly model: Model<Api>;
   readonly cwd: string;
   readonly thinkingLevel?: ThinkingLevel;

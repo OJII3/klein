@@ -112,5 +112,5 @@ export function createAttachedControlTools(
         };
       },
     }),
-  ];
+  ] as const;
 }

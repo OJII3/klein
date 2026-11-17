@@ -156,7 +156,9 @@ function createHarness(
 async function waitFor(predicate: () => boolean): Promise<void> {
   for (let attempt = 0; attempt < 100; attempt += 1) {
     if (predicate()) return;
-    await new Promise((resolve) => setTimeout(resolve, 1));
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 1);
+    });
   }
   throw new Error("condition was not met");
 }
@@ -502,7 +504,9 @@ test("closeIdleTasks closes idle tasks past the timeout unless they own watches"
   await waitFor(() => harness.deliveries.length === 2);
   await harness.taskCoordinator.waitForCompletion();
 
-  const updatedAtMs = Date.parse(harness.store.tasks.get(idleTaskId)!.updatedAt);
+  const idleTask = harness.store.tasks.get(idleTaskId);
+  if (!idleTask) assert.fail("Expected idle task to be stored");
+  const updatedAtMs = Date.parse(idleTask.updatedAt);
   assert.equal(
     await harness.coordinator.closeIdleTasks(updatedAtMs + ATTACHED_TASK_IDLE_CLOSE_MS - 1),
     0,
@@ -672,9 +676,8 @@ test("forwards AgentToolContext to createTools for started and restored tasks", 
     updatedAt: "2026-01-01T00:00:00.000Z",
     closeAfterResult: false,
   });
-  const analyzeImage = async () => "解析結果";
   const toolContext: AgentToolContext = {
-    analyzeImage,
+    analyzeImage: async () => "解析結果",
     requesterId: () => undefined,
   };
   const harness = createHarness(undefined, store, { toolContext });

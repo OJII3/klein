@@ -4,6 +4,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 
+import { isRecord, parseJson } from "@shared/type-guards";
 import { runMcpCommand } from "./mcp-cli";
 import { createTempDir } from "../testing/temp-dir";
 
@@ -35,7 +36,10 @@ function json(response: ServerResponse, status: number, body: unknown): void {
  */
 async function startOAuthMcpServer(): Promise<OAuthMcpServer> {
   let origin = "";
-  const server = createServer(async (request, response) => {
+  const handleRequest = async (
+    request: IncomingMessage,
+    response: ServerResponse,
+  ): Promise<void> => {
     const url = new URL(request.url ?? "/", origin);
     if (url.pathname === "/mcp" && request.method === "POST") {
       if (request.headers.authorization !== `Bearer ${ACCESS_TOKEN}`) {
@@ -46,15 +50,20 @@ async function startOAuthMcpServer(): Promise<OAuthMcpServer> {
           .end();
         return;
       }
-      const message = JSON.parse(await readBody(request));
+      const message = parseJson(await readBody(request));
+      if (!isRecord(message)) {
+        response.writeHead(400).end();
+        return;
+      }
       if (message.id === undefined) {
         response.writeHead(202).end();
         return;
       }
+      const protocolVersion = isRecord(message.params) ? message.params.protocolVersion : undefined;
       const result =
         message.method === "initialize"
           ? {
-              protocolVersion: message.params.protocolVersion,
+              protocolVersion,
               capabilities: { tools: {} },
               serverInfo: { name: "oauth-test", version: "1.0.0" },
             }
@@ -111,17 +120,31 @@ async function startOAuthMcpServer(): Promise<OAuthMcpServer> {
       return;
     }
     response.writeHead(404).end();
+  };
+  const server = createServer((request, response) => {
+    void handleRequest(request, response).catch((error: unknown) => {
+      if (!response.headersSent) {
+        response.writeHead(500).end(String(error));
+      } else {
+        response.destroy();
+      }
+    });
   });
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  await new Promise<void>((resolve) => {
+    server.listen(0, "127.0.0.1", resolve);
+  });
   const address = server.address();
   assert.ok(address && typeof address === "object");
   origin = `http://127.0.0.1:${address.port}`;
   return {
     url: `${origin}/mcp`,
     close: () =>
-      new Promise<void>((resolve, reject) =>
-        server.close((error) => (error ? reject(error) : resolve())),
-      ),
+      new Promise<void>((resolve, reject) => {
+        server.close((error) => {
+          if (error) reject(error);
+          else resolve();
+        });
+      }),
   };
 }
 
@@ -196,10 +219,14 @@ test("mcp login signs in through the loopback callback", async () => {
         openUrl: (url) => {
           // Give the sign-in a moment to wait for the callback, like a browser loading a page would.
           setTimeout(() => {
-            visitAuthorizationUrl(url).then(
-              () => browserVisits.push(url),
-              (error: unknown) => errors.push(String(error)),
-            );
+            void (async () => {
+              try {
+                await visitAuthorizationUrl(url);
+                browserVisits.push(url);
+              } catch (error: unknown) {
+                errors.push(String(error));
+              }
+            })();
           }, 20);
         },
       });
@@ -207,8 +234,13 @@ test("mcp login signs in through the loopback callback", async () => {
       assert.equal(code, 0, errors.join("\n"));
       assert.equal(browserVisits.length, 1);
       assert.ok(logs.includes('Signed in to MCP server "docs" (1 tools).'), logs.join("\n"));
-      const stored = JSON.parse(await readFile(join(workspace.agentDir, "mcp-auth.json"), "utf8"));
-      assert.equal(stored[`mcp__docs|${server.url}`]?.tokens?.access_token, ACCESS_TOKEN);
+      const stored = parseJson(await readFile(join(workspace.agentDir, "mcp-auth.json"), "utf8"));
+      if (!isRecord(stored)) assert.fail("Expected mcp-auth.json to be an object");
+      const serverEntry = stored[`mcp__docs|${server.url}`];
+      if (!isRecord(serverEntry) || !isRecord(serverEntry.tokens)) {
+        assert.fail("Expected stored OAuth tokens for docs server");
+      }
+      assert.equal(serverEntry.tokens.access_token, ACCESS_TOKEN);
 
       // A second sign-in reuses the stored token instead of starting the browser flow again.
       const again: string[] = [];
@@ -261,9 +293,14 @@ test("mcp list reports the configured servers", async () => {
       });
       // The server needs a sign-in, so list reports it rather than connecting.
       assert.equal(code, 1);
-      const report = JSON.parse(logs.join("\n"));
-      assert.equal(report.servers[0].name, "docs");
-      assert.equal(report.servers[0].state, "needs-auth");
+      const report = parseJson(logs.join("\n"));
+      if (!isRecord(report) || !Array.isArray(report.servers)) {
+        assert.fail("Expected mcp list report with servers array");
+      }
+      const firstServer: unknown = report.servers[0];
+      if (!isRecord(firstServer)) assert.fail("Expected first server entry");
+      assert.equal(firstServer.name, "docs");
+      assert.equal(firstServer.state, "needs-auth");
     });
   } finally {
     await server.close();

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
+import { parseJson, isRecord } from "@shared/type-guards";
 import { createLogFilePath, createLogger, flushLogger } from "./logger";
 import { createTempDir } from "../testing/temp-dir";
 
@@ -24,7 +25,8 @@ test("redacts sensitive top-level fields", () => {
     "test message",
   );
 
-  const entry = JSON.parse(lines[0] ?? "{}");
+  const entry = parseJson(lines[0] ?? "{}");
+  if (!isRecord(entry)) assert.fail("Expected log entry to be an object");
   assert.equal(entry.apiKey, "[Redacted]");
   assert.equal(entry.token, "[Redacted]");
   assert.equal(entry.event, "test");
@@ -41,7 +43,8 @@ test("persists JSONL records when a log file path is configured", async () => {
   flushLogger(logger);
 
   const lines = (await readFile(filePath, "utf8")).trim().split("\n");
-  const entry = JSON.parse(lines[0] ?? "{}");
+  const entry = parseJson(lines[0] ?? "{}");
+  if (!isRecord(entry)) assert.fail("Expected log entry to be an object");
   assert.equal(entry.event, "file_test");
   assert.equal(entry.value, 42);
   assert.equal(entry.msg, "written to file");

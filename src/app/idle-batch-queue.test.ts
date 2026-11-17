@@ -28,7 +28,9 @@ function createQueue(
 }
 
 function delay(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+  return new Promise((resolve) => {
+    setTimeout(resolve, milliseconds);
+  });
 }
 
 test("batches items per key and flushes them after idle", async () => {

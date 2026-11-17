@@ -41,7 +41,7 @@ export function useLogs({ active, onUpdated }: UseLogsOptions) {
   }, [filters, load]);
 
   useEffect(() => {
-    if (!active) return;
+    if (!active) return undefined;
 
     reload();
     const timer = window.setInterval(reload, 5000);

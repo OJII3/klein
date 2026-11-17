@@ -1,5 +1,4 @@
 import { resizeImage } from "@earendil-works/pi-coding-agent";
-import { type Attachment, type Message } from "discord.js";
 import type { Logger } from "pino";
 
 import {
@@ -9,6 +8,56 @@ import {
   type DiscordReplyReference,
   type DiscordUser,
 } from "../domain/discord-message";
+
+export interface DiscordAdapterAttachment {
+  readonly id: string;
+  readonly name: string;
+  readonly size: number;
+  readonly url: string;
+  readonly contentType: string | null;
+}
+
+export interface DiscordAdapterChannel {
+  readonly id: string;
+  readonly name?: string | null;
+  readonly parentId?: string | null;
+  isThread(): boolean;
+}
+
+export interface DiscordAdapterMessage {
+  readonly id: string;
+  readonly channelId: string;
+  readonly guildId: string | null;
+  readonly content: string;
+  readonly createdAt: Date;
+  readonly author: {
+    readonly bot: boolean;
+    readonly id: string;
+    readonly username: string;
+    readonly displayName: string;
+  };
+  readonly member?: { readonly displayName: string } | null;
+  readonly channel: DiscordAdapterChannel;
+  readonly attachments: { values(): Iterable<DiscordAdapterAttachment> };
+  readonly mentions: {
+    readonly users: {
+      get(id: string):
+        | {
+            readonly bot: boolean;
+            readonly id: string;
+            readonly username: string;
+            readonly displayName: string;
+          }
+        | undefined;
+    };
+    readonly roles: {
+      get(id: string): { readonly id: string; readonly name: string } | undefined;
+    };
+    readonly members?: { get(id: string): { readonly displayName: string } | undefined } | null;
+  };
+  readonly reference?: { readonly messageId?: string; readonly channelId?: string } | null;
+  fetchReference(): Promise<DiscordAdapterMessage>;
+}
 
 const IMAGE_MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024;
 const IMAGE_FETCH_TIMEOUT_MS = 15_000;
@@ -61,7 +110,7 @@ async function readResponseBytes(response: Response): Promise<Uint8Array> {
   return bytes;
 }
 
-function toDiscordUser(message: Message): DiscordUser {
+function toDiscordUser(message: DiscordAdapterMessage): DiscordUser {
   return {
     bot: message.author.bot,
     id: message.author.id,
@@ -73,13 +122,13 @@ function toDiscordUser(message: Message): DiscordUser {
 export class DiscordJsMessageAdapter {
   constructor(private readonly logger?: Logger) {}
 
-  hasSupportedImageAttachment(message: Message): boolean {
+  hasSupportedImageAttachment(message: DiscordAdapterMessage): boolean {
     return [...message.attachments.values()].some(
       (attachment) => normalizeImageMimeType(attachment.contentType) !== undefined,
     );
   }
 
-  toDiscordMessage(message: Message): DiscordMessage {
+  toDiscordMessage(message: DiscordAdapterMessage): DiscordMessage {
     const thread = message.channel.isThread() ? message.channel : undefined;
     const channelName =
       "name" in message.channel && typeof message.channel.name === "string"
@@ -100,7 +149,7 @@ export class DiscordJsMessageAdapter {
     };
   }
 
-  async fetchImages(message: Message): Promise<DiscordImageAttachment[]> {
+  async fetchImages(message: DiscordAdapterMessage): Promise<DiscordImageAttachment[]> {
     const imageAttachments = [...message.attachments.values()].filter(
       (attachment) => normalizeImageMimeType(attachment.contentType) !== undefined,
     );
@@ -127,7 +176,9 @@ export class DiscordJsMessageAdapter {
     return images.filter((image): image is DiscordImageAttachment => image !== undefined);
   }
 
-  async fetchReplyReference(message: Message): Promise<DiscordReplyReference | undefined> {
+  async fetchReplyReference(
+    message: DiscordAdapterMessage,
+  ): Promise<DiscordReplyReference | undefined> {
     const messageId = message.reference?.messageId;
     if (!messageId) return undefined;
     if (message.reference?.channelId && message.reference.channelId !== message.channelId) {
@@ -157,7 +208,7 @@ export class DiscordJsMessageAdapter {
     }
   }
 
-  private async fetchImage(attachment: Attachment): Promise<DiscordImageAttachment> {
+  private async fetchImage(attachment: DiscordAdapterAttachment): Promise<DiscordImageAttachment> {
     const mimeType = normalizeImageMimeType(attachment.contentType);
     if (!mimeType) {
       throw new Error(`Unsupported Discord image type: ${attachment.contentType ?? "unknown"}`);
@@ -186,7 +237,7 @@ export class DiscordJsMessageAdapter {
     };
   }
 
-  private normalizeMessageContent(message: Message): string {
+  private normalizeMessageContent(message: DiscordAdapterMessage): string {
     const content = message.content.trim();
 
     return resolveDiscordMentions(content, {

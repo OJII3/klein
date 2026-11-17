@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { createStubExtensionToolContext } from "@agents/testing/test-stubs";
 import { createDiscordSendTool } from "./discord-send";
 
 test("returns the sent content in the tool result", async () => {
@@ -20,7 +21,7 @@ test("returns the sent content in the tool result", async () => {
     { content: "送信する本文" },
     undefined,
     undefined,
-    {} as never,
+    await createStubExtensionToolContext(),
   );
 
   assert.deepEqual(sentMessage, {
@@ -51,7 +52,7 @@ test("records returned Discord message IDs in details", async () => {
     { content: "分割メッセージ" },
     undefined,
     undefined,
-    {} as never,
+    await createStubExtensionToolContext(),
   );
 
   assert.deepEqual(result.details, { messageIds: ["msg-101", "msg-102"] });

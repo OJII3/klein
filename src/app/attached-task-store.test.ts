@@ -36,7 +36,7 @@ test("saves, lists, and deletes attached tasks", async () => {
   );
 
   const tasks = await store.list();
-  assert.deepEqual(tasks.map((task) => task.id).sort(), ["attached-1", "attached-2"]);
+  assert.deepEqual(tasks.map((task) => task.id).toSorted(), ["attached-1", "attached-2"]);
 
   await store.delete("attached-1");
   assert.deepEqual(

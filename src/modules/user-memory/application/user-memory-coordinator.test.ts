@@ -75,7 +75,9 @@ test("batches messages per user and applies the generated patch", async () => {
       createMessage("100000000000000002", "message-b1", "Rustが好き", false, "bob"),
     );
 
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 30);
+    });
     await taskCoordinator.waitForCompletion();
 
     assert.deepEqual(

@@ -1,10 +1,65 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["typescript", "unicorn", "oxc"],
-  "categories": {
-    "correctness": "error"
+  "plugins": ["typescript", "unicorn", "oxc", "import", "promise", "react", "jsx-a11y"],
+  "options": {
+    "typeAware": true,
+    "denyWarnings": true,
+    "reportUnusedDisableDirectives": "error"
   },
-  "rules": {},
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error",
+    "perf": "error"
+  },
+  "rules": {
+    "eslint/no-await-in-loop": "off",
+    "typescript/no-floating-promises": [
+      "error",
+      {
+        "allowForKnownSafeCalls": [
+          {
+            "from": "package",
+            "package": "node:test",
+            "name": [
+              "test",
+              "it",
+              "describe",
+              "before",
+              "after",
+              "beforeEach",
+              "afterEach",
+              "suite"
+            ]
+          }
+        ]
+      }
+    ],
+    "typescript/no-misused-promises": "error",
+    "typescript/switch-exhaustiveness-check": "error",
+    "typescript/no-explicit-any": "error",
+    "typescript/no-non-null-assertion": "error",
+    "typescript/no-unsafe-argument": "error",
+    "typescript/no-unsafe-assignment": "error",
+    "typescript/no-unsafe-call": "error",
+    "typescript/no-unsafe-function-type": "error",
+    "typescript/no-unsafe-member-access": "error",
+    "typescript/no-unsafe-return": "error",
+    "import/no-cycle": "error",
+    "import/no-duplicates": "error",
+    "import/no-unassigned-import": ["error", { "allow": ["**/*.css"] }],
+    "promise/catch-or-return": "error",
+    "eslint/eqeqeq": "error",
+    "eslint/no-promise-executor-return": "error",
+    "eslint/preserve-caught-error": "error",
+    "unicorn/no-array-callback-reference": "error",
+    "unicorn/no-instanceof-array": "error",
+    "unicorn/no-object-as-default-parameter": "error",
+    "unicorn/no-useless-promise-resolve-reject": "error",
+    "unicorn/prefer-type-error": "error",
+    "unicorn/prefer-string-replace-all": "error",
+    "react/react-in-jsx-scope": "off",
+    "jsx-a11y/control-has-associated-label": ["error", { "ignoreElements": ["td", "th"] }]
+  },
   "ignorePatterns": ["dist/**", "web/node_modules/**"],
   "env": {
     "builtin": true

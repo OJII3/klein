@@ -101,7 +101,7 @@ export class UserMemoryCoordinator {
     const updated = await this.options.processor.process(
       userId,
       before,
-      messages.map(toUserMemoryMessage),
+      messages.map((message) => toUserMemoryMessage(message)),
     );
     if (!updated) return;
 

@@ -45,5 +45,9 @@ export function resolveUsageProvider(
       return input.openCodeGoApiKey
         ? new OpenCodeGoUsageProvider(input.openCodeGoApiKey)
         : undefined;
+    default: {
+      const exhaustive: never = input.provider;
+      throw new Error(`Unsupported LLM provider: ${String(exhaustive)}`);
+    }
   }
 }

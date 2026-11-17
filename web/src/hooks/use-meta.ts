@@ -10,13 +10,14 @@ export function useDisplayName(): string {
 
   useEffect(() => {
     let current = true;
-    void getMeta()
-      .then((meta) => {
+    void (async () => {
+      try {
+        const meta = await getMeta();
         if (current) setDisplayName(meta.displayName);
-      })
-      .catch(() => {
+      } catch {
         // The default name matches the static document title.
-      });
+      }
+    })();
     return () => {
       current = false;
     };

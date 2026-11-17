@@ -7,6 +7,7 @@ import {
   isValidDiscordUsername,
   normalizeDiscordUsername,
 } from "@modules/discord/domain/discord-user";
+import { isFileNotFound } from "@shared/type-guards";
 import {
   clampImpression,
   USER_MEMORY_DEFAULT_SECTION_CONTENT,
@@ -40,7 +41,7 @@ export class MarkdownUserMemoryStore
     try {
       content = await readFile(filePath, "utf8");
     } catch (error) {
-      if (isNodeError(error) && error.code === "ENOENT") return undefined;
+      if (isFileNotFound(error)) return undefined;
       throw new Error(`Failed to read user memory file: ${filePath}`, { cause: error });
     }
 
@@ -56,7 +57,7 @@ export class MarkdownUserMemoryStore
     try {
       names = await readdir(this.directory);
     } catch (error) {
-      if (isNodeError(error) && error.code === "ENOENT") return [];
+      if (isFileNotFound(error)) return [];
       throw new Error(`Failed to list user memory directory: ${this.directory}`, { cause: error });
     }
 
@@ -112,7 +113,7 @@ export class MarkdownUserMemoryStore
         await unlink(filePath);
         return true;
       } catch (error) {
-        if (isNodeError(error) && error.code === "ENOENT") return false;
+        if (isFileNotFound(error)) return false;
         throw new Error(`Failed to delete user memory file: ${filePath}`, { cause: error });
       }
     });
@@ -201,7 +202,7 @@ export function renderUserMemory(memory: UserMemory): string {
 }
 
 export function parseUserMemory(content: string): UserMemory {
-  const normalized = content.replace(/\r\n?/g, "\n");
+  const normalized = content.replaceAll(/\r\n?/g, "\n");
   const lines = normalized.split("\n");
   if (lines[0]?.trim() !== FRONTMATTER_DELIMITER) {
     throw new Error("Front matter is missing");
@@ -294,7 +295,7 @@ function parseScalar(raw: string): string {
     }
   }
   if (raw.startsWith("'") && raw.endsWith("'")) {
-    return raw.slice(1, -1).replace(/''/g, "'");
+    return raw.slice(1, -1).replaceAll("''", "'");
   }
   return raw;
 }
@@ -318,7 +319,7 @@ function resolveOptionalText(
 }
 
 function normalizeFrontmatterText(value: string): string {
-  return value.replace(/\s+/gu, " ").trim();
+  return value.replaceAll(/\s+/gu, " ").trim();
 }
 
 function resolveSection(
@@ -341,8 +342,4 @@ function resolveImpression(current: number, patch: UserMemoryPatch): number {
 
 function quote(value: string): string {
   return JSON.stringify(value);
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && "code" in error;
 }

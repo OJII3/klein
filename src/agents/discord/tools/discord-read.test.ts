@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { ImageAnalysisError } from "@agents/core/image-analysis";
+import { createStubExtensionToolContext } from "@agents/testing/test-stubs";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import { createDiscordReadTool } from "./discord-read";
 
@@ -36,7 +37,7 @@ test("reads a message using the current channel by default", async () => {
     { messageId: "message-456" },
     undefined,
     undefined,
-    {} as never,
+    await createStubExtensionToolContext(),
   );
 
   assert.deepEqual(requestedLocator, {
@@ -71,7 +72,7 @@ test("returns image attachments as tool result content", async () => {
     { messageId: "message-456" },
     undefined,
     undefined,
-    {} as never,
+    await createStubExtensionToolContext(),
   );
 
   assert.deepEqual(result.content, [
@@ -103,8 +104,8 @@ test("returns image analysis instead of image content when an analyzer is availa
       },
     },
     "current-channel",
-    async (message, focus) => {
-      analyzedMessage = message;
+    async (readMsg, focus) => {
+      analyzedMessage = readMsg;
       analyzedFocus = focus;
       return "画像にはテスト用の内容があります。";
     },
@@ -115,7 +116,7 @@ test("returns image analysis instead of image content when an analyzer is availa
     { messageId: "message-456", focus: "テスト用の内容だけ" },
     undefined,
     undefined,
-    {} as never,
+    await createStubExtensionToolContext(),
   );
 
   assert.deepEqual(analyzedMessage, {
@@ -173,7 +174,7 @@ test("returns an analysis failure note instead of image content", async () => {
     { messageId: "message-456" },
     undefined,
     undefined,
-    {} as never,
+    await createStubExtensionToolContext(),
   );
 
   assert.deepEqual(result.content, [
@@ -203,7 +204,7 @@ test("reads a message from the explicitly provided channel", async () => {
     { channelId: "linked-channel", messageId: "linked-message" },
     undefined,
     undefined,
-    {} as never,
+    await createStubExtensionToolContext(),
   );
 
   assert.deepEqual(requestedLocator, {

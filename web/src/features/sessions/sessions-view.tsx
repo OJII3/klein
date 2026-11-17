@@ -76,7 +76,11 @@ export function SessionsView({
                 <span className="text-[0.7rem] font-medium text-ink-soft">セッション</span>
                 <select
                   className="select select-sm w-full"
-                  onChange={(event) => onSelect((event.target as HTMLSelectElement).value)}
+                  onChange={(event) => {
+                    if (event.target instanceof HTMLSelectElement) {
+                      onSelect(event.target.value);
+                    }
+                  }}
                   value={selectedSession?.id ?? ""}
                 >
                   <option disabled value="">
@@ -105,6 +109,7 @@ export function SessionsView({
                     <li key={session.id}>
                       <button
                         aria-current={selected ? "true" : undefined}
+                        aria-label={`${channelLabel(session)} (${session.messageCount} メッセージ)`}
                         className="w-full"
                         onClick={() => onSelect(session.id)}
                         type="button"

@@ -127,19 +127,18 @@ export class DiscordUserDirectory implements DiscordUserResolver {
   }
 
   private queueSave(): void {
-    const current = this.writeQueue
-      .catch(() => undefined)
-      .then(async () => {
-        const document: DiscordUserDocument = {
-          version: 1,
-          users: this.list(),
-        };
-        await mkdir(dirname(this.filePath), { recursive: true });
-        const temporaryPath = `${this.filePath}.${randomUUID()}.tmp`;
-        await writeFile(temporaryPath, `${JSON.stringify(document, null, 2)}\n`, "utf8");
-        await rename(temporaryPath, this.filePath);
-      });
-    this.writeQueue = current.catch((error) => {
+    const save = async (): Promise<void> => {
+      await this.writeQueue.catch(() => undefined);
+      const document: DiscordUserDocument = {
+        version: 1,
+        users: this.list(),
+      };
+      await mkdir(dirname(this.filePath), { recursive: true });
+      const temporaryPath = `${this.filePath}.${randomUUID()}.tmp`;
+      await writeFile(temporaryPath, `${JSON.stringify(document, null, 2)}\n`, "utf8");
+      await rename(temporaryPath, this.filePath);
+    };
+    this.writeQueue = save().catch((error: unknown) => {
       this.logger?.warn(
         { err: error, event: "discord_user_directory_save_failed" },
         "Failed to save the Discord user directory",

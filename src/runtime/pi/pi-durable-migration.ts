@@ -1,10 +1,24 @@
 import { createHash } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { mkdir, readFile, readdir, utimes } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { Logger } from "pino";
 
+import type {
+  AssistantMessage,
+  ImageContent,
+  JsonObject,
+  JsonValue,
+  StopReason,
+  SystemMessage,
+  TextContent,
+  ThinkingContent,
+  ToolCall,
+  ToolResultMessage,
+  Usage,
+  UserMessage,
+} from "@earendil-works/pi-ai";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import {
   ChannelSessionStateStore,
@@ -12,6 +26,9 @@ import {
   type ChannelSessionState,
   type ConversationKey,
 } from "@app/channel-session-state-store";
+import { isRecord, parseJson } from "@shared/type-guards";
+
+type AppendableMessage = Parameters<SessionManager["appendMessage"]>[0];
 
 const SUMMARY_PREFIX =
   "The conversation history before this point was compacted into the following summary:\n\n<summary>\n";
@@ -129,7 +146,7 @@ async function migrateLegacyChannelSessionStateFiles(
     let state: ChannelSessionState | undefined;
     try {
       state = parseChannelSessionState(
-        JSON.parse(await readFile(join(legacyDir, file.name), "utf8")),
+        parseJson(await readFile(join(legacyDir, file.name), "utf8")),
       );
     } catch {
       continue;
@@ -252,16 +269,47 @@ async function migrateSingleDatabase(options: {
 }
 
 function hasRequiredTables(db: DatabaseSync): boolean {
-  const rows = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{
-    name: string;
-  }>;
-  const names = new Set(rows.map((row) => row.name));
+  const rows = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all();
+  const names = new Set<string>();
+  for (const row of rows) {
+    if (typeof row.name === "string") {
+      names.add(row.name);
+    }
+  }
   return (
     names.has("documents") &&
     names.has("document_revisions") &&
     names.has("conversations") &&
     names.has("entries")
   );
+}
+
+function isStoredDocumentRecord(value: unknown): value is StoredDocumentRecord {
+  return (
+    isRecord(value) &&
+    typeof value.id === "number" &&
+    typeof value.kind === "string" &&
+    typeof value.key === "string" &&
+    isRecord(value.scope) &&
+    typeof value.scope.kind === "string"
+  );
+}
+
+function toStoredRevisionRow(row: Record<string, unknown>): StoredRevisionRow | undefined {
+  if (
+    typeof row.seq === "number" &&
+    typeof row.kind === "string" &&
+    typeof row.version === "number" &&
+    typeof row.content === "string"
+  ) {
+    return {
+      seq: row.seq,
+      kind: row.kind,
+      version: row.version,
+      content: row.content,
+    };
+  }
+  return undefined;
 }
 
 function loadSessionDocuments(
@@ -271,23 +319,33 @@ function loadSessionDocuments(
     .prepare(
       "SELECT id, record FROM documents WHERE scope_kind = 'session' AND owner_id = 0 AND retired_at IS NULL ORDER BY id ASC",
     )
-    .all() as Array<{ id: number; record: string }>;
+    .all();
   const revisionStmt = db.prepare(
     "SELECT seq, kind, version, content FROM document_revisions WHERE document_id = ? ORDER BY seq ASC",
   );
 
   const results: Array<{ record: StoredDocumentRecord; value: unknown }> = [];
   for (const row of docRows) {
-    let record: StoredDocumentRecord;
+    if (typeof row.id !== "number" || typeof row.record !== "string") continue;
+    let parsedRecord: unknown;
     try {
-      record = JSON.parse(row.record) as StoredDocumentRecord;
+      parsedRecord = parseJson(row.record);
     } catch {
       continue;
     }
-    const revisions = revisionStmt.all(row.id) as unknown as StoredRevisionRow[];
+    if (!isStoredDocumentRecord(parsedRecord)) continue;
+
+    const rawRevisions = revisionStmt.all(row.id);
+    const revisions: StoredRevisionRow[] = [];
+    for (const rawRevision of rawRevisions) {
+      const revision = toStoredRevisionRow(rawRevision);
+      if (revision) {
+        revisions.push(revision);
+      }
+    }
     const value = materializeDocumentValue(revisions);
     if (value === undefined) continue;
-    results.push({ record, value });
+    results.push({ record: parsedRecord, value });
   }
   return results;
 }
@@ -300,83 +358,167 @@ function materializeDocumentValue(revisions: readonly StoredRevisionRow[]): unkn
       break;
     }
   }
-  if (baseIndex < 0) return undefined;
+  const baseRevision = baseIndex >= 0 ? revisions[baseIndex] : undefined;
+  if (!baseRevision) return undefined;
 
   let value: unknown;
   try {
-    value = JSON.parse(revisions[baseIndex]!.content);
+    value = parseJson(baseRevision.content);
   } catch {
     return undefined;
   }
 
   for (let index = baseIndex + 1; index < revisions.length; index += 1) {
-    const revision = revisions[index]!;
-    if (revision.kind !== "delta") continue;
-    const ops = JSON.parse(revision.content) as readonly unknown[];
+    const revision = revisions[index];
+    if (!revision || revision.kind !== "delta") continue;
+    const ops = parseJson(revision.content);
+    if (!Array.isArray(ops)) continue;
     value = applyDeltaOps(value, ops);
   }
   return value;
 }
 
+type DeltaPathSegment = string | number;
+type DeltaContainer = Record<string, unknown> | unknown[];
+
+function isMutableArray(value: unknown): value is unknown[] {
+  return Array.isArray(value);
+}
+
+function isDeltaPath(value: unknown): value is readonly DeltaPathSegment[] {
+  return (
+    isMutableArray(value) &&
+    value.every((segment) => typeof segment === "string" || typeof segment === "number")
+  );
+}
+
+function isDeltaContainer(value: unknown): value is DeltaContainer {
+  return isMutableArray(value) || isRecord(value);
+}
+
+function readContainerSlot(container: DeltaContainer, segment: DeltaPathSegment): unknown {
+  if (isMutableArray(container)) {
+    return typeof segment === "number" ? container[segment] : undefined;
+  }
+  return container[String(segment)];
+}
+
+function writeContainerSlot(
+  container: DeltaContainer,
+  segment: DeltaPathSegment,
+  value: unknown,
+): void {
+  if (isMutableArray(container)) {
+    if (typeof segment === "number") {
+      container[segment] = value;
+    }
+    return;
+  }
+  container[String(segment)] = value;
+}
+
+function deleteContainerSlot(container: DeltaContainer, segment: DeltaPathSegment): void {
+  if (isMutableArray(container)) {
+    if (typeof segment === "number") {
+      Reflect.deleteProperty(container, segment);
+    }
+    return;
+  }
+  delete container[String(segment)];
+}
+
 export function applyDeltaOps(root: unknown, ops: readonly unknown[]): unknown {
   let current = root;
   for (const op of ops) {
-    if (!Array.isArray(op) || typeof op[0] !== "string") continue;
+    if (!isMutableArray(op) || typeof op[0] !== "string") continue;
     const kind = op[0];
     if (kind === "r") {
       current = op[1];
       continue;
     }
-    const path = op[1] as readonly (string | number)[];
-    if (!Array.isArray(path)) continue;
+    const path: unknown = op[1];
+    if (!isDeltaPath(path)) continue;
 
     switch (kind) {
       case "p": {
-        const target = navigateToTarget(current, path) as unknown[];
-        const start = op[2] as number;
-        const deleteCount = op[3] as number;
-        const items = (op[4] as readonly unknown[]) ?? [];
+        const target = navigateToTarget(current, path);
+        const start: unknown = op[2];
+        const deleteCount: unknown = op[3];
+        if (
+          !isMutableArray(target) ||
+          typeof start !== "number" ||
+          typeof deleteCount !== "number"
+        ) {
+          break;
+        }
+        const items: readonly unknown[] = isMutableArray(op[4]) ? op[4] : [];
         target.splice(start, deleteCount, ...items);
         break;
       }
       case "m": {
-        const target = navigateToTarget(current, path) as unknown[];
-        const perm = op[2] as readonly number[];
+        const target = navigateToTarget(current, path);
+        const perm: unknown = op[2];
+        if (!isMutableArray(target) || !isMutableArray(perm)) break;
         const copy = target.slice();
         for (let index = 0; index < perm.length; index += 1) {
-          target[index] = copy[perm[index]!];
+          const sourceIndex: unknown = perm[index];
+          if (typeof sourceIndex === "number") {
+            target[index] = copy[sourceIndex];
+          }
         }
         break;
       }
       case "s": {
-        const parent = navigateToParent(current, path);
-        parent[path.at(-1)!] = op[2];
+        const key = path.at(-1);
+        const parent = key !== undefined ? navigateToParent(current, path) : undefined;
+        if (parent && key !== undefined) {
+          writeContainerSlot(parent, key, op[2]);
+        }
         break;
       }
       case "d": {
-        const parent = navigateToParent(current, path);
-        delete parent[path.at(-1)!];
+        const key = path.at(-1);
+        const parent = key !== undefined ? navigateToParent(current, path) : undefined;
+        if (parent && key !== undefined) {
+          deleteContainerSlot(parent, key);
+        }
         break;
       }
       case "a": {
-        const suffix = op[2] as string;
+        const suffix: unknown = op[2];
+        if (typeof suffix !== "string") break;
         if (path.length === 0) {
-          current = (current as string) + suffix;
+          if (typeof current === "string") {
+            current = current + suffix;
+          }
         } else {
-          const parent = navigateToParent(current, path);
-          const key = path.at(-1)!;
-          parent[key] = (parent[key] as string) + suffix;
+          const key = path.at(-1);
+          const parent = key !== undefined ? navigateToParent(current, path) : undefined;
+          if (parent && key !== undefined) {
+            const existing = readContainerSlot(parent, key);
+            if (typeof existing === "string") {
+              writeContainerSlot(parent, key, existing + suffix);
+            }
+          }
         }
         break;
       }
       case "t": {
-        const trimCount = op[2] as number;
+        const trimCount: unknown = op[2];
+        if (typeof trimCount !== "number") break;
         if (path.length === 0) {
-          current = (current as string).slice(trimCount);
+          if (typeof current === "string") {
+            current = current.slice(trimCount);
+          }
         } else {
-          const parent = navigateToParent(current, path);
-          const key = path.at(-1)!;
-          parent[key] = (parent[key] as string).slice(trimCount);
+          const key = path.at(-1);
+          const parent = key !== undefined ? navigateToParent(current, path) : undefined;
+          if (parent && key !== undefined) {
+            const existing = readContainerSlot(parent, key);
+            if (typeof existing === "string") {
+              writeContainerSlot(parent, key, existing.slice(trimCount));
+            }
+          }
         }
         break;
       }
@@ -385,38 +527,39 @@ export function applyDeltaOps(root: unknown, ops: readonly unknown[]): unknown {
   return current;
 }
 
-function navigateToTarget(root: unknown, path: readonly (string | number)[]): unknown {
+function navigateToTarget(root: unknown, path: readonly DeltaPathSegment[]): unknown {
   let node: unknown = root;
   for (const segment of path) {
-    node = (node as Record<string | number, unknown>)[segment];
+    if (!isDeltaContainer(node)) return undefined;
+    node = readContainerSlot(node, segment);
   }
   return node;
 }
 
 function navigateToParent(
   root: unknown,
-  path: readonly (string | number)[],
-): Record<string | number, unknown> {
+  path: readonly DeltaPathSegment[],
+): DeltaContainer | undefined {
   let node: unknown = root;
   for (let index = 0; index < path.length - 1; index += 1) {
-    node = (node as Record<string | number, unknown>)[path[index]!];
+    const segment = path[index];
+    if (segment === undefined || !isDeltaContainer(node)) return undefined;
+    node = readContainerSlot(node, segment);
   }
-  return node as Record<string | number, unknown>;
+  return isDeltaContainer(node) ? node : undefined;
 }
 
 function parseConversationKey(
   candidateKey: unknown,
   legacyChannelId: unknown,
 ): ConversationKey | undefined {
-  if (typeof candidateKey === "object" && candidateKey !== null) {
-    const keyObj = candidateKey as { kind?: unknown; channelId?: unknown };
-    if (
-      keyObj.kind === "discord" &&
-      typeof keyObj.channelId === "string" &&
-      keyObj.channelId.length > 0
-    ) {
-      return { kind: "discord", channelId: keyObj.channelId };
-    }
+  if (
+    isRecord(candidateKey) &&
+    candidateKey.kind === "discord" &&
+    typeof candidateKey.channelId === "string" &&
+    candidateKey.channelId.length > 0
+  ) {
+    return { kind: "discord", channelId: candidateKey.channelId };
   }
   if (typeof legacyChannelId === "string" && legacyChannelId.length > 0) {
     return { kind: "discord", channelId: legacyChannelId };
@@ -425,44 +568,32 @@ function parseConversationKey(
 }
 
 function parseChannelSessionState(value: unknown): ChannelSessionState | undefined {
-  if (typeof value !== "object" || value === null) return undefined;
-  const candidate = value as {
-    conversationKey?: unknown;
-    channelId?: unknown;
-    accessScope?: unknown;
-    sessionKey?: unknown;
-    lastActivityAt?: unknown;
-    lastRotationDate?: unknown;
-    hasActivitySinceRotation?: unknown;
-    handoffContext?: unknown;
-  };
-  const conversationKey = parseConversationKey(candidate.conversationKey, candidate.channelId);
+  if (!isRecord(value)) return undefined;
+  const conversationKey = parseConversationKey(value.conversationKey, value.channelId);
   if (
     !conversationKey ||
-    typeof candidate.sessionKey !== "string" ||
-    (candidate.lastActivityAt !== null && typeof candidate.lastActivityAt !== "number") ||
-    typeof candidate.lastRotationDate !== "string" ||
-    typeof candidate.hasActivitySinceRotation !== "boolean" ||
-    (candidate.accessScope !== undefined &&
-      candidate.accessScope !== null &&
-      typeof candidate.accessScope !== "string") ||
-    (candidate.handoffContext !== undefined &&
-      candidate.handoffContext !== null &&
-      typeof candidate.handoffContext !== "string")
+    typeof value.sessionKey !== "string" ||
+    (value.lastActivityAt !== null && typeof value.lastActivityAt !== "number") ||
+    typeof value.lastRotationDate !== "string" ||
+    typeof value.hasActivitySinceRotation !== "boolean" ||
+    (value.accessScope !== undefined &&
+      value.accessScope !== null &&
+      typeof value.accessScope !== "string") ||
+    (value.handoffContext !== undefined &&
+      value.handoffContext !== null &&
+      typeof value.handoffContext !== "string")
   ) {
     return undefined;
   }
 
   return {
     conversationKey,
-    ...(typeof candidate.accessScope === "string" ? { accessScope: candidate.accessScope } : {}),
-    sessionKey: candidate.sessionKey,
-    lastActivityAt: candidate.lastActivityAt,
-    lastRotationDate: candidate.lastRotationDate,
-    hasActivitySinceRotation: candidate.hasActivitySinceRotation,
-    ...(typeof candidate.handoffContext === "string"
-      ? { handoffContext: candidate.handoffContext }
-      : {}),
+    ...(typeof value.accessScope === "string" ? { accessScope: value.accessScope } : {}),
+    sessionKey: value.sessionKey,
+    lastActivityAt: value.lastActivityAt,
+    lastRotationDate: value.lastRotationDate,
+    hasActivitySinceRotation: value.hasActivitySinceRotation,
+    ...(typeof value.handoffContext === "string" ? { handoffContext: value.handoffContext } : {}),
   };
 }
 
@@ -481,20 +612,54 @@ function parseSessionConversations(
   docKey: string,
   value: unknown,
 ): { sessionKey: string; conversationIds: number[] } | undefined {
-  if (typeof value !== "object" || value === null) return undefined;
-  const candidate = value as {
-    sessionKey?: unknown;
-    conversationIds?: unknown;
-  };
+  if (!isRecord(value)) return undefined;
   const sessionKey =
-    typeof candidate.sessionKey === "string" && candidate.sessionKey.length > 0
-      ? candidate.sessionKey
-      : docKey;
-  if (!sessionKey || !Array.isArray(candidate.conversationIds)) return undefined;
-  const conversationIds = candidate.conversationIds.filter(
+    typeof value.sessionKey === "string" && value.sessionKey.length > 0 ? value.sessionKey : docKey;
+  if (!sessionKey || !Array.isArray(value.conversationIds)) return undefined;
+  const conversationIds = value.conversationIds.filter(
     (id): id is number => typeof id === "number" && Number.isSafeInteger(id) && id >= 0,
   );
   return { sessionKey, conversationIds };
+}
+
+function parseStoredConversationRecord(value: unknown): StoredConversationRecord | undefined {
+  if (!isRecord(value) || typeof value.id !== "number") return undefined;
+  if (value.parent === undefined) {
+    return { id: value.id };
+  }
+  if (
+    isRecord(value.parent) &&
+    typeof value.parent.conversationId === "number" &&
+    typeof value.parent.at === "number"
+  ) {
+    return {
+      id: value.id,
+      parent: {
+        conversationId: value.parent.conversationId,
+        at: value.parent.at,
+      },
+    };
+  }
+  return { id: value.id };
+}
+
+function parseStoredEntryRecord(value: unknown): StoredEntryRecord | undefined {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== "number" ||
+    typeof value.conversationId !== "number" ||
+    typeof value.kind !== "string"
+  ) {
+    return undefined;
+  }
+  return {
+    id: value.id,
+    conversationId: value.conversationId,
+    ...(typeof value.head === "number" ? { head: value.head } : {}),
+    kind: value.kind,
+    ...(Array.isArray(value.model) ? { model: value.model.filter(isRecord) } : {}),
+    ...(value.data !== undefined ? { data: value.data } : {}),
+  };
 }
 
 function loadConversationEntries(db: DatabaseSync, conversationId: number): StoredEntryRecord[] {
@@ -510,15 +675,17 @@ function loadConversationEntries(db: DatabaseSync, conversationId: number): Stor
   while (currentId !== undefined && !visited.has(currentId)) {
     visited.add(currentId);
     chain.push({ conversationId: currentId, maxEntryId });
-    const row = convStmt.get(currentId) as { record: string } | undefined;
-    if (!row) break;
-    let conv: StoredConversationRecord;
+    const row = convStmt.get(currentId);
+    if (!row || typeof row.record !== "string") break;
+    let parsedConv: unknown;
     try {
-      conv = JSON.parse(row.record) as StoredConversationRecord;
+      parsedConv = parseJson(row.record);
     } catch {
       break;
     }
-    if (conv.parent && typeof conv.parent.conversationId === "number") {
+    const conv = parseStoredConversationRecord(parsedConv);
+    if (!conv) break;
+    if (conv.parent) {
       currentId = conv.parent.conversationId;
       maxEntryId = conv.parent.at;
     } else {
@@ -529,19 +696,290 @@ function loadConversationEntries(db: DatabaseSync, conversationId: number): Stor
   chain.reverse();
   const entries: StoredEntryRecord[] = [];
   for (const segment of chain) {
-    const rows = entriesStmt.all(segment.conversationId) as Array<{ record: string }>;
+    const rows = entriesStmt.all(segment.conversationId);
     for (const row of rows) {
-      let entry: StoredEntryRecord;
+      if (typeof row.record !== "string") continue;
+      let parsedEntry: unknown;
       try {
-        entry = JSON.parse(row.record) as StoredEntryRecord;
+        parsedEntry = parseJson(row.record);
       } catch {
         continue;
       }
+      const entry = parseStoredEntryRecord(parsedEntry);
+      if (!entry) continue;
       if (segment.maxEntryId !== undefined && entry.id > segment.maxEntryId) continue;
       entries.push(entry);
     }
   }
   return entries;
+}
+
+function isJsonValue(value: unknown): value is JsonValue {
+  if (
+    value === null ||
+    typeof value === "boolean" ||
+    typeof value === "number" ||
+    typeof value === "string"
+  ) {
+    return true;
+  }
+  if (isMutableArray(value)) {
+    return value.every((item) => isJsonValue(item));
+  }
+  if (isRecord(value)) {
+    return Object.values(value).every((item) => isJsonValue(item));
+  }
+  return false;
+}
+
+function toJsonObject(value: unknown): JsonObject {
+  if (!isRecord(value)) return {};
+  const result: JsonObject = {};
+  for (const [key, item] of Object.entries(value)) {
+    if (isJsonValue(item)) {
+      result[key] = item;
+    }
+  }
+  return result;
+}
+
+function isTextContent(value: unknown): value is TextContent {
+  return (
+    isRecord(value) &&
+    value.type === "text" &&
+    typeof value.text === "string" &&
+    (value.textSignature === undefined || typeof value.textSignature === "string")
+  );
+}
+
+function isImageContent(value: unknown): value is ImageContent {
+  return (
+    isRecord(value) &&
+    value.type === "image" &&
+    typeof value.data === "string" &&
+    typeof value.mimeType === "string"
+  );
+}
+
+function isThinkingContent(value: unknown): value is ThinkingContent {
+  return (
+    isRecord(value) &&
+    value.type === "thinking" &&
+    typeof value.thinking === "string" &&
+    (value.thinkingSignature === undefined || typeof value.thinkingSignature === "string") &&
+    (value.redacted === undefined || typeof value.redacted === "boolean")
+  );
+}
+
+function parseToolCall(value: unknown): ToolCall | undefined {
+  if (
+    !isRecord(value) ||
+    value.type !== "toolCall" ||
+    typeof value.id !== "string" ||
+    typeof value.name !== "string"
+  ) {
+    return undefined;
+  }
+  return {
+    type: "toolCall",
+    id: value.id,
+    name: value.name,
+    arguments: toJsonObject(value.arguments),
+    ...(typeof value.thoughtSignature === "string"
+      ? { thoughtSignature: value.thoughtSignature }
+      : {}),
+    ...(typeof value.namespace === "string" ? { namespace: value.namespace } : {}),
+    ...(typeof value.argumentsError === "string" ? { argumentsError: value.argumentsError } : {}),
+  };
+}
+
+function parseUsage(value: unknown): Usage {
+  if (
+    isRecord(value) &&
+    typeof value.input === "number" &&
+    typeof value.output === "number" &&
+    typeof value.cacheRead === "number" &&
+    typeof value.cacheWrite === "number" &&
+    typeof value.totalTokens === "number" &&
+    isRecord(value.cost) &&
+    typeof value.cost.input === "number" &&
+    typeof value.cost.output === "number" &&
+    typeof value.cost.cacheRead === "number" &&
+    typeof value.cost.cacheWrite === "number" &&
+    typeof value.cost.total === "number"
+  ) {
+    return {
+      input: value.input,
+      output: value.output,
+      cacheRead: value.cacheRead,
+      cacheWrite: value.cacheWrite,
+      ...(typeof value.cacheWrite1h === "number" ? { cacheWrite1h: value.cacheWrite1h } : {}),
+      ...(typeof value.reasoning === "number" ? { reasoning: value.reasoning } : {}),
+      totalTokens: value.totalTokens,
+      cost: {
+        input: value.cost.input,
+        output: value.cost.output,
+        cacheRead: value.cost.cacheRead,
+        cacheWrite: value.cost.cacheWrite,
+        total: value.cost.total,
+        ...(typeof value.cost.totalFromProvider === "boolean"
+          ? { totalFromProvider: value.cost.totalFromProvider }
+          : {}),
+      },
+    };
+  }
+  return {
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    totalTokens: 0,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+  };
+}
+
+function parseStopReason(value: unknown): StopReason {
+  switch (value) {
+    case "pending":
+    case "stop":
+    case "length":
+    case "toolUse":
+    case "error":
+    case "aborted":
+    case "deferred":
+      return value;
+    default:
+      return "stop";
+  }
+}
+
+function parseTextOrImageArray(value: unknown): (TextContent | ImageContent)[] | undefined {
+  if (!isMutableArray(value)) return undefined;
+  const items: (TextContent | ImageContent)[] = [];
+  for (const item of value) {
+    if (isTextContent(item) || isImageContent(item)) {
+      items.push(item);
+    }
+  }
+  return items;
+}
+
+function parseAppendableMessage(value: Record<string, unknown>): AppendableMessage | undefined {
+  const timestamp = typeof value.timestamp === "number" ? value.timestamp : 0;
+
+  if (value.role === "user") {
+    const content =
+      typeof value.content === "string" ? value.content : parseTextOrImageArray(value.content);
+    if (content === undefined) return undefined;
+    const message: UserMessage = { role: "user", content, timestamp };
+    return message;
+  }
+
+  if (value.role === "assistant") {
+    const content: (TextContent | ThinkingContent | ToolCall)[] = [];
+    if (isMutableArray(value.content)) {
+      for (const block of value.content) {
+        if (isTextContent(block) || isThinkingContent(block)) {
+          content.push(block);
+          continue;
+        }
+        const toolCall = parseToolCall(block);
+        if (toolCall) {
+          content.push(toolCall);
+        }
+      }
+    }
+    const message: AssistantMessage = {
+      role: "assistant",
+      content,
+      api: typeof value.api === "string" ? value.api : "",
+      provider: typeof value.provider === "string" ? value.provider : "",
+      model: typeof value.model === "string" ? value.model : "",
+      ...(typeof value.responseModel === "string" ? { responseModel: value.responseModel } : {}),
+      ...(typeof value.responseId === "string" ? { responseId: value.responseId } : {}),
+      ...(typeof value.providerThinkingLevel === "string"
+        ? { providerThinkingLevel: value.providerThinkingLevel }
+        : {}),
+      usage: parseUsage(value.usage),
+      stopReason: parseStopReason(value.stopReason),
+      ...(typeof value.errorMessage === "string" ? { errorMessage: value.errorMessage } : {}),
+      ...(typeof value.rawStopReason === "string" ? { rawStopReason: value.rawStopReason } : {}),
+      ...(typeof value.endTurn === "boolean" ? { endTurn: value.endTurn } : {}),
+      timestamp,
+      ...(typeof value.durationMs === "number" ? { durationMs: value.durationMs } : {}),
+    };
+    return message;
+  }
+
+  if (value.role === "toolResult") {
+    if (typeof value.toolCallId !== "string" || typeof value.toolName !== "string") {
+      return undefined;
+    }
+    const content = parseTextOrImageArray(value.content) ?? [];
+    const message: ToolResultMessage = {
+      role: "toolResult",
+      toolCallId: value.toolCallId,
+      toolName: value.toolName,
+      content,
+      ...(isJsonValue(value.details) ? { details: value.details } : {}),
+      isError: typeof value.isError === "boolean" ? value.isError : false,
+      timestamp,
+      ...(typeof value.durationMs === "number" ? { durationMs: value.durationMs } : {}),
+    };
+    return message;
+  }
+
+  if (value.role === "system") {
+    const content =
+      typeof value.content === "string"
+        ? value.content
+        : isMutableArray(value.content)
+          ? value.content.filter((item): item is TextContent => isTextContent(item))
+          : undefined;
+    if (content === undefined) return undefined;
+    const message: SystemMessage = {
+      role: "system",
+      content,
+      timestamp,
+    };
+    return message;
+  }
+
+  if (value.role === "custom") {
+    if (typeof value.customType !== "string") return undefined;
+    const content =
+      typeof value.content === "string" ? value.content : parseTextOrImageArray(value.content);
+    if (content === undefined) return undefined;
+    const message: Extract<AppendableMessage, { role: "custom" }> = {
+      role: "custom",
+      customType: value.customType,
+      content,
+      display: typeof value.display === "boolean" ? value.display : true,
+      ...(value.details !== undefined ? { details: value.details } : {}),
+      timestamp,
+    };
+    return message;
+  }
+
+  if (value.role === "bashExecution") {
+    if (typeof value.command !== "string" || typeof value.output !== "string") return undefined;
+    const message: Extract<AppendableMessage, { role: "bashExecution" }> = {
+      role: "bashExecution",
+      command: value.command,
+      output: value.output,
+      exitCode: typeof value.exitCode === "number" ? value.exitCode : undefined,
+      cancelled: typeof value.cancelled === "boolean" ? value.cancelled : false,
+      truncated: typeof value.truncated === "boolean" ? value.truncated : false,
+      ...(typeof value.fullOutputPath === "string" ? { fullOutputPath: value.fullOutputPath } : {}),
+      timestamp,
+      ...(typeof value.excludeFromContext === "boolean"
+        ? { excludeFromContext: value.excludeFromContext }
+        : {}),
+    };
+    return message;
+  }
+
+  return undefined;
 }
 
 function writeMigratedSessionFile(options: {
@@ -577,7 +1015,7 @@ function writeMigratedSessionFile(options: {
           : undefined;
       const compactionEntryId = sessionManager.appendCompaction(
         summary,
-        firstKeptEntryId as never,
+        firstKeptEntryId ?? null,
         0,
       );
       entryIdMap.set(entry.id, compactionEntryId);
@@ -585,9 +1023,10 @@ function writeMigratedSessionFile(options: {
       continue;
     }
 
-    for (const message of entry.model ?? []) {
-      if (typeof message !== "object" || message === null || !("role" in message)) continue;
-      const appendedId = sessionManager.appendMessage(message as never);
+    for (const rawMessage of entry.model ?? []) {
+      const message = parseAppendableMessage(rawMessage);
+      if (!message) continue;
+      const appendedId = sessionManager.appendMessage(message);
       if (!entryIdMap.has(entry.id)) {
         entryIdMap.set(entry.id, appendedId);
       }
@@ -598,12 +1037,11 @@ function writeMigratedSessionFile(options: {
   const sessionFile = sessionManager.getSessionFile();
   if (!sessionFile) return undefined;
   if (appendedCount === 0 || !existsSync(sessionFile)) {
-    const internal = sessionManager as unknown as {
-      _rewriteFile?: () => void;
-      flushed?: boolean;
-    };
-    internal._rewriteFile?.();
-    internal.flushed = true;
+    const header = sessionManager.getHeader();
+    const serialized = [...(header ? [header] : []), ...sessionManager.getEntries()]
+      .map((entry) => `${JSON.stringify(entry)}\n`)
+      .join("");
+    writeFileSync(sessionFile, serialized, "utf8");
   }
   return existsSync(sessionFile) ? sessionFile : undefined;
 }
@@ -618,10 +1056,10 @@ function extractCompactionSummary(message: Record<string, unknown> | undefined):
         ? content
             .filter(
               (block): block is { type: string; text?: string } =>
-                typeof block === "object" && block !== null && "type" in block,
+                isRecord(block) && typeof block.type === "string",
             )
             .filter((block) => block.type === "text")
-            .map((block) => block.text ?? "")
+            .map((block) => (typeof block.text === "string" ? block.text : ""))
             .join("\n")
         : "";
   if (raw.startsWith(SUMMARY_PREFIX) && raw.endsWith(SUMMARY_SUFFIX)) {

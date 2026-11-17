@@ -40,7 +40,8 @@ test("formats at most ten bullets within 800 characters", () => {
       .join("\n"),
     "クライン",
   );
-  const handoffBullets = summary.split("## 引き継ぎ\n")[1]!;
+  const handoffBullets = summary.split("## 引き継ぎ\n")[1];
+  assert.ok(handoffBullets !== undefined);
 
   assert.ok(handoffBullets.split("\n").length <= 10);
   assert.ok(handoffBullets.length <= 800);

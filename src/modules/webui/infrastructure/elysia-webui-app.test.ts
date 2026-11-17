@@ -4,6 +4,7 @@ import test from "node:test";
 import { join } from "node:path";
 
 import { createPiSessionManager } from "@runtime/pi/pi-agent-runtime";
+import { isRecord, parseJson } from "@shared/type-guards";
 import { createWebUiApp } from "./elysia-webui-app";
 import { PinoJsonlReader } from "./pino-jsonl-reader";
 import { PiSessionReader } from "./pi-session-reader";
@@ -45,7 +46,7 @@ test("serves health, logs, Pi sessions, and scoped memory through Elysia", async
     },
     stopReason: "stop",
     timestamp: Date.now(),
-  } as never);
+  });
   const sessionId = sessionManager.getSessionId();
 
   const channelNames = {
@@ -127,25 +128,26 @@ test("serves health, logs, Pi sessions, and scoped memory through Elysia", async
 
   const health = await app.handle(new Request("http://localhost/api/health"));
   assert.equal(health.status, 200);
-  assert.deepEqual(await health.json(), { ok: true });
+  assert.deepEqual(await readJson(health), { ok: true });
 
   const meta = await app.handle(new Request("http://localhost/api/meta"));
   assert.equal(meta.status, 200);
-  assert.deepEqual(await meta.json(), { displayName: "Klein" });
+  assert.deepEqual(await readJson(meta), { displayName: "Klein" });
 
   const channels = await app.handle(new Request("http://localhost/api/channels"));
   assert.equal(channels.status, 200);
-  assert.deepEqual(await channels.json(), {
+  assert.deepEqual(await readJson(channels), {
     items: [{ channelId: "123", name: "general" }],
   });
 
   const logs = await app.handle(new Request("http://localhost/api/logs?limit=1"));
   assert.equal(logs.status, 200);
-  assert.equal((await logs.json()).items[0].kind, "test_event");
+  const logsBody = assertRecord(await readJson(logs));
+  assert.equal(assertRecord(assertArray(logsBody.items)[0]).kind, "test_event");
 
   const tools = await app.handle(new Request("http://localhost/api/tools"));
   assert.equal(tools.status, 200);
-  assert.deepEqual(await tools.json(), {
+  assert.deepEqual(await readJson(tools), {
     mcpServers: [],
     sessionCount: 1,
     tools: [],
@@ -155,44 +157,41 @@ test("serves health, logs, Pi sessions, and scoped memory through Elysia", async
 
   const sessions = await app.handle(new Request("http://localhost/api/sessions"));
   assert.equal(sessions.status, 200);
-  const sessionList = (await sessions.json()) as {
-    items: { id: string; firstMessage: string; channelName?: string }[];
-    nextCursor: string | null;
-  };
-  assert.equal(sessionList.items.length, 1);
-  assert.equal(sessionList.items[0]?.id, sessionId);
-  assert.equal(sessionList.items[0]?.firstMessage, "hello");
-  assert.equal(sessionList.items[0]?.channelName, "general");
+  const sessionList = assertRecord(await readJson(sessions));
+  const sessionItems = assertArray(sessionList.items);
+  assert.equal(sessionItems.length, 1);
+  const firstSession = assertRecord(sessionItems[0]);
+  assert.equal(firstSession.id, sessionId);
+  assert.equal(firstSession.firstMessage, "hello");
+  assert.equal(firstSession.channelName, "general");
   assert.equal(sessionList.nextCursor, null);
 
   const detail = await app.handle(new Request(`http://localhost/api/sessions/${sessionId}`));
   assert.equal(detail.status, 200);
-  const detailBody = await detail.json();
-  assert.equal(detailBody.items.length, 2);
+  const detailBody = assertRecord(await readJson(detail));
+  assert.equal(assertArray(detailBody.items).length, 2);
   assert.equal(detailBody.nextCursor, null);
 
   const firstSessionPage = await app.handle(
     new Request(`http://localhost/api/sessions/${sessionId}?limit=1`),
   );
   assert.equal(firstSessionPage.status, 200);
-  const firstSessionPageBody = (await firstSessionPage.json()) as {
-    items: { summary: string }[];
-    nextCursor: string | null;
-  };
-  assert.equal(firstSessionPageBody.items[0]?.summary, "hello back");
-  assert.ok(firstSessionPageBody.nextCursor);
+  const firstSessionPageBody = assertRecord(await readJson(firstSessionPage));
+  assert.equal(assertRecord(assertArray(firstSessionPageBody.items)[0]).summary, "hello back");
+  const firstNextCursor = assertString(firstSessionPageBody.nextCursor);
 
   const secondSessionPage = await app.handle(
     new Request(
-      `http://localhost/api/sessions/${sessionId}?limit=1&cursor=${encodeURIComponent(firstSessionPageBody.nextCursor ?? "")}`,
+      `http://localhost/api/sessions/${sessionId}?limit=1&cursor=${encodeURIComponent(firstNextCursor)}`,
     ),
   );
   assert.equal(secondSessionPage.status, 200);
-  assert.equal((await secondSessionPage.json()).items[0].summary, "hello");
+  const secondSessionPageBody = assertRecord(await readJson(secondSessionPage));
+  assert.equal(assertRecord(assertArray(secondSessionPageBody.items)[0]).summary, "hello");
 
   const memoryGuilds = await app.handle(new Request("http://localhost/api/memory"));
   assert.equal(memoryGuilds.status, 200);
-  assert.deepEqual(await memoryGuilds.json(), {
+  assert.deepEqual(await readJson(memoryGuilds), {
     enabled: true,
     items: [
       {
@@ -221,7 +220,8 @@ test("serves health, logs, Pi sessions, and scoped memory through Elysia", async
 
   const userMemory = await app.handle(new Request("http://localhost/api/memory/user/123"));
   assert.equal(userMemory.status, 200);
-  assert.equal((await userMemory.json()).memory.displayName, "Alice");
+  const userMemoryBody = assertRecord(await readJson(userMemory));
+  assert.equal(assertRecord(userMemoryBody.memory).displayName, "Alice");
 
   const missingUserMemory = await app.handle(new Request("http://localhost/api/memory/user/999"));
   assert.equal(missingUserMemory.status, 404);
@@ -230,7 +230,7 @@ test("serves health, logs, Pi sessions, and scoped memory through Elysia", async
     new Request("http://localhost/api/memory/user/123", { method: "DELETE" }),
   );
   assert.equal(deletedUserMemory.status, 200);
-  assert.deepEqual(await deletedUserMemory.json(), { deleted: true });
+  assert.deepEqual(await readJson(deletedUserMemory), { deleted: true });
 
   const missingDeletedUserMemory = await app.handle(
     new Request("http://localhost/api/memory/user/999", { method: "DELETE" }),
@@ -239,17 +239,19 @@ test("serves health, logs, Pi sessions, and scoped memory through Elysia", async
 
   const ownerMemory = await app.handle(new Request("http://localhost/api/memory/owner"));
   assert.equal(ownerMemory.status, 200);
-  assert.equal((await ownerMemory.json()).entries[0].title, "オーナーの事実");
+  const ownerMemoryBody = assertRecord(await readJson(ownerMemory));
+  assert.equal(assertRecord(assertArray(ownerMemoryBody.entries)[0]).title, "オーナーの事実");
 
   const memory = await app.handle(new Request("http://localhost/api/memory/guild/guild-a"));
   assert.equal(memory.status, 200);
-  assert.equal((await memory.json()).entries[0].title, "guild-a の事実");
+  const memoryBody = assertRecord(await readJson(memory));
+  assert.equal(assertRecord(assertArray(memoryBody.entries)[0]).title, "guild-a の事実");
 
   const deletedMemory = await app.handle(
     new Request("http://localhost/api/memory/guild/guild-a/mem-1", { method: "DELETE" }),
   );
   assert.equal(deletedMemory.status, 200);
-  assert.deepEqual(await deletedMemory.json(), { deleted: true });
+  assert.deepEqual(await readJson(deletedMemory), { deleted: true });
 
   const ownerRule = await app.handle(
     new Request("http://localhost/api/memory/owner/rules", {
@@ -291,3 +293,28 @@ test("serves health, logs, Pi sessions, and scoped memory through Elysia", async
   );
   assert.equal(invalidSessionListCursor.status, 400);
 });
+
+async function readJson(response: Response): Promise<unknown> {
+  return parseJson(await response.text());
+}
+
+function assertRecord(value: unknown): Record<string, unknown> {
+  if (!isRecord(value)) {
+    assert.fail("Expected JSON object");
+  }
+  return value;
+}
+
+function assertArray(value: unknown): unknown[] {
+  if (!Array.isArray(value)) {
+    assert.fail("Expected JSON array");
+  }
+  return value;
+}
+
+function assertString(value: unknown): string {
+  if (typeof value !== "string" || value.length === 0) {
+    assert.fail("Expected non-empty string");
+  }
+  return value;
+}

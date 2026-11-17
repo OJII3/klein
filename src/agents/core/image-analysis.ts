@@ -1,3 +1,5 @@
+import { isRecord, parseJson } from "@shared/type-guards";
+
 export type ImageAnalysisFailureReason =
   "rate_limited" | "http_error" | "empty_result" | "unavailable" | "unknown";
 
@@ -52,7 +54,7 @@ function extractHttpStatus(message: string): number | undefined {
   const jsonStart = message.indexOf("{");
   if (jsonStart !== -1) {
     try {
-      const status = findHttpStatus(JSON.parse(message.slice(jsonStart)));
+      const status = findHttpStatus(parseJson(message.slice(jsonStart)));
       if (status !== undefined) return status;
     } catch {
       // Not JSON; fall through to the textual patterns.
@@ -77,14 +79,13 @@ function findHttpStatus(value: unknown): number | undefined {
     }
     return undefined;
   }
-  if (typeof value !== "object" || value === null) return undefined;
+  if (!isRecord(value)) return undefined;
 
-  const record = value as Record<string, unknown>;
   for (const key of ["status", "statusCode", "code"]) {
-    const candidate = record[key];
+    const candidate = value[key];
     if (typeof candidate === "number" && candidate >= 400 && candidate <= 599) return candidate;
   }
-  for (const candidate of Object.values(record)) {
+  for (const candidate of Object.values(value)) {
     const status = findHttpStatus(candidate);
     if (status !== undefined) return status;
   }

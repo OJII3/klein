@@ -66,12 +66,12 @@ export function LogTable({ logs, expandedId, onToggle }: LogTableProps) {
           <tbody key={day.key}>
             <tr>
               <th
-                className="border-y border-line bg-surface-muted px-3 py-1.5 text-left"
+                className="border-y border-line bg-surface-muted px-3 py-1.5 text-left text-[0.72rem] font-medium text-ink-soft"
                 colSpan={4}
                 scope="rowgroup"
               >
-                <span className="text-[0.72rem] font-medium text-ink-soft">{day.label}</span>
-                <span className="ml-2 font-mono text-[0.62rem] text-ink-faint">
+                {day.label}
+                <span className="ml-2 font-mono text-[0.62rem] font-normal text-ink-faint">
                   {day.items.length} 件
                 </span>
               </th>

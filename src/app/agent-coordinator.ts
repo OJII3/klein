@@ -42,11 +42,11 @@ export interface AgentCoordinatorDependencies {
   readonly channelSessionStateStore?: ChannelSessionStateStore;
   readonly channelRuleStore?: DiscordChannelRuleStore;
   readonly logger: Logger;
-  readonly memoryCoordinator?: MemoryCoordinator;
-  readonly ownerMemoryStore?: OwnerMemoryStore;
+  readonly memoryCoordinator?: Pick<MemoryCoordinator, "getContext" | "enqueue">;
+  readonly ownerMemoryStore?: Pick<OwnerMemoryStore, "getContext">;
   readonly operatingState: DiscordOperatingState;
   readonly scheduledTaskStore?: ScheduledTaskStore;
-  readonly userMemoryCoordinator?: UserMemoryCoordinator;
+  readonly userMemoryCoordinator?: Pick<UserMemoryCoordinator, "observe">;
   readonly userMemoryStore?: Pick<UserMemoryStore, "read">;
   readonly watchCheckRunner: WatchCheckRunner;
   readonly taskCoordinator: TaskCoordinator;

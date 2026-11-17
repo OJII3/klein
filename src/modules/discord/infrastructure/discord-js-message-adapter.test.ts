@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { Message } from "discord.js";
 
-import { DiscordJsMessageAdapter } from "./discord-js-message-adapter";
+import { DiscordJsMessageAdapter, type DiscordAdapterMessage } from "./discord-js-message-adapter";
 
-function createReferencedMessage(channelId: string): Message {
+function createMessageStub(overrides: Partial<DiscordAdapterMessage> = {}): DiscordAdapterMessage {
+  const channelId = overrides.channelId ?? "public";
   return {
     author: {
       bot: false,
@@ -12,20 +12,26 @@ function createReferencedMessage(channelId: string): Message {
       username: "satsuki",
       displayName: "さつき",
     },
+    attachments: new Map(),
+    channel: { id: channelId, isThread: () => false },
     channelId,
     content: "参照先の内容",
+    createdAt: new Date("2026-10-14T09:30:42.123Z"),
+    guildId: "guild-123",
     id: "reference-123",
     mentions: { users: new Map(), roles: new Map() },
-  } as unknown as Message;
+    fetchReference: async () => createMessageStub({ channelId }),
+    ...overrides,
+  };
 }
 
 test("keeps same-channel reply content", async () => {
   const adapter = new DiscordJsMessageAdapter();
-  const message = {
+  const message = createMessageStub({
     channelId: "public",
     reference: { messageId: "reference-123", channelId: "public" },
-    fetchReference: async () => createReferencedMessage("public"),
-  } as unknown as Message;
+    fetchReference: async () => createMessageStub({ channelId: "public" }),
+  });
 
   const reference = await adapter.fetchReplyReference(message);
   assert.equal(reference?.id, "reference-123");
@@ -36,14 +42,14 @@ test("keeps same-channel reply content", async () => {
 test("does not fetch cross-channel reference content", async () => {
   const adapter = new DiscordJsMessageAdapter();
   let fetched = false;
-  const message = {
+  const message = createMessageStub({
     channelId: "public",
     reference: { messageId: "reference-123", channelId: "private" },
     fetchReference: async () => {
       fetched = true;
-      return createReferencedMessage("private");
+      return createMessageStub({ channelId: "private" });
     },
-  } as unknown as Message;
+  });
 
   assert.deepEqual(await adapter.fetchReplyReference(message), { id: "reference-123" });
   assert.equal(fetched, false);
@@ -51,22 +57,21 @@ test("does not fetch cross-channel reference content", async () => {
 
 test("omits fetched reply content if it belongs to another channel", async () => {
   const adapter = new DiscordJsMessageAdapter();
-  const message = {
+  const message = createMessageStub({
     channelId: "public",
     reference: { messageId: "reference-123" },
-    fetchReference: async () => createReferencedMessage("private"),
-  } as unknown as Message;
+    fetchReference: async () => createMessageStub({ channelId: "private" }),
+  });
 
   assert.deepEqual(await adapter.fetchReplyReference(message), { id: "reference-123" });
 });
 
 test("preserves the original Discord message timestamp including milliseconds", () => {
   const adapter = new DiscordJsMessageAdapter();
-  const message = {
-    ...createReferencedMessage("public"),
-    channel: { isThread: () => false, name: "general" },
+  const message = createMessageStub({
+    channel: { id: "public", isThread: () => false, name: "general" },
     createdAt: new Date("2026-10-14T18:30:42.123+09:00"),
-  } as unknown as Message;
+  });
 
   const event = adapter.toDiscordMessage(message);
   assert.equal(event.channelName, "general");

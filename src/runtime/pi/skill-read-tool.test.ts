@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
+import { createStubExtensionToolContext } from "./pi-test-helpers";
 import { createSkillReadTool } from "./skill-read-tool";
 import { createTempDir } from "../../testing/temp-dir";
 
@@ -24,21 +25,22 @@ function textOf(result: { content: readonly { type: string; text?: string }[] })
 
 test("reads a skill file by absolute or relative path", async () => {
   await withSkillsDirectory(async (directory, tool) => {
+    const ctx = createStubExtensionToolContext();
     const absolute = await tool.execute(
       "call",
-      { path: join(directory, "demo", "SKILL.md") } as never,
+      { path: join(directory, "demo", "SKILL.md") },
       undefined,
       undefined,
-      {} as never,
+      ctx,
     );
     assert.equal(textOf(absolute), "line 1\nline 2\nline 3");
 
     const relative = await tool.execute(
       "call",
-      { path: "demo/references/notes.md" } as never,
+      { path: "demo/references/notes.md" },
       undefined,
       undefined,
-      {} as never,
+      ctx,
     );
     assert.equal(textOf(relative), "notes");
   });
@@ -48,10 +50,10 @@ test("supports offset and limit", async () => {
   await withSkillsDirectory(async (directory, tool) => {
     const result = await tool.execute(
       "call",
-      { path: join(directory, "demo", "SKILL.md"), offset: 2, limit: 1 } as never,
+      { path: join(directory, "demo", "SKILL.md"), offset: 2, limit: 1 },
       undefined,
       undefined,
-      {} as never,
+      createStubExtensionToolContext(),
     );
     assert.equal(textOf(result), "line 2");
   });
@@ -64,7 +66,13 @@ test("rejects files outside the skills directory", async () => {
   await writeFile(outsideFile, "outside", "utf8");
   await withSkillsDirectory(async (_directory, tool) => {
     await assert.rejects(
-      tool.execute("call", { path: outsideFile } as never, undefined, undefined, {} as never),
+      tool.execute(
+        "call",
+        { path: outsideFile },
+        undefined,
+        undefined,
+        createStubExtensionToolContext(),
+      ),
       /not readable/u,
     );
   });
@@ -76,10 +84,10 @@ test("rejects binary files", async () => {
     await assert.rejects(
       tool.execute(
         "call",
-        { path: join(directory, "demo", "binary.bin") } as never,
+        { path: join(directory, "demo", "binary.bin") },
         undefined,
         undefined,
-        {} as never,
+        createStubExtensionToolContext(),
       ),
       /not text/u,
     );
@@ -89,7 +97,13 @@ test("rejects binary files", async () => {
 test("reports a missing skills directory", async () => {
   const tool = createSkillReadTool(join(tmpdir(), "klein-missing-skills-directory"));
   await assert.rejects(
-    tool.execute("call", { path: "demo/SKILL.md" } as never, undefined, undefined, {} as never),
+    tool.execute(
+      "call",
+      { path: "demo/SKILL.md" },
+      undefined,
+      undefined,
+      createStubExtensionToolContext(),
+    ),
     /Skills directory is not available/u,
   );
 });

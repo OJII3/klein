@@ -52,7 +52,7 @@ export function formatDiscordUser(user: DiscordUser): string {
 
 export function formatDiscordReply(reply: DiscordReplyReference): string {
   const author = reply.author?.displayName ?? "不明なユーザー";
-  const content = reply.content?.replace(/\s+/gu, " ").trim() ?? "";
+  const content = reply.content?.replaceAll(/\s+/gu, " ").trim() ?? "";
   const preview = Array.from(content).slice(0, DISCORD_REPLY_PREVIEW_LIMIT).join("");
   const truncated = content.length > preview.length ? `${preview}…` : preview;
 
@@ -77,7 +77,7 @@ export function resolveDiscordMentions(
     readonly role: (roleId: string) => DiscordRole | undefined;
   },
 ): string {
-  return content.replace(/<@([!&]?)(\d+)>/g, (mention, kind: string, id: string) => {
+  return content.replaceAll(/<@([!&]?)(\d+)>/g, (mention, kind: string, id: string) => {
     if (kind === "&") {
       const role = resolvers.role(id);
       return role ? `@${role.name}` : mention;

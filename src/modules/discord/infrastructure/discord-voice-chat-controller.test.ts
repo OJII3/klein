@@ -1,12 +1,31 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { ChatInputCommandInteraction } from "discord.js";
+import type { DiscordGatewayAdapterCreator } from "@discordjs/voice";
 import type { AsrClient } from "@modules/asr/domain/asr-client";
 
 import { createDiscordAccessPolicy } from "../domain/discord-access-policy";
-import type { VoiceChatConversation } from "../ports/voice-chat-conversation";
-import { DiscordVoiceChatController } from "./discord-voice-chat-controller";
-import { DiscordVoiceCaptureSession } from "./discord-voice-capture-session";
+import type {
+  VoiceChatConversationContext,
+  VoiceChatConversationFactory,
+} from "../ports/voice-chat-conversation";
+import {
+  DiscordVoiceChatController,
+  type VoiceCaptureSession,
+  type VoiceChatCommandInteraction,
+} from "./discord-voice-chat-controller";
+
+const adapterCreator: DiscordGatewayAdapterCreator = () => ({
+  sendPayload: () => true,
+  destroy: () => undefined,
+});
+
+const asrStub: AsrClient = {
+  connect: async () => ({
+    onError: () => () => undefined,
+    start: () => ({ write: () => undefined, commit: async () => ({ text: "" }) }),
+    close: () => undefined,
+  }),
+};
 
 function createInteraction(
   subcommand: "join" | "leave",
@@ -21,15 +40,16 @@ function createInteraction(
 ) {
   const replies: string[] = [];
   const sentMessages = options.sentMessages ?? [];
-  const interaction = {
-    channel: {
-      id: options.channelId ?? "channel-123",
-      isThread: () => options.isThread ?? false,
-      parentId: options.parentId ?? null,
-      send: async (message: unknown) => {
-        sentMessages.push(message);
-      },
+  const channel = {
+    id: options.channelId ?? "channel-123",
+    isThread: () => options.isThread ?? false,
+    parentId: options.parentId ?? null,
+    send: async (message: unknown) => {
+      sentMessages.push(message);
     },
+  };
+  const interaction: VoiceChatCommandInteraction = {
+    channel,
     channelId: options.channelId ?? "channel-123",
     deferReply: async () => undefined,
     editReply: async (content: string) => replies.push(content),
@@ -41,71 +61,70 @@ function createInteraction(
           voice: { channel: { id: "voice-channel-123" } },
         }),
       },
-      voiceAdapterCreator: {},
+      voiceAdapterCreator: adapterCreator,
     },
     guildId: "guild-123",
     inGuild: () => true,
     options: { getSubcommand: () => subcommand },
     reply: async ({ content }: { content: string }) => replies.push(content),
     user: { id: options.userId ?? "user-123", bot: options.userIsBot ?? false },
-  } as unknown as ChatInputCommandInteraction;
+  };
   return { interaction, replies, sentMessages };
 }
 
+function createSessionStub(): VoiceCaptureSession {
+  return {
+    start: async () => undefined,
+    stop: async () => undefined,
+    speakInBackground: async () => undefined,
+    playReaction: async () => false,
+    subscribeSpeechStart: () => () => undefined,
+  };
+}
+
 function createController(
-  conversationFactory: {
-    create(context: {
-      readonly channelId: string;
-      readonly guildId: string;
-      readonly parentChannelId?: string;
-      readonly threadId?: string;
-      readonly user: {
-        readonly bot: boolean;
-        readonly displayName: string;
-        readonly id: string;
-        readonly username: string;
-      };
-      readonly voiceChannelId: string;
-      readonly playReaction?: (reaction: string, signal: AbortSignal) => Promise<boolean>;
-    }): Promise<VoiceChatConversation>;
-  },
+  conversationFactory: VoiceChatConversationFactory,
   policy = createDiscordAccessPolicy({ default: "allow", directMessages: "deny" }),
   characterName = "クライン",
+  createSession: (options: {
+    readonly onTranscript: (text: string, requestId?: string) => Promise<void>;
+  }) => VoiceCaptureSession = () => createSessionStub(),
 ) {
   return new DiscordVoiceChatController(policy, undefined, {
-    asr: {} as AsrClient,
+    asr: asrStub,
     characterName,
     conversationFactory,
+    createSession,
     language: "ja",
     tts: { synthesize: async () => new Uint8Array() },
   });
 }
 
 test("sends final voice transcripts to the dedicated conversation", async () => {
-  const originalStart = DiscordVoiceCaptureSession.prototype.start;
   let onTranscript: ((text: string, requestId?: string) => Promise<void>) | undefined;
-  DiscordVoiceCaptureSession.prototype.start = async function () {
-    onTranscript = (
-      this as unknown as {
-        options: { onTranscript: (text: string, requestId?: string) => Promise<void> };
-      }
-    ).options.onTranscript;
-  };
-  const contexts: unknown[] = [];
+  const contexts: VoiceChatConversationContext[] = [];
   const transcripts: string[] = [];
   const requestIds: Array<string | undefined> = [];
-  const controller = createController({
-    create: async (context) => {
-      contexts.push(context);
-      return {
-        handleTranscript: async (text, requestId) => {
-          transcripts.push(text);
-          requestIds.push(requestId);
-        },
-        stop: async () => undefined,
-      };
+  const controller = createController(
+    {
+      create: async (context) => {
+        contexts.push(context);
+        return {
+          handleTranscript: async (text, requestId) => {
+            transcripts.push(text);
+            requestIds.push(requestId);
+          },
+          stop: async () => undefined,
+        };
+      },
     },
-  });
+    undefined,
+    "クライン",
+    (options) => {
+      onTranscript = options.onTranscript;
+      return createSessionStub();
+    },
+  );
   const { interaction } = createInteraction("join", {
     channelId: "thread-123",
     isThread: true,
@@ -117,10 +136,9 @@ test("sends final voice transcripts to the dedicated conversation", async () => 
     assert.ok(onTranscript);
     await onTranscript("こんにちは", "asr-request-123");
 
-    const { speak, playReaction, onSpeechStart, ...contextWithoutSpeak } = contexts[0] as Record<
-      string,
-      unknown
-    >;
+    const [context] = contexts;
+    assert.ok(context);
+    const { speak, playReaction, onSpeechStart, ...contextWithoutSpeak } = context;
     assert.equal(typeof speak, "function");
     assert.equal(typeof playReaction, "function");
     assert.equal(typeof onSpeechStart, "function");
@@ -140,7 +158,6 @@ test("sends final voice transcripts to the dedicated conversation", async () => 
     assert.deepEqual(transcripts, ["こんにちは"]);
     assert.deepEqual(requestIds, ["asr-request-123"]);
   } finally {
-    DiscordVoiceCaptureSession.prototype.start = originalStart;
     await controller.stop();
   }
 });
@@ -170,8 +187,6 @@ test("blocks VC sessions when the text channel is denied", async () => {
 
 test("stops the capture and dedicated conversation on leave", async () => {
   const stopped: string[] = [];
-  const originalStart = DiscordVoiceCaptureSession.prototype.start;
-  DiscordVoiceCaptureSession.prototype.start = async () => undefined;
   const controller = createController({
     create: async () => ({
       handleTranscript: async () => undefined,
@@ -190,14 +205,11 @@ test("stops the capture and dedicated conversation on leave", async () => {
     assert.deepEqual(stopped, ["conversation"]);
     assert.deepEqual(replies, ["VCから退出しました。"]);
   } finally {
-    DiscordVoiceCaptureSession.prototype.start = originalStart;
     await controller.stop();
   }
 });
 
 test("owner VC access rejects other users and bots and accepts the owner", async () => {
-  const originalStart = DiscordVoiceCaptureSession.prototype.start;
-  DiscordVoiceCaptureSession.prototype.start = async () => undefined;
   let createCalls = 0;
   const controller = createController(
     {
@@ -218,14 +230,11 @@ test("owner VC access rejects other users and bots and accepts the owner", async
     await controller.handleCommand(createInteraction("join").interaction);
     assert.equal(createCalls, 1);
   } finally {
-    DiscordVoiceCaptureSession.prototype.start = originalStart;
     await controller.stop();
   }
 });
 
 test("uses characterName in VC join and leave announcements", async () => {
-  const originalStart = DiscordVoiceCaptureSession.prototype.start;
-  DiscordVoiceCaptureSession.prototype.start = async () => undefined;
   const controller = createController(
     {
       create: async () => ({
@@ -248,7 +257,6 @@ test("uses characterName in VC join and leave announcements", async () => {
     assert.match(JSON.stringify(sentMessages[0]), /月見ヤチヨが参加しました/);
     assert.match(JSON.stringify(sentMessages[1]), /月見ヤチヨが退出しました/);
   } finally {
-    DiscordVoiceCaptureSession.prototype.start = originalStart;
     await controller.stop();
   }
 });
