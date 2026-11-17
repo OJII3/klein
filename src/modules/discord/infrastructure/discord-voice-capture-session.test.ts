@@ -8,6 +8,7 @@ import { setImmediate as waitImmediate } from "node:timers/promises";
 import {
   AudioPlayerStatus,
   createAudioResource,
+  StreamType,
   type AudioResource,
   type DiscordGatewayAdapterCreator,
 } from "@discordjs/voice";
@@ -24,6 +25,10 @@ import {
   type VoiceReceivedAudioStream,
 } from "./discord-voice-capture-session";
 import type { VoiceAudioPlayer, VoiceLogger } from "./discord-voice-playback";
+
+function createStubAudioResource(): AudioResource {
+  return createAudioResource(Readable.from([Buffer.alloc(0)]), { inputType: StreamType.Opus });
+}
 
 const adapterCreator: DiscordGatewayAdapterCreator = () => ({
   sendPayload: () => true,
@@ -139,9 +144,7 @@ function createCapture(testOptions: CreateCaptureOptions = {}) {
     adapterCreator,
     asr: { connect: async () => asrConnection },
     audioPlayerFactory: () => audioPlayer,
-    audioResourceFactory:
-      testOptions.audioResourceFactory ??
-      (() => createAudioResource(Readable.from([Buffer.alloc(0)]))),
+    audioResourceFactory: testOptions.audioResourceFactory ?? (() => createStubAudioResource()),
     connectVoice: async () => connection,
     createDecoder: () => {
       const decoder = new FakeAudioDecoder();
@@ -315,7 +318,7 @@ test("resource creation failure clears playback state for a later reaction", asy
       if (shouldFailResource) {
         throw new Error("resource creation failed");
       }
-      return createAudioResource(Readable.from([Buffer.alloc(0)]));
+      return createStubAudioResource();
     },
   });
   await capture.start();
@@ -357,7 +360,7 @@ test("loads saved reaction audio without synthesizing it", async () => {
     },
     audioResourceFactory: (audio) => {
       resourceAudio = audio;
-      return createAudioResource(Readable.from([Buffer.alloc(0)]));
+      return createStubAudioResource();
     },
   });
 
