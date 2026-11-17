@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { DiscordGatewayAdapterCreator } from "@discordjs/voice";
-import type { AsrClient } from "@modules/asr/domain/asr-client";
+import type { AsrClient } from "@modules/asr/ports/asr-client";
 
 import { createDiscordAccessPolicy } from "../domain/discord-access-policy";
 import type {

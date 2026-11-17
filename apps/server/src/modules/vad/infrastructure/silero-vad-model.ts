@@ -3,7 +3,7 @@ import { dirname, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import modelPath from "./models/silero_vad_16k_op15.onnx" with { type: "file" };
-import type { VadFrameScorer } from "../domain/vad-stream";
+import type { VadFrameScorer } from "../ports/vad-frame-scorer";
 
 export class SileroVadModel implements VadFrameScorer {
   private static sessionPromise?: Promise<ort.InferenceSession>;

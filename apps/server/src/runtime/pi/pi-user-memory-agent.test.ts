@@ -4,10 +4,8 @@ import { join } from "node:path";
 import test from "node:test";
 
 import type { UserMemory } from "@modules/user-memory/domain/user-memory";
-import {
-  MarkdownUserMemoryStore,
-  renderUserMemory,
-} from "@modules/user-memory/infrastructure/markdown-user-memory-store";
+import { renderUserMemory } from "@modules/user-memory/domain/user-memory-format";
+import { MarkdownUserMemoryStore } from "@modules/user-memory/infrastructure/markdown-user-memory-store";
 import { createTempDir } from "../../testing/temp-dir";
 import {
   PiUserMemoryAgent,

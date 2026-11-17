@@ -16,7 +16,7 @@ import type {
   WatchTask,
 } from "@modules/scheduling/domain/scheduled-task";
 import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
-import type { TextToSpeech } from "@modules/tts/infrastructure/sbv2-tts";
+import type { TextToSpeech } from "@modules/tts/ports/text-to-speech";
 
 let cachedExtensionRunnerPromise: Promise<ExtensionRunner> | undefined;
 

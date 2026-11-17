@@ -23,7 +23,7 @@ import { createDiscordAgentTools } from "@agents/discord/discord-tools";
 import { loadPromptFile } from "@app/prompt";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
-import { QuickJsWatchCheckRunner } from "@modules/scheduling/application/quickjs-watch-check-runner";
+import { QuickJsWatchCheckRunner } from "@modules/scheduling/infrastructure/quickjs-watch-check-runner";
 import { isRecord, parseJson } from "@shared/type-guards";
 
 import { createTempDir } from "../../testing/temp-dir";

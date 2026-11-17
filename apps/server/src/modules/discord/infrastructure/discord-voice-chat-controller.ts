@@ -6,8 +6,8 @@ import {
   TextDisplayBuilder,
 } from "discord.js";
 import type { DiscordGatewayAdapterCreator } from "@discordjs/voice";
-import type { AsrClient } from "@modules/asr/domain/asr-client";
-import type { TextToSpeech } from "@modules/tts/infrastructure/sbv2-tts";
+import type { AsrClient } from "@modules/asr/ports/asr-client";
+import type { TextToSpeech } from "@modules/tts/ports/text-to-speech";
 import type { VoiceReactionPreset } from "@modules/discord/ports/voice-reaction-selector";
 
 import type { DiscordAccessPolicy } from "../domain/discord-access-policy";

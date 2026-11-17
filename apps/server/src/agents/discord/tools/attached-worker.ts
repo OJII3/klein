@@ -2,8 +2,8 @@ import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 
 import type { AgentImageAnalyzer } from "@agents/core/agent-factory";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
-import type { WatchCheckRunner } from "@modules/scheduling/application/watch-check-runner";
 import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
+import type { WatchCheckRunner } from "@modules/scheduling/ports/watch-check-runner";
 import { parseAccessScope } from "@shared/access";
 import { createWatchTools } from "@agents/tools/watch";
 import { createDiscordImageAnalysis, createDiscordReadTool } from "./discord-read";

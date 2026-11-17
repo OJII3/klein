@@ -1,6 +1,6 @@
 import { Check } from "typebox/value";
 
-import type { AsrClient, AsrConnection, AsrRequest } from "../domain/asr-client";
+import type { AsrClient, AsrConnection, AsrRequest } from "../ports/asr-client";
 import {
   AsrClientMessageSchema,
   AsrServerMessageSchema,

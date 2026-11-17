@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { renderWatchToolSection, type WatchTool } from "./watch-tool";
+import type { WatchTool } from "../ports/watch-tool";
+import { renderWatchToolSection } from "./watch-tool";
 
 const fetchTool: WatchTool = {
   name: "fetch_content",

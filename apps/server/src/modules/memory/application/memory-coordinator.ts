@@ -3,22 +3,20 @@ import type { Logger } from "pino";
 import { formatDiscordMessage, type DiscordMessage } from "@modules/discord/domain/discord-message";
 import { IdleBatchQueue } from "@app/idle-batch-queue";
 import type { TaskCoordinator } from "@app/task-coordinator";
-import { JsonMemoryStore, listMemoryGuildIds } from "../infrastructure/json-memory-store";
-import { renderMemoryContext } from "../infrastructure/memory-context-renderer";
 import { selectMemoryEntries } from "./memory-context-selector";
-import { MemoryEntryNotFoundError } from "../domain/memory";
-import type {
-  GuildMemoryEditor,
-  GuildMemoryReader,
-  MemoryDocument,
-  MemoryGuildSummary,
-  MemoryLocation,
-  MemoryMessage,
-  MemoryProcessor,
+import { renderMemoryContext } from "../domain/memory-context-renderer";
+import {
+  MemoryEntryNotFoundError,
+  type MemoryDocument,
+  type MemoryGuildSummary,
+  type MemoryLocation,
+  type MemoryMessage,
 } from "../domain/memory";
+import type { MemoryProcessor } from "../ports/memory-processor";
+import type { GuildMemoryEditor, GuildMemoryReader, GuildMemoryStore } from "../ports/memory-store";
 
 export interface MemoryCoordinatorOptions {
-  readonly filePath: string;
+  readonly store: GuildMemoryStore;
   readonly idleSeconds: number;
   readonly maxBatchAgeSeconds: number;
   readonly maxBatchMessages: number;
@@ -83,7 +81,7 @@ export class MemoryCoordinator implements GuildMemoryReader, GuildMemoryEditor {
   async listGuilds(): Promise<readonly MemoryGuildSummary[]> {
     if (this.disposed) return [];
 
-    const guildIds = await listMemoryGuildIds(this.options.filePath);
+    const guildIds = await this.options.store.listGuildIds();
     return Promise.all(
       guildIds.map(async (guildId) => {
         const document = await this.read(guildId);
@@ -97,15 +95,14 @@ export class MemoryCoordinator implements GuildMemoryReader, GuildMemoryEditor {
   }
 
   async read(guildId: string): Promise<MemoryDocument> {
-    const store = new JsonMemoryStore(resolveMemoryFilePath(this.options.filePath, guildId));
-    return store.read();
+    return this.options.store.forGuild(guildId).read();
   }
 
   deleteEntry(guildId: string, entryId: string): Promise<void> {
     if (this.disposed) return Promise.reject(new Error("Memory coordinator is disposed"));
 
     return this.runGuildOperation(guildId, async () => {
-      const store = new JsonMemoryStore(resolveMemoryFilePath(this.options.filePath, guildId));
+      const store = this.options.store.forGuild(guildId);
       const document = await store.read();
       if (!document.entries.some((entry) => entry.id === entryId)) {
         throw new MemoryEntryNotFoundError({ guildId, type: "guild" }, entryId);
@@ -118,7 +115,7 @@ export class MemoryCoordinator implements GuildMemoryReader, GuildMemoryEditor {
   addRule(guildId: string, title: string, content: string): Promise<void> {
     if (this.disposed) return Promise.reject(new Error("Memory coordinator is disposed"));
     return this.runGuildOperation(guildId, async () => {
-      const store = new JsonMemoryStore(resolveMemoryFilePath(this.options.filePath, guildId));
+      const store = this.options.store.forGuild(guildId);
       await store.apply(
         [{ type: "add", kind: "rule", scope: { type: "guild" }, title, content }],
         [],
@@ -139,7 +136,7 @@ export class MemoryCoordinator implements GuildMemoryReader, GuildMemoryEditor {
   private processGuild(guildId: string, messages: readonly DiscordMessage[]): Promise<void> {
     const startedAt = Date.now();
     return this.runGuildOperation(guildId, async () => {
-      const store = new JsonMemoryStore(resolveMemoryFilePath(this.options.filePath, guildId));
+      const store = this.options.store.forGuild(guildId);
       const document = await store.read();
       const operations = await this.options.processor.process(
         document,
@@ -194,8 +191,4 @@ function latestUpdatedAt(document: MemoryDocument): string | null {
     (latest, entry) => (latest === null || entry.updatedAt > latest ? entry.updatedAt : latest),
     null,
   );
-}
-
-export function resolveMemoryFilePath(filePath: string, guildId: string): string {
-  return filePath.replaceAll("{guildId}", guildId);
 }

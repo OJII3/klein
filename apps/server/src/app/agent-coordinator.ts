@@ -11,11 +11,11 @@ import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-a
 import type { MemoryCoordinator } from "@modules/memory/application/memory-coordinator";
 import type { OwnerMemoryStore } from "@modules/memory/application/owner-memory-store";
 import type { UserMemoryCoordinator } from "@modules/user-memory/application/user-memory-coordinator";
-import type { UserMemoryStore } from "@modules/user-memory/domain/user-memory";
-import { renderFirstSpeakerUserMemory } from "@modules/user-memory/infrastructure/user-memory-context-renderer";
+import { renderFirstSpeakerUserMemory } from "@modules/user-memory/domain/user-memory-context-renderer";
+import type { UserMemoryStore } from "@modules/user-memory/ports/user-memory-store";
 import type { DiscordChannelRuleStore } from "@modules/discord/ports/discord-channel-rule-store";
 import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
-import type { WatchCheckRunner } from "@modules/scheduling/application/watch-check-runner";
+import type { WatchCheckRunner } from "@modules/scheduling/ports/watch-check-runner";
 import { isOwnerAccessScope, ownerAccessScope, PUBLIC_ACCESS_SCOPE } from "@shared/access";
 import type { TaskCoordinator } from "./task-coordinator";
 import {

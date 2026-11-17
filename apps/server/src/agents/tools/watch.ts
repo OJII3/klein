@@ -12,12 +12,12 @@ import {
   type ScheduleInput,
   type StoredSchedule,
 } from "@modules/scheduling/domain/schedule";
-import type { WatchCheckRunner } from "@modules/scheduling/application/watch-check-runner";
 import type {
   ScheduledTaskAccessScope,
   WatchTask,
 } from "@modules/scheduling/domain/scheduled-task";
 import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
+import type { WatchCheckRunner } from "@modules/scheduling/ports/watch-check-runner";
 
 const weekdaySchema = Type.Union(SCHEDULE_WEEKDAYS.map((weekday) => Type.Literal(weekday)));
 

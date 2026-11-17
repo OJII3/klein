@@ -12,8 +12,8 @@ import {
 } from "@agents/testing/test-stubs";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
-import type { WatchCheckRunner } from "@modules/scheduling/application/watch-check-runner";
 import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
+import type { WatchCheckRunner } from "@modules/scheduling/ports/watch-check-runner";
 import { isRecord } from "@shared/type-guards";
 import type { AgentEvent } from "../core/agent-event";
 import type { AgentFactory, AgentToolContext } from "../core/agent-factory";

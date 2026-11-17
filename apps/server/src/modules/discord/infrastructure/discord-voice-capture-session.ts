@@ -9,8 +9,8 @@ import {
   type DiscordGatewayAdapterCreator,
 } from "@discordjs/voice";
 
-import type { AsrClient, AsrConnection, AsrRequest } from "@modules/asr/domain/asr-client";
-import { VadStream, type VadEvent } from "@modules/vad/domain/vad-stream";
+import type { AsrClient, AsrConnection, AsrRequest } from "@modules/asr/ports/asr-client";
+import { VadStream, type VadEvent } from "@modules/vad/application/vad-stream";
 import { SileroVadModel } from "@modules/vad/infrastructure/silero-vad-model";
 import {
   DiscordVoicePlayback,

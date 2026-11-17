@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 
 import type { CodemodeJsonSchema } from "@earendil-works/pi-codemode";
-import type { WatchTool } from "@modules/scheduling/application/watch-tool";
+import type { WatchTool } from "@modules/scheduling/ports/watch-tool";
 import { isRecord } from "@shared/type-guards";
 
 const MAX_URLS = 10;

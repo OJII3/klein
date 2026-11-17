@@ -6,7 +6,7 @@ import {
   createStubDiscordChannelApi,
   createStubExtensionToolContext,
 } from "@agents/testing/test-stubs";
-import type { WatchCheckRunner } from "@modules/scheduling/application/watch-check-runner";
+import type { WatchCheckRunner } from "@modules/scheduling/ports/watch-check-runner";
 import { createAttachedWorkerTools } from "./attached-worker";
 
 const runner: WatchCheckRunner = {
