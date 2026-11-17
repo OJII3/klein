@@ -15,6 +15,7 @@ import { createLogFilePath, createLogger, flushLogger } from "./logger";
 import { collectModelsInUse } from "./model-configuration";
 import { loadPromptFile } from "./prompt";
 import { loadProfile } from "./profile";
+import { createShutdownRunner } from "./shutdown";
 import { TaskCoordinator } from "./task-coordinator";
 import { VoiceChatCoordinator } from "./voice-chat-coordinator";
 import { DiscordAgent } from "@agents/discord/discord-agent";
@@ -79,6 +80,7 @@ const DISCORD_USAGE_STATUS_REFRESH_INTERVAL_MS = 60 * 60 * 1_000;
 const CHANNEL_CONTEXT_ROTATION_CHECK_INTERVAL_MS = 60 * 1_000;
 const ATTACHED_TASK_IDLE_CHECK_INTERVAL_MS = 60 * 1_000;
 const SCHEDULED_TASK_CHECK_INTERVAL_MS = 10 * 1_000;
+const SHUTDOWN_TIMEOUT_MS = 20 * 1_000;
 
 export async function bootstrapApplication(): Promise<void> {
   const { sessionMode } = parseCliOptions(process.argv.slice(2));
@@ -455,10 +457,7 @@ export async function bootstrapApplication(): Promise<void> {
   let contextRotationInterval: ReturnType<typeof setInterval> | undefined;
   let attachedTaskCleanupInterval: ReturnType<typeof setInterval> | undefined;
   let scheduledTaskCheckInterval: ReturnType<typeof setInterval> | undefined;
-  let shuttingDown = false;
   const shutdown = async (signal: string): Promise<void> => {
-    if (shuttingDown) return;
-    shuttingDown = true;
     logger.info({ event: "shutdown_started", signal }, "Shutting down");
 
     if (usageStatusInterval) {
@@ -493,11 +492,26 @@ export async function bootstrapApplication(): Promise<void> {
     flushLogger(logger);
   };
 
+  const runShutdown = createShutdownRunner({
+    timeoutMs: SHUTDOWN_TIMEOUT_MS,
+    shutdown,
+    onTimeout: (signal) => {
+      logger.error(
+        { event: "shutdown_timeout", signal },
+        "Shutdown did not finish in time; forcing exit",
+      );
+    },
+    onError: (error, signal) => {
+      logger.error({ err: error, event: "shutdown_failed", signal }, "Shutdown failed");
+    },
+    exit: (code) => process.exit(code),
+  });
+
   process.once("SIGINT", () => {
-    void shutdown("SIGINT");
+    void runShutdown("SIGINT");
   });
   process.once("SIGTERM", () => {
-    void shutdown("SIGTERM");
+    void runShutdown("SIGTERM");
   });
 
   try {
@@ -534,7 +548,8 @@ export async function bootstrapApplication(): Promise<void> {
       ),
     ]);
   } catch (error) {
-    await shutdown("startup_failed");
+    logger.fatal({ err: error, event: "startup_failed" }, "Klein failed to start");
+    await runShutdown("startup_failed", 1);
     throw error;
   }
   const runChannelContextRotationCheck = (): void => {
