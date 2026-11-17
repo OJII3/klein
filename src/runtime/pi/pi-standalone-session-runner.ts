@@ -38,7 +38,7 @@ export interface PiStandaloneSessionRunnerOptions {
   readonly agentDir: string;
   readonly logger: Logger;
   readonly modelRuntime: ModelRuntime;
-  readonly usageReporter?: PiUsageReporter;
+  readonly usageReporter?: Pick<PiUsageReporter, "recordAssistantMessage">;
 }
 
 export interface PiSessionOptions {

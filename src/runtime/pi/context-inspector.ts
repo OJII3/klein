@@ -46,6 +46,7 @@ import { QuickJsWatchCheckRunner } from "@modules/scheduling/application/quickjs
 import { FileScheduledTaskStore } from "@modules/scheduling/infrastructure/file-scheduled-task-store";
 import { MarkdownUserMemoryStore } from "@modules/user-memory/infrastructure/markdown-user-memory-store";
 import { parseDiscordChannelId } from "@shared/discord-channel-session-key";
+import { isRecord, parseJson } from "@shared/type-guards";
 import {
   createPiAgentFactory,
   createPiModelRuntime,
@@ -390,8 +391,8 @@ export function extractTurnTraceFromEntries(
   let startUserIdx = -1;
   if (options.targetAssistantEntryId) {
     for (let i = branch.length - 1; i >= 0; i -= 1) {
-      const entry = branch[i]!;
-      if (entry.type === "message" && entry.message.role === "user") {
+      const entry = branch[i];
+      if (entry && entry.type === "message" && entry.message.role === "user") {
         startUserIdx = i;
         break;
       }
@@ -410,7 +411,8 @@ export function extractTurnTraceFromEntries(
 
   let turnContextText: string | undefined;
   for (let i = startUserIdx - 1; i >= 0; i -= 1) {
-    const prev = branch[i]!;
+    const prev = branch[i];
+    if (!prev) continue;
     if (prev.type === "custom" && prev.customType === TURN_CONTEXT_CUSTOM_TYPE) {
       turnContextText = renderCustomContent(prev.data);
       break;
@@ -418,7 +420,8 @@ export function extractTurnTraceFromEntries(
     if (prev.type === "message") break;
   }
 
-  const startEntry = branch[startUserIdx]!;
+  const startEntry = branch[startUserIdx];
+  if (!startEntry) return undefined;
   const userText =
     startEntry.type === "message" && startEntry.message.role === "user"
       ? extractUserMessageParts(startEntry.message.content).userText
@@ -426,7 +429,8 @@ export function extractTurnTraceFromEntries(
 
   const steps: RecordedTurnStep[] = [];
   for (let i = startUserIdx; i < branch.length; i += 1) {
-    const entry = branch[i]!;
+    const entry = branch[i];
+    if (!entry) continue;
     if (i > startUserIdx && entry.type === "message" && entry.message.role === "user") {
       break;
     }
@@ -610,7 +614,8 @@ export function estimateTextTokens(text: string): number {
   let asciiChars = 0;
   let nonAsciiChars = 0;
   for (const char of text) {
-    if (char.codePointAt(0)! <= 0x7f) asciiChars += 1;
+    const codePoint = char.codePointAt(0);
+    if (codePoint !== undefined && codePoint <= 0x7f) asciiChars += 1;
     else nonAsciiChars += 1;
   }
   return Math.ceil(asciiChars / 4 + nonAsciiChars / 1.5);
@@ -974,7 +979,7 @@ function appendTokenAndCacheSummaryMarkdown(
 ): void {
   if (requests.length === 0) return;
 
-  const analyses = requests.map(analyzeCapturedRequest);
+  const analyses = requests.map((request) => analyzeCapturedRequest(request));
   lines.push("## Token & Cache Reference");
   lines.push("");
   lines.push(
@@ -996,7 +1001,10 @@ function appendTokenAndCacheSummaryMarkdown(
     );
     lines.push("| --- | ---: | ---: | --- |");
     for (let i = 1; i < requests.length; i += 1) {
-      const stability = comparePrefixStability(requests[i - 1]!, requests[i]!);
+      const previous = requests[i - 1];
+      const current = requests[i];
+      if (!previous || !current) continue;
+      const stability = comparePrefixStability(previous, current);
       const tRatio = `${(stability.transcript.ratio * 100).toFixed(1)}% (${stability.transcript.sharedPrefixChars}/${stability.transcript.previousTotalChars})`;
       const pRatio = stability.providerPayload
         ? `${(stability.providerPayload.ratio * 100).toFixed(1)}% (${stability.providerPayload.sharedPrefixChars}/${stability.providerPayload.previousTotalChars})`
@@ -1233,10 +1241,16 @@ async function executeSessionSlice(
       )
     : undefined;
 
-  const activeRuntime = liveCapture?.modelRuntime ?? offlineCapture!.modelRuntime;
-  const captureExtension = liveCapture?.captureExtension ?? offlineCapture!.captureExtension;
-  const capturedRequests = liveCapture?.requests ?? offlineCapture!.requests;
-  const setNextLabel = liveCapture?.setNextLabel ?? offlineCapture!.setNextLabel;
+  const activeCapture = liveCapture ?? offlineCapture;
+  if (!activeCapture) {
+    throw new Error("Failed to initialize context capture");
+  }
+  const activeRuntime = activeCapture.modelRuntime;
+  const captureExtension = activeCapture.captureExtension;
+  const capturedRequests = activeCapture.requests;
+  const setNextLabel = (label: string | undefined): void => {
+    activeCapture.setNextLabel(label);
+  };
 
   try {
     const provider = options.provider ?? "opencode-go";
@@ -1327,7 +1341,7 @@ async function executeSessionSlice(
     }
 
     const normalizedEntries = normalizeSessionCwd(sliceEntries, process.cwd());
-    const safeTimestamp = header.timestamp.replace(/[:.]/g, "-");
+    const safeTimestamp = header.timestamp.replaceAll(/[:.]/g, "-");
     const sessionFilePath = join(sessionDir, `${safeTimestamp}_${header.id}.jsonl`);
     await writeFile(sessionFilePath, serializeSessionEntriesToJsonl(normalizedEntries), "utf8");
 
@@ -1526,7 +1540,7 @@ async function createOfflineContextCapture(options: {
   };
 
   const origStreamSimple = modelRuntime.streamSimple.bind(modelRuntime);
-  modelRuntime.streamSimple = ((
+  modelRuntime.streamSimple = (
     model: Model<Api>,
     context: TranscriptContext,
     streamOptions?: ModelsSimpleStreamOptions,
@@ -1576,7 +1590,7 @@ async function createOfflineContextCapture(options: {
     })();
 
     return outer;
-  }) as typeof modelRuntime.streamSimple;
+  };
 
   return {
     modelRuntime,
@@ -1610,7 +1624,7 @@ function attachLiveRequestCapture(modelRuntime: ModelRuntime): {
   };
 
   const origStreamSimple = modelRuntime.streamSimple.bind(modelRuntime);
-  modelRuntime.streamSimple = ((
+  modelRuntime.streamSimple = (
     model: Model<Api>,
     context: TranscriptContext,
     streamOptions?: ModelsSimpleStreamOptions,
@@ -1660,7 +1674,7 @@ function attachLiveRequestCapture(modelRuntime: ModelRuntime): {
       () => record(undefined),
     );
     return stream;
-  }) as typeof modelRuntime.streamSimple;
+  };
 
   return {
     modelRuntime,
@@ -1721,9 +1735,13 @@ function resolveSafeOfflineModel(
   }
 }
 
+function isUnknownArray(value: unknown): value is readonly unknown[] {
+  return Array.isArray(value);
+}
+
 function cloneJsonPayload(value: unknown): unknown {
-  return JSON.parse(
-    JSON.stringify(value, (_key, nested) => {
+  return parseJson(
+    JSON.stringify(value, (_key, nested: unknown) => {
       if (typeof AbortSignal !== "undefined" && nested instanceof AbortSignal) {
         return undefined;
       }
@@ -1756,21 +1774,19 @@ function extractUserMessageParts(content: unknown): {
   if (typeof content === "string") {
     return { userText: content, images: [] };
   }
-  if (!Array.isArray(content)) {
+  if (!isUnknownArray(content)) {
     return { userText: "", images: [] };
   }
 
   const textParts: string[] = [];
   const images: ImageContent[] = [];
   for (const block of content) {
-    if (!block || typeof block !== "object") continue;
-    if (block.type === "text" && "text" in block && typeof block.text === "string") {
+    if (!isRecord(block)) continue;
+    if (block.type === "text" && typeof block.text === "string") {
       textParts.push(block.text);
     } else if (
       block.type === "image" &&
-      "data" in block &&
       typeof block.data === "string" &&
-      "mimeType" in block &&
       typeof block.mimeType === "string"
     ) {
       images.push({
@@ -1796,8 +1812,8 @@ function normalizeSessionCwd(entries: readonly FileEntry[], cwd: string): FileEn
 
 function findLastMessageRole(entries: readonly FileEntry[]): string | undefined {
   for (let i = entries.length - 1; i >= 0; i -= 1) {
-    const entry = entries[i]!;
-    if (entry.type === "message") return entry.message.role;
+    const entry = entries[i];
+    if (entry?.type === "message") return entry.message.role;
   }
   return undefined;
 }
@@ -1845,13 +1861,13 @@ function summarizeAgentMessage(message: AgentMessage, index: number): CapturedAg
           parts.push(block.text);
         } else if (block.type === "image") {
           imageCount += 1;
-          parts.push(`[image:${"mimeType" in block ? String(block.mimeType) : "unknown"}]`);
+          parts.push(`[image:${"mimeType" in block ? block.mimeType : "unknown"}]`);
         } else if (block.type === "toolCall" && "name" in block) {
           parts.push(
-            `[toolCall ${String(block.name)}(${JSON.stringify("arguments" in block ? block.arguments : {})})]`,
+            `[toolCall ${block.name}(${JSON.stringify("arguments" in block ? block.arguments : {})})]`,
           );
         } else if (block.type === "thinking" && "thinking" in block) {
-          parts.push(`[thinking: ${String(block.thinking)}]`);
+          parts.push(`[thinking: ${block.thinking}]`);
         }
       }
       text = parts.join("\n");
@@ -1904,19 +1920,17 @@ function renderMessageTextForDisplay(message: Message): string {
 
 function renderCustomContent(content: unknown): string {
   if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    return content
-      .map((block) =>
-        block && typeof block === "object" && "text" in block && typeof block.text === "string"
-          ? block.text
-          : "",
-      )
-      .filter(Boolean)
-      .join("\n");
+  if (isUnknownArray(content)) {
+    const parts: string[] = [];
+    for (const block of content) {
+      if (isRecord(block) && typeof block.text === "string" && block.text.length > 0) {
+        parts.push(block.text);
+      }
+    }
+    return parts.join("\n");
   }
-  if (content && typeof content === "object") {
-    const record = content as Record<string, unknown>;
-    if (typeof record.content === "string") return record.content;
+  if (isRecord(content)) {
+    if (typeof content.content === "string") return content.content;
     return JSON.stringify(content, null, 2);
   }
   return "";
@@ -1982,8 +1996,8 @@ function agentMessageToStep(
           thinkingParts.push(block.thinking);
         } else if (block.type === "toolCall" && "name" in block) {
           toolCalls.push({
-            id: "id" in block ? String(block.id) : "",
-            name: String(block.name),
+            id: "id" in block ? block.id : "",
+            name: block.name,
             arguments: "arguments" in block ? block.arguments : {},
           });
         } else if (block.type === "image") {
@@ -2078,31 +2092,28 @@ function extractProviderPayloadView(
   api: string,
   payload: unknown,
 ): ProviderPayloadView | undefined {
-  if (!payload || typeof payload !== "object") return undefined;
-  const record = payload as Record<string, unknown>;
+  if (!isRecord(payload)) return undefined;
 
   if (api === "google-generative-ai" || api === "google-vertex") {
-    const config = (record.config ?? {}) as Record<string, unknown>;
+    const config = isRecord(payload.config) ? payload.config : {};
     const systemInstruction =
       typeof config.systemInstruction === "string" ? config.systemInstruction : "";
-    const toolsRaw = Array.isArray(config.tools) ? config.tools : [];
+    const toolsRaw = isUnknownArray(config.tools) ? config.tools : [];
     const toolNames: string[] = [];
     for (const toolEntry of toolsRaw) {
-      if (!toolEntry || typeof toolEntry !== "object") continue;
-      const decls = (toolEntry as Record<string, unknown>).functionDeclarations;
-      if (Array.isArray(decls)) {
+      if (!isRecord(toolEntry)) continue;
+      const decls = toolEntry.functionDeclarations;
+      if (isUnknownArray(decls)) {
         for (const decl of decls) {
-          if (decl && typeof decl === "object" && "name" in decl) {
-            toolNames.push(String((decl as Record<string, unknown>).name));
+          if (isRecord(decl) && typeof decl.name === "string") {
+            toolNames.push(decl.name);
           }
         }
       }
     }
-    const contents = Array.isArray(record.contents) ? record.contents : [];
+    const contents = isUnknownArray(payload.contents) ? payload.contents : [];
     const roles = contents.map((item) =>
-      item && typeof item === "object" && "role" in item
-        ? String((item as Record<string, unknown>).role)
-        : "unknown",
+      isRecord(item) && typeof item.role === "string" ? item.role : "unknown",
     );
     return {
       api,
@@ -2114,32 +2125,26 @@ function extractProviderPayloadView(
     };
   }
 
-  if (Array.isArray(record.messages)) {
-    const messages = record.messages;
+  if (isUnknownArray(payload.messages)) {
+    const messages = payload.messages;
     const roles = messages.map((item) =>
-      item && typeof item === "object" && "role" in item
-        ? String((item as Record<string, unknown>).role)
-        : "unknown",
+      isRecord(item) && typeof item.role === "string" ? item.role : "unknown",
     );
     const systemInstructionChars = messages
       .filter(
         (item): item is Record<string, unknown> =>
-          !!item &&
-          typeof item === "object" &&
-          ((item as Record<string, unknown>).role === "system" ||
-            (item as Record<string, unknown>).role === "developer"),
+          isRecord(item) && (item.role === "system" || item.role === "developer"),
       )
       .reduce((sum, item) => sum + JSON.stringify(item.content ?? "").length, 0);
 
-    const toolsRaw = Array.isArray(record.tools) ? record.tools : [];
+    const toolsRaw = isUnknownArray(payload.tools) ? payload.tools : [];
     const toolNames = toolsRaw
       .map((item) => {
-        if (!item || typeof item !== "object") return undefined;
-        const fn = (item as Record<string, unknown>).function;
-        if (fn && typeof fn === "object" && "name" in fn) {
-          return String((fn as Record<string, unknown>).name);
+        if (!isRecord(item)) return undefined;
+        if (isRecord(item.function) && typeof item.function.name === "string") {
+          return item.function.name;
         }
-        if ("name" in item) return String((item as Record<string, unknown>).name);
+        if (typeof item.name === "string") return item.name;
         return undefined;
       })
       .filter((name): name is string => name !== undefined);
@@ -2158,36 +2163,32 @@ function extractProviderPayloadView(
 }
 
 function normalizeProviderPayloadForCache(api: string, payload: unknown): unknown {
-  if (!payload || typeof payload !== "object") return payload;
-  const record = payload as Record<string, unknown>;
+  if (!isRecord(payload)) return payload;
 
   if (api === "google-generative-ai" || api === "google-vertex") {
-    const config =
-      record.config && typeof record.config === "object"
-        ? (record.config as Record<string, unknown>)
-        : {};
+    const config = isRecord(payload.config) ? payload.config : {};
     const { systemInstruction, tools, ...restConfig } = config;
     return {
-      model: record.model,
+      model: payload.model,
       systemInstruction,
       tools,
-      contents: record.contents,
+      contents: payload.contents,
       config: restConfig,
     };
   }
 
-  if (Array.isArray(record.messages)) {
-    const messages = record.messages as Array<Record<string, unknown>>;
+  if (isUnknownArray(payload.messages)) {
+    const messages = payload.messages;
     const systemMessages = messages.filter(
-      (item) => item?.role === "system" || item?.role === "developer",
+      (item) => isRecord(item) && (item.role === "system" || item.role === "developer"),
     );
     const nonSystemMessages = messages.filter(
-      (item) => item?.role !== "system" && item?.role !== "developer",
+      (item) => !isRecord(item) || (item.role !== "system" && item.role !== "developer"),
     );
     return {
-      model: record.model,
+      model: payload.model,
       systemMessages,
-      tools: record.tools,
+      tools: payload.tools,
       messages: nonSystemMessages,
     };
   }
@@ -2196,9 +2197,14 @@ function normalizeProviderPayloadForCache(api: string, payload: unknown): unknow
 }
 
 function stripTimestamps(message: Message): unknown {
-  const cloned = structuredClone(message) as unknown as Record<string, unknown>;
-  delete cloned.timestamp;
-  return cloned;
+  const cloned = structuredClone(message);
+  const stripped: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(cloned)) {
+    if (key !== "timestamp") {
+      stripped[key] = value;
+    }
+  }
+  return stripped;
 }
 
 function commonPrefixLength(left: string, right: string): number {
@@ -2214,8 +2220,8 @@ function findFirstJsonDiffPath(left: unknown, right: unknown, path = "$"): strin
   if (Object.is(left, right)) return undefined;
   if (typeof left !== typeof right || left === null || right === null) return path;
   if (typeof left !== "object") return path;
-  if (Array.isArray(left) || Array.isArray(right)) {
-    if (!Array.isArray(left) || !Array.isArray(right)) return path;
+  if (isUnknownArray(left) || isUnknownArray(right)) {
+    if (!isUnknownArray(left) || !isUnknownArray(right)) return path;
     const min = Math.min(left.length, right.length);
     for (let i = 0; i < min; i += 1) {
       const diff = findFirstJsonDiffPath(left[i], right[i], `${path}[${i}]`);
@@ -2224,19 +2230,18 @@ function findFirstJsonDiffPath(left: unknown, right: unknown, path = "$"): strin
     return left.length === right.length ? undefined : `${path}[${min}]`;
   }
 
-  const leftObj = left as Record<string, unknown>;
-  const rightObj = right as Record<string, unknown>;
-  const keys = new Set([...Object.keys(leftObj), ...Object.keys(rightObj)]);
+  if (!isRecord(left) || !isRecord(right)) return path;
+  const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
   for (const key of keys) {
-    if (!(key in leftObj) || !(key in rightObj)) return `${path}.${key}`;
-    const diff = findFirstJsonDiffPath(leftObj[key], rightObj[key], `${path}.${key}`);
+    if (!(key in left) || !(key in right)) return `${path}.${key}`;
+    const diff = findFirstJsonDiffPath(left[key], right[key], `${path}.${key}`);
     if (diff) return diff;
   }
   return undefined;
 }
 
 function toPreview(text: string, maxLength = 120): string {
-  const singleLine = text.replace(/\s+/gu, " ").trim();
+  const singleLine = text.replaceAll(/\s+/gu, " ").trim();
   return singleLine.length <= maxLength ? singleLine : `${singleLine.slice(0, maxLength - 1)}…`;
 }
 

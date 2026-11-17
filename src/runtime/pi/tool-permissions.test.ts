@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { createStubExtensionApi, type RegisteredToolSummary } from "./pi-test-helpers";
 import { ToolAuthorization } from "./tool-permissions";
 
 test("owner access is determined by session permissions", () => {
@@ -31,16 +31,16 @@ test("MCP resource calls check session permissions for exact servers and listing
   }
 });
 
-test("registered MCP tools use namespace authorization despite truncation and name collisions", () => {
+test("registered MCP tools use namespace authorization despite truncation and name collisions", async () => {
   const auth = new ToolAuthorization(false, { mcp: { servers: { "private-vault": "allow" } } });
   auth.rememberServers(["private-vault", "private_vault"]);
-  let definition: ToolDefinition | undefined;
-  const pi = {
-    registerTool: (tool: ToolDefinition) => {
+  let definition: RegisteredToolSummary | undefined;
+  const pi = createStubExtensionApi({
+    onRegisterTool: (tool) => {
       definition = tool;
     },
-  } as ExtensionAPI;
-  auth.wrap((api) =>
+  });
+  await auth.wrap((api) =>
     api.registerTool({
       name: "mcp__private_vault__truncated_1234",
       namespace: { name: "mcp__private_vault" },

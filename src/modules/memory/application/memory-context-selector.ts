@@ -41,7 +41,7 @@ export function selectMemoryEntries(
             score: scoreMemoryEntry(entry, queryText, queryTerms),
           }))
           .filter(({ score }) => score >= minRelatedScore)
-          .sort((left, right) => {
+          .toSorted((left, right) => {
             const scoreDifference = right.score - left.score;
             if (scoreDifference !== 0) return scoreDifference;
 
@@ -71,6 +71,10 @@ export function isVisibleAt(scope: MemoryEntryScope, location: MemoryLocation): 
       return scope.channelId === location.channelId;
     case "thread":
       return scope.threadId === location.threadId;
+    default: {
+      const exhaustive: never = scope;
+      throw new Error(`Unsupported memory scope: ${String(exhaustive)}`);
+    }
   }
 }
 
@@ -80,8 +84,13 @@ function scopeSpecificity(scope: MemoryEntryScope): number {
       return 1;
     case "thread":
       return 2;
-    default:
+    case "guild":
+    case "owner":
       return 0;
+    default: {
+      const exhaustive: never = scope;
+      throw new Error(`Unsupported memory scope: ${String(exhaustive)}`);
+    }
   }
 }
 
@@ -126,7 +135,7 @@ function extractSearchTerms(value: string): string[] {
 }
 
 function normalizeForSearch(value: string): string {
-  return value.normalize("NFKC").toLocaleLowerCase("ja-JP").replace(/\s+/gu, " ").trim();
+  return value.normalize("NFKC").toLocaleLowerCase("ja-JP").replaceAll(/\s+/gu, " ").trim();
 }
 
 function isJapaneseToken(value: string): boolean {

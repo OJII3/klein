@@ -18,7 +18,9 @@ export function createDiscordSendTool(
       }),
       async execute(_toolCallId, params) {
         await channelApi.sendTyping(channelId);
-        await new Promise((resolve) => setTimeout(resolve, 1_000));
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, 1_000);
+        });
         const sent = await channelApi.sendMessage(channelId, params.content);
         const messageIds = Array.isArray(sent) ? sent : [];
 

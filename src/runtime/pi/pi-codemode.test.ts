@@ -112,7 +112,7 @@ for (const restricted of [false, true]) {
       assert.deepEqual(
         getCurrentTools(requests[0].messages)
           .map((tool) => tool.name)
-          .sort(),
+          .toSorted(),
         [
           "codemode",
           "discord_read",
@@ -124,12 +124,12 @@ for (const restricted of [false, true]) {
           "web_search",
         ]
           .filter((name) => !restricted || name !== "discord_read")
-          .sort(),
+          .toSorted(),
       );
       assert.match(getCurrentSystemPrompt(requests[0].messages), /You are クライン/);
-      const result = requests[1].messages
-        .filter((message) => message.role === "toolResult" && message.toolName === "codemode")
-        .at(-1);
+      const result = requests[1].messages.findLast(
+        (message) => message.role === "toolResult" && message.toolName === "codemode",
+      );
       assert.ok(result && result.role === "toolResult");
       const output = result.content
         .filter((block) => block.type === "text")
@@ -153,7 +153,7 @@ for (const restricted of [false, true]) {
             block.type === "text" && block.text === "Checking the two messages before replying.",
         ),
       );
-      assert.deepEqual(readIds.sort(), restricted ? [] : ["first", "second"]);
+      assert.deepEqual(readIds.toSorted(), restricted ? [] : ["first", "second"]);
       assert.deepEqual(sent, ["……確認したよ"]);
 
       provider.setResponses([

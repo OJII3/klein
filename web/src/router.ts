@@ -41,7 +41,8 @@ export function useRoute(): Route {
 
 function parseRoute(href: string): Route {
   const url = new URL(href, "http://localhost");
-  const [segment] = url.pathname.split("/").filter(Boolean);
+  const segment = url.pathname.split("/").find(Boolean);
+  if (!segment) return { view: "logs" };
 
   switch (segment) {
     case "sessions":

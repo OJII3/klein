@@ -6,6 +6,7 @@ import type {
   AttachedTaskScope,
   AttachedTaskStartInput,
 } from "@agents/core/attached-agent";
+import { createStubExtensionToolContext } from "@agents/testing/test-stubs";
 import { createAttachedControlTools } from "./attached-control";
 
 function createTarget() {
@@ -52,25 +53,23 @@ function createTarget() {
   return { target, started, sent, closed, listed };
 }
 
-function findTool(tools: ReturnType<typeof createAttachedControlTools>, name: string) {
-  const tool = tools.find((candidate) => candidate.name === name);
-  assert.ok(tool, `missing tool ${name}`);
-  return tool;
+function unpackControlTools(tools: ReturnType<typeof createAttachedControlTools>) {
+  const [workerStart, workerSend, workerClose, workerList] = tools;
+  return { workerStart, workerSend, workerClose, workerList };
 }
 
 test("starts a task in the current conversation", async () => {
   const { target, started } = createTarget();
-  const tool = findTool(
+  const { workerStart } = unpackControlTools(
     createAttachedControlTools(target, "channel-1", "public", false),
-    "worker_start",
   );
 
-  const result = await tool.execute(
+  const result = await workerStart.execute(
     "tool-call",
-    { prompt: "investigate" } as never,
+    { prompt: "investigate" },
     undefined,
     undefined,
-    {} as never,
+    await createStubExtensionToolContext(),
   );
 
   assert.deepEqual(started, [
@@ -86,17 +85,16 @@ test("starts a task in the current conversation", async () => {
 
 test("sends a follow-up to a task with bound scope", async () => {
   const { target, sent } = createTarget();
-  const tool = findTool(
+  const { workerSend } = unpackControlTools(
     createAttachedControlTools(target, "channel-1", "public", false),
-    "worker_send",
   );
 
-  const result = await tool.execute(
+  const result = await workerSend.execute(
     "tool-call",
-    { taskId: "task-1", message: "check again" } as never,
+    { taskId: "task-1", message: "check again" },
     undefined,
     undefined,
-    {} as never,
+    await createStubExtensionToolContext(),
   );
 
   assert.deepEqual(sent, [
@@ -114,17 +112,16 @@ test("sends a follow-up to a task with bound scope", async () => {
 
 test("closes a task with bound scope", async () => {
   const { target, closed } = createTarget();
-  const tool = findTool(
+  const { workerClose } = unpackControlTools(
     createAttachedControlTools(target, "channel-1", "public", false),
-    "worker_close",
   );
 
-  const result = await tool.execute(
+  const result = await workerClose.execute(
     "tool-call",
-    { taskId: "task-1" } as never,
+    { taskId: "task-1" },
     undefined,
     undefined,
-    {} as never,
+    await createStubExtensionToolContext(),
   );
 
   assert.deepEqual(closed, [
@@ -141,12 +138,17 @@ test("closes a task with bound scope", async () => {
 
 test("lists the tasks of the current conversation and accessScope", async () => {
   const { target, listed } = createTarget();
-  const tool = findTool(
+  const { workerList } = unpackControlTools(
     createAttachedControlTools(target, "channel-1", "public", false),
-    "worker_list",
   );
 
-  const result = await tool.execute("tool-call", {} as never, undefined, undefined, {} as never);
+  const result = await workerList.execute(
+    "tool-call",
+    {},
+    undefined,
+    undefined,
+    await createStubExtensionToolContext(),
+  );
 
   assert.deepEqual(listed, [
     { conversationKey: { kind: "discord", channelId: "channel-1" }, accessScope: "public" },
@@ -158,33 +160,29 @@ test("rejects worker_send, worker_close, and worker_list outside the bound scope
   const { target } = createTarget();
   const otherChannelTools = createAttachedControlTools(target, "channel-2", "public", false);
   const otherScopeTools = createAttachedControlTools(target, "channel-1", "owner:123", true);
+  const ctx = await createStubExtensionToolContext();
 
-  for (const tools of [otherChannelTools, otherScopeTools]) {
-    const sendResult = await findTool(tools, "worker_send").execute(
+  for (const rawTools of [otherChannelTools, otherScopeTools]) {
+    const { workerSend, workerClose, workerList } = unpackControlTools(rawTools);
+    const sendResult = await workerSend.execute(
       "tool-call",
-      { taskId: "task-1", message: "hijack" } as never,
+      { taskId: "task-1", message: "hijack" },
       undefined,
       undefined,
-      {} as never,
+      ctx,
     );
     assert.deepEqual(sendResult.details, { taskId: "task-1", sent: false });
 
-    const closeResult = await findTool(tools, "worker_close").execute(
+    const closeResult = await workerClose.execute(
       "tool-call",
-      { taskId: "task-1" } as never,
+      { taskId: "task-1" },
       undefined,
       undefined,
-      {} as never,
+      ctx,
     );
     assert.deepEqual(closeResult.details, { taskId: "task-1", closed: false });
 
-    const listResult = await findTool(tools, "worker_list").execute(
-      "tool-call",
-      {} as never,
-      undefined,
-      undefined,
-      {} as never,
-    );
+    const listResult = await workerList.execute("tool-call", {}, undefined, undefined, ctx);
     assert.deepEqual(listResult.details, { tasks: [] });
   }
 });

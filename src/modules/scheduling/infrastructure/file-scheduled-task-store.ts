@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
+import { isFileNotFound, parseJson } from "@shared/type-guards";
+
 import {
   parseScheduledTask,
   type ReminderTask,
@@ -23,7 +25,7 @@ export class FileScheduledTaskStore implements ScheduledTaskStore {
     return tasks
       .filter((task) => task.kind !== "watch" || task.enabled)
       .filter((task) => Date.parse(task.nextRunAt) <= now)
-      .sort((left, right) => left.nextRunAt.localeCompare(right.nextRunAt));
+      .toSorted((left, right) => left.nextRunAt.localeCompare(right.nextRunAt));
   }
 
   async listForScope(
@@ -52,7 +54,7 @@ export class FileScheduledTaskStore implements ScheduledTaskStore {
         (task) =>
           task.kind === kind && task.channelId === channelId && task.accessScope === accessScope,
       )
-      .sort((left, right) => left.nextRunAt.localeCompare(right.nextRunAt));
+      .toSorted((left, right) => left.nextRunAt.localeCompare(right.nextRunAt));
   }
 
   async delete(
@@ -64,7 +66,7 @@ export class FileScheduledTaskStore implements ScheduledTaskStore {
     const path = this.getFilePath(taskId);
     let task: ScheduledTask;
     try {
-      task = parseScheduledTask(JSON.parse(await readFile(path, "utf8")));
+      task = parseScheduledTask(parseJson(await readFile(path, "utf8")));
     } catch (error) {
       if (isFileNotFound(error)) return false;
       throw error;
@@ -83,7 +85,7 @@ export class FileScheduledTaskStore implements ScheduledTaskStore {
   private async readAll(): Promise<ScheduledTask[]> {
     const paths = await this.getFiles();
     return Promise.all(
-      paths.map(async (path) => parseScheduledTask(JSON.parse(await readFile(path, "utf8")))),
+      paths.map(async (path) => parseScheduledTask(parseJson(await readFile(path, "utf8")))),
     );
   }
 
@@ -112,8 +114,4 @@ export class FileScheduledTaskStore implements ScheduledTaskStore {
   private getFilePath(taskId: string): string {
     return resolve(this.directory, `${encodeURIComponent(taskId)}.json`);
   }
-}
-
-function isFileNotFound(error: unknown): boolean {
-  return error instanceof Error && "code" in error && error.code === "ENOENT";
 }

@@ -3,18 +3,25 @@ import test from "node:test";
 
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 
-import type { AgentFactory, AgentToolContext } from "../core/agent-factory";
-import type { AgentRuntime } from "../core/agent-runtime";
-import type { AgentTool } from "../core/agent-tool";
-import { DiscordAgent } from "./discord-agent";
-import { createDiscordAgentTools } from "./discord-tools";
-import type { AgentEvent } from "../core/agent-event";
-import type { AgentTurn } from "../core/agent-turn";
+import {
+  InMemoryScheduledTaskStore,
+  createStubAgentToolContext,
+  createStubDiscordChannelApi,
+  createStubExtensionToolContext,
+  createStubTextToSpeech,
+} from "@agents/testing/test-stubs";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
 import type { WatchCheckRunner } from "@modules/scheduling/application/watch-check-runner";
-import type { ReminderTask, ScheduledTask } from "@modules/scheduling/domain/scheduled-task";
 import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
+import { isRecord } from "@shared/type-guards";
+import type { AgentEvent } from "../core/agent-event";
+import type { AgentFactory, AgentToolContext } from "../core/agent-factory";
+import type { AgentRuntime } from "../core/agent-runtime";
+import type { AgentTool } from "../core/agent-tool";
+import type { AgentTurn } from "../core/agent-turn";
+import { DiscordAgent } from "./discord-agent";
+import { createDiscordAgentTools } from "./discord-tools";
 
 const silentWatchCheckRunner: WatchCheckRunner = {
   async run() {
@@ -67,6 +74,37 @@ function createToolsFor(
     });
 }
 
+async function executeToolByName(
+  tools: readonly ToolDefinition[],
+  name: string,
+  params: Record<string, unknown>,
+) {
+  const found = tools.find((candidate) => candidate.name === name);
+  assert.ok(found);
+  return found.execute(
+    "call",
+    params,
+    undefined,
+    undefined,
+    await createStubExtensionToolContext(),
+  );
+}
+
+function requireDetailsRecord(details: unknown): Record<string, unknown> {
+  if (!isRecord(details)) {
+    assert.fail("Expected tool result details to be a record");
+  }
+  return details;
+}
+
+function requireStringField(details: unknown, key: string): string {
+  const value = requireDetailsRecord(details)[key];
+  if (typeof value !== "string") {
+    assert.fail(`Expected string field '${key}' in tool result details`);
+  }
+  return value;
+}
+
 test("routes voice replies through discord_speak using the existing runtime prompt", async () => {
   let tools: readonly ToolDefinition[] = [];
   const spoken: string[] = [];
@@ -81,14 +119,14 @@ test("routes voice replies through discord_speak using the existing runtime prom
         { type: "text", text: "さつき (@satsuki):\n読み取った本文\n[添付画像: sample.png]" },
         { type: "image", data: "c2VjcmV0", mimeType: "image/png" },
       ]);
-      const tool = tools.find((tool) => tool.name === "discord_speak");
-      assert.ok(tool);
-      await tool.execute(
+      const speakTool = tools.find((candidate) => candidate.name === "discord_speak");
+      assert.ok(speakTool);
+      await speakTool.execute(
         "tool-call",
-        { text: "LLMの返答" } as never,
+        { text: "LLMの返答" },
         undefined,
         undefined,
-        {} as never,
+        await createStubExtensionToolContext(),
       );
       return undefined;
     },
@@ -97,17 +135,21 @@ test("routes voice replies through discord_speak using the existing runtime prom
   const agentFactory: AgentFactory = {
     async create(definition, createTools) {
       assert.equal(definition.systemPrompt, "voice system prompt");
-      tools = createTools({ requesterId: () => undefined }) as readonly ToolDefinition[];
+      createTools({ requesterId: () => undefined });
       return runtime;
     },
   };
+  const buildTools = createToolsFor(createStubDiscordChannelApi(), "channel-123", {
+    speak: async (text, toolCallId) => {
+      assert.equal(toolCallId, "tool-call");
+      spoken.push(text);
+    },
+  });
   const agent = await DiscordAgent.create(agentFactory, "channel-123", "voice system prompt", {
-    tools: createToolsFor({} as DiscordChannelApi, "channel-123", {
-      speak: async (text, toolCallId) => {
-        assert.equal(toolCallId, "tool-call");
-        spoken.push(text);
-      },
-    }),
+    tools: (toolContext) => {
+      tools = buildTools(toolContext);
+      return tools;
+    },
   });
 
   assert.ok(tools.some((tool) => tool.name === "discord_speak"));
@@ -118,7 +160,7 @@ test("routes voice replies through discord_speak using the existing runtime prom
 });
 
 test("adds discord_ask only when a turn requester is available", () => {
-  const channelApi = {} as DiscordChannelApi;
+  const channelApi = createStubDiscordChannelApi();
   const withRequester = createDiscordAgentTools({
     analyzeImage: async () => "",
     channelApi,
@@ -140,7 +182,7 @@ test("adds discord_ask only when a turn requester is available", () => {
 });
 
 test("marks the Discord surface tools so the core layer can reject them", () => {
-  const channelApi = {} as DiscordChannelApi;
+  const channelApi = createStubDiscordChannelApi();
   const withSpeak = createDiscordAgentTools({
     analyzeImage: async () => "",
     channelApi,
@@ -155,26 +197,28 @@ test("marks the Discord surface tools so the core layer can reject them", () => 
     channelApi,
     channelId: "channel-123",
     ownerFeaturesAllowed: false,
-    tts: {} as never,
+    tts: createStubTextToSpeech(),
     watchCheckRunner: silentWatchCheckRunner,
   });
 
-  const surfaceNames = [...withSpeak, ...withVoice]
-    .filter((tool) => (tool as AgentTool).surface === true)
+  const combinedTools: readonly AgentTool[] = [...withSpeak, ...withVoice];
+
+  const surfaceNames = combinedTools
+    .filter((tool) => tool.surface === true)
     .map((tool) => tool.name)
-    .sort();
+    .toSorted();
   assert.deepEqual(surfaceNames, ["discord_ask", "discord_send", "discord_speak", "discord_voice"]);
 
-  const primarySurfaceNames = [...withSpeak, ...withVoice]
-    .filter((tool) => (tool as AgentTool).primarySurface === true)
+  const primarySurfaceNames = combinedTools
+    .filter((tool) => tool.primarySurface === true)
     .map((tool) => tool.name)
-    .sort();
+    .toSorted();
   assert.deepEqual(primarySurfaceNames, ["discord_send", "discord_speak"]);
 
   const surfaceOutcomes = Object.fromEntries(
-    [...withSpeak, ...withVoice]
-      .filter((tool) => (tool as AgentTool).surfaceOutcome !== undefined)
-      .map((tool) => [tool.name, (tool as AgentTool).surfaceOutcome]),
+    combinedTools
+      .filter((tool) => tool.surfaceOutcome !== undefined)
+      .map((tool) => [tool.name, tool.surfaceOutcome]),
   );
   assert.deepEqual(surfaceOutcomes, {
     discord_ask: "Asked a question in Discord.",
@@ -245,43 +289,38 @@ test("wires the runtime image analyzer into discord_read", async () => {
   };
   const agentFactory: AgentFactory = {
     async create(_definition, createTools) {
-      tools = createTools({
+      createTools({
         async analyzeImage(prompt) {
           analyzedPrompt = prompt;
           return "画像解析結果";
         },
         requesterId: () => undefined,
-      }) as readonly ToolDefinition[];
+      });
       return runtime;
     },
   };
-  const channelApi: DiscordChannelApi = {
-    async getChannelLocation(channelId) {
-      return { channelId };
-    },
-    async sendTyping() {},
-    async sendMessage() {},
-    async sendChoices() {
-      throw new Error("Unexpected choice send");
-    },
-    async sendAudio() {},
+  const channelApi = createStubDiscordChannelApi({
     async readMessage() {
       return message;
     },
-  };
+  });
 
+  const buildTools = createToolsFor(channelApi, "channel-123");
   const agent = await DiscordAgent.create(agentFactory, "channel-123", "system prompt", {
-    tools: createToolsFor(channelApi, "channel-123"),
+    tools: (toolContext) => {
+      tools = buildTools(toolContext);
+      return tools;
+    },
   });
   const readTool = tools.find((tool) => tool.name === "discord_read");
   assert.ok(readTool);
 
   const result = await readTool.execute(
     "tool-call",
-    { messageId: "message-456", focus: "エラーの内容" } as never,
+    { messageId: "message-456", focus: "エラーの内容" },
     undefined,
     undefined,
-    {} as never,
+    await createStubExtensionToolContext(),
   );
 
   assert.deepEqual(analyzedPrompt, {
@@ -371,7 +410,7 @@ test("binds private reads to the owner and refuses other authors or channels", a
   const factory: AgentFactory = {
     async create(_definition, createTools, options) {
       assert.equal(options.ownerFeaturesAllowed, true);
-      tools = createTools({ requesterId: () => undefined }) as readonly ToolDefinition[];
+      createTools({ requesterId: () => undefined });
       return {
         async prompt(turn) {
           prompts.push(turn);
@@ -384,26 +423,36 @@ test("binds private reads to the owner and refuses other authors or channels", a
       };
     },
   };
-  const service = {
+  const service = createStubDiscordChannelApi({
     async readMessage(_locator, trustedRequester) {
       requester = trustedRequester;
       return { ...message, images: [] };
     },
-  } as Pick<DiscordChannelApi, "readMessage"> as DiscordChannelApi;
+  });
+  const buildTools = createToolsFor(service, message.channelId, {
+    ownerFeaturesAllowed: true,
+    ownerUserId: message.author.id,
+  });
   const agent = await DiscordAgent.create(factory, message.channelId, "system", {
     ownerUserId: message.author.id,
     ownerFeaturesAllowed: true,
-    tools: createToolsFor(service, message.channelId, {
-      ownerFeaturesAllowed: true,
-      ownerUserId: message.author.id,
-    }),
+    tools: (toolContext) => {
+      tools = buildTools(toolContext);
+      return tools;
+    },
   });
   await agent.promptMessage(message);
   await agent.steerMessage(message);
   assert.ok(prompts.every((turn) => !("ownerFeaturesAllowed" in turn.event)));
   const read = tools.find((tool) => tool.name === "discord_read");
   assert.ok(read);
-  await read.execute("read", { messageId: message.id } as never, undefined, undefined, {} as never);
+  await read.execute(
+    "read",
+    { messageId: message.id },
+    undefined,
+    undefined,
+    await createStubExtensionToolContext(),
+  );
   assert.deepEqual(requester, { userId: message.author.id });
   for (const invalid of [
     { ...message, author: { ...message.author, id: "other" } },
@@ -427,40 +476,23 @@ function eventText(event: AgentEvent | undefined): string {
 }
 
 test("keeps reminders across session rotation and isolates channel and access scopes", async () => {
-  const reminders = new Map<string, ScheduledTask>();
-  const store = {
-    async create(task: ScheduledTask) {
-      reminders.set(task.id, task);
-    },
-    async listForScope(kind: ScheduledTask["kind"], channelId: string, accessScope: string) {
-      return [...reminders.values()].filter(
-        (task) =>
-          task.kind === kind && task.channelId === channelId && task.accessScope === accessScope,
-      );
-    },
-    async listDue() {
-      return [];
-    },
-    async delete(_kind: ScheduledTask["kind"], channelId: string, accessScope: string, id: string) {
-      const task = reminders.get(id);
-      if (task?.channelId !== channelId || task.accessScope !== accessScope) return false;
-      return reminders.delete(id);
-    },
-    async update(task: ScheduledTask) {
-      reminders.set(task.id, task);
-    },
-  } as unknown as ScheduledTaskStore;
-  async function createTools(
+  const store = new InMemoryScheduledTaskStore();
+  async function createSessionTools(
     sessionKey: string,
     channelId: string,
     ownerFeaturesAllowed: boolean,
     ownerUserId?: string,
   ) {
     let tools: readonly ToolDefinition[] = [];
+    const buildTools = createToolsFor(createStubDiscordChannelApi(), channelId, {
+      ownerFeaturesAllowed,
+      ownerUserId,
+      scheduledTaskStore: store,
+    });
     await DiscordAgent.create(
       {
-        async create(_definition, createTools) {
-          tools = createTools({ requesterId: () => undefined }) as readonly ToolDefinition[];
+        async create(_definition, createAgentTools) {
+          createAgentTools({ requesterId: () => undefined });
           return {
             async prompt() {
               return undefined;
@@ -475,55 +507,46 @@ test("keeps reminders across session rotation and isolates channel and access sc
         sessionKey,
         ownerFeaturesAllowed,
         ownerUserId,
-        tools: createToolsFor({} as DiscordChannelApi, channelId, {
-          ownerFeaturesAllowed,
-          ownerUserId,
-          scheduledTaskStore: store,
-        }),
+        tools: (toolContext) => {
+          tools = buildTools(toolContext);
+          return tools;
+        },
       },
     );
     return tools;
   }
-  async function execute(tools: readonly ToolDefinition[], name: string, params: unknown) {
-    const tool = tools.find((tool) => tool.name === name);
-    assert.ok(tool);
-    return tool.execute("call", params as never, undefined, undefined, {} as never);
-  }
-  const original = await createTools("session-old", "channel-a", false, "123");
-  const added = await execute(original, "reminder_add", {
+
+  const original = await createSessionTools("session-old", "channel-a", false, "123");
+  const added = await executeToolByName(original, "reminder_add", {
     message: "定例会",
     schedule: { type: "after", minutes: 1 },
   });
-  const id = (added.details as { id: string }).id;
-  const rotated = await createTools("session-new", "channel-a", false, "123");
-  assert.equal(
-    (
-      (await execute(rotated, "reminder_list", {})).details as unknown as {
-        reminders: ReminderTask[];
-      }
-    ).reminders.length,
-    1,
-  );
+  const id = requireStringField(added.details, "id");
+  const rotated = await createSessionTools("session-new", "channel-a", false, "123");
+  const rotatedList = requireDetailsRecord(
+    (await executeToolByName(rotated, "reminder_list", {})).details,
+  ).reminders;
+  assert.ok(Array.isArray(rotatedList));
+  assert.equal(rotatedList.length, 1);
+
   for (const tools of [
-    await createTools("session-new", "channel-b", false, "123"),
-    await createTools("session-new", "channel-a", true, "123"),
-    await createTools("session-new", "channel-a", true, "456"),
+    await createSessionTools("session-new", "channel-b", false, "123"),
+    await createSessionTools("session-new", "channel-a", true, "123"),
+    await createSessionTools("session-new", "channel-a", true, "456"),
   ]) {
     assert.deepEqual(
-      (
-        (await execute(tools, "reminder_list", {})).details as unknown as {
-          reminders: ReminderTask[];
-        }
-      ).reminders,
+      requireDetailsRecord((await executeToolByName(tools, "reminder_list", {})).details).reminders,
       [],
     );
     assert.equal(
-      ((await execute(tools, "reminder_delete", { id })).details as { deleted: boolean }).deleted,
+      requireDetailsRecord((await executeToolByName(tools, "reminder_delete", { id })).details)
+        .deleted,
       false,
     );
   }
   assert.equal(
-    ((await execute(rotated, "reminder_delete", { id })).details as { deleted: boolean }).deleted,
+    requireDetailsRecord((await executeToolByName(rotated, "reminder_delete", { id })).details)
+      .deleted,
     true,
   );
   for (const [allowed, userId, expectedScope] of [
@@ -531,42 +554,30 @@ test("keeps reminders across session rotation and isolates channel and access sc
     [true, undefined, "public"],
     [false, "123", "public"],
   ] as const) {
-    const tools = await createTools("session-any", "channel-a", allowed, userId);
-    const result = await execute(tools, "reminder_add", {
+    const tools = await createSessionTools("session-any", "channel-a", allowed, userId);
+    const result = await executeToolByName(tools, "reminder_add", {
       message: "通知",
       schedule: { type: "after", minutes: 1 },
     });
-    assert.equal(reminders.get((result.details as { id: string }).id)?.accessScope, expectedScope);
+    assert.equal(
+      store.tasks.get(requireStringField(result.details, "id"))?.accessScope,
+      expectedScope,
+    );
   }
 });
 
 test("exposes watch tools in every session with the session scope", async () => {
-  const created: ScheduledTask[] = [];
-  const store = {
-    async create(task: ScheduledTask) {
-      created.push(task);
-    },
-    async listForScope() {
-      return [];
-    },
-    async listDue() {
-      return [];
-    },
-    async delete() {
-      return false;
-    },
-    async update() {},
-  } as unknown as ScheduledTaskStore;
-  const ownerTools = createToolsFor({} as DiscordChannelApi, "channel-a", {
+  const store = new InMemoryScheduledTaskStore();
+  const ownerTools = createToolsFor(createStubDiscordChannelApi(), "channel-a", {
     ownerFeaturesAllowed: true,
     ownerUserId: "123",
     scheduledTaskStore: store,
-  })({} as never);
-  const publicTools = createToolsFor({} as DiscordChannelApi, "channel-a", {
+  })(createStubAgentToolContext());
+  const publicTools = createToolsFor(createStubDiscordChannelApi(), "channel-a", {
     ownerFeaturesAllowed: false,
     ownerUserId: "123",
     scheduledTaskStore: store,
-  })({} as never);
+  })(createStubAgentToolContext());
 
   assert.ok(ownerTools.some((tool) => tool.name === "watch_add"));
   const publicWatchTool = publicTools.find((tool) => tool.name === "watch_add");
@@ -578,10 +589,10 @@ test("exposes watch tools in every session with the session scope", async () => 
       schedule: { type: "every", minutes: 15 },
       script: "return 1;",
       message: "確認してください。",
-    } as never,
+    },
     undefined,
     undefined,
-    {} as never,
+    await createStubExtensionToolContext(),
   );
-  assert.equal(created.at(-1)?.accessScope, "public");
+  assert.equal(store.created.at(-1)?.accessScope, "public");
 });

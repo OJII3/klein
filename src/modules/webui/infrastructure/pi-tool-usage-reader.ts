@@ -1,6 +1,7 @@
 import { open, stat } from "node:fs/promises";
 
 import { parseSessionEntries, type FileEntry } from "@earendil-works/pi-coding-agent";
+import { isFileNotFound } from "@shared/type-guards";
 
 import type { McpServerUsageStat, ToolUsageReport, ToolUsageStat } from "../domain/tool-usage";
 import type { ToolUsageReader } from "../ports/viewer-readers";
@@ -46,7 +47,7 @@ export class PiToolUsageReader implements ToolUsageReader {
       try {
         await this.ingest(filePath);
       } catch (error) {
-        if (isNodeError(error) && error.code === "ENOENT") continue;
+        if (isFileNotFound(error)) continue;
         throw error;
       }
     }
@@ -137,7 +138,7 @@ export class PiToolUsageReader implements ToolUsageReader {
         lastCalledAt: formatTimestamp(counter.lastCalledAt),
         name,
       }))
-      .sort((left, right) => right.calls - left.calls || left.name.localeCompare(right.name));
+      .toSorted((left, right) => right.calls - left.calls || left.name.localeCompare(right.name));
 
     const serverStats: McpServerUsageStat[] = [...mcpServers.entries()]
       .map(([name, counter]) => ({
@@ -147,7 +148,7 @@ export class PiToolUsageReader implements ToolUsageReader {
         name,
         toolCount: counter.toolNames.size,
       }))
-      .sort((left, right) => right.calls - left.calls || left.name.localeCompare(right.name));
+      .toSorted((left, right) => right.calls - left.calls || left.name.localeCompare(right.name));
 
     return {
       mcpServers: serverStats,
@@ -213,8 +214,4 @@ function latestTimestamp(
 
 function formatTimestamp(value: number | undefined): string | null {
   return value === undefined ? null : new Date(value).toISOString();
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && "code" in error;
 }

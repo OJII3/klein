@@ -25,9 +25,9 @@ export function EmptyState({ children }: { children: string }) {
 
 export function LoadingState({ label = "読み込み中…" }: { label?: string }) {
   return (
-    <div className="flex items-center justify-center gap-2.5 px-4 py-12" role="status">
+    <output className="flex items-center justify-center gap-2.5 px-4 py-12">
       <span aria-hidden="true" className="loading loading-spinner loading-sm text-primary" />
       <span className="text-sm text-ink-faint">{label}</span>
-    </div>
+    </output>
   );
 }

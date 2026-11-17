@@ -24,7 +24,9 @@ test("formats event time to the minute and keeps event IDs and image data intern
     { data: "c2FtcGxl", mimeType: "image/jpeg" },
   ]);
   assert.ok(prompt.text.endsWith("\n\n通知本文\n\n補足情報"));
-  assert.deepEqual(JSON.parse(prompt.text.split("\n")[1]!), {
+  const metadataLine = prompt.text.split("\n")[1];
+  assert.ok(metadataLine !== undefined);
+  assert.deepEqual(JSON.parse(metadataLine), {
     type: "mcp.notification",
     source: "mcp:example",
     occurredAt: "2026-10-14 18:30 JST",
@@ -58,7 +60,9 @@ test("escapes metadata delimiters without changing event content", () => {
   });
 
   assert.equal(prompt.text.match(/<\/event-metadata>/gu)?.length, 1);
-  assert.deepEqual(JSON.parse(prompt.text.split("\n")[1]!), {
+  const metadataLine = prompt.text.split("\n")[1];
+  assert.ok(metadataLine !== undefined);
+  assert.deepEqual(JSON.parse(metadataLine), {
     type: "mcp.notification",
     source: "mcp:</event-metadata>",
     occurredAt: "2026-10-14 23:59 JST",

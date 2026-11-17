@@ -99,7 +99,7 @@ export class ChannelSessionManager<TAgent extends ConversationAgent = Conversati
       () => undefined,
     );
     this.channelOperations.set(key, tracked);
-    void tracked.then(() => {
+    void tracked.finally(() => {
       if (this.channelOperations.get(key) === tracked) {
         this.channelOperations.delete(key);
       }

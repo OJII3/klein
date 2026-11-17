@@ -1,11 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { ButtonInteraction, Client } from "discord.js";
+
+import { isRecord } from "@shared/type-guards";
 
 import type { DiscordAccess } from "../domain/discord-access-policy";
 import type { PendingDiscordAccessRequest } from "../ports/discord-access-request-store";
 import type { DiscordAccessRuleTarget } from "../ports/discord-access-rule-store";
-import { DiscordChannelAccessRequester } from "./discord-channel-access-request";
+import {
+  DiscordChannelAccessRequester,
+  type DiscordChannelAccessButtonInteraction,
+  type DiscordChannelAccessClient,
+} from "./discord-channel-access-request";
 
 interface ContainerJson {
   readonly accent_color?: number;
@@ -15,39 +20,65 @@ interface ContainerJson {
   }>;
 }
 
-function toJson(payload: { components: Array<{ toJSON: () => unknown }> }): ContainerJson[] {
-  return payload.components.map((component) => component.toJSON() as ContainerJson);
+function parseContainerJson(value: unknown): ContainerJson {
+  assert.ok(isRecord(value));
+  assert.ok(Array.isArray(value.components));
+  return {
+    ...(typeof value.accent_color === "number" ? { accent_color: value.accent_color } : {}),
+    components: value.components.map((entry: unknown) => {
+      assert.ok(isRecord(entry));
+      const nested = Array.isArray(entry.components)
+        ? entry.components.map((button: unknown) => {
+            assert.ok(isRecord(button));
+            return {
+              ...(typeof button.custom_id === "string" ? { custom_id: button.custom_id } : {}),
+              ...(typeof button.label === "string" ? { label: button.label } : {}),
+            };
+          })
+        : undefined;
+      return {
+        ...(typeof entry.content === "string" ? { content: entry.content } : {}),
+        ...(nested ? { components: nested } : {}),
+      };
+    }),
+  };
+}
+
+function toJson(payload: {
+  components: ReadonlyArray<{ toJSON: () => unknown }>;
+}): ContainerJson[] {
+  return payload.components.map((component) => parseContainerJson(component.toJSON()));
 }
 
 function createHarness() {
-  const sent: Array<{ components: Array<{ toJSON: () => unknown }> }> = [];
-  const edits: Array<{ components: Array<{ toJSON: () => unknown }> }> = [];
+  const sent: Array<{ components: ReadonlyArray<{ toJSON: () => unknown }> }> = [];
+  const edits: Array<{ components: ReadonlyArray<{ toJSON: () => unknown }> }> = [];
   const channel = {
-    send: async (payload: { components: Array<{ toJSON: () => unknown }> }) => {
+    send: async (payload: { components: ReadonlyArray<{ toJSON: () => unknown }> }) => {
       sent.push(payload);
       return { id: `pending-message-${sent.length}` };
     },
     messages: {
       fetch: async (messageId: string) => ({
         id: messageId,
-        edit: async (payload: { components: Array<{ toJSON: () => unknown }> }) => {
+        edit: async (payload: { components: ReadonlyArray<{ toJSON: () => unknown }> }) => {
           edits.push(payload);
         },
       }),
     },
   };
-  const ownerMessages: Array<{ components: Array<{ toJSON: () => unknown }> }> = [];
+  const ownerMessages: Array<{ components: ReadonlyArray<{ toJSON: () => unknown }> }> = [];
   const owner = {
-    send: async (payload: { components: Array<{ toJSON: () => unknown }> }) => {
+    send: async (payload: { components: ReadonlyArray<{ toJSON: () => unknown }> }) => {
       ownerMessages.push(payload);
       return { id: "owner-message" };
     },
   };
-  const client = {
+  const client: DiscordChannelAccessClient = {
     channels: { fetch: async (id: string) => (id === "pending-channel" ? channel : null) },
     users: { fetch: async () => owner },
     guilds: { cache: new Map([["guild-123", { name: "テストサーバー" }]]) },
-  } as unknown as Client;
+  };
   const updates: Array<{ target: DiscordAccessRuleTarget; access: DiscordAccess }> = [];
   const store = {
     async load() {},
@@ -155,14 +186,16 @@ test("keeps a pending request usable after a restart", async () => {
   assert.equal(harness.sent.length, 1);
   assert.equal(harness.ownerMessages.length, 1);
 
-  const customId = toJson(harness.ownerMessages[0]!)[0]?.components[1]?.components?.[0]?.custom_id;
+  const [ownerMessage] = harness.ownerMessages;
+  assert.ok(ownerMessage);
+  const customId = toJson(ownerMessage)[0]?.components[1]?.components?.[0]?.custom_id;
   assert.ok(customId);
-  const interaction = {
+  const interaction: DiscordChannelAccessButtonInteraction = {
     customId,
     user: { id: "owner-123" },
     reply: async () => undefined,
     update: async () => undefined,
-  } as unknown as ButtonInteraction;
+  };
 
   assert.equal(await afterRestart.handleButton(interaction), true);
   assert.deepEqual(harness.updates, [
@@ -184,18 +217,20 @@ test("allows the channel and updates both messages when the owner accepts", asyn
   );
   await requester.request(request);
 
-  const customId = toJson(harness.ownerMessages[0]!)[0]?.components[1]?.components?.[0]?.custom_id;
+  const [ownerMessage] = harness.ownerMessages;
+  assert.ok(ownerMessage);
+  const customId = toJson(ownerMessage)[0]?.components[1]?.components?.[0]?.custom_id;
   assert.ok(customId);
 
-  const updated: Array<{ components: Array<{ toJSON: () => unknown }> }> = [];
-  const interaction = {
+  const updated: Array<{ components: ReadonlyArray<{ toJSON: () => unknown }> }> = [];
+  const interaction: DiscordChannelAccessButtonInteraction = {
     customId,
     user: { id: "owner-123" },
     reply: async () => undefined,
-    update: async (payload: { components: Array<{ toJSON: () => unknown }> }) => {
+    update: async (payload) => {
       updated.push(payload);
     },
-  } as unknown as ButtonInteraction;
+  };
 
   assert.equal(await requester.handleButton(interaction), true);
   assert.deepEqual(harness.updates, [
@@ -204,10 +239,14 @@ test("allows the channel and updates both messages when the owner accepts", asyn
       access: "allow",
     },
   ]);
-  assert.match(toJson(updated[0]!)[0]?.components[0]?.content ?? "", /許可しました/u);
-  assert.match(toJson(updated[0]!)[0]?.components[0]?.content ?? "", /テストサーバー/u);
-  assert.match(toJson(updated[0]!)[0]?.components[0]?.content ?? "", /#thread-name/u);
-  assert.match(toJson(harness.edits[0]!)[0]?.components[0]?.content ?? "", /許可されました/u);
+  const [firstUpdate] = updated;
+  assert.ok(firstUpdate);
+  const [firstEdit] = harness.edits;
+  assert.ok(firstEdit);
+  assert.match(toJson(firstUpdate)[0]?.components[0]?.content ?? "", /許可しました/u);
+  assert.match(toJson(firstUpdate)[0]?.components[0]?.content ?? "", /テストサーバー/u);
+  assert.match(toJson(firstUpdate)[0]?.components[0]?.content ?? "", /#thread-name/u);
+  assert.match(toJson(firstEdit)[0]?.components[0]?.content ?? "", /許可されました/u);
   assert.equal(harness.persistedRequests.size, 0);
 });
 
@@ -221,15 +260,17 @@ test("rejects the channel when the owner denies", async () => {
   );
   await requester.request(request);
 
-  const customId = toJson(harness.ownerMessages[0]!)[0]?.components[1]?.components?.[1]?.custom_id;
+  const [ownerMessage] = harness.ownerMessages;
+  assert.ok(ownerMessage);
+  const customId = toJson(ownerMessage)[0]?.components[1]?.components?.[1]?.custom_id;
   assert.ok(customId);
 
-  const interaction = {
+  const interaction: DiscordChannelAccessButtonInteraction = {
     customId,
     user: { id: "owner-123" },
     reply: async () => undefined,
     update: async () => undefined,
-  } as unknown as ButtonInteraction;
+  };
 
   await requester.handleButton(interaction);
 
@@ -239,7 +280,9 @@ test("rejects the channel when the owner denies", async () => {
       access: "deny",
     },
   ]);
-  assert.match(toJson(harness.edits[0]!)[0]?.components[0]?.content ?? "", /拒否されました/u);
+  const [firstEdit] = harness.edits;
+  assert.ok(firstEdit);
+  assert.match(toJson(firstEdit)[0]?.components[0]?.content ?? "", /拒否されました/u);
 });
 
 test("ignores button presses from anyone other than the owner", async () => {
@@ -252,18 +295,20 @@ test("ignores button presses from anyone other than the owner", async () => {
   );
   await requester.request(request);
 
-  const customId = toJson(harness.ownerMessages[0]!)[0]?.components[1]?.components?.[0]?.custom_id;
+  const [ownerMessage] = harness.ownerMessages;
+  assert.ok(ownerMessage);
+  const customId = toJson(ownerMessage)[0]?.components[1]?.components?.[0]?.custom_id;
   assert.ok(customId);
 
   const replies: Array<{ content: string; flags?: number }> = [];
-  const interaction = {
+  const interaction: DiscordChannelAccessButtonInteraction = {
     customId,
     user: { id: "other-user" },
-    reply: async (payload: { content: string; flags?: number }) => {
+    reply: async (payload) => {
       replies.push(payload);
     },
     update: async () => undefined,
-  } as unknown as ButtonInteraction;
+  };
 
   assert.equal(await requester.handleButton(interaction), true);
   assert.equal(harness.updates.length, 0);

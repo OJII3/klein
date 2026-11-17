@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { Type, type Static } from "typebox";
+import { Type } from "typebox";
 import { Check, Errors } from "typebox/value";
 
 import type {
@@ -57,8 +57,6 @@ const DiscordAccessFileSchema = Type.Object(
   { additionalProperties: false },
 );
 
-type DiscordAccessFile = Static<typeof DiscordAccessFileSchema>;
-
 export class FileDiscordAccessRuleStore implements DiscordAccessRuleStore {
   private guilds: Readonly<Record<string, DiscordGuildAccessRule>> = {};
   private writeQueue: Promise<void> = Promise.resolve();
@@ -96,7 +94,7 @@ export class FileDiscordAccessRuleStore implements DiscordAccessRuleStore {
       throw new Error(`Discord access rules are invalid: ${this.filePath}. ${errors}`);
     }
 
-    this.guilds = (value as DiscordAccessFile).guilds ?? {};
+    this.guilds = value.guilds ?? {};
   }
 
   getGuildRule(guildId: string): DiscordGuildAccessRule | undefined {

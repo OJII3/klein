@@ -7,9 +7,9 @@ import {
   createEditToolDefinition,
   createReadToolDefinition,
   createWriteToolDefinition,
-  type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 
+import type { AgentTool } from "@agents/core/agent-tool";
 import type { StandaloneAgentFactory } from "@agents/core/standalone-agent";
 import type {
   UserMemory,
@@ -125,7 +125,7 @@ export class PiUserMemoryAgent implements UserMemoryProcessor {
   }
 }
 
-function createSandboxedTools(directory: string, fileName: string): ToolDefinition[] {
+function createSandboxedTools(directory: string, fileName: string): AgentTool[] {
   const root = resolve(directory);
   const allowed = resolve(root, fileName);
   const guard = (candidate: string): string => {
@@ -156,7 +156,7 @@ function createSandboxedTools(directory: string, fileName: string): ToolDefiniti
     },
   });
 
-  return [readTool, writeTool, editTool] as unknown as ToolDefinition[];
+  return [readTool, writeTool, editTool];
 }
 
 function buildUserPrompt(

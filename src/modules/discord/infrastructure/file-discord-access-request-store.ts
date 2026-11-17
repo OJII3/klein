@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { Type, type Static } from "typebox";
+import { Type } from "typebox";
 import { Check, Errors } from "typebox/value";
 
 import type {
@@ -29,8 +29,6 @@ const DiscordAccessRequestFileSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-
-type DiscordAccessRequestFile = Static<typeof DiscordAccessRequestFileSchema>;
 
 export class FileDiscordAccessRequestStore implements DiscordAccessRequestStore {
   private requests = new Map<string, PendingDiscordAccessRequest>();
@@ -69,12 +67,7 @@ export class FileDiscordAccessRequestStore implements DiscordAccessRequestStore 
       throw new Error(`Discord access requests are invalid: ${this.filePath}. ${errors}`);
     }
 
-    this.requests = new Map(
-      ((value as DiscordAccessRequestFile).requests ?? []).map((request) => [
-        request.requestId,
-        request,
-      ]),
-    );
+    this.requests = new Map((value.requests ?? []).map((request) => [request.requestId, request]));
   }
 
   list(): readonly PendingDiscordAccessRequest[] {

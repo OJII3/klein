@@ -28,8 +28,11 @@ export function useSessions({ active, onUpdated, selectedSessionId }: UseSession
   const [detailError, setDetailError] = useState<string | null>(null);
   const [detailReloadKey, setDetailReloadKey] = useState(0);
   const effectiveSessionId = selectedSessionId ?? sessions[0]?.id ?? null;
-  const effectiveSessionIdRef = useRef<string | null>(null);
-  effectiveSessionIdRef.current = effectiveSessionId;
+  const effectiveSessionIdRef = useRef<string | null>(effectiveSessionId);
+
+  useEffect(() => {
+    effectiveSessionIdRef.current = effectiveSessionId;
+  }, [effectiveSessionId]);
 
   const load = useCallback(
     async (query: SessionQuery = {}, append = false) => {
@@ -55,15 +58,17 @@ export function useSessions({ active, onUpdated, selectedSessionId }: UseSession
   );
 
   useEffect(() => {
-    if (!active) return;
+    if (!active) return undefined;
 
     void load();
-    const timer = window.setInterval(load, 10000);
+    const timer = window.setInterval(() => {
+      void load();
+    }, 10000);
     return () => window.clearInterval(timer);
   }, [active, load]);
 
   useEffect(() => {
-    if (!active || !effectiveSessionId) return;
+    if (!active || !effectiveSessionId) return undefined;
 
     let current = true;
     setDetailLoading(true);
@@ -72,22 +77,22 @@ export function useSessions({ active, onUpdated, selectedSessionId }: UseSession
     setEvents([]);
     setNextCursor(null);
 
-    void getSession(effectiveSessionId, { limit: 100 })
-      .then((response) => {
+    void (async () => {
+      try {
+        const response = await getSession(effectiveSessionId, { limit: 100 });
         if (!current) return;
         setSelectedSession(response.session);
         setEvents(response.items);
         setNextCursor(response.nextCursor);
-      })
-      .catch((requestError: unknown) => {
+      } catch (requestError: unknown) {
         if (!current) return;
         setDetailError(
           requestError instanceof Error ? requestError.message : "セッションの取得に失敗しました",
         );
-      })
-      .finally(() => {
+      } finally {
         if (current) setDetailLoading(false);
-      });
+      }
+    })();
 
     return () => {
       current = false;
@@ -107,23 +112,24 @@ export function useSessions({ active, onUpdated, selectedSessionId }: UseSession
     if (!effectiveSessionId || !nextCursor || detailLoadingMore) return;
 
     const requestedSessionId = effectiveSessionId;
+    const cursor = nextCursor;
     setDetailLoadingMore(true);
     setDetailError(null);
-    void getSession(requestedSessionId, { cursor: nextCursor, limit: 100 })
-      .then((response) => {
+    void (async () => {
+      try {
+        const response = await getSession(requestedSessionId, { cursor, limit: 100 });
         if (effectiveSessionIdRef.current !== requestedSessionId) return;
         setEvents((current) => [...response.items, ...current]);
         setNextCursor(response.nextCursor);
-      })
-      .catch((requestError: unknown) => {
+      } catch (requestError: unknown) {
         if (effectiveSessionIdRef.current !== requestedSessionId) return;
         setDetailError(
           requestError instanceof Error ? requestError.message : "セッションの取得に失敗しました",
         );
-      })
-      .finally(() => {
+      } finally {
         if (effectiveSessionIdRef.current === requestedSessionId) setDetailLoadingMore(false);
-      });
+      }
+    })();
   }, [detailLoadingMore, effectiveSessionId, nextCursor]);
 
   const selectedFromList =

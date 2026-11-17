@@ -4,8 +4,8 @@ import {
   MessageFlags,
   SlashCommandBuilder,
   TextDisplayBuilder,
-  type ChatInputCommandInteraction,
 } from "discord.js";
+import type { DiscordGatewayAdapterCreator } from "@discordjs/voice";
 import type { AsrClient } from "@modules/asr/domain/asr-client";
 import type { TextToSpeech } from "@modules/tts/infrastructure/sbv2-tts";
 import type { VoiceReactionPreset } from "@modules/discord/ports/voice-reaction-selector";
@@ -15,7 +15,10 @@ import type {
   VoiceChatConversation,
   VoiceChatConversationFactory,
 } from "../ports/voice-chat-conversation";
-import { DiscordVoiceCaptureSession } from "./discord-voice-capture-session";
+import {
+  DiscordVoiceCaptureSession,
+  type DiscordVoiceCaptureSessionOptions,
+} from "./discord-voice-capture-session";
 
 export const VOICE_COMMAND = new SlashCommandBuilder()
   .setName("voice")
@@ -24,18 +27,53 @@ export const VOICE_COMMAND = new SlashCommandBuilder()
   .addSubcommand((command) => command.setName("leave").setDescription("VCから退出して会話を終了"))
   .toJSON();
 
+export interface VoiceCaptureSession {
+  start(): Promise<void>;
+  stop(): Promise<void>;
+  speakInBackground(text: string, toolCallId?: string): Promise<void>;
+  playReaction(reaction: string, signal: AbortSignal): Promise<boolean>;
+  subscribeSpeechStart(listener: () => void): () => void;
+}
+
+export interface VoiceChatCommandInteraction {
+  readonly guildId: string | null;
+  readonly channelId: string;
+  readonly user: { readonly id: string; readonly bot: boolean };
+  readonly options: { getSubcommand(): string };
+  readonly channel: {
+    readonly id: string;
+    readonly parentId?: string | null;
+    isThread(): boolean;
+  } | null;
+  readonly guild: {
+    readonly members: {
+      fetch(userId: string): Promise<{
+        readonly displayName: string;
+        readonly user: { readonly username: string };
+        readonly voice: { readonly channel: { readonly id: string } | null };
+      }>;
+    };
+    readonly voiceAdapterCreator: DiscordGatewayAdapterCreator;
+  } | null;
+  inGuild(): boolean;
+  reply(options: { content: string; ephemeral: boolean }): Promise<unknown>;
+  deferReply(options: { ephemeral: boolean }): Promise<unknown>;
+  editReply(content: string): Promise<unknown>;
+}
+
 export interface DiscordVoiceChatControllerOptions {
   readonly asr: AsrClient;
   readonly characterName: string;
   readonly language: string;
   readonly reactionPresets?: readonly VoiceReactionPreset[];
   readonly conversationFactory: VoiceChatConversationFactory;
+  readonly createSession?: (options: DiscordVoiceCaptureSessionOptions) => VoiceCaptureSession;
   readonly tts?: TextToSpeech;
 }
 
 interface ActiveVoiceChat {
   readonly conversation: VoiceChatConversation;
-  readonly session: DiscordVoiceCaptureSession;
+  readonly session: VoiceCaptureSession;
   readonly userId: string;
   readonly voiceChannelId: string;
 }
@@ -71,8 +109,9 @@ export class DiscordVoiceChatController {
     this.logger = logger?.child({ component: "discord-voice-chat-controller" });
   }
 
-  async handleCommand(interaction: ChatInputCommandInteraction): Promise<void> {
-    if (!interaction.inGuild()) {
+  async handleCommand(interaction: VoiceChatCommandInteraction): Promise<void> {
+    const guildId = interaction.guildId;
+    if (!interaction.inGuild() || !guildId) {
       await interaction.reply({
         content: "このコマンドはサーバー内でのみ使用できます。",
         ephemeral: true,
@@ -80,7 +119,6 @@ export class DiscordVoiceChatController {
       return;
     }
 
-    const guildId = interaction.guildId;
     this.logger?.info(
       {
         event: "discord_voice_chat_command_received",
@@ -143,10 +181,14 @@ export class DiscordVoiceChatController {
     }
 
     await interaction.deferReply({ ephemeral: true });
-    let session: DiscordVoiceCaptureSession | undefined;
+    let session: VoiceCaptureSession | undefined;
     let conversation: VoiceChatConversation | undefined;
     try {
-      session = new DiscordVoiceCaptureSession({
+      const createSession =
+        this.options.createSession ??
+        ((sessionOptions: DiscordVoiceCaptureSessionOptions) =>
+          new DiscordVoiceCaptureSession(sessionOptions));
+      session = createSession({
         adapterCreator: guild.voiceAdapterCreator,
         asr: this.options.asr,
         guildId,
@@ -163,12 +205,7 @@ export class DiscordVoiceChatController {
             { err: error, event: "discord_voice_chat_session_ended", guildId },
             "Stopped the voice conversation after an ASR failure",
           );
-          void conversation?.stop().catch((stopError: unknown) => {
-            this.logger?.warn(
-              { err: stopError, event: "discord_voice_chat_cleanup_failed", guildId },
-              "Failed to clean up the voice conversation after an ASR failure",
-            );
-          });
+          void this.stopConversationSafely(conversation, guildId);
         },
         tts: this.options.tts,
         userId: interaction.user.id,
@@ -239,7 +276,7 @@ export class DiscordVoiceChatController {
     );
   }
 
-  private async leave(interaction: ChatInputCommandInteraction, guildId: string): Promise<void> {
+  private async leave(interaction: VoiceChatCommandInteraction, guildId: string): Promise<void> {
     const active = this.sessions.get(guildId);
     if (!active) {
       await interaction.reply({ content: "VC会話セッションはありません。", ephemeral: true });
@@ -267,6 +304,21 @@ export class DiscordVoiceChatController {
       0x747f8d,
       guildId,
     );
+  }
+
+  private async stopConversationSafely(
+    conversation: VoiceChatConversation | undefined,
+    guildId: string,
+  ): Promise<void> {
+    if (!conversation) return;
+    try {
+      await conversation.stop();
+    } catch (stopError) {
+      this.logger?.warn(
+        { err: stopError, event: "discord_voice_chat_cleanup_failed", guildId },
+        "Failed to clean up the voice conversation after an ASR failure",
+      );
+    }
   }
 
   private async sendAnnouncement(

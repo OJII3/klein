@@ -40,7 +40,7 @@ export function createOwnerMemoryTools(store: OwnerMemoryStore, sourceId = "agen
       exposure: "deferred",
       async execute(_toolCallId, params) {
         const document = await store.read();
-        const kindFilter = params.kind as MemoryKind | undefined;
+        const kindFilter = params.kind;
         const entries = kindFilter
           ? document.entries.filter((entry) => entry.kind === kindFilter)
           : document.entries;
@@ -51,7 +51,7 @@ export function createOwnerMemoryTools(store: OwnerMemoryStore, sourceId = "agen
               text:
                 entries.length === 0
                   ? "オーナー用メモリにエントリはありません。"
-                  : entries.map(formatOwnerMemoryEntry).join("\n\n"),
+                  : entries.map((entry) => formatOwnerMemoryEntry(entry)).join("\n\n"),
             },
           ],
           details: {
@@ -81,7 +81,7 @@ export function createOwnerMemoryTools(store: OwnerMemoryStore, sourceId = "agen
       exposure: "deferred",
       async execute(_toolCallId, params) {
         const entry = await store.addEntry({
-          kind: params.kind as MemoryKind,
+          kind: params.kind,
           title: params.title,
           content: params.content,
           sourceId,
@@ -108,7 +108,7 @@ export function createOwnerMemoryTools(store: OwnerMemoryStore, sourceId = "agen
         try {
           const updated = await store.updateEntry({
             id: params.id,
-            ...(params.kind !== undefined ? { kind: params.kind as MemoryKind } : {}),
+            ...(params.kind !== undefined ? { kind: params.kind } : {}),
             ...(params.title !== undefined ? { title: params.title } : {}),
             ...(params.content !== undefined ? { content: params.content } : {}),
             sourceId,

@@ -1,15 +1,14 @@
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import test from "node:test";
-import { join, resolve } from "node:path";
+import { join, resolve as resolvePath } from "node:path";
 
 import {
+  defineTool,
   SettingsManager,
   SessionManager,
   ModelRuntime,
   type ContextEvent,
-  type ExtensionAPI,
-  type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import {
   fauxAssistantMessage,
@@ -19,17 +18,18 @@ import {
   type TranscriptContext,
 } from "@earendil-works/pi-ai";
 import pino from "pino";
-import { createPiEventPrompt } from "./pi-event-prompt";
+import { Type } from "typebox";
+
 import type { AgentEvent } from "@agents/core/agent-event";
 import { ImageAnalysisError } from "@agents/core/image-analysis";
-
+import { isRecord, parseJson } from "@shared/type-guards";
+import { createTempDir } from "../../testing/temp-dir";
 import {
   BACKGROUND_COMPACTION_LEAD_TOKENS,
   type BackgroundCompactionPreparation,
   createBackgroundCompactionExtension,
   shouldStartBackgroundCompaction,
 } from "./background-compaction";
-
 import {
   createAssistantTextContextExtension,
   createPiAgentFactory,
@@ -39,7 +39,17 @@ import {
   resolveConfiguredModel,
   withOpenCodeSessionHeader,
 } from "./pi-agent-runtime";
-import { createTempDir } from "../../testing/temp-dir";
+import { createPiEventPrompt } from "./pi-event-prompt";
+import {
+  createStubAssistantMessage,
+  createStubExtensionContext,
+  createStubModel,
+  createStubPiRuntimeSession,
+  createStubSessionBeforeCompactEvent,
+  createStubTurnEndEvent,
+  extractContextMessagesResult,
+  loadTestExtension,
+} from "./pi-test-helpers";
 
 const discordAsk = {
   name: "discord_ask",
@@ -59,20 +69,26 @@ const discordSpeak = {
   surfaceOutcome: "Spoke in the Discord voice channel.",
 } as const;
 
+function assistantTexts(context: TranscriptContext): string[] {
+  return context.messages
+    .filter((message) => message.role === "assistant")
+    .flatMap((message) => message.content.filter((block) => block.type === "text"))
+    .map((block) => block.text);
+}
+
 test("records completed turn outcomes while preserving the active turn after sending", async () => {
-  const oldCall = fauxAssistantMessage([
-    { type: "text", text: "Old reasoning text" },
-    fauxToolCall("discord_send", { content: "old" }),
-  ]);
+  const oldToolCall = fauxToolCall("discord_send", { content: "old" });
+  const oldCall = fauxAssistantMessage([{ type: "text", text: "Old reasoning text" }, oldToolCall]);
   const oldEnd = fauxAssistantMessage("Old turn finished");
   const silentEnd = fauxAssistantMessage("No reply needed");
+  const currentToolCall = fauxToolCall("discord_send", { content: "current" });
   const currentCall = fauxAssistantMessage([
     { type: "text", text: "Current reasoning text" },
-    fauxToolCall("discord_send", { content: "current" }),
+    currentToolCall,
   ]);
   const result: ContextEvent["messages"][number] = {
     role: "toolResult",
-    toolCallId: currentCall.content.find((block) => block.type === "toolCall")!.id,
+    toolCallId: currentToolCall.id,
     toolName: "discord_send",
     content: [{ type: "text", text: "The message was sent to Discord." }],
     isError: false,
@@ -81,7 +97,7 @@ test("records completed turn outcomes while preserving the active turn after sen
   const messages: ContextEvent["messages"] = [
     { role: "user", content: "Old request", timestamp: 1 },
     oldCall,
-    { ...result, toolCallId: oldCall.content.find((block) => block.type === "toolCall")!.id },
+    { ...result, toolCallId: oldToolCall.id },
     oldEnd,
     { role: "user", content: "Ignored request", timestamp: 2 },
     silentEnd,
@@ -90,15 +106,14 @@ test("records completed turn outcomes while preserving the active turn after sen
     result,
     { role: "user", content: "Steering input", timestamp: 4 },
   ];
-  const handler = registerExtension(createAssistantTextContextExtension([discordSend])).get(
-    "context",
-  )!;
-  const filtered = (await handler(
-    { type: "context", messages } as never,
-    {} as ExtensionContext,
-  )) as { messages: ContextEvent["messages"] };
+  const ext = await loadTestExtension(createAssistantTextContextExtension([discordSend]));
+  const handler = ext.handlers.get("context")?.[0];
+  assert.ok(handler);
+  const filteredMessages = extractContextMessagesResult(
+    await handler({ type: "context", messages }, createStubExtensionContext()),
+  );
 
-  assert.deepEqual(filtered.messages, [
+  assert.deepEqual(filteredMessages, [
     messages[0],
     { ...oldCall, content: oldCall.content.filter((block) => block.type !== "text") },
     messages[2],
@@ -113,7 +128,7 @@ test("records completed turn outcomes while preserving the active turn after sen
     },
     ...messages.slice(6),
   ]);
-  assert.equal(filtered.messages[7], currentCall);
+  assert.equal(filteredMessages[7], currentCall);
   assert.equal(oldCall.content[0]?.type, "text");
   assert.equal(oldEnd.content[0]?.type, "text");
 });
@@ -161,6 +176,8 @@ for (const { toolNames, errors, expected } of [
     ];
     for (const [index, toolName] of toolNames.entries()) {
       const call = fauxToolCall(toolName, {});
+      const isError = errors[index];
+      assert.ok(isError !== undefined);
       messages.push(
         fauxAssistantMessage([{ type: "text", text: "Private reasoning" }, call]),
         { role: "user", content: "Steering input", timestamp: 2 },
@@ -169,7 +186,7 @@ for (const { toolNames, errors, expected } of [
           toolCallId: call.id,
           toolName,
           content: [{ type: "text", text: "Tool result" }],
-          isError: errors[index]!,
+          isError,
           timestamp: 3,
         },
       );
@@ -182,15 +199,16 @@ for (const { toolNames, errors, expected } of [
     ]);
     messages.push(end, { role: "user", content: "Next request", timestamp: 4 });
     const original = structuredClone(messages);
-    const handler = registerExtension(
+    const ext = await loadTestExtension(
       createAssistantTextContextExtension([discordAsk, discordSend, discordSpeak]),
-    ).get("context")!;
-    const filtered = (await handler(
-      { type: "context", messages } as never,
-      {} as ExtensionContext,
-    )) as { messages: ContextEvent["messages"] };
+    );
+    const handler = ext.handlers.get("context")?.[0];
+    assert.ok(handler);
+    const filteredMessages = extractContextMessagesResult(
+      await handler({ type: "context", messages }, createStubExtensionContext()),
+    );
 
-    assert.deepEqual(filtered.messages.at(-2), {
+    assert.deepEqual(filteredMessages.at(-2), {
       ...end,
       content: [thinking, { type: "text", text: expected }],
     });
@@ -224,11 +242,7 @@ test("normalizes completed turns from the surface tools the role holds", async (
         name: "discord_speak",
         label: "Speak in Discord Voice Channel",
         description: "Speak in the current Discord voice channel.",
-        parameters: {
-          type: "object",
-          properties: { text: { type: "string" } },
-          required: ["text"],
-        } as never,
+        parameters: Type.Object({ text: Type.String() }),
         surface: true,
         primarySurface: true,
         surfaceOutcome: "Spoke in the Discord voice channel.",
@@ -286,13 +300,10 @@ test("normalizes completed turns from the surface tools the role holds", async (
       context: {},
     });
 
-    const assistantTexts = (context: TranscriptContext) =>
-      context.messages
-        .filter((message) => message.role === "assistant")
-        .flatMap((message) => message.content.filter((block) => block.type === "text"))
-        .map((block) => block.text);
-    assert.deepEqual(assistantTexts(requests[0]!), ["Spoke in the Discord voice channel."]);
-    assert.deepEqual(assistantTexts(requests[1]!), [
+    const [req0, req1] = requests;
+    assert.ok(req0 && req1);
+    assert.deepEqual(assistantTexts(req0), ["Spoke in the Discord voice channel."]);
+    assert.deepEqual(assistantTexts(req1), [
       "Spoke in the Discord voice channel.",
       "I didn't use discord_speak, so I stayed silent.",
     ]);
@@ -304,9 +315,9 @@ test("normalizes completed turns from the surface tools the role holds", async (
 });
 
 test("preserves an active turn without completed history or a user boundary", async () => {
-  const handler = registerExtension(createAssistantTextContextExtension([discordSend])).get(
-    "context",
-  )!;
+  const ext = await loadTestExtension(createAssistantTextContextExtension([discordSend]));
+  const handler = ext.handlers.get("context")?.[0];
+  assert.ok(handler);
   const call = fauxAssistantMessage([
     { type: "text", text: "Current text" },
     fauxToolCall("discord_send", { content: "reply" }),
@@ -316,11 +327,10 @@ test("preserves an active turn without completed history or a user boundary", as
     [{ role: "user" as const, content: "First request", timestamp: 1 }, call],
     [fauxAssistantMessage("Completed text without a new request")],
   ]) {
-    const filtered = (await handler(
-      { type: "context", messages } as never,
-      {} as ExtensionContext,
-    )) as { messages: ContextEvent["messages"] };
-    assert.deepEqual(filtered.messages, messages);
+    const filteredMessages = extractContextMessagesResult(
+      await handler({ type: "context", messages }, createStubExtensionContext()),
+    );
+    assert.deepEqual(filteredMessages, messages);
   }
 });
 
@@ -331,13 +341,14 @@ test("passes agent image attachments to Pi", async () => {
         options?: { images?: readonly unknown[]; source?: string };
       }
     | undefined;
-  const runtime = new PiAgentRuntime({
-    sessionManager: createSessionManagerStub(),
-    async prompt(text: string, options?: { images?: readonly unknown[]; source?: string }) {
-      receivedPrompt = { options, text };
-    },
-    dispose() {},
-  } as never);
+  const runtime = new PiAgentRuntime(
+    createStubPiRuntimeSession({
+      sessionManager: createSessionManagerStub(),
+      async prompt(text, options) {
+        receivedPrompt = { options, text };
+      },
+    }),
+  );
 
   const event: AgentEvent = {
     id: "image-event",
@@ -364,13 +375,14 @@ test("passes agent image attachments to Pi", async () => {
 test("records turn context as a custom entry before the prompt", async () => {
   const received: Array<{ kind: string; value: unknown }> = [];
   const sessionManager = createSessionManagerStub();
-  const runtime = new PiAgentRuntime({
-    sessionManager,
-    async prompt(text: string, options?: { images?: readonly unknown[]; source?: string }) {
-      received.push({ kind: "prompt", value: { options, text } });
-    },
-    dispose() {},
-  } as never);
+  const runtime = new PiAgentRuntime(
+    createStubPiRuntimeSession({
+      sessionManager,
+      async prompt(text, options) {
+        received.push({ kind: "prompt", value: { options, text } });
+      },
+    }),
+  );
 
   const event: AgentEvent = {
     id: "context-event",
@@ -417,18 +429,19 @@ test("records turn context as a custom entry before the prompt", async () => {
 test("does not record turn context when steering a streaming session", async () => {
   const received: Array<{ kind: string; value: unknown }> = [];
   const sessionManager = createSessionManagerStub();
-  const runtime = new PiAgentRuntime({
-    isStreaming: true,
-    sessionManager,
-    async prompt() {
-      received.push({ kind: "prompt", value: undefined });
-    },
-    async steer(text: string) {
-      received.push({ kind: "steer", value: text });
-      return "queued";
-    },
-    dispose() {},
-  } as never);
+  const runtime = new PiAgentRuntime(
+    createStubPiRuntimeSession({
+      isStreaming: true,
+      sessionManager,
+      async prompt() {
+        received.push({ kind: "prompt", value: undefined });
+      },
+      async steer(text) {
+        received.push({ kind: "steer", value: text });
+        return "queued";
+      },
+    }),
+  );
 
   const event: AgentEvent = {
     id: "steer-event",
@@ -450,16 +463,15 @@ test("does not record turn context when steering a streaming session", async () 
 test("passes image analysis to the main session without image attachments", async () => {
   const received: Array<{ kind: string; value: unknown }> = [];
   const runtime = new PiAgentRuntime(
-    {
+    createStubPiRuntimeSession({
       sessionManager: createSessionManagerStub(),
-      async prompt(text: string, options?: { images?: readonly unknown[]; source?: string }) {
+      async prompt(text, options) {
         received.push({ kind: "prompt", value: { options, text } });
       },
-      async sendCustomMessage(message: unknown) {
+      async sendCustomMessage(message) {
         received.push({ kind: "custom", value: message });
       },
-      dispose() {},
-    } as never,
+    }),
     {
       async analyze(prompt) {
         assert.equal(prompt.text, createPiEventPrompt(event).text);
@@ -509,16 +521,15 @@ test("passes image analysis to the main session without image attachments", asyn
 test("continues with text when image analysis fails", async () => {
   const received: Array<{ kind: string; value: unknown }> = [];
   const runtime = new PiAgentRuntime(
-    {
+    createStubPiRuntimeSession({
       sessionManager: createSessionManagerStub(),
-      async prompt(text: string, options?: { images?: readonly unknown[]; source?: string }) {
+      async prompt(text, options) {
         received.push({ kind: "prompt", value: { options, text } });
       },
-      async sendCustomMessage(message: unknown) {
+      async sendCustomMessage(message) {
         received.push({ kind: "custom", value: message });
       },
-      dispose() {},
-    } as never,
+    }),
     {
       async analyze() {
         throw new ImageAnalysisError({
@@ -569,19 +580,23 @@ test("continues with text when image analysis fails", async () => {
 
 test("accepts non-Discord events through prompt and steer", async () => {
   const received: Array<{ kind: string; text: string }> = [];
+  let streaming = false;
   const session = {
-    isStreaming: false,
-    sessionManager: createSessionManagerStub(),
-    async prompt(text: string) {
-      received.push({ kind: "prompt", text });
+    ...createStubPiRuntimeSession({
+      sessionManager: createSessionManagerStub(),
+      async prompt(text) {
+        received.push({ kind: "prompt", text });
+      },
+      async steer(text) {
+        received.push({ kind: "steer", text });
+        return "queued";
+      },
+    }),
+    get isStreaming() {
+      return streaming;
     },
-    async steer(text: string) {
-      received.push({ kind: "steer", text });
-      return "queued";
-    },
-    dispose() {},
   };
-  const runtime = new PiAgentRuntime(session as never);
+  const runtime = new PiAgentRuntime(session);
   const events: AgentEvent[] = [
     {
       id: "reminder-1",
@@ -608,7 +623,7 @@ test("accepts non-Discord events through prompt and steer", async () => {
 
   await runtime.prompt({ event: events[0], context: {} });
   await runtime.steer({ event: events[1], context: {} });
-  session.isStreaming = true;
+  streaming = true;
   await runtime.steer({ event: events[2], context: {} });
 
   assert.deepEqual(
@@ -616,7 +631,10 @@ test("accepts non-Discord events through prompt and steer", async () => {
     ["prompt", "prompt", "steer"],
   );
   for (const [index, input] of received.entries()) {
-    const metadata = JSON.parse(input.text.split("\n")[1]!);
+    const metadataLine = input.text.split("\n")[1];
+    assert.ok(metadataLine);
+    const metadata = parseJson(metadataLine);
+    assert.ok(isRecord(metadata));
     assert.equal(metadata.id, undefined);
     assert.equal(metadata.occurredAt, "2026-10-14 18:30 JST");
     assert.equal(metadata.type, events[index].type);
@@ -750,7 +768,7 @@ test("keeps queued prompt turns from overwriting the active turn requester", asy
   const turnState: { requesterId?: string } = {};
   let callIndex = 0;
   const runtime = new PiAgentRuntime(
-    {
+    createStubPiRuntimeSession({
       sessionManager: createSessionManagerStub(),
       async prompt() {
         const current = callIndex;
@@ -761,8 +779,7 @@ test("keeps queued prompt turns from overwriting the active turn requester", asy
         }
         observedRequesters.push(turnState.requesterId);
       },
-      dispose() {},
-    } as never,
+    }),
     undefined,
     undefined,
     undefined,
@@ -838,16 +855,12 @@ test("updates requesterId only when a steered message begins its turn", async ()
     (toolContext) => {
       getRequesterId = toolContext.requesterId;
       return [
-        {
+        defineTool({
           name: "probe_requester",
           label: "Probe Requester",
           description: "Records the active requester id",
-          parameters: {
-            type: "object",
-            properties: { label: { type: "string" } },
-            required: ["label"],
-          } as never,
-          async execute(_toolCallId, params: { label: string }) {
+          parameters: Type.Object({ label: Type.String() }),
+          async execute(_toolCallId, params) {
             requestersObservedInTool.push({
               label: params.label,
               requesterId: toolContext.requesterId(),
@@ -865,7 +878,7 @@ test("updates requesterId only when a steered message begins its turn", async ()
               details: {},
             };
           },
-        },
+        }),
       ];
     },
     { role: { kind: "conversation" }, sessionKey: "steer-requester" },
@@ -891,8 +904,9 @@ test("updates requesterId only when a steered message begins its turn", async ()
     });
 
     await firstToolStarted;
-    assert.ok(runtime.steer);
-    await runtime.steer({
+    const steer = runtime.steer?.bind(runtime);
+    assert.ok(steer);
+    await steer({
       event: {
         id: "turn-2",
         type: "discord.message",
@@ -929,16 +943,12 @@ test("updates requesterId only when a steered message begins its turn", async ()
     const runtime2 = await factory.create(
       { systemPrompt: "Call probe_requester.", toolNames: ["probe_requester"] },
       (toolContext) => [
-        {
+        defineTool({
           name: "probe_requester",
           label: "Probe Requester",
           description: "Records the active requester id",
-          parameters: {
-            type: "object",
-            properties: { label: { type: "string" } },
-            required: ["label"],
-          } as never,
-          async execute(_toolCallId, params: { label: string }) {
+          parameters: Type.Object({ label: Type.String() }),
+          async execute(_toolCallId, params) {
             eventSteerRequesters.push({
               label: params.label,
               requesterId: toolContext.requesterId(),
@@ -949,7 +959,7 @@ test("updates requesterId only when a steered message begins its turn", async ()
             }
             return { content: [{ type: "text", text: "ok" }], details: {} };
           },
-        },
+        }),
       ],
       { role: { kind: "conversation" }, sessionKey: "steer-requester-clear" },
     );
@@ -971,7 +981,9 @@ test("updates requesterId only when a steered message begins its turn", async ()
         context: { requesterId: "user-1" },
       });
       await eventToolStarted;
-      await runtime2.steer!({
+      const steer2 = runtime2.steer?.bind(runtime2);
+      assert.ok(steer2);
+      await steer2({
         event: {
           id: "turn-b",
           type: "reminder.due",
@@ -999,17 +1011,13 @@ test("updates requesterId only when a steered message begins its turn", async ()
 });
 
 test("returns assistant text from prompt only when the role sends it to the caller", async () => {
-  const session = {
+  const session = createStubPiRuntimeSession({
     messages: [
-      { role: "user", content: "hello" },
-      { role: "assistant", content: [{ type: "text", text: "result" }] },
+      { role: "user", content: "hello", timestamp: 0 },
+      createStubAssistantMessage({ content: [{ type: "text", text: "result" }] }),
     ],
-    sessionManager: {
-      appendCustomEntry() {},
-    },
-    async prompt() {},
-    dispose() {},
-  };
+    sessionManager: createSessionManagerStub(),
+  });
   const turn = {
     event: {
       id: "event-1",
@@ -1021,17 +1029,10 @@ test("returns assistant text from prompt only when the role sends it to the call
     context: {},
   };
 
-  const caller = new PiAgentRuntime(
-    session as never,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    "caller",
-  );
+  const caller = new PiAgentRuntime(session, undefined, undefined, undefined, undefined, "caller");
   assert.equal(await caller.prompt(turn), "result");
 
-  const conversation = new PiAgentRuntime(session as never);
+  const conversation = new PiAgentRuntime(session);
   assert.equal(await conversation.prompt(turn), undefined);
 });
 
@@ -1092,11 +1093,9 @@ test("keeps caller assistant text for attached agents", async () => {
       context: {},
     });
 
-    const assistantTexts = requests[0]!.messages
-      .filter((message) => message.role === "assistant")
-      .flatMap((message) => message.content.filter((block) => block.type === "text"))
-      .map((block) => block.text);
-    assert.deepEqual(assistantTexts, ["first result"]);
+    const req0 = requests[0];
+    assert.ok(req0);
+    assert.deepEqual(assistantTexts(req0), ["first result"]);
   } finally {
     runtime.dispose();
     if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
@@ -1143,7 +1142,7 @@ test("rejects an unknown configured model", () => {
 
 test("loads skills from the default profile directory", async () => {
   const loader = createResourceLoader(
-    resolve(".runtime/pi"),
+    resolvePath(".runtime/pi"),
     "Test system prompt",
     SettingsManager.inMemory(),
   );
@@ -1154,7 +1153,7 @@ test("loads skills from the default profile directory", async () => {
     loader
       .getSkills()
       .skills.map((skill) => skill.name)
-      .sort(),
+      .toSorted(),
     ["honkai-character-dialogue"],
   );
   assert.deepEqual(loader.getSkills().diagnostics, []);
@@ -1172,7 +1171,7 @@ test("loads skills from a selected profile directory", async () => {
   );
 
   const loader = createResourceLoader(
-    resolve(".runtime/pi"),
+    resolvePath(".runtime/pi"),
     "Test system prompt",
     SettingsManager.inMemory(),
     undefined,
@@ -1189,7 +1188,7 @@ test("loads skills from a selected profile directory", async () => {
 
 test("loads Pi web access tools", async () => {
   const loader = createResourceLoader(
-    resolve(".runtime/pi"),
+    resolvePath(".runtime/pi"),
     "Test system prompt",
     SettingsManager.inMemory(),
   );
@@ -1250,7 +1249,10 @@ test("stores attached sessions under sessions/attached", async () => {
     taskId: "attached-1",
   });
 
-  assert.equal(attached.getSessionDir(), resolve(agentDir, "sessions", "attached", "attached-1"));
+  assert.equal(
+    attached.getSessionDir(),
+    resolvePath(agentDir, "sessions", "attached", "attached-1"),
+  );
 });
 
 test("starts background compaction before the built-in threshold", async () => {
@@ -1261,7 +1263,7 @@ test("starts background compaction before the built-in threshold", async () => {
   let preparation: BackgroundCompactionPreparation | undefined;
   let summarizeCalls = 0;
 
-  const handlers = registerExtension(
+  const ext = await loadTestExtension(
     createBackgroundCompactionExtension(settingsManager, {
       leadTokens: 0,
       summarize: async (nextPreparation) => {
@@ -1277,25 +1279,29 @@ test("starts background compaction before the built-in threshold", async () => {
   );
   const context = createTestContext(sessionManager);
 
-  handlers.get("turn_end")?.({} as never, context);
-  await new Promise<void>((resolve) => setImmediate(resolve));
+  const turnEnd = ext.handlers.get("turn_end")?.[0];
+  assert.ok(turnEnd);
+  void turnEnd(createStubTurnEndEvent(), context);
+  await new Promise<void>((resolve) => {
+    setImmediate(resolve);
+  });
 
   assert.equal(summarizeCalls, 1);
   assert.ok(preparation);
 
-  const result = handlers.get("session_before_compact")?.(
-    {
+  const beforeCompact = ext.handlers.get("session_before_compact")?.[0];
+  assert.ok(beforeCompact);
+  const result = await beforeCompact(
+    createStubSessionBeforeCompactEvent({
       preparation,
       branchEntries: sessionManager.getBranch(),
-      reason: "threshold",
-      willRetry: false,
-      signal: new AbortController().signal,
-    } as never,
+    }),
     context,
-  ) as { compaction?: { summary: string; tokensBefore: number } } | undefined;
+  );
 
-  assert.equal(result?.compaction?.summary, "prepared summary");
-  assert.equal(result?.compaction?.tokensBefore, 1000);
+  assert.ok(isRecord(result) && isRecord(result.compaction));
+  assert.equal(result.compaction.summary, "prepared summary");
+  assert.equal(result.compaction.tokensBefore, 1000);
 });
 
 test("falls back to built-in compaction while background summary is pending", async () => {
@@ -1307,7 +1313,7 @@ test("falls back to built-in compaction while background summary is pending", as
   let backgroundSignal: AbortSignal | undefined;
   let releaseSummary!: () => void;
 
-  const handlers = registerExtension(
+  const ext = await loadTestExtension(
     createBackgroundCompactionExtension(settingsManager, {
       leadTokens: 0,
       summarize: async (nextPreparation, _context, signal) => {
@@ -1322,25 +1328,30 @@ test("falls back to built-in compaction while background summary is pending", as
   );
   const context = createTestContext(sessionManager);
 
-  handlers.get("turn_end")?.({} as never, context);
-  await new Promise<void>((resolve) => setImmediate(resolve));
+  const turnEnd = ext.handlers.get("turn_end")?.[0];
+  assert.ok(turnEnd);
+  void turnEnd(createStubTurnEndEvent(), context);
+  await new Promise<void>((resolve) => {
+    setImmediate(resolve);
+  });
   assert.ok(preparation);
 
-  const result = handlers.get("session_before_compact")?.(
-    {
+  const beforeCompact = ext.handlers.get("session_before_compact")?.[0];
+  assert.ok(beforeCompact);
+  const result = await beforeCompact(
+    createStubSessionBeforeCompactEvent({
       preparation,
       branchEntries: sessionManager.getBranch(),
-      reason: "threshold",
-      willRetry: false,
-      signal: new AbortController().signal,
-    } as never,
+    }),
     context,
   );
 
   assert.equal(result, undefined);
   assert.equal(backgroundSignal?.aborted, true);
   releaseSummary();
-  await new Promise<void>((resolve) => setImmediate(resolve));
+  await new Promise<void>((resolve) => {
+    setImmediate(resolve);
+  });
 });
 
 test("starts before Pi's compaction threshold", () => {
@@ -1363,25 +1374,24 @@ test("compactForHandoff formats Goal and summary prompt with characterName", asy
   appendTestConversation(sessionManager);
   const capturedSystemPrompts: string[] = [];
   const runtime = new PiAgentRuntime(
-    {
-      model: { provider: "test", id: "test-model" },
+    createStubPiRuntimeSession({
+      model: createStubModel(),
       sessionManager,
       async compact() {
         throw new Error("Nothing to compact (session too small)");
       },
-      dispose() {},
-    } as never,
+    }),
     undefined,
     undefined,
     {
-      async completeSimple(_model: unknown, context: { systemPrompt: string }) {
-        capturedSystemPrompts.push(context.systemPrompt);
-        return {
+      async completeSimple(_model, context) {
+        capturedSystemPrompts.push(context.systemPrompt ?? "");
+        return createStubAssistantMessage({
           stopReason: "stop",
           content: [{ type: "text", text: "- テスト項目" }],
-        };
+        });
       },
-    } as never,
+    },
     undefined,
     "none",
     {},
@@ -1402,6 +1412,9 @@ function createSessionManagerStub() {
   const entries: Array<{ customType: string; data: unknown }> = [];
   return {
     entries,
+    getSessionId: () => "stub-session",
+    getBranch: () => [],
+    buildSessionContext: () => ({ messages: [], thinkingLevel: "off", model: null }),
     appendCustomEntry(customType: string, data?: unknown) {
       entries.push({ customType, data });
       return `entry-${entries.length}`;
@@ -1409,23 +1422,11 @@ function createSessionManagerStub() {
   };
 }
 
-function registerExtension(extension: ReturnType<typeof createBackgroundCompactionExtension>) {
-  type Handler = (event: never, context: ExtensionContext) => unknown;
-  const handlers = new Map<string, Handler>();
-  const api = {
-    on(event: string, handler: Handler) {
-      handlers.set(event, handler);
-    },
-  } as unknown as ExtensionAPI;
-  extension(api);
-  return handlers;
-}
-
-function createTestContext(sessionManager: SessionManager): ExtensionContext {
-  return {
+function createTestContext(sessionManager: SessionManager) {
+  return createStubExtensionContext({
     sessionManager,
     getContextUsage: () => ({ tokens: 1000, contextWindow: 1000, percent: 100 }),
-  } as unknown as ExtensionContext;
+  });
 }
 
 function createTestSession(): SessionManager {
@@ -1446,21 +1447,13 @@ function appendTestConversation(sessionManager: SessionManager): void {
     content: "hello",
     timestamp: Date.now(),
   });
-  sessionManager.appendMessage({
-    role: "assistant",
-    content: [{ type: "text", text: "hello" }],
-    api: "openai-completions",
-    provider: "opencode-go",
-    model: "kimi-k3",
-    usage: {
-      input: 0,
-      output: 0,
-      cacheRead: 0,
-      cacheWrite: 0,
-      totalTokens: 0,
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-    },
-    stopReason: "stop",
-    timestamp: Date.now(),
-  } as never);
+  sessionManager.appendMessage(
+    createStubAssistantMessage({
+      content: [{ type: "text", text: "hello" }],
+      api: "openai-completions",
+      provider: "opencode-go",
+      model: "kimi-k3",
+      timestamp: Date.now(),
+    }),
+  );
 }

@@ -1,6 +1,8 @@
 import { readdir, readFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 
+import { isFileNotFound, isRecord, parseJson } from "@shared/type-guards";
+
 import type { PinoViewerEvent, ViewerPage } from "../domain/viewer-event";
 import type { ViewerLogQuery, ViewerLogReader } from "../ports/viewer-readers";
 
@@ -69,14 +71,14 @@ export class PinoJsonlReader implements ViewerLogReader {
     try {
       entries = await readdir(directory, { withFileTypes: true });
     } catch (error) {
-      if (isNodeError(error) && error.code === "ENOENT") return [];
+      if (isFileNotFound(error)) return [];
       throw error;
     }
 
     return entries
       .filter((entry) => entry.isFile() && entry.name.endsWith(".jsonl"))
       .map((entry) => resolve(directory, entry.name))
-      .sort((left, right) => basename(right).localeCompare(basename(left)));
+      .toSorted((left, right) => basename(right).localeCompare(basename(left)));
   }
 }
 
@@ -84,7 +86,7 @@ async function readJsonlLines(filePath: string): Promise<string[]> {
   try {
     return (await readFile(filePath, "utf8")).split(/\r?\n/);
   } catch (error) {
-    if (isNodeError(error) && error.code === "ENOENT") return [];
+    if (isFileNotFound(error)) return [];
     throw error;
   }
 }
@@ -98,7 +100,7 @@ function parsePinoLine(
 
   let value: unknown;
   try {
-    value = JSON.parse(line);
+    value = parseJson(line);
   } catch {
     return undefined;
   }
@@ -167,7 +169,7 @@ function encodeCursor(cursor: PinoLogCursor): string {
 function decodeCursor(value: string): PinoLogCursor {
   let decoded: unknown;
   try {
-    decoded = JSON.parse(Buffer.from(value, "base64url").toString("utf8"));
+    decoded = parseJson(Buffer.from(value, "base64url").toString("utf8"));
   } catch {
     throw new Error("Invalid log cursor");
   }
@@ -191,12 +193,4 @@ function normalizeLimit(value: number | undefined): number {
     throw new Error("Log limit must be an integer between 1 and 200");
   }
   return value;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && "code" in error;
 }

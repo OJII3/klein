@@ -2,6 +2,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import { parseSessionEntries, SessionManager } from "@earendil-works/pi-coding-agent";
+import { isFileNotFound } from "@shared/type-guards";
 
 export async function sumMonthlyProviderCost(
   agentDirectory: string,
@@ -39,7 +40,7 @@ async function listSessionDirectories(root: string): Promise<string[]> {
   try {
     entries = await readdir(root, { withFileTypes: true });
   } catch (error) {
-    if (isNodeError(error) && error.code === "ENOENT") return [];
+    if (isFileNotFound(error)) return [];
     throw error;
   }
 
@@ -51,7 +52,7 @@ async function listSessionDirectories(root: string): Promise<string[]> {
     try {
       children = await readdir(path, { withFileTypes: true });
     } catch (error) {
-      if (isNodeError(error) && error.code === "ENOENT") continue;
+      if (isFileNotFound(error)) continue;
       throw error;
     }
     if (children.some((child) => child.isFile() && child.name.endsWith(".jsonl"))) {
@@ -61,8 +62,4 @@ async function listSessionDirectories(root: string): Promise<string[]> {
     }
   }
   return directories;
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && "code" in error;
 }

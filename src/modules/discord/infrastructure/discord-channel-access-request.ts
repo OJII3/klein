@@ -6,8 +6,6 @@ import {
   ContainerBuilder,
   MessageFlags,
   TextDisplayBuilder,
-  type ButtonInteraction,
-  type Client,
   type Message,
 } from "discord.js";
 import type { Logger } from "pino";
@@ -105,6 +103,31 @@ function locationKey(request: DiscordChannelAccessRequest): string {
   return `${request.guildId}:${request.channelId}:${request.threadId ?? ""}`;
 }
 
+export interface DiscordChannelAccessClient {
+  readonly channels: { fetch(id: string): Promise<unknown> };
+  readonly guilds: {
+    readonly cache: { get(id: string): { readonly name?: string } | undefined };
+  };
+  readonly users: {
+    fetch(id: string): Promise<{
+      send(payload: {
+        components: ContainerBuilder[];
+        flags: MessageFlags.IsComponentsV2;
+      }): Promise<unknown>;
+    }>;
+  };
+}
+
+export interface DiscordChannelAccessButtonInteraction {
+  readonly customId: string;
+  readonly user: { readonly id: string };
+  reply(options: { content: string; flags: MessageFlags.Ephemeral }): Promise<unknown>;
+  update(options: {
+    components: ContainerBuilder[];
+    flags: MessageFlags.IsComponentsV2;
+  }): Promise<unknown>;
+}
+
 /**
  * Asks the owner whether a channel that the bot was mentioned in may be allowed.
  * The pending notice stays in the channel and is updated once the owner decides.
@@ -114,7 +137,7 @@ export class DiscordChannelAccessRequester {
   private readonly pendingByRequestId = new Map<string, PendingAccessRequest>();
 
   constructor(
-    private readonly client: Client,
+    private readonly client: DiscordChannelAccessClient,
     private readonly accessRuleStore: DiscordAccessRuleStore,
     private readonly accessRequestStore: DiscordAccessRequestStore,
     private readonly ownerUserId: string | undefined,
@@ -181,7 +204,7 @@ export class DiscordChannelAccessRequester {
   }
 
   /** Returns true when the interaction was one of this requester's buttons. */
-  async handleButton(interaction: ButtonInteraction): Promise<boolean> {
+  async handleButton(interaction: DiscordChannelAccessButtonInteraction): Promise<boolean> {
     const parsed = parseButtonId(interaction.customId);
     if (!parsed) return false;
 

@@ -14,9 +14,14 @@ import type { Logger } from "pino";
 import type { DiscordAccessPolicy } from "@modules/discord/domain/discord-access-policy";
 import type { DiscordReactionEvent } from "@modules/discord/domain/discord-reaction";
 import { parseDiscordChannelId } from "@shared/discord-channel-session-key";
+import { isRecord, parseJson } from "@shared/type-guards";
 import { TURN_CONTEXT_CUSTOM_TYPE } from "./pi-turn-context";
 
 export const DEFAULT_NEGATIVE_FEEDBACK_EMOJIS = ["👎"] as const;
+
+function isDroppedSystemEntry(entry: SessionEntry): boolean {
+  return entry.type === "message" && entry.message.role === "system";
+}
 
 export interface SentDiscordMessageRecord {
   readonly discordMessageId: string;
@@ -132,19 +137,18 @@ export function buildLinearBranchBeforeEntry(
 
   const filtered: SessionEntry[] = [];
   if (options.dropSystemMessages) {
-    const isDroppedSystem = (entry: SessionEntry): boolean =>
-      entry.type === "message" && entry.message.role === "system";
     const collectedIndexById = new Map(collected.map((entry, index) => [entry.id, index]));
 
     for (const entry of collected) {
-      if (isDroppedSystem(entry)) continue;
+      if (isDroppedSystemEntry(entry)) continue;
       if (entry.type === "compaction") {
         let nextFirstKeptId = entry.firstKeptEntryId;
         const originalIdx = collectedIndexById.get(entry.firstKeptEntryId);
-        if (originalIdx !== undefined && isDroppedSystem(collected[originalIdx]!)) {
+        const originalEntry = originalIdx === undefined ? undefined : collected[originalIdx];
+        if (originalIdx !== undefined && originalEntry && isDroppedSystemEntry(originalEntry)) {
           const replacement = collected
             .slice(originalIdx + 1)
-            .find((candidate) => !isDroppedSystem(candidate));
+            .find((candidate) => !isDroppedSystemEntry(candidate));
           nextFirstKeptId = replacement?.id ?? entry.id;
         }
         const { systemMessage: _droppedSystemMessage, ...rest } = entry;
@@ -161,10 +165,20 @@ export function buildLinearBranchBeforeEntry(
     filtered.push(...collected);
   }
 
-  const relinked = filtered.map((entry, index): SessionEntry => {
-    const parentId = index === 0 ? null : filtered[index - 1]!.id;
-    return entry.parentId === parentId ? entry : { ...entry, parentId };
-  });
+  const relinked: SessionEntry[] = [];
+  for (let index = 0; index < filtered.length; index += 1) {
+    const entry = filtered[index];
+    if (!entry) continue;
+    const previous = index === 0 ? undefined : filtered[index - 1];
+    const parentId = previous ? previous.id : null;
+    if (entry.parentId === parentId) {
+      relinked.push(entry);
+    } else {
+      const updated = { ...entry };
+      updated.parentId = parentId;
+      relinked.push(updated);
+    }
+  }
 
   return {
     header,
@@ -209,8 +223,8 @@ export function findTurnBoundsForAssistantEntry(
 
   let turnStartEntryId: string | undefined;
   for (let i = branchEntries.length - 2; i >= 0; i -= 1) {
-    const entry = branchEntries[i]!;
-    if (entry.type === "message" && entry.message.role === "user") {
+    const entry = branchEntries[i];
+    if (entry?.type === "message" && entry.message.role === "user") {
       turnStartEntryId = entry.id;
       break;
     }
@@ -220,8 +234,8 @@ export function findTurnBoundsForAssistantEntry(
   if (turnStartEntryId) {
     const userIndex = branchEntries.findIndex((entry) => entry.id === turnStartEntryId);
     for (let i = userIndex - 1; i >= 0; i -= 1) {
-      const entry = branchEntries[i]!;
-      if (entry.type === "custom" && entry.customType === TURN_CONTEXT_CUSTOM_TYPE) {
+      const entry = branchEntries[i];
+      if (entry?.type === "custom" && entry.customType === TURN_CONTEXT_CUSTOM_TYPE) {
         turnContextEntryId = entry.id;
         break;
       }
@@ -256,10 +270,12 @@ export class SentMessageSessionIndex {
 
   async record(entry: SentDiscordMessageRecord): Promise<void> {
     this.byMessageId.set(entry.discordMessageId, entry);
-    const work = this.writeQueue.then(async () => {
+    const previous = this.writeQueue;
+    const work = (async () => {
+      await previous;
       await mkdir(dirname(this.filePath), { recursive: true });
       await appendFile(this.filePath, `${JSON.stringify(entry)}\n`, "utf8");
-    });
+    })();
     this.writeQueue = work.catch(() => undefined);
     await work;
   }
@@ -298,8 +314,8 @@ export class SentMessageSessionIndex {
       const trimmed = line.trim();
       if (!trimmed) continue;
       try {
-        const parsed = JSON.parse(trimmed) as SentDiscordMessageRecord;
-        if (parsed && typeof parsed.discordMessageId === "string") {
+        const parsed = parseJson(trimmed);
+        if (isSentDiscordMessageRecord(parsed)) {
           this.byMessageId.set(parsed.discordMessageId, parsed);
         }
       } catch {
@@ -358,7 +374,7 @@ export class SessionEvalCaseStore {
     const bounds = findTurnBoundsForAssistantEntry(entries, record.assistantEntryId);
 
     await mkdir(this.casesDir, { recursive: true });
-    const safeTimestamp = reaction.occurredAt.replace(/[:.]/g, "-");
+    const safeTimestamp = reaction.occurredAt.replaceAll(/[:.]/g, "-");
     const caseId = `${safeTimestamp}_${reaction.messageId}`;
     const sessionFileName = `${caseId}.session.jsonl`;
     const caseFileName = `${caseId}.case.json`;
@@ -427,8 +443,8 @@ export class SessionEvalCaseStore {
       if (!filename.endsWith(".case.json")) continue;
       try {
         const raw = await readFile(join(this.casesDir, filename), "utf8");
-        const parsed = JSON.parse(raw) as EvalFeedbackCase;
-        if (parsed && typeof parsed.caseId === "string") {
+        const parsed = parseJson(raw);
+        if (isEvalFeedbackCase(parsed)) {
           cases.push(parsed);
         }
       } catch {
@@ -436,7 +452,7 @@ export class SessionEvalCaseStore {
       }
     }
 
-    return cases.sort(
+    return cases.toSorted(
       (a, b) => b.createdAt.localeCompare(a.createdAt) || b.caseId.localeCompare(a.caseId),
     );
   }
@@ -467,7 +483,11 @@ export class SessionEvalCaseStore {
       raw = await readFile(caseFilePath, "utf8");
     }
 
-    const caseMeta = JSON.parse(raw) as EvalFeedbackCase;
+    const parsed = parseJson(raw);
+    if (!isEvalFeedbackCase(parsed)) {
+      throw new Error(`Invalid eval feedback case file: ${caseFilePath}`);
+    }
+    const caseMeta = parsed;
     const sessionFilePath = join(dirname(caseFilePath), caseMeta.sessionFile);
     const entries = parseSessionEntries(await readFile(sessionFilePath, "utf8"));
     return {
@@ -532,9 +552,17 @@ export interface SessionSentMessageObserverContext {
   readonly logger?: Logger;
 }
 
+export interface ObservableEvalSession {
+  subscribe: AgentSession["subscribe"];
+  readonly sessionManager: Pick<
+    AgentSession["sessionManager"],
+    "getBranch" | "getSessionId" | "getSessionFile"
+  >;
+}
+
 export function observeSessionSentMessages(
   index: SentMessageSessionIndex,
-  session: AgentSession,
+  session: ObservableEvalSession,
   context: SessionSentMessageObserverContext,
 ): () => void {
   return session.subscribe((event) => {
@@ -545,7 +573,7 @@ export function observeSessionSentMessages(
 
 function recordTurnEndDiscordMessages(
   index: SentMessageSessionIndex,
-  session: AgentSession,
+  session: ObservableEvalSession,
   toolResults: readonly Message[],
   context: SessionSentMessageObserverContext,
 ): void {
@@ -553,11 +581,7 @@ function recordTurnEndDiscordMessages(
     if (message.role !== "toolResult" || message.toolName !== "discord_send" || message.isError) {
       return false;
     }
-    const details = message.details as { messageIds?: unknown } | undefined;
-    return (
-      Array.isArray(details?.messageIds) &&
-      details.messageIds.some((id): id is string => typeof id === "string" && id.length > 0)
-    );
+    return extractMessageIds(message.details).length > 0;
   });
   if (sentToolResults.length === 0) return;
 
@@ -570,14 +594,11 @@ function recordTurnEndDiscordMessages(
   const records: SentDiscordMessageRecord[] = [];
   for (const toolResult of sentToolResults) {
     if (toolResult.role !== "toolResult") continue;
-    const details = toolResult.details as { messageIds?: unknown } | undefined;
-    const messageIds = Array.isArray(details?.messageIds)
-      ? details.messageIds.filter((id): id is string => typeof id === "string" && id.length > 0)
-      : [];
+    const messageIds = extractMessageIds(toolResult.details);
     if (messageIds.length === 0) continue;
 
-    const toolResultEntry = [...branch]
-      .reverse()
+    const toolResultEntry = branch
+      .toReversed()
       .find(
         (entry) =>
           entry.type === "message" &&
@@ -700,7 +721,7 @@ export interface EvalFeedbackObserver {
   readonly index: SentMessageSessionIndex;
   readonly store: SessionEvalCaseStore;
   observeSession(
-    session: AgentSession,
+    session: ObservableEvalSession,
     context: Pick<SessionSentMessageObserverContext, "sessionKey" | "ownerFeaturesAllowed">,
   ): () => void;
   handleReaction(reaction: DiscordReactionEvent): Promise<void>;
@@ -741,4 +762,71 @@ export function createEvalFeedbackObserver(options: {
       return index.flush();
     },
   };
+}
+
+function extractMessageIds(details: unknown): string[] {
+  if (!isRecord(details) || !Array.isArray(details.messageIds)) return [];
+  return details.messageIds.filter((id): id is string => typeof id === "string" && id.length > 0);
+}
+
+function isSentDiscordMessageRecord(value: unknown): value is SentDiscordMessageRecord {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.discordMessageId === "string" &&
+    typeof value.channelId === "string" &&
+    typeof value.sessionKey === "string" &&
+    typeof value.sessionId === "string" &&
+    (value.sessionFile === undefined || typeof value.sessionFile === "string") &&
+    typeof value.assistantEntryId === "string" &&
+    typeof value.toolResultEntryId === "string" &&
+    typeof value.toolCallId === "string" &&
+    typeof value.sentAt === "string" &&
+    typeof value.content === "string" &&
+    typeof value.ownerFeaturesAllowed === "boolean"
+  );
+}
+
+function isEvalFeedbackCase(value: unknown): value is EvalFeedbackCase {
+  if (!isRecord(value)) return false;
+  if (
+    value.version !== 1 ||
+    typeof value.caseId !== "string" ||
+    typeof value.createdAt !== "string" ||
+    typeof value.sessionFile !== "string"
+  ) {
+    return false;
+  }
+  const { reaction, sourceSession, slice, recordedResponse } = value;
+  if (
+    !isRecord(reaction) ||
+    !isRecord(sourceSession) ||
+    !isRecord(slice) ||
+    !isRecord(recordedResponse)
+  ) {
+    return false;
+  }
+  return (
+    typeof reaction.emoji === "string" &&
+    typeof reaction.userId === "string" &&
+    typeof reaction.isOwner === "boolean" &&
+    typeof reaction.channelId === "string" &&
+    (reaction.guildId === undefined || typeof reaction.guildId === "string") &&
+    typeof reaction.messageId === "string" &&
+    typeof reaction.occurredAt === "string" &&
+    typeof sourceSession.sessionId === "string" &&
+    typeof sourceSession.sessionKey === "string" &&
+    typeof sourceSession.ownerFeaturesAllowed === "boolean" &&
+    (sourceSession.originalSessionFile === undefined ||
+      typeof sourceSession.originalSessionFile === "string") &&
+    (slice.upToEntryId === null || typeof slice.upToEntryId === "string") &&
+    typeof slice.targetAssistantEntryId === "string" &&
+    typeof slice.targetToolResultEntryId === "string" &&
+    (slice.turnStartEntryId === undefined || typeof slice.turnStartEntryId === "string") &&
+    (slice.turnContextEntryId === undefined || typeof slice.turnContextEntryId === "string") &&
+    typeof slice.entryCount === "number" &&
+    typeof recordedResponse.content === "string" &&
+    typeof recordedResponse.toolCallId === "string" &&
+    (recordedResponse.assistantTextBeforeCall === undefined ||
+      typeof recordedResponse.assistantTextBeforeCall === "string")
+  );
 }

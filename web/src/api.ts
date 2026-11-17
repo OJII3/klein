@@ -94,7 +94,7 @@ export interface MemoryEntry {
   content: string;
   createdAt: string;
   updatedAt: string;
-  sourceMessageIds: string[];
+  sourceMessageIds: readonly string[];
 }
 
 export type MemoryScope = { type: "owner" } | { type: "guild"; guildId: string };
@@ -137,9 +137,9 @@ export interface UserMemorySummary {
 
 export interface MemoryScopesResponse {
   enabled: boolean;
-  items: MemoryScopeSummary[];
+  items: readonly MemoryScopeSummary[];
   userMemoryEnabled: boolean;
-  users: UserMemorySummary[];
+  users: readonly UserMemorySummary[];
 }
 
 export interface UserMemoryResponse {
@@ -148,7 +148,7 @@ export interface UserMemoryResponse {
 
 export interface MemoryDetailResponse {
   scope: MemoryScope;
-  entries: MemoryEntry[];
+  entries: readonly MemoryEntry[];
 }
 
 export interface ToolUsageStat {
@@ -170,8 +170,8 @@ export interface ToolUsageReport {
   totalCalls: number;
   totalErrors: number;
   sessionCount: number;
-  tools: ToolUsageStat[];
-  mcpServers: McpServerUsageStat[];
+  tools: readonly ToolUsageStat[];
+  mcpServers: readonly McpServerUsageStat[];
 }
 
 const apiOrigin = typeof window === "undefined" ? "http://127.0.0.1:4310" : window.location.origin;
@@ -194,28 +194,56 @@ function errorMessage(error: unknown): string {
   return "APIリクエストに失敗しました";
 }
 
-async function unwrap<T>(request: Promise<unknown>): Promise<T> {
-  const response = (await request) as { data?: unknown; error?: unknown };
-  if (response.error) throw new Error(errorMessage(response.error));
-  if (response.data === undefined) throw new Error("APIレスポンスが空です");
-  return response.data as T;
+function isErrorBody(value: unknown): value is { error: string } {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "error" in value &&
+    typeof value.error === "string"
+  );
 }
 
-function withoutEmptyValues<T extends object>(query: T): Partial<T> {
-  return Object.fromEntries(
-    Object.entries(query).filter(([, value]) => value !== undefined && value !== ""),
-  ) as Partial<T>;
+async function unwrap<T>(
+  request: Promise<{ data: T | { error: string } | null; error: unknown }>,
+): Promise<T> {
+  const response = await request;
+  if (response.error) throw new Error(errorMessage(response.error));
+  if (response.data === null || response.data === undefined) {
+    throw new Error("APIレスポンスが空です");
+  }
+  if (isErrorBody(response.data)) {
+    throw new Error(response.data.error);
+  }
+  return response.data;
+}
+
+function cleanLogsQuery(query: LogsQuery): LogsQuery {
+  return {
+    ...(query.limit !== undefined ? { limit: query.limit } : {}),
+    ...(query.cursor ? { cursor: query.cursor } : {}),
+    ...(query.level ? { level: query.level } : {}),
+    ...(query.q ? { q: query.q } : {}),
+    ...(query.channelId ? { channelId: query.channelId } : {}),
+    ...(query.event ? { event: query.event } : {}),
+  };
+}
+
+function cleanSessionQuery(query: SessionQuery): SessionQuery {
+  return {
+    ...(query.limit !== undefined ? { limit: query.limit } : {}),
+    ...(query.cursor ? { cursor: query.cursor } : {}),
+  };
 }
 
 export function listLogs(query: LogsQuery = {}): Promise<LogsResponse> {
   return unwrap<LogsResponse>(
-    client.api.logs.get({ query: withoutEmptyValues({ limit: 100, ...query }) }),
+    client.api.logs.get({ query: cleanLogsQuery({ limit: 100, ...query }) }),
   );
 }
 
 export function listSessions(query: SessionQuery = {}): Promise<SessionsResponse> {
   return unwrap<SessionsResponse>(
-    client.api.sessions.get({ query: withoutEmptyValues({ limit: 100, ...query }) }),
+    client.api.sessions.get({ query: cleanSessionQuery({ limit: 100, ...query }) }),
   );
 }
 
@@ -232,7 +260,7 @@ export function getSession(
   query: SessionQuery = {},
 ): Promise<SessionDetailResponse> {
   return unwrap<SessionDetailResponse>(
-    client.api.sessions({ sessionId }).get({ query: withoutEmptyValues(query) }),
+    client.api.sessions({ sessionId }).get({ query: cleanSessionQuery(query) }),
   );
 }
 

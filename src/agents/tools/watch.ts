@@ -206,7 +206,7 @@ export function createWatchTools(
       exposure: "deferred",
       async execute() {
         const watches = (await store.listForScope("watch", channelId, accessScope)).filter(
-          canManage,
+          (watch) => canManage(watch),
         );
         return {
           content: [
@@ -215,43 +215,11 @@ export function createWatchTools(
               text:
                 watches.length === 0
                   ? "この会話に監視はありません。"
-                  : watches.map(formatWatch).join("\n"),
+                  : watches.map((watch) => formatWatch(watch)).join("\n"),
             },
           ],
           details: {
-            watches: watches.map(
-              ({
-                id,
-                name,
-                nextRunAt,
-                schedule,
-                script,
-                args,
-                message,
-                ownerTaskId: watchOwnerTaskId,
-                enabled,
-                lastCheckedAt,
-                lastTriggeredAt,
-                lastStatus,
-                lastError,
-                consecutiveFailures,
-              }) => ({
-                id,
-                name,
-                nextRunAt,
-                schedule: formatSchedule(schedule),
-                script,
-                args,
-                message,
-                enabled,
-                consecutiveFailures,
-                ...(watchOwnerTaskId ? { ownerTaskId: watchOwnerTaskId } : {}),
-                ...(lastCheckedAt ? { lastCheckedAt } : {}),
-                ...(lastTriggeredAt ? { lastTriggeredAt } : {}),
-                ...(lastStatus ? { lastStatus } : {}),
-                ...(lastError ? { lastError } : {}),
-              }),
-            ),
+            watches: watches.map((watch) => serializeWatchListItem(watch)),
           },
         };
       },
@@ -313,7 +281,44 @@ export function createWatchTools(
         };
       },
     }),
-  ];
+  ] as const;
+}
+
+interface WatchListItem {
+  readonly id: string;
+  readonly name: string;
+  readonly nextRunAt: string;
+  readonly schedule: string;
+  readonly script: string;
+  readonly args: readonly string[];
+  readonly message: string;
+  readonly enabled: boolean;
+  readonly consecutiveFailures: number;
+  ownerTaskId?: string;
+  lastCheckedAt?: string;
+  lastTriggeredAt?: string;
+  lastStatus?: WatchTask["lastStatus"];
+  lastError?: string;
+}
+
+function serializeWatchListItem(watch: WatchTask): WatchListItem {
+  const item: WatchListItem = {
+    id: watch.id,
+    name: watch.name,
+    nextRunAt: watch.nextRunAt,
+    schedule: formatSchedule(watch.schedule),
+    script: watch.script,
+    args: watch.args,
+    message: watch.message,
+    enabled: watch.enabled,
+    consecutiveFailures: watch.consecutiveFailures,
+  };
+  if (watch.ownerTaskId) item.ownerTaskId = watch.ownerTaskId;
+  if (watch.lastCheckedAt) item.lastCheckedAt = watch.lastCheckedAt;
+  if (watch.lastTriggeredAt) item.lastTriggeredAt = watch.lastTriggeredAt;
+  if (watch.lastStatus) item.lastStatus = watch.lastStatus;
+  if (watch.lastError) item.lastError = watch.lastError;
+  return item;
 }
 
 function formatWatch(watch: WatchTask): string {
@@ -364,6 +369,8 @@ async function requireSuccessfulDryRun(
   try {
     await runner.run(watch);
   } catch (error) {
-    throw new Error(`${failureMessage}${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(`${failureMessage}${error instanceof Error ? error.message : String(error)}`, {
+      cause: error,
+    });
   }
 }

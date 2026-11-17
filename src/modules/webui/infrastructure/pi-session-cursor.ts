@@ -1,3 +1,5 @@
+import { isRecord, parseJson } from "@shared/type-guards";
+
 interface SessionCursor {
   readonly sessionId: string;
   readonly beforeEntryId: string;
@@ -18,7 +20,7 @@ export function encodeSessionListCursor(cursor: SessionListCursor): string {
 export function decodeSessionCursor(value: string, sessionId: string): SessionCursor {
   let decoded: unknown;
   try {
-    decoded = JSON.parse(Buffer.from(value, "base64url").toString("utf8"));
+    decoded = parseJson(Buffer.from(value, "base64url").toString("utf8"));
   } catch {
     throw new Error("Invalid session cursor");
   }
@@ -38,7 +40,7 @@ export function decodeSessionCursor(value: string, sessionId: string): SessionCu
 export function decodeSessionListCursor(value: string): SessionListCursor {
   let decoded: unknown;
   try {
-    decoded = JSON.parse(Buffer.from(value, "base64url").toString("utf8"));
+    decoded = parseJson(Buffer.from(value, "base64url").toString("utf8"));
   } catch {
     throw new Error("Invalid session list cursor");
   }
@@ -60,8 +62,4 @@ export function normalizeSessionLimit(value: number | undefined): number {
     throw new Error("Session event limit must be an integer between 1 and 200");
   }
   return value;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

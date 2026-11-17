@@ -22,10 +22,10 @@ interface MemoryViewProps {
   channelNames: ReadonlyMap<string, string>;
   enabled: boolean;
   userMemoryEnabled: boolean;
-  scopes: MemoryScopeSummary[];
-  users: UserMemorySummary[];
+  scopes: readonly MemoryScopeSummary[];
+  users: readonly UserMemorySummary[];
   selectedScope: MemorySelection | null;
-  entries: MemoryEntry[];
+  entries: readonly MemoryEntry[];
   userMemory: UserMemory | null;
   loading: boolean;
   loadingDetail: boolean;
@@ -159,7 +159,9 @@ export function MemoryView(props: MemoryViewProps) {
               <input
                 aria-label="メモリを検索"
                 className="input input-sm w-full"
-                onChange={(event) => setQuery((event.target as HTMLInputElement).value)}
+                onChange={(event) => {
+                  if (event.target instanceof HTMLInputElement) setQuery(event.target.value);
+                }}
                 placeholder="名前・ID で絞り込み"
                 type="search"
                 value={query}
@@ -360,7 +362,7 @@ function MemoryEntries({
 }: {
   channelNames: ReadonlyMap<string, string>;
   deletingEntryId: string | null;
-  entries: MemoryEntry[];
+  entries: readonly MemoryEntry[];
   scope: MemoryScope;
   onDelete: (entryId: string) => void;
   addingRule: boolean;
@@ -440,9 +442,12 @@ function MemoryEntries({
           <label className="flex flex-col gap-1">
             <span className="text-[0.7rem] font-medium text-ink-soft">タイトル</span>
             <input
+              aria-label="タイトル"
               className="input input-sm w-full"
               maxLength={200}
-              onChange={(event) => setRuleTitle((event.target as HTMLInputElement).value)}
+              onChange={(event) => {
+                if (event.target instanceof HTMLInputElement) setRuleTitle(event.target.value);
+              }}
               required
               value={ruleTitle}
             />
@@ -450,9 +455,12 @@ function MemoryEntries({
           <label className="flex flex-col gap-1">
             <span className="text-[0.7rem] font-medium text-ink-soft">内容</span>
             <textarea
+              aria-label="内容"
               className="textarea textarea-sm min-h-[5.5rem] w-full resize-y"
               maxLength={10000}
-              onChange={(event) => setRuleContent((event.target as HTMLTextAreaElement).value)}
+              onChange={(event) => {
+                if (event.target instanceof HTMLTextAreaElement) setRuleContent(event.target.value);
+              }}
               required
               rows={3}
               value={ruleContent}
@@ -631,14 +639,21 @@ function ImpressionMeter({ value }: { value: number }) {
           {formatImpression(value)}
         </span>
       </div>
-      <div
+      <meter
         aria-label={`印象 ${value}`}
-        className="relative h-1.5 overflow-hidden rounded-full bg-base-300"
-        role="img"
+        className="sr-only"
+        high={50}
+        low={-50}
+        max={100}
+        min={-100}
+        optimum={50}
+        value={value}
       >
-        <span aria-hidden="true" className="absolute inset-y-0 left-1/2 w-px bg-line-strong" />
+        {formatImpression(value)} ({impressionLabel(value)})
+      </meter>
+      <div aria-hidden="true" className="relative h-1.5 overflow-hidden rounded-full bg-base-300">
+        <span className="absolute inset-y-0 left-1/2 w-px bg-line-strong" />
         <span
-          aria-hidden="true"
           className={`absolute inset-y-0 ${value >= 0 ? "left-1/2 bg-green" : "right-1/2 bg-red"}`}
           style={{ width: `${width}%` }}
         />

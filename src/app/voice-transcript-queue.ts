@@ -116,23 +116,24 @@ export class VoiceTranscriptQueue {
       return;
     }
 
-    if (action === "merge" && this.messages.length > 1) {
-      const first = this.messages[0]!;
-      const second = this.messages[1]!;
-      this.messages.splice(0, 2, {
-        ...first,
-        content: `${first.content}\n${second.content}`,
-      });
-      this.options.logger.info(
-        {
-          event: "voice_chat_transcripts_merged",
-          messageId: first.id,
-          queueLength: this.messages.length,
-        },
-        "Merged adjacent voice transcripts based on the queue classification",
-      );
-      this.scheduleDecision();
-      return;
+    if (action === "merge") {
+      const [first, second] = this.messages;
+      if (first && second) {
+        this.messages.splice(0, 2, {
+          ...first,
+          content: `${first.content}\n${second.content}`,
+        });
+        this.options.logger.info(
+          {
+            event: "voice_chat_transcripts_merged",
+            messageId: first.id,
+            queueLength: this.messages.length,
+          },
+          "Merged adjacent voice transcripts based on the queue classification",
+        );
+        this.scheduleDecision();
+        return;
+      }
     }
 
     if (action === "steer" && this.options.steer) {

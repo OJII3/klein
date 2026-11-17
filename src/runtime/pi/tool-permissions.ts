@@ -1,5 +1,11 @@
-import type { ExtensionAPI, ExtensionFactory, ToolLoadout } from "@earendil-works/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionFactory,
+  ExtensionToolContext,
+  ToolLoadout,
+} from "@earendil-works/pi-coding-agent";
 import { isAccessAllowed, type AccessLevel } from "@shared/access";
+import { isRecord } from "@shared/type-guards";
 
 const MCP_RESOURCE_TOOLS = new Set([
   "list_mcp_resources",
@@ -30,8 +36,10 @@ export class ToolAuthorization {
   rememberServers(names: readonly string[]): void {
     for (const name of names) this.servers.add(name);
   }
-  allowsResource(input: Record<string, unknown>): boolean {
-    if (typeof input.server === "string") return this.allowsServer(input.server);
+  allowsResource(input: unknown): boolean {
+    if (isRecord(input) && typeof input.server === "string") {
+      return this.allowsServer(input.server);
+    }
     // Listings only include servers exposed by the session's filtered MCP API.
     return true;
   }
@@ -44,8 +52,14 @@ export class ToolAuthorization {
     if (this.alwaysAllowedTools.has(name)) return true;
     const server = /^mcp__(.+?)__/.exec(name)?.[1];
     if (server) {
-      const matching = [...this.servers].filter((name) => name.replaceAll("-", "_") === server);
-      if (!(matching.length ? matching : [server]).every((name) => this.allowsServer(name)))
+      const matching = [...this.servers].filter(
+        (serverName) => serverName.replaceAll("-", "_") === server,
+      );
+      if (
+        !(matching.length ? matching : [server]).every((serverName) =>
+          this.allowsServer(serverName),
+        )
+      )
         return false;
     }
     return this.allows(
@@ -63,8 +77,10 @@ export class ToolAuthorization {
       if (
         !this.allowsTool(event.toolName) ||
         (MCP_RESOURCE_TOOLS.has(event.toolName) && !this.allowsResource(event.input))
-      )
+      ) {
         return { block: true, reason: "This tool is not permitted for this input." };
+      }
+      return undefined;
     });
   };
   wrap(factory: ExtensionFactory): ExtensionFactory {
@@ -86,25 +102,63 @@ export class ToolAuthorization {
         this.rememberServers(servers.map((server) => server.name));
         return servers.filter((server) => this.allowsServer(server.name));
       },
-      setActiveTools: (names) => pi.setActiveTools(names.filter(allowed)),
+      setActiveTools: (names) => pi.setActiveTools(names.filter((name) => allowed(name))),
       registerTool: (tool) => {
+        const prepareLoadout = tool.prepareLoadout;
         pi.registerTool({
           ...tool,
           exposure: allowed(tool.name) ? tool.exposure : "hidden",
-          prepareLoadout: tool.prepareLoadout
-            ? (loadout) => tool.prepareLoadout!(filterLoadout(loadout))
+          prepareLoadout: prepareLoadout
+            ? (loadout) => prepareLoadout(filterLoadout(loadout))
             : undefined,
           execute: (id, params, signal, update, ctx) => {
             if (
               !this.allowsTool(tool.name) ||
-              (MCP_RESOURCE_TOOLS.has(tool.name) &&
-                !this.allowsResource(params as Record<string, unknown>))
+              (MCP_RESOURCE_TOOLS.has(tool.name) && !this.allowsResource(params))
             )
               throw new Error("This tool is not permitted for this input.");
-            const filteredContext = Object.create(ctx);
-            Object.defineProperty(filteredContext, "tools", {
-              value: ctx.tools.filter((candidate) => allowed(candidate.name)),
-            });
+            const filteredContext: ExtensionToolContext = {
+              get ui() {
+                return ctx.ui;
+              },
+              get mode() {
+                return ctx.mode;
+              },
+              get hasUI() {
+                return ctx.hasUI;
+              },
+              get cwd() {
+                return ctx.cwd;
+              },
+              get sessionManager() {
+                return ctx.sessionManager;
+              },
+              get modelRegistry() {
+                return ctx.modelRegistry;
+              },
+              get model() {
+                return ctx.model;
+              },
+              get scopedModels() {
+                return ctx.scopedModels;
+              },
+              get thinkingLevel() {
+                return ctx.thinkingLevel;
+              },
+              get signal() {
+                return ctx.signal;
+              },
+              isIdle: () => ctx.isIdle(),
+              isProjectTrusted: () => ctx.isProjectTrusted(),
+              abort: () => ctx.abort(),
+              hasPendingMessages: () => ctx.hasPendingMessages(),
+              shutdown: () => ctx.shutdown(),
+              getContextUsage: () => ctx.getContextUsage(),
+              compact: (options) => ctx.compact(options),
+              getSystemPrompt: () => ctx.getSystemPrompt(),
+              tools: ctx.tools.filter((candidate) => allowed(candidate.name)),
+              executeTool: (name, args, options) => ctx.executeTool(name, args, options),
+            };
             return tool.execute(id, params, signal, update, filteredContext);
           },
         });

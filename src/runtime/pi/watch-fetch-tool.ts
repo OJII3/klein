@@ -2,21 +2,27 @@ import { resolve } from "node:path";
 
 import type { CodemodeJsonSchema } from "@earendil-works/pi-codemode";
 import type { WatchTool } from "@modules/scheduling/application/watch-tool";
+import { isRecord } from "@shared/type-guards";
 
 const MAX_URLS = 10;
 const MAX_CONTENT_BYTES = 64 * 1_024;
 
 export interface WatchFetchCoreResult {
   readonly content?: readonly { readonly type: string; readonly text?: string }[];
-  readonly structuredContent?: {
-    readonly urls?: readonly {
-      readonly url?: string;
-      readonly title?: string;
-      readonly content?: string;
-      readonly status?: number;
-      readonly error?: string | null;
-    }[];
-  };
+  readonly structuredContent?:
+    | {
+        readonly urls?: readonly {
+          readonly url?: string;
+          readonly title?: string;
+          readonly content?: string;
+          readonly status?: number;
+          readonly error?: string | null;
+        }[];
+      }
+    | {
+        readonly queries: readonly unknown[];
+        readonly urls?: never;
+      };
 }
 
 export interface WatchFetchCore {
@@ -107,17 +113,29 @@ export function createWatchFetchToolFromCore(
     async execute(args, { signal }) {
       const params = normalizeFetchArgs(args);
       const result = await (await getCore()).fetchContent(params, signal);
-      const entries = result.structuredContent?.urls;
+      const structured = result.structuredContent;
+      const entries = structured && "urls" in structured ? structured.urls : undefined;
       if (!entries || entries.length === 0) {
         throw new Error(textOf(result) || "fetch_content が内容を返しませんでした。");
       }
-      const urls = entries.map((entry) => ({
-        url: entry.url ?? params.url ?? params.urls?.[0] ?? "",
-        title: entry.title ?? "",
-        content: truncateUtf8(entry.content ?? "", MAX_CONTENT_BYTES),
-        ...(entry.status === undefined ? {} : { status: entry.status }),
-        error: entry.error ?? null,
-      }));
+      const urls = entries.map((entry) => {
+        const item: {
+          url: string;
+          title: string;
+          content: string;
+          status?: number;
+          error: string | null;
+        } = {
+          url: entry.url ?? params.url ?? params.urls?.[0] ?? "",
+          title: entry.title ?? "",
+          content: truncateUtf8(entry.content ?? "", MAX_CONTENT_BYTES),
+          error: entry.error ?? null,
+        };
+        if (entry.status !== undefined) {
+          item.status = entry.status;
+        }
+        return item;
+      });
       const failed = urls.filter((entry) => entry.error !== null);
       if (failed.length === urls.length) {
         throw new Error(failed.map((entry) => `${entry.url}: ${entry.error}`).join("\n"));
@@ -132,13 +150,12 @@ function normalizeFetchArgs(value: unknown): {
   urls?: string[];
   mode: "raw" | "readable";
 } {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+  if (!isRecord(value)) {
     throw new Error("fetch_content には引数オブジェクトを渡してください。");
   }
-  const record = value as Record<string, unknown>;
-  const url = typeof record.url === "string" ? record.url.trim() : undefined;
-  const urls = Array.isArray(record.urls)
-    ? record.urls.flatMap((entry) =>
+  const url = typeof value.url === "string" ? value.url.trim() : undefined;
+  const urls = Array.isArray(value.urls)
+    ? value.urls.flatMap((entry) =>
         typeof entry === "string" && entry.trim() ? [entry.trim()] : [],
       )
     : undefined;
@@ -160,7 +177,7 @@ function normalizeFetchArgs(value: unknown): {
       throw new Error("fetch_content は http と https のみ対応しています。");
     }
   }
-  const mode = record.mode ?? "raw";
+  const mode = value.mode ?? "raw";
   if (mode !== "raw" && mode !== "readable") {
     throw new Error('fetch_content の mode は "raw" か "readable" です。');
   }
@@ -185,8 +202,6 @@ function textOf(result: WatchFetchCoreResult): string {
 
 async function loadWatchFetchCore(agentDir: string): Promise<WatchFetchCore> {
   process.env.PI_CODING_AGENT_DIR = resolve(agentDir);
-  const module = (await import("pi-web-access/web-tool-core.ts")) as {
-    createStandaloneWebToolCore(): WatchFetchCore;
-  };
-  return module.createStandaloneWebToolCore();
+  const { createStandaloneWebToolCore } = await import("pi-web-access/web-tool-core.ts");
+  return createStandaloneWebToolCore();
 }

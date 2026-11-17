@@ -118,7 +118,7 @@ test("prompts StandaloneAgentFactory directly with text and sandboxed tools", as
       async create(definition, tools, options) {
         assert.equal(definition.systemPrompt, USER_MEMORY_AGENT_SYSTEM_PROMPT);
         assert.equal(options.sessionKey, "user-memory-test");
-        receivedToolNames = tools.map((tool) => tool.name).sort();
+        receivedToolNames = tools.map((tool) => tool.name).toSorted();
         return {
           async prompt(text) {
             receivedPrompt = text;

@@ -4,15 +4,31 @@ import type {
   AgentSession,
   AgentSessionEvent,
   ExtensionFactory,
+  SessionManager,
+  SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 
 import type { PiUsageReporter } from "./pi-usage-reporter";
 
 const BLOCKED_SESSION_ENTRY_TYPE = "klein-provider-http-400";
 
+export interface PiTraceSession {
+  readonly sessionManager: Pick<SessionManager, "getSessionId" | "getBranch" | "appendCustomEntry">;
+  readonly settingsManager: Pick<
+    SettingsManager,
+    "getHttpIdleTimeoutMs" | "getProviderRetrySettings"
+  >;
+  readonly model: AgentSession["model"];
+  readonly thinkingLevel: AgentSession["thinkingLevel"];
+  readonly steeringMode: AgentSession["steeringMode"];
+  readonly cacheWarmingStatus?: AgentSession["cacheWarmingStatus"];
+  subscribe: AgentSession["subscribe"];
+  abort: AgentSession["abort"];
+}
+
 export interface PiRuntimeTraceOptions {
   readonly now?: () => number;
-  readonly usageReporter?: PiUsageReporter;
+  readonly usageReporter?: Pick<PiUsageReporter, "recordAssistantMessage">;
 }
 
 /** Observe Pi without recording prompts, tool arguments, or HTTP headers. */
@@ -35,9 +51,9 @@ export class PiRuntimeTrace {
   private compactionStartedAt = 0;
   private sessionBlocked = false;
   private unsubscribe?: () => void;
-  private session?: AgentSession;
+  private session?: PiTraceSession;
   private readonly now: () => number;
-  private readonly usageReporter?: PiUsageReporter;
+  private readonly usageReporter?: Pick<PiUsageReporter, "recordAssistantMessage">;
 
   constructor(
     private readonly logger: Logger,
@@ -95,7 +111,7 @@ export class PiRuntimeTrace {
     });
   };
 
-  attach(session: AgentSession): void {
+  attach(session: PiTraceSession): void {
     this.session = session;
     this.sessionId = session.sessionManager.getSessionId();
     this.sessionBlocked = session.sessionManager.getBranch().some((entry) => {
@@ -305,6 +321,16 @@ export class PiRuntimeTrace {
         this.inputId = undefined;
         this.llmCallId = undefined;
         this.providerRequestId = undefined;
+        break;
+      case "turn_end":
+      case "tool_execution_update":
+      case "bash_execution_update":
+      case "session_info_changed":
+      case "thinking_level_changed":
+      case "entry_appended":
+      case "summarization_retry_scheduled":
+      case "summarization_retry_attempt_start":
+      case "summarization_retry_finished":
         break;
     }
   }

@@ -1,6 +1,6 @@
 import ky from "ky";
 import { Check, Errors } from "typebox/value";
-import { Type, type Static } from "typebox";
+import { Type } from "typebox";
 
 import type { MonthlyUsageLimit } from "../domain/monthly-usage-limit";
 import type { UsageLimitProvider } from "../ports/usage-limit-provider";
@@ -19,8 +19,6 @@ const OpenCodeGoUsageResponseSchema = Type.Object({
     monthly: UsageWindowSchema,
   }),
 });
-
-type OpenCodeGoUsageResponse = Static<typeof OpenCodeGoUsageResponseSchema>;
 
 function formatValidationErrors(value: unknown): string {
   return [...Errors(OpenCodeGoUsageResponseSchema, value)]
@@ -52,10 +50,10 @@ export class OpenCodeGoUsageProvider implements UsageLimitProvider {
       throw new Error(`OpenCode Go usage response is invalid: ${formatValidationErrors(response)}`);
     }
 
-    const monthly = (response as OpenCodeGoUsageResponse).usage.monthly;
+    const monthly = response.usage.monthly;
     const resetsAt = new Date(monthly.resetsAt);
     if (Number.isNaN(resetsAt.getTime())) {
-      throw new Error("OpenCode Go usage response contains an invalid reset timestamp");
+      throw new TypeError("OpenCode Go usage response contains an invalid reset timestamp");
     }
 
     return {

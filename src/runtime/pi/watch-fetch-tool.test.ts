@@ -1,12 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { isRecord } from "@shared/type-guards";
 import {
   createWatchFetchTool,
   createWatchFetchToolFromCore,
   type WatchFetchCore,
   type WatchFetchCoreResult,
 } from "./watch-fetch-tool";
+
+function extractUrls(result: unknown): readonly Record<string, unknown>[] {
+  assert.ok(isRecord(result) && Array.isArray(result.urls));
+  return result.urls.filter((entry): entry is Record<string, unknown> => isRecord(entry));
+}
 
 function coreReturning(
   result: WatchFetchCoreResult,
@@ -75,12 +81,14 @@ test("keeps per-URL errors when another URL succeeds", async () => {
     }),
   );
 
-  const result = (await tool.execute(
-    { urls: ["https://example.com/ok", "https://example.com/fail"] },
-    { signal },
-  )) as { urls: { error: string | null }[] };
-  assert.equal(result.urls.length, 2);
-  assert.equal(result.urls[1]?.error, "HTTP 500");
+  const urls = extractUrls(
+    await tool.execute(
+      { urls: ["https://example.com/ok", "https://example.com/fail"] },
+      { signal },
+    ),
+  );
+  assert.equal(urls.length, 2);
+  assert.equal(urls[1]?.error, "HTTP 500");
 });
 
 test("fails when every URL fails", async () => {
@@ -120,10 +128,9 @@ test("truncates fetched content by UTF-8 bytes", async () => {
       },
     }),
   );
-  const result = (await tool.execute({ url: "https://example.com" }, { signal })) as {
-    urls: { content: string }[];
-  };
-  const truncated = result.urls[0]?.content ?? "";
+  const urls = extractUrls(await tool.execute({ url: "https://example.com" }, { signal }));
+  const rawTruncated = urls[0]?.content;
+  const truncated = typeof rawTruncated === "string" ? rawTruncated : "";
   assert.ok(Buffer.byteLength(truncated, "utf8") <= 64 * 1024);
   assert.ok(!truncated.endsWith("\uFFFD"));
 });

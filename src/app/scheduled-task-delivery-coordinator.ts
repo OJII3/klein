@@ -26,7 +26,7 @@ export interface ScheduledTaskDeliveryCoordinatorDependencies {
   readonly channelApi: DiscordChannelApi;
   readonly logger: Logger;
   readonly operatingState: DiscordOperatingState;
-  readonly ownerMemoryStore?: OwnerMemoryStore;
+  readonly ownerMemoryStore?: Pick<OwnerMemoryStore, "getContext">;
   readonly ownerUserId?: string;
   readonly scheduledTaskStore?: ScheduledTaskStore;
   readonly watchCheckRunner: WatchCheckRunner;
@@ -137,7 +137,7 @@ export class ScheduledTaskDeliveryCoordinator {
   }
 
   private pruneSkippedTasks(tasks: readonly ScheduledTask[]): void {
-    const dueKeys = new Set(tasks.map(taskKey));
+    const dueKeys = new Set(tasks.map((task) => taskKey(task)));
     for (const key of this.skippedTasks) {
       if (!dueKeys.has(key)) this.skippedTasks.delete(key);
     }

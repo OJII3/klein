@@ -319,13 +319,13 @@ test("migrates pi-durable SQLite channel states and conversations idempotently",
   assert.equal(listed.items.length, 2);
 
   const sessionDir = join(agentDir, "sessions", "conversation", encodeURIComponent(sessionKey));
-  const filesBefore = (await readdir(sessionDir)).sort();
+  const filesBefore = (await readdir(sessionDir)).toSorted();
   assert.equal(filesBefore.length, 2);
 
   const secondRun = await migratePiDurableStorage({ agentDir, cwd: process.cwd() });
   assert.equal(secondRun.migratedChannelStates, 0);
   assert.equal(secondRun.migratedConversations, 0);
-  const filesAfter = (await readdir(sessionDir)).sort();
+  const filesAfter = (await readdir(sessionDir)).toSorted();
   assert.deepEqual(filesAfter, filesBefore);
 });
 

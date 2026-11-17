@@ -41,12 +41,17 @@ export default function App() {
     navigate(`/memory?scope=${encodeURIComponent(memoryScopeKey(scope))}`);
   }, []);
 
+  const { reload: reloadLogs } = logs;
+  const { reload: reloadSessions } = sessions;
+  const { reload: reloadMemory } = memory;
+  const { reload: reloadToolUsage } = toolUsage;
+
   const refreshCurrentView = useCallback(() => {
-    if (route.view === "logs") logs.reload();
-    else if (route.view === "sessions") void sessions.reload();
-    else if (route.view === "tools") void toolUsage.reload();
-    else void memory.reload();
-  }, [logs.reload, memory.reload, sessions.reload, toolUsage.reload, route.view]);
+    if (route.view === "logs") reloadLogs();
+    else if (route.view === "sessions") void reloadSessions();
+    else if (route.view === "tools") void reloadToolUsage();
+    else reloadMemory();
+  }, [reloadLogs, reloadMemory, reloadSessions, reloadToolUsage, route.view]);
 
   return (
     <AppShell
@@ -111,11 +116,17 @@ export default function App() {
           userMemoryEnabled={memory.userMemoryEnabled}
           loading={memory.scopesLoading}
           loadingDetail={memory.detailLoading}
-          onDelete={memory.deleteEntry}
-          onDeleteUserMemory={memory.deleteUser}
-          onAddRule={memory.createRule}
+          onDelete={(entryId) => {
+            void memory.deleteEntry(entryId);
+          }}
+          onDeleteUserMemory={(userId) => {
+            void memory.deleteUser(userId);
+          }}
+          onAddRule={(title, content) => {
+            void memory.createRule(title, content);
+          }}
           onDismissDeleteError={memory.dismissDeleteError}
-          onRetry={() => void memory.reload()}
+          onRetry={memory.reload}
           onRetryDetail={memory.retryDetail}
           onSelect={selectScope}
           selectedScope={memory.selectedScope}

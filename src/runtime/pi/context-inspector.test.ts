@@ -24,6 +24,7 @@ import { loadPromptFile } from "@app/prompt";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
 import { QuickJsWatchCheckRunner } from "@modules/scheduling/application/quickjs-watch-check-runner";
+import { isRecord, parseJson } from "@shared/type-guards";
 
 import { createTempDir } from "../../testing/temp-dir";
 import {
@@ -93,7 +94,7 @@ async function createMockModelRuntime(
   });
   fauxCore.setResponses([...responses]);
 
-  modelRuntime.streamSimple = ((
+  modelRuntime.streamSimple = (
     model: Model<Api>,
     context: TranscriptContext,
     streamOptions?: ModelsSimpleStreamOptions,
@@ -104,11 +105,7 @@ async function createMockModelRuntime(
       if (fauxCore.getPendingResponseCount() === 0) {
         fauxCore.appendResponses([fauxAssistantMessage("OK")]);
       }
-      const stream = fauxCore.streamSimple(
-        model as unknown as Model<string>,
-        context,
-        streamOptions,
-      );
+      const stream = fauxCore.streamSimple(model, context, streamOptions);
       for await (const event of stream) {
         outer.push(event);
         if (event.type === "done" || event.type === "error") {
@@ -119,7 +116,7 @@ async function createMockModelRuntime(
       outer.end();
     })();
     return outer;
-  }) as typeof modelRuntime.streamSimple;
+  };
 
   return modelRuntime;
 }
@@ -230,7 +227,8 @@ test("inspects turns and raw context from a persisted session JSONL in turn-star
       captureProviderPayload: true,
     });
     assert.equal(turnStartResult.requests.length, 1);
-    const req = turnStartResult.requests[0]!;
+    const req = turnStartResult.requests[0];
+    assert.ok(req);
     assert.ok(req.systemPrompt.length > 0);
     assert.ok(req.tools.some((tool) => tool.name === "discord_send"));
     assert.ok(req.providerPayload !== undefined);
@@ -254,8 +252,10 @@ test("inspects turns and raw context from a persisted session JSONL in turn-star
       captureProviderPayload: true,
     });
     assert.equal(preMessageResult.requests.length, 1);
+    const preReq = preMessageResult.requests[0];
+    assert.ok(preReq);
     assert.ok(
-      preMessageResult.requests[0]!.transcriptMessages.some(
+      preReq.transcriptMessages.some(
         (m) => m.role === "toolResult" && m.toolName === "discord_read",
       ),
     );
@@ -280,15 +280,14 @@ test("inspects turns and raw context from a persisted session JSONL in turn-star
       captureProviderPayload: true,
     });
     assert.equal(allTurnsResult.requests.length, 2);
-    const analysis0 = analyzeCapturedRequest(allTurnsResult.requests[0]!);
-    const analysis1 = analyzeCapturedRequest(allTurnsResult.requests[1]!);
+    const [allTurnsReq0, allTurnsReq1] = allTurnsResult.requests;
+    assert.ok(allTurnsReq0 && allTurnsReq1);
+    const analysis0 = analyzeCapturedRequest(allTurnsReq0);
+    const analysis1 = analyzeCapturedRequest(allTurnsReq1);
     assert.ok(analysis0.systemPromptTokens > 0);
     assert.ok(analysis0.tools.length > 0);
     assert.ok(analysis1.messagesTotalTokens >= analysis0.messagesTotalTokens);
-    const stability = comparePrefixStability(
-      allTurnsResult.requests[0]!,
-      allTurnsResult.requests[1]!,
-    );
+    const stability = comparePrefixStability(allTurnsReq0, allTurnsReq1);
     assert.ok(stability.transcript.ratio > 0);
     const allTurnsMarkdown = formatContextInspectionMarkdown(allTurnsResult, {
       includeTools: false,
@@ -414,13 +413,15 @@ test("records a 👎 feedback case, inspects original trace + raw context, and r
     assert.equal(inspectedPre.trace?.recordedResponseContent, "的外れな返答です");
     assert.equal(inspectedPre.trace?.assistantTextBeforeCall, "このまま答えてしまおう");
     assert.ok(inspectedPre.trace?.steps.some((step) => step.toolName === "discord_read"));
+    const inspectedPreReq = inspectedPre.requests[0];
+    assert.ok(inspectedPreReq);
     assert.ok(
-      inspectedPre.requests[0]!.transcriptMessages.some(
+      inspectedPreReq.transcriptMessages.some(
         (m) => m.role === "toolResult" && m.toolName === "discord_read",
       ),
     );
     assert.ok(
-      !inspectedPre.requests[0]!.transcriptMessages.some(
+      !inspectedPreReq.transcriptMessages.some(
         (m) => m.role === "assistant" && JSON.stringify(m.content).includes("的外れな返答です"),
       ),
     );
@@ -428,8 +429,10 @@ test("records a 👎 feedback case, inspects original trace + raw context, and r
     const inspectedTurnStart = await inspectFeedbackCase(loaded, { mode: "turn-start" });
     assert.equal(inspectedTurnStart.mode, "turn-start");
     assert.equal(inspectedTurnStart.requests.length, 1);
+    const inspectedTurnStartReq = inspectedTurnStart.requests[0];
+    assert.ok(inspectedTurnStartReq);
     assert.ok(
-      inspectedTurnStart.requests[0]!.contextWithSystem.some(
+      inspectedTurnStartReq.contextWithSystem.some(
         (m) => m.customType === "klein-turn-context" && m.text.includes("正確な情報だけ"),
       ),
     );
@@ -471,7 +474,7 @@ test("records a 👎 feedback case, inspects original trace + raw context, and r
     const judgeRuntime = await createMockModelRuntime(join(temp.path, "judge-rt"), []);
     let capturedJudgeSystem = "";
     let capturedJudgeUser = "";
-    judgeRuntime.completeSimple = (async (_model, context) => {
+    judgeRuntime.completeSimple = async (_model, context) => {
       capturedJudgeSystem = context.systemPrompt ?? "";
       const firstUser = context.messages[0];
       capturedJudgeUser =
@@ -489,7 +492,7 @@ test("records a 👎 feedback case, inspects original trace + raw context, and r
           findings: [],
         }),
       );
-    }) as typeof judgeRuntime.completeSimple;
+    };
 
     const judgeText = await runContextJudge({
       reportMarkdown: replayMarkdown,
@@ -505,7 +508,9 @@ test("records a 👎 feedback case, inspects original trace + raw context, and r
     });
     assert.ok(capturedJudgeSystem.includes("context engineer"));
     assert.ok(capturedJudgeUser.includes(loaded.caseMeta.caseId));
-    assert.equal(JSON.parse(judgeText).summary, "調査完了");
+    const parsedJudge = parseJson(judgeText);
+    assert.ok(isRecord(parsedJudge));
+    assert.equal(parsedJudge.summary, "調査完了");
   } finally {
     agent.dispose();
     await temp[Symbol.asyncDispose]();

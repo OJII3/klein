@@ -52,10 +52,15 @@ test("batches recent guild messages and keeps guild memory files separate", asyn
     coordinator.enqueue(createMessage("guild-a", "message-a1", "A-1"));
     coordinator.enqueue(createMessage("guild-a", "message-a2", "A-2"));
     coordinator.enqueue(createMessage("guild-b", "message-b1", "B-1"));
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 30);
+    });
     await taskCoordinator.waitForCompletion();
 
-    assert.deepEqual(processed.sort(), [["message-a1", "message-a2"], ["message-b1"]].sort());
+    assert.deepEqual(
+      processed.toSorted(byFirstId),
+      [["message-a1", "message-a2"], ["message-b1"]].toSorted(byFirstId),
+    );
     assert.match(
       (await coordinator.getContext(
         { channelId: "guild-a-channel", guildId: "guild-a" },
@@ -183,4 +188,8 @@ function createMessage(guildId: string, id: string, content: string): DiscordMes
     occurredAt: "2026-10-14T09:30:42.123Z",
     images: [],
   };
+}
+
+function byFirstId(left: readonly string[], right: readonly string[]): number {
+  return (left[0] ?? "").localeCompare(right[0] ?? "");
 }

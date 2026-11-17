@@ -2,24 +2,35 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  type ExtensionAPI,
   type ExtensionContext,
   SessionManager,
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 
+import { isRecord } from "@shared/type-guards";
 import {
   type BackgroundCompactionPreparation,
   createBackgroundCompactionExtension,
 } from "./background-compaction";
+import {
+  createStubAssistantMessage,
+  createStubCompactionPreparation,
+  createStubExtensionContext,
+  createStubModel,
+  createStubSessionBeforeCompactEvent,
+  createStubTurnEndEvent,
+  createStubUsage,
+  createTestModelRegistry,
+  loadTestExtension,
+} from "./pi-test-helpers";
 
-test("defers edited messages to standard compaction before summarizing", () => {
+test("defers edited messages to standard compaction before summarizing", async () => {
   const sessionManager = createTestSession();
   const firstEntry = sessionManager.getBranch()[0];
   assert.ok(firstEntry);
   sessionManager.appendContextEdit(firstEntry.id, { content: "replacement" });
   let summarizeCalls = 0;
-  const handlers = registerExtension(
+  const ext = await loadTestExtension(
     createBackgroundCompactionExtension(createTestSettings(), {
       summarize: async () => {
         summarizeCalls += 1;
@@ -28,7 +39,9 @@ test("defers edited messages to standard compaction before summarizing", () => {
     }),
   );
 
-  handlers.get("turn_end")?.({} as never, createTestContext(sessionManager));
+  const turnEnd = ext.handlers.get("turn_end")?.[0];
+  assert.ok(turnEnd);
+  await turnEnd(createStubTurnEndEvent(), createTestContext(sessionManager));
 
   assert.equal(summarizeCalls, 0);
 });
@@ -37,7 +50,7 @@ test("discards a background summary when a summarized message is omitted", async
   const sessionManager = createTestSession();
   let preparation: BackgroundCompactionPreparation | undefined;
   let backgroundSignal: AbortSignal | undefined;
-  const handlers = registerExtension(
+  const ext = await loadTestExtension(
     createBackgroundCompactionExtension(createTestSettings(), {
       summarize: async (nextPreparation, _context, signal) => {
         preparation = nextPreparation;
@@ -51,15 +64,24 @@ test("discards a background summary when a summarized message is omitted", async
     }),
   );
   const context = createTestContext(sessionManager);
-  handlers.get("turn_end")?.({} as never, context);
-  await new Promise<void>((resolve) => setImmediate(resolve));
+  const turnEnd = ext.handlers.get("turn_end")?.[0];
+  assert.ok(turnEnd);
+  await turnEnd(createStubTurnEndEvent(), context);
+  await new Promise<void>((resolve) => {
+    setImmediate(resolve);
+  });
   assert.ok(preparation);
   const firstEntry = sessionManager.getBranch()[0];
   assert.ok(firstEntry);
   sessionManager.appendContextEdit(firstEntry.id, null);
 
-  const result = handlers.get("session_before_compact")?.(
-    { preparation, branchEntries: sessionManager.getBranch() } as never,
+  const beforeCompact = ext.handlers.get("session_before_compact")?.[0];
+  assert.ok(beforeCompact);
+  const result = await beforeCompact(
+    createStubSessionBeforeCompactEvent({
+      preparation,
+      branchEntries: sessionManager.getBranch(),
+    }),
     context,
   );
 
@@ -67,10 +89,10 @@ test("discards a background summary when a summarized message is omitted", async
   assert.equal(backgroundSignal?.aborted, true);
 });
 
-test("cancels background work after an edit even below the compaction threshold", () => {
+test("cancels background work after an edit even below the compaction threshold", async () => {
   const sessionManager = createTestSession();
   let backgroundSignal: AbortSignal | undefined;
-  const handlers = registerExtension(
+  const ext = await loadTestExtension(
     createBackgroundCompactionExtension(createTestSettings(), {
       summarize: async (_preparation, _context, signal) => {
         backgroundSignal = signal;
@@ -79,14 +101,16 @@ test("cancels background work after an edit even below the compaction threshold"
     }),
   );
   const context = createTestContext(sessionManager);
-  handlers.get("turn_end")?.({} as never, context);
+  const turnEnd = ext.handlers.get("turn_end")?.[0];
+  assert.ok(turnEnd);
+  void turnEnd(createStubTurnEndEvent(), context);
   assert.equal(backgroundSignal?.aborted, false);
   const firstEntry = sessionManager.getBranch()[0];
   assert.ok(firstEntry);
   sessionManager.appendContextEdit(firstEntry.id, null);
   context.getContextUsage = () => ({ tokens: 0, contextWindow: 1000, percent: 0 });
 
-  handlers.get("turn_end")?.({} as never, context);
+  void turnEnd(createStubTurnEndEvent(), context);
 
   assert.equal(backgroundSignal?.aborted, true);
 });
@@ -94,7 +118,7 @@ test("cancels background work after an edit even below the compaction threshold"
 test("uses characterName in handoff compaction prompt and summary", async () => {
   const sessionManager = createTestSession();
   const capturedSystemPrompts: string[] = [];
-  const handlers = registerExtension(
+  const ext = await loadTestExtension(
     createBackgroundCompactionExtension(createTestSettings(), {
       handoff: {
         instructions: "handoff",
@@ -102,53 +126,44 @@ test("uses characterName in handoff compaction prompt and summary", async () => 
       },
     }),
   );
-  const firstKeptEntryId = sessionManager.getBranch()[1]!.id;
-  const context = {
-    ...createTestContext(sessionManager),
-    model: { provider: "test", id: "test-model" },
-    modelRegistry: {
-      complete: async (_model: unknown, input: { systemPrompt: string }) => {
-        capturedSystemPrompts.push(input.systemPrompt);
-        return {
-          stopReason: "stop",
-          content: [{ type: "text", text: "- 継続する話題" }],
-          usage: {
-            input: 10,
-            output: 5,
-            cacheRead: 0,
-            cacheWrite: 0,
-            totalTokens: 15,
-            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-          },
-        };
-      },
-    },
-  } as unknown as ExtensionContext;
+  const secondEntry = sessionManager.getBranch()[1];
+  assert.ok(secondEntry);
+  const modelRegistry = createTestModelRegistry();
+  modelRegistry.complete = async (_model, input) => {
+    capturedSystemPrompts.push(input.systemPrompt ?? "");
+    return createStubAssistantMessage({
+      content: [{ type: "text", text: "- 継続する話題" }],
+      usage: createStubUsage({ input: 10, output: 5, totalTokens: 15 }),
+    });
+  };
+  const context = createStubExtensionContext({
+    sessionManager,
+    getContextUsage: () => ({ tokens: 1000, contextWindow: 1000, percent: 100 }),
+    model: createStubModel(),
+    modelRegistry,
+  });
 
-  const result = await (handlers.get("session_before_compact")?.(
-    {
+  const beforeCompact = ext.handlers.get("session_before_compact")?.[0];
+  assert.ok(beforeCompact);
+  const result = await beforeCompact(
+    createStubSessionBeforeCompactEvent({
       customInstructions: "handoff",
-      preparation: {
-        firstKeptEntryId,
-        messagesToSummarize: [],
-        turnPrefixMessages: [],
-        isSplitTurn: false,
-        tokensBefore: 1000,
-        fileOps: { read: new Set(), written: new Set(), edited: new Set() },
+      preparation: createStubCompactionPreparation({
+        firstKeptEntryId: secondEntry.id,
         settings: createTestSettings().getCompactionSettings(),
-      },
+      }),
       branchEntries: sessionManager.getBranch(),
-      signal: new AbortController().signal,
-    } as never,
+    }),
     context,
-  ) as Promise<{ compaction?: { summary: string } }>);
+  );
 
   assert.match(
     capturedSystemPrompts[0] ?? "",
     /^あなたは月見ヤチヨの次セッション向け引き継ぎメモを作ります。/,
   );
+  assert.ok(isRecord(result) && isRecord(result.compaction));
   assert.equal(
-    result?.compaction?.summary,
+    result.compaction.summary,
     "## Goal\n月見ヤチヨとして振る舞う\n\n## 引き継ぎ\n- 継続する話題",
   );
 });
@@ -172,20 +187,8 @@ function createTestSession(): SessionManager {
 }
 
 function createTestContext(sessionManager: SessionManager): ExtensionContext {
-  return {
+  return createStubExtensionContext({
     sessionManager,
     getContextUsage: () => ({ tokens: 1000, contextWindow: 1000, percent: 100 }),
-  } as unknown as ExtensionContext;
-}
-
-function registerExtension(extension: ReturnType<typeof createBackgroundCompactionExtension>) {
-  type Handler = (event: never, context: ExtensionContext) => unknown;
-  const handlers = new Map<string, Handler>();
-  const api = {
-    on(event: string, handler: Handler) {
-      handlers.set(event, handler);
-    },
-  } as unknown as ExtensionAPI;
-  extension(api);
-  return handlers;
+  });
 }

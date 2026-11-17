@@ -48,16 +48,17 @@ export interface DiscordAgentToolsOptions {
 export function createDiscordAgentTools(
   options: DiscordAgentToolsOptions,
 ): readonly ToolDefinition[] {
-  const ownerFeaturesAllowed = options.ownerFeaturesAllowed && !!options.ownerUserId;
-  const accessScope = ownerFeaturesAllowed
-    ? ownerAccessScope(options.ownerUserId!)
-    : PUBLIC_ACCESS_SCOPE;
+  const ownerUserId =
+    options.ownerFeaturesAllowed && options.ownerUserId ? options.ownerUserId : undefined;
+  const ownerFeaturesAllowed = ownerUserId !== undefined;
+  const accessScope =
+    ownerUserId !== undefined ? ownerAccessScope(ownerUserId) : PUBLIC_ACCESS_SCOPE;
   return [
     createDiscordReadTool(
       options.channelApi,
       options.channelId,
       createDiscordImageAnalysis(options.analyzeImage),
-      ownerFeaturesAllowed ? { userId: options.ownerUserId! } : undefined,
+      ownerUserId !== undefined ? { userId: ownerUserId } : undefined,
     ),
     ...(options.requesterUserId
       ? [createDiscordAskTool(options.channelApi, options.channelId, options.requesterUserId)]

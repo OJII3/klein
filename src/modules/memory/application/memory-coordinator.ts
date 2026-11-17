@@ -143,7 +143,7 @@ export class MemoryCoordinator implements GuildMemoryReader, GuildMemoryEditor {
       const document = await store.read();
       const operations = await this.options.processor.process(
         document,
-        messages.map(toMemoryMessage),
+        messages.map((message) => toMemoryMessage(message)),
       );
       await store.apply(
         operations,
@@ -170,7 +170,7 @@ export class MemoryCoordinator implements GuildMemoryReader, GuildMemoryEditor {
       () => undefined,
     );
     this.guildOperations.set(guildId, tracked);
-    void tracked.then(() => {
+    void tracked.finally(() => {
       if (this.guildOperations.get(guildId) === tracked) {
         this.guildOperations.delete(guildId);
       }

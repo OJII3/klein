@@ -1,4 +1,6 @@
-import type { AccessScope } from "@shared/access";
+import { parseAccessScope, type AccessScope } from "@shared/access";
+import { isRecord } from "@shared/type-guards";
+
 import { isRecurringSchedule, parseStoredSchedule, type StoredSchedule } from "./schedule";
 
 export type ScheduledTaskAccessScope = AccessScope;
@@ -44,8 +46,7 @@ export type ScheduledTask = ReminderTask | WatchTask;
 
 export function parseScheduledTask(value: unknown): ScheduledTask {
   if (
-    typeof value !== "object" ||
-    value === null ||
+    !isRecord(value) ||
     "dueAt" in value ||
     "repeat" in value ||
     "sessionKey" in value ||
@@ -54,99 +55,107 @@ export function parseScheduledTask(value: unknown): ScheduledTask {
     throw new Error("スケジュールの保存形式が不正です。旧形式には対応していません。");
   }
 
-  const record = value as Record<string, unknown>;
+  const { id, channelId, createdAt, nextRunAt, kind } = value;
+  const accessScope = parseAccessScope(value.accessScope);
   if (
-    typeof record.id !== "string" ||
-    record.id.length === 0 ||
-    typeof record.channelId !== "string" ||
-    record.channelId.length === 0 ||
-    typeof record.accessScope !== "string" ||
-    !/^(?:public|owner:\d+)$/u.test(record.accessScope) ||
-    typeof record.createdAt !== "string" ||
-    !Number.isFinite(Date.parse(record.createdAt)) ||
-    typeof record.nextRunAt !== "string" ||
-    !Number.isFinite(Date.parse(record.nextRunAt))
+    typeof id !== "string" ||
+    id.length === 0 ||
+    typeof channelId !== "string" ||
+    channelId.length === 0 ||
+    accessScope === undefined ||
+    (accessScope !== "public" && !/^owner:\d+$/u.test(accessScope)) ||
+    typeof createdAt !== "string" ||
+    !Number.isFinite(Date.parse(createdAt)) ||
+    typeof nextRunAt !== "string" ||
+    !Number.isFinite(Date.parse(nextRunAt))
   ) {
     throw new Error("スケジュールの保存内容が不正です。");
   }
 
-  const schedule = parseStoredSchedule(record.schedule);
-  if (record.kind === "reminder") {
-    if (typeof record.message !== "string" || record.message.length === 0) {
+  const schedule = parseStoredSchedule(value.schedule);
+  if (kind === "reminder") {
+    const { message } = value;
+    if (typeof message !== "string" || message.length === 0) {
       throw new Error("リマインダーの本文が不正です。");
     }
     return {
       kind: "reminder",
-      id: record.id,
-      channelId: record.channelId,
-      accessScope: record.accessScope as ScheduledTaskAccessScope,
-      createdAt: record.createdAt,
+      id,
+      channelId,
+      accessScope,
+      createdAt,
       schedule,
-      nextRunAt: record.nextRunAt,
-      message: record.message,
+      nextRunAt,
+      message,
     };
   }
 
-  if (record.kind === "watch") {
+  if (kind === "watch") {
+    const {
+      name,
+      script,
+      args,
+      message,
+      ownerTaskId,
+      enabled,
+      state,
+      lastCheckedAt,
+      lastTriggeredAt,
+      lastStatus,
+      lastError,
+      consecutiveFailures,
+    } = value;
     if (
-      typeof record.name !== "string" ||
-      record.name.length === 0 ||
-      typeof record.script !== "string" ||
-      record.script.length === 0 ||
-      !Array.isArray(record.args) ||
-      !record.args.every((arg) => typeof arg === "string") ||
-      typeof record.message !== "string" ||
-      record.message.length === 0 ||
-      (record.ownerTaskId !== undefined &&
-        (typeof record.ownerTaskId !== "string" || record.ownerTaskId.length === 0)) ||
-      (record.enabled !== undefined && typeof record.enabled !== "boolean") ||
-      (record.state !== undefined && !isJsonObject(record.state)) ||
+      typeof name !== "string" ||
+      name.length === 0 ||
+      typeof script !== "string" ||
+      script.length === 0 ||
+      !isStringArray(args) ||
+      typeof message !== "string" ||
+      message.length === 0 ||
+      (ownerTaskId !== undefined &&
+        (typeof ownerTaskId !== "string" || ownerTaskId.length === 0)) ||
+      (enabled !== undefined && typeof enabled !== "boolean") ||
+      (state !== undefined && !isRecord(state)) ||
       !isRecurringSchedule(schedule) ||
-      (record.lastCheckedAt !== undefined &&
-        (typeof record.lastCheckedAt !== "string" ||
-          !Number.isFinite(Date.parse(record.lastCheckedAt)))) ||
-      (record.lastTriggeredAt !== undefined &&
-        (typeof record.lastTriggeredAt !== "string" ||
-          !Number.isFinite(Date.parse(record.lastTriggeredAt)))) ||
-      (record.lastStatus !== undefined &&
-        record.lastStatus !== "ok" &&
-        record.lastStatus !== "error") ||
-      (record.lastError !== undefined && typeof record.lastError !== "string") ||
-      !Number.isInteger(record.consecutiveFailures) ||
-      (record.consecutiveFailures as number) < 0
+      (lastCheckedAt !== undefined &&
+        (typeof lastCheckedAt !== "string" || !Number.isFinite(Date.parse(lastCheckedAt)))) ||
+      (lastTriggeredAt !== undefined &&
+        (typeof lastTriggeredAt !== "string" || !Number.isFinite(Date.parse(lastTriggeredAt)))) ||
+      (lastStatus !== undefined && lastStatus !== "ok" && lastStatus !== "error") ||
+      (lastError !== undefined && typeof lastError !== "string") ||
+      typeof consecutiveFailures !== "number" ||
+      !Number.isInteger(consecutiveFailures) ||
+      consecutiveFailures < 0
     ) {
       throw new Error("監視設定の保存内容が不正です。");
     }
     return {
       kind: "watch",
-      id: record.id,
-      channelId: record.channelId,
-      accessScope: record.accessScope as ScheduledTaskAccessScope,
-      createdAt: record.createdAt,
+      id,
+      channelId,
+      accessScope,
+      createdAt,
       schedule,
-      nextRunAt: record.nextRunAt,
-      name: record.name,
-      script: record.script,
-      args: record.args as string[],
-      message: record.message,
-      ...(record.ownerTaskId !== undefined ? { ownerTaskId: record.ownerTaskId as string } : {}),
-      enabled: record.enabled !== false,
-      ...(record.state !== undefined ? { state: record.state as Record<string, unknown> } : {}),
-      ...(record.lastCheckedAt !== undefined
-        ? { lastCheckedAt: record.lastCheckedAt as string }
-        : {}),
-      ...(record.lastTriggeredAt !== undefined
-        ? { lastTriggeredAt: record.lastTriggeredAt as string }
-        : {}),
-      ...(record.lastStatus !== undefined ? { lastStatus: record.lastStatus as WatchStatus } : {}),
-      ...(record.lastError !== undefined ? { lastError: record.lastError as string } : {}),
-      consecutiveFailures: record.consecutiveFailures as number,
+      nextRunAt,
+      name,
+      script,
+      args,
+      message,
+      ...(ownerTaskId !== undefined ? { ownerTaskId } : {}),
+      enabled: enabled !== false,
+      ...(state !== undefined ? { state } : {}),
+      ...(lastCheckedAt !== undefined ? { lastCheckedAt } : {}),
+      ...(lastTriggeredAt !== undefined ? { lastTriggeredAt } : {}),
+      ...(lastStatus !== undefined ? { lastStatus } : {}),
+      ...(lastError !== undefined ? { lastError } : {}),
+      consecutiveFailures,
     };
   }
 
   throw new Error("スケジュールの種類が不正です。");
 }
 
-function isJsonObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item): item is string => typeof item === "string");
 }

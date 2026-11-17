@@ -4,6 +4,7 @@ import test from "node:test";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 
 import { createLogger } from "@app/logger";
+import { isRecord, parseJson } from "@shared/type-guards";
 import { createPiUsageReporterFromEnv, PiUsageReporter } from "./pi-usage-reporter";
 
 const logger = createLogger({ level: "silent" });
@@ -82,14 +83,21 @@ test("sends assistant message usage to the usage endpoint", async () => {
 test("falls back to the message timestamp when the response has no id", async () => {
   const requests: unknown[] = [];
   const reporter = createReporter(async (_input, init) => {
-    requests.push(JSON.parse(String(init?.body)));
+    assert.equal(typeof init?.body, "string");
+    if (typeof init?.body === "string") {
+      requests.push(parseJson(init.body));
+    }
     return new Response(null, { status: 200 });
   });
 
   reporter.recordAssistantMessage("session-1", assistantMessage({ responseId: undefined }));
   await reporter.flush();
 
-  assert.equal((requests[0] as Array<{ id: string }>)[0]?.id, "session-1:1794000000000");
+  const firstBatch = requests[0];
+  assert.ok(Array.isArray(firstBatch));
+  const firstItem: unknown = firstBatch[0];
+  assert.ok(isRecord(firstItem));
+  assert.equal(firstItem.id, "session-1:1794000000000");
 });
 
 test("does not send anything without a configured endpoint and token", async () => {

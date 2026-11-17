@@ -5,19 +5,21 @@ import { join } from "node:path";
 
 import {
   parseSessionEntries,
-  type AgentSession,
+  type AgentSessionEventListener,
   type FileEntry,
   type SessionEntry,
 } from "@earendil-works/pi-coding-agent";
 
 import { createDiscordAccessPolicy } from "@modules/discord/domain/discord-access-policy";
 import { createTempDir } from "../../testing/temp-dir";
+import { createStubTurnEndEvent } from "./pi-test-helpers";
 import { TURN_CONTEXT_CUSTOM_TYPE } from "./pi-turn-context";
 import {
   buildLinearBranchBeforeEntry,
   createDiscordReactionFeedbackHandler,
   createEvalFeedbackObserver,
   findTurnBoundsForAssistantEntry,
+  type ObservableEvalSession,
   SentMessageSessionIndex,
   serializeSessionEntriesToJsonl,
   SessionEvalCaseStore,
@@ -199,6 +201,9 @@ test("buildLinearBranchBeforeEntry slices strictly before target and preserves c
     ["m1", "tc1", "sys1", "u1", "a1", "tr1"],
   );
 
+  const entry6 = entries[6];
+  const entry7 = entries[7];
+  assert.ok(entry6?.type === "message" && entry7?.type === "message");
   const entriesWithCompaction: FileEntry[] = [
     ...entries.slice(0, 6),
     {
@@ -216,13 +221,13 @@ test("buildLinearBranchBeforeEntry slices strictly before target and preserves c
       },
     },
     {
-      ...entries[6]!,
+      ...entry6,
       parentId: "cmp1",
-    } as FileEntry,
+    },
     {
-      ...entries[7]!,
+      ...entry7,
       parentId: "tr1",
-    } as FileEntry,
+    },
   ];
 
   const turnStartSlice = buildLinearBranchBeforeEntry(entriesWithCompaction, "a2", {
@@ -433,15 +438,19 @@ test("createEvalFeedbackObserver observes turn_end discord_send calls, flushes i
   });
 
   const branchEntries = entries.filter((entry): entry is SessionEntry => entry.type !== "session");
-  const toolResultEntry = branchEntries.at(-1)!;
-  if (toolResultEntry.type !== "message") {
-    throw new Error("Expected final entry to be a message");
+  const toolResultEntry = branchEntries.at(-1);
+  if (
+    !toolResultEntry ||
+    toolResultEntry.type !== "message" ||
+    toolResultEntry.message.role !== "toolResult"
+  ) {
+    throw new Error("Expected final entry to be a toolResult message");
   }
 
-  let subscriber: ((event: { type: string; toolResults?: unknown[] }) => void) | undefined;
+  let subscriber: AgentSessionEventListener | undefined;
   let unsubscribed = false;
-  const fakeSession = {
-    subscribe(listener: (event: { type: string; toolResults?: unknown[] }) => void) {
+  const fakeSession: ObservableEvalSession = {
+    subscribe(listener) {
       subscriber = listener;
       return () => {
         unsubscribed = true;
@@ -453,17 +462,18 @@ test("createEvalFeedbackObserver observes turn_end discord_send calls, flushes i
       getSessionId: () => "sess-1",
       getSessionFile: () => sessionFilePath,
     },
-  } as unknown as AgentSession;
+  };
 
   const cleanup = observer.observeSession(fakeSession, {
     sessionKey: "discord-channel:ch-1",
     ownerFeaturesAllowed: true,
   });
 
-  subscriber?.({
-    type: "turn_end",
-    toolResults: [toolResultEntry.message],
-  });
+  subscriber?.(
+    createStubTurnEndEvent({
+      toolResults: [toolResultEntry.message],
+    }),
+  );
   await observer.flush();
 
   const indexed = await observer.index.findByDiscordMessageId("discord-msg-999");

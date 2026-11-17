@@ -5,6 +5,7 @@ import {
   isAccessAllowed,
   isOwnerAccessScope,
   ownerAccessScope,
+  parseAccessScope,
   PUBLIC_ACCESS_SCOPE,
 } from "./access";
 
@@ -19,6 +20,11 @@ test("access levels allow everyone or owner sessions only", () => {
 
 test("access scopes distinguish public from a specific owner", () => {
   assert.equal(ownerAccessScope("123"), "owner:123");
+  assert.equal(parseAccessScope("public"), PUBLIC_ACCESS_SCOPE);
+  assert.equal(parseAccessScope("owner:123"), "owner:123");
+  assert.equal(parseAccessScope("owner:"), undefined);
+  assert.equal(parseAccessScope("invalid"), undefined);
+  assert.equal(parseAccessScope(123), undefined);
   assert.equal(isOwnerAccessScope("owner:123", "123"), true);
   assert.equal(isOwnerAccessScope("owner:123", "456"), false);
   assert.equal(isOwnerAccessScope(PUBLIC_ACCESS_SCOPE, "123"), false);

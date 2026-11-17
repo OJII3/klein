@@ -1,29 +1,55 @@
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { resolve as resolvePath } from "node:path";
 import {
+  AudioPlayer,
   AudioPlayerStatus,
   createAudioPlayer,
   createAudioResource,
   StreamType,
+  type AudioResource,
   type VoiceConnection,
 } from "@discordjs/voice";
-import type { Logger } from "pino";
 import { Readable } from "node:stream";
 
 import type { VoiceReactionPreset } from "@modules/discord/ports/voice-reaction-selector";
 import type { TextToSpeech } from "@modules/tts/infrastructure/sbv2-tts";
 
+export interface VoiceLogger {
+  child(bindings: Record<string, unknown>): VoiceLogger;
+  info(obj: Record<string, unknown>, msg: string): void;
+  warn(obj: Record<string, unknown>, msg: string): void;
+  error(obj: Record<string, unknown>, msg: string): void;
+}
+
+export interface VoiceAudioPlayer {
+  on(event: "error", listener: (error: Error) => void): unknown;
+  on(
+    event: "stateChange",
+    listener: (
+      previous: { readonly status: AudioPlayerStatus },
+      next: { readonly status: AudioPlayerStatus },
+    ) => void,
+  ): unknown;
+  play(resource: AudioResource): unknown;
+  stop(force?: boolean): unknown;
+}
+
+export interface VoicePlaybackConnection {
+  subscribePlayer(player: VoiceAudioPlayer): void;
+}
+
 export interface DiscordVoicePlaybackOptions {
-  readonly audioResourceFactory?: (audio: Uint8Array) => ReturnType<typeof createAudioResource>;
-  readonly logger?: Logger;
+  readonly audioPlayerFactory?: () => VoiceAudioPlayer;
+  readonly audioResourceFactory?: (audio: Uint8Array) => AudioResource;
+  readonly logger?: VoiceLogger;
   readonly reactionPresets?: readonly VoiceReactionPreset[];
   readonly tts: TextToSpeech;
 }
 
 export class DiscordVoicePlayback {
-  private readonly logger?: Logger;
-  private audioPlayer?: ReturnType<typeof createAudioPlayer>;
+  private readonly logger?: VoiceLogger;
+  private audioPlayer?: VoiceAudioPlayer;
   private stopped = false;
   private replyActive = false;
   private pendingReply?: {
@@ -34,6 +60,7 @@ export class DiscordVoicePlayback {
   };
   private userSpeechActive = false;
   private readonly reactionAudio = new Map<string, Uint8Array>();
+  private reactionLoadPromise: Promise<void> = Promise.resolve();
   private currentPlayback?: {
     kind: "reply" | "reaction";
     finish: (played: boolean, error?: Error) => void;
@@ -43,9 +70,10 @@ export class DiscordVoicePlayback {
     this.logger = options.logger?.child({ component: "discord-voice-playback" });
   }
 
-  start(connection: VoiceConnection): void {
-    this.audioPlayer = createAudioPlayer();
-    this.audioPlayer.on("error", (error) => {
+  start(connection: VoiceConnection | VoicePlaybackConnection): void {
+    const player = this.options.audioPlayerFactory?.() ?? createAudioPlayer();
+    this.audioPlayer = player;
+    player.on("error", (error) => {
       const playback = this.currentPlayback;
       if (playback) {
         this.currentPlayback = undefined;
@@ -56,7 +84,7 @@ export class DiscordVoicePlayback {
         "Failed to play synthesized voice audio",
       );
     });
-    this.audioPlayer.on("stateChange", (previous, next) => {
+    player.on("stateChange", (previous, next) => {
       if (next.status === AudioPlayerStatus.Idle && this.currentPlayback) {
         const playback = this.currentPlayback;
         this.currentPlayback = undefined;
@@ -71,8 +99,16 @@ export class DiscordVoicePlayback {
         "Voice audio playback state changed",
       );
     });
-    connection.subscribe(this.audioPlayer);
-    void this.loadReactionAudio();
+    if ("subscribePlayer" in connection) {
+      connection.subscribePlayer(player);
+    } else if (player instanceof AudioPlayer) {
+      connection.subscribe(player);
+    }
+    this.reactionLoadPromise = this.loadReactionAudio();
+  }
+
+  async waitForReactionsLoaded(): Promise<void> {
+    await this.reactionLoadPromise;
   }
 
   stop(): void {
@@ -231,7 +267,7 @@ export class DiscordVoicePlayback {
     await Promise.all(
       (this.options.reactionPresets ?? []).map(async (preset) => {
         try {
-          const audio = await readFile(resolve(preset.audioFile));
+          const audio = await readFile(resolvePath(preset.audioFile));
           if (!this.stopped) this.reactionAudio.set(preset.id, audio);
         } catch (error) {
           this.logger?.warn(

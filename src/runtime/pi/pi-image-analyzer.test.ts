@@ -10,6 +10,7 @@ import {
   PiImageAnalyzer,
 } from "./pi-image-analyzer";
 import { resolveConfiguredImageModel, resolveConfiguredModel } from "./pi-model-runtime";
+import { createStubAssistantMessage } from "./pi-test-helpers";
 
 test("sends image attachments to a one-shot analysis request", async () => {
   let received:
@@ -30,11 +31,9 @@ test("sends image attachments to a one-shot analysis request", async () => {
         reasoning: options?.reasoning,
         systemPrompt: context.systemPrompt,
       };
-      return {
-        role: "assistant",
+      return createStubAssistantMessage({
         content: [{ type: "text", text: "画像の解析結果" }],
-        stopReason: "stop",
-      } as never;
+      });
     },
   };
   const analyzer = new PiImageAnalyzer(
@@ -68,11 +67,9 @@ test("adds the caller's focus to the analysis request", async () => {
     {
       async completeSimple(_model, context) {
         receivedContent = context.messages[0]?.content;
-        return {
-          role: "assistant",
+        return createStubAssistantMessage({
           content: [{ type: "text", text: "エラーは認証失敗です。" }],
-          stopReason: "stop",
-        } as never;
+        });
       },
     },
     resolveConfiguredImageModel("opencode-go", "kimi-k3"),
@@ -100,12 +97,11 @@ test("classifies a rate limit response from the provider", async () => {
   const analyzer = new PiImageAnalyzer(
     {
       async completeSimple() {
-        return {
-          role: "assistant",
+        return createStubAssistantMessage({
           content: [],
           stopReason: "error",
           errorMessage: '429: {"type":"server_error"}',
-        } as never;
+        });
       },
     },
     resolveConfiguredImageModel("opencode-go", "kimi-k3"),
@@ -153,7 +149,7 @@ test("classifies an empty analysis result", async () => {
   const analyzer = new PiImageAnalyzer(
     {
       async completeSimple() {
-        return { role: "assistant", content: [], stopReason: "stop" } as never;
+        return createStubAssistantMessage({ content: [], stopReason: "stop" });
       },
     },
     resolveConfiguredImageModel("opencode-go", "kimi-k3"),

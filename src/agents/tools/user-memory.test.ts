@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import { join } from "node:path";
 import test from "node:test";
 
+import { createStubExtensionToolContext } from "@agents/testing/test-stubs";
 import { DiscordUserDirectory } from "@modules/discord/application/discord-user-directory";
 import { MarkdownUserMemoryStore } from "@modules/user-memory/infrastructure/markdown-user-memory-store";
+import { isRecord } from "@shared/type-guards";
 import { createTempDir } from "../../testing/temp-dir";
 import { createUserMemoryTools } from "./user-memory";
 
@@ -11,8 +13,10 @@ const userId = "123456789012345678";
 const username = "alice";
 
 function textOf(result: { content: readonly unknown[] }): string {
-  const block = result.content[0] as { type: string; text: string } | undefined;
-  return block?.type === "text" ? block.text : "";
+  const block = result.content[0];
+  return isRecord(block) && block.type === "text" && typeof block.text === "string"
+    ? block.text
+    : "";
 }
 
 function findTool(tools: ReturnType<typeof createUserMemoryTools>, name: string) {
@@ -41,15 +45,16 @@ function createTools(tempPath: string) {
 test("gets user memory through the read-only tool", async () => {
   await using temp = await createTempDir("klein-user-memory-");
   const { getTool, store, toolNames } = createTools(temp.path);
+  const ctx = await createStubExtensionToolContext();
 
   assert.deepEqual(toolNames, ["user_memory_get"]);
 
   const missing = await getTool.execute(
     "tool-call",
-    { discord_id: username } as never,
+    { discord_id: username },
     undefined,
     undefined,
-    {} as never,
+    ctx,
   );
   assert.match(textOf(missing), /まだありません/u);
 
@@ -69,10 +74,10 @@ test("gets user memory through the read-only tool", async () => {
 
   const got = await getTool.execute(
     "tool-call",
-    { discord_id: "@Alice" } as never,
+    { discord_id: "@Alice" },
     undefined,
     undefined,
-    {} as never,
+    ctx,
   );
   const markdown = textOf(got);
   assert.match(markdown, /^---\ndiscord_id: "alice"/u);
@@ -90,10 +95,10 @@ test("reports unknown users", async () => {
 
   const missing = await getTool.execute(
     "tool-call",
-    { discord_id: "unknown" } as never,
+    { discord_id: "unknown" },
     undefined,
     undefined,
-    {} as never,
+    await createStubExtensionToolContext(),
   );
   assert.match(textOf(missing), /見つかりません/u);
 });

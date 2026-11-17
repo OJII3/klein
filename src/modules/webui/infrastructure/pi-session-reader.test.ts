@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import test from "node:test";
+import type { AssistantMessage } from "@earendil-works/pi-ai";
 
 import { createPiSessionManager } from "@runtime/pi/pi-agent-runtime";
 import { PiSessionReader } from "./pi-session-reader";
@@ -33,25 +34,16 @@ test("lists and reads Pi sessions without exposing image data", async () => {
     timestamp: Date.now(),
   });
   sessionManager.appendMessage({
-    role: "assistant",
+    role: "toolResult",
+    toolCallId: "call-1",
+    toolName: "read_image",
+    isError: false,
     content: [
       { type: "text", text: "hello back" },
       { type: "image", data: "secret-image-data", mimeType: "image/png" },
     ],
-    api: "openai-completions",
-    provider: "opencode-go",
-    model: "kimi-k3",
-    usage: {
-      input: 0,
-      output: 0,
-      cacheRead: 0,
-      cacheWrite: 0,
-      totalTokens: 0,
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-    },
-    stopReason: "stop",
     timestamp: Date.now(),
-  } as never);
+  });
   sessionManager.appendMessage({
     role: "assistant",
     content: [],
@@ -69,7 +61,7 @@ test("lists and reads Pi sessions without exposing image data", async () => {
     stopReason: "error",
     errorMessage: "403: RegionError",
     timestamp: Date.now(),
-  } as never);
+  });
 
   const secondSessionManager = createPiSessionManager(
     agentDirectory,
@@ -78,11 +70,7 @@ test("lists and reads Pi sessions without exposing image data", async () => {
     process.cwd(),
   );
   secondSessionManager.appendMessage({ role: "user", content: "second", timestamp: Date.now() });
-  secondSessionManager.appendMessage({
-    role: "assistant",
-    content: "second response",
-    timestamp: Date.now(),
-  } as never);
+  secondSessionManager.appendMessage(createAssistantTextMessage("second response"));
 
   const reader = new PiSessionReader(agentDirectory);
   const sessions = await reader.list();
@@ -182,11 +170,7 @@ test("reads usage and context edits without exposing replacement image data", as
     content: "hello",
     timestamp: Date.now(),
   });
-  sessionManager.appendMessage({
-    role: "assistant",
-    content: "hello back",
-    timestamp: Date.now(),
-  } as never);
+  sessionManager.appendMessage(createAssistantTextMessage("hello back"));
   const usage = {
     input: 10,
     output: 0,
@@ -219,3 +203,23 @@ test("reads usage and context edits without exposing replacement image data", as
   });
   assert.deepEqual(detail.items[4]?.content, { targetId, replacement: null });
 });
+
+function createAssistantTextMessage(text: string): AssistantMessage {
+  return {
+    role: "assistant",
+    content: [{ type: "text", text }],
+    api: "openai-completions",
+    provider: "opencode-go",
+    model: "kimi-k3",
+    usage: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 0,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+    stopReason: "stop",
+    timestamp: Date.now(),
+  };
+}

@@ -4,12 +4,10 @@ import {
   GatewayIntentBits,
   Partials,
   AttachmentBuilder,
-  type Interaction,
-  type Message,
-  type MessageReaction,
-  type PartialMessageReaction,
-  type PartialUser,
-  type User,
+  type ApplicationCommandDataResolvable,
+  type ClientOptions,
+  type ContainerBuilder,
+  type MessageFlags,
 } from "discord.js";
 import type { Logger } from "pino";
 
@@ -35,19 +33,192 @@ import type { DiscordAccessRuleStore } from "../ports/discord-access-rule-store"
 import type { DiscordAccessRequestStore } from "../ports/discord-access-request-store";
 import type { DiscordChannelRuleStore } from "../ports/discord-channel-rule-store";
 
-import { DiscordChannelAccessRequester } from "./discord-channel-access-request";
-import { DiscordChoiceRequester } from "./discord-choice-requester";
+import {
+  DiscordChannelAccessRequester,
+  type DiscordChannelAccessButtonInteraction,
+  type DiscordChannelAccessClient,
+} from "./discord-channel-access-request";
+import {
+  DiscordChoiceRequester,
+  type DiscordChoiceButtonInteraction,
+  type DiscordChoiceClient,
+} from "./discord-choice-requester";
 import {
   DiscordVoiceChatController,
   type DiscordVoiceChatControllerOptions,
 } from "./discord-voice-chat-controller";
-import { DiscordJsInteractionHandler } from "./discord-js-interaction-handler";
-import { DiscordJsMessageAdapter } from "./discord-js-message-adapter";
+import {
+  DiscordJsInteractionHandler,
+  type DiscordHandlerInteraction,
+} from "./discord-js-interaction-handler";
+import { DiscordJsMessageAdapter, type DiscordAdapterMessage } from "./discord-js-message-adapter";
 
 const DISCORD_MESSAGE_LIMIT = 2_000;
 interface SendableChannel {
   send(content: string | { files: AttachmentBuilder[] }): Promise<unknown>;
   sendTyping?(): Promise<void>;
+}
+
+export interface DiscordServiceMessage extends DiscordAdapterMessage {
+  readonly mentions: DiscordAdapterMessage["mentions"] & {
+    readonly users: DiscordAdapterMessage["mentions"]["users"] & {
+      has(id: string): boolean;
+    };
+  };
+}
+
+export interface DiscordServiceTextChannel {
+  readonly id: string;
+  readonly name?: string | null;
+  readonly guildId?: string | null;
+  readonly parentId?: string | null;
+  readonly messages?: { fetch(messageId: string): Promise<DiscordServiceMessage> };
+  isThread(): boolean;
+  isTextBased(): boolean;
+}
+
+export interface DiscordServiceMessageChannel extends DiscordServiceTextChannel {
+  readonly messages: { fetch(messageId: string): Promise<DiscordServiceMessage> };
+}
+
+export interface DiscordServiceChannel {
+  readonly id?: string;
+  readonly name?: string | null;
+  readonly guildId?: string | null;
+  readonly parentId?: string | null;
+  readonly messages?: { fetch(messageId: string): Promise<DiscordServiceMessage> };
+  isThread?(): boolean;
+  isTextBased(): boolean;
+}
+
+export interface DiscordServiceResolvedUser {
+  readonly partial?: false;
+  readonly id: string;
+  readonly bot: boolean;
+}
+
+export type DiscordServiceUser =
+  | DiscordServiceResolvedUser
+  | { readonly partial: true; fetch(): Promise<DiscordServiceResolvedUser> };
+
+export interface DiscordServiceResolvedReactionMessage {
+  readonly partial?: false;
+  readonly id: string;
+  readonly channelId: string;
+  readonly guildId: string | null;
+  readonly content: string | null;
+  readonly author: { readonly id: string } | null;
+  readonly channel: {
+    readonly id?: string;
+    readonly name?: string | null;
+    readonly parentId?: string | null;
+    isThread?(): boolean;
+  };
+}
+
+export type DiscordServiceReactionMessage =
+  | DiscordServiceResolvedReactionMessage
+  | { readonly partial: true; fetch(): Promise<DiscordServiceResolvedReactionMessage> };
+
+export interface DiscordServiceResolvedReaction {
+  readonly partial?: false;
+  readonly emoji: { readonly name: string | null; readonly identifier: string };
+  readonly message: DiscordServiceReactionMessage;
+}
+
+export type DiscordServiceReaction =
+  | DiscordServiceResolvedReaction
+  | { readonly partial: true; fetch(): Promise<DiscordServiceResolvedReaction> };
+
+export type DiscordServiceButtonInteraction = DiscordChoiceButtonInteraction &
+  DiscordChannelAccessButtonInteraction & {
+    isButton?(): boolean;
+    isChatInputCommand(): boolean;
+    isModalSubmit(): boolean;
+  };
+
+export type DiscordServiceInteraction = DiscordServiceButtonInteraction | DiscordHandlerInteraction;
+
+export interface DiscordServiceReadyClient {
+  readonly user: { readonly id: string };
+  readonly application: {
+    readonly commands: {
+      set(commands: readonly ApplicationCommandDataResolvable[]): Promise<unknown>;
+    };
+  };
+}
+
+export interface DiscordServiceClient extends DiscordChoiceClient, DiscordChannelAccessClient {
+  readonly user: {
+    readonly id: string;
+    setActivity(name: string): unknown;
+    setStatus(status: "online" | "idle"): unknown;
+  } | null;
+  readonly channels: {
+    fetch(id: string): Promise<DiscordServiceChannel | null>;
+  };
+  readonly users: {
+    fetch(id: string): Promise<{
+      send(payload: {
+        components: ContainerBuilder[];
+        flags: MessageFlags.IsComponentsV2;
+      }): Promise<unknown>;
+    }>;
+  };
+  once(
+    event: Events.ClientReady,
+    listener: (readyClient: DiscordServiceReadyClient) => void,
+  ): unknown;
+  on(event: Events.MessageCreate, listener: (message: DiscordServiceMessage) => void): unknown;
+  on(
+    event: Events.MessageReactionAdd,
+    listener: (reaction: DiscordServiceReaction, user: DiscordServiceUser) => void,
+  ): unknown;
+  on(
+    event: Events.InteractionCreate,
+    listener: (interaction: DiscordServiceInteraction) => void,
+  ): unknown;
+  off(event: Events.MessageCreate, listener: (message: DiscordServiceMessage) => void): unknown;
+  off(
+    event: Events.MessageReactionAdd,
+    listener: (reaction: DiscordServiceReaction, user: DiscordServiceUser) => void,
+  ): unknown;
+  off(
+    event: Events.InteractionCreate,
+    listener: (interaction: DiscordServiceInteraction) => void,
+  ): unknown;
+  login(token: string): Promise<unknown>;
+  destroy(): Promise<unknown>;
+}
+
+function isTextBasedChannel(
+  channel: DiscordServiceChannel | null | undefined,
+): channel is DiscordServiceTextChannel {
+  return (
+    channel !== null &&
+    channel !== undefined &&
+    channel.isTextBased() &&
+    typeof channel.id === "string" &&
+    typeof channel.isThread === "function"
+  );
+}
+
+function isReadableChannel(
+  channel: DiscordServiceChannel | null | undefined,
+): channel is DiscordServiceMessageChannel {
+  return isTextBasedChannel(channel) && channel.messages !== undefined;
+}
+
+function isButtonInteraction(
+  interaction: DiscordServiceInteraction,
+): interaction is DiscordServiceButtonInteraction {
+  return (
+    "isButton" in interaction &&
+    typeof interaction.isButton === "function" &&
+    interaction.isButton() &&
+    "customId" in interaction &&
+    "update" in interaction
+  );
 }
 
 function isSendableChannel(value: unknown): value is SendableChannel {
@@ -70,21 +241,19 @@ function splitMessage(content: string): string[] {
 }
 
 export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
-  private readonly client: Client;
+  private readonly client: DiscordServiceClient;
   private readonly channels = new Map<string, SendableChannel>();
   private readonly voiceChatController?: DiscordVoiceChatController;
   private readonly interactionHandler: DiscordJsInteractionHandler;
   private readonly messageAdapter: DiscordJsMessageAdapter;
   private readonly channelAccessRequester?: DiscordChannelAccessRequester;
   private readonly choiceRequester: DiscordChoiceRequester;
+  private readonly pendingTasks = new Set<Promise<void>>();
   private onMessage?: DiscordMessageHandler;
   private onReaction?: DiscordReactionHandler;
-  private messageListener?: (message: Message) => void;
-  private reactionListener?: (
-    reaction: MessageReaction | PartialMessageReaction,
-    user: User | PartialUser,
-  ) => void;
-  private interactionListener?: (interaction: Interaction) => void;
+  private messageListener?: (message: DiscordServiceMessage) => void;
+  private reactionListener?: (reaction: DiscordServiceReaction, user: DiscordServiceUser) => void;
+  private interactionListener?: (interaction: DiscordServiceInteraction) => void;
   private acceptingMessages = false;
   private readonly logger?: Logger;
 
@@ -100,6 +269,7 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
     accessRequestStore?: DiscordAccessRequestStore,
     options?: {
       readonly enableReactions?: boolean;
+      readonly createClient?: (clientOptions: ClientOptions) => DiscordServiceClient;
     },
   ) {
     this.logger = logger?.child({ component: "discord-service" });
@@ -115,7 +285,7 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
       accessRuleStore,
     );
     const enableReactions = options?.enableReactions === true;
-    this.client = new Client({
+    const clientOptions: ClientOptions = {
       intents: [
         GatewayIntentBits.DirectMessages,
         GatewayIntentBits.Guilds,
@@ -130,7 +300,8 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
         Partials.Channel,
         ...(enableReactions ? [Partials.Message, Partials.Reaction, Partials.User] : []),
       ],
-    });
+    };
+    this.client = options?.createClient?.(clientOptions) ?? new Client(clientOptions);
     this.choiceRequester = new DiscordChoiceRequester(
       this.client,
       accessPolicy,
@@ -165,50 +336,50 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
         },
         "Discord client is ready",
       );
-      void this.synchronizeCommands(readyClient)
-        .then(() => {
-          this.logger?.info(
-            { event: "discord_commands_synchronized" },
-            "Synchronized Discord commands",
-          );
-        })
-        .catch((error: unknown) => {
-          this.logger?.error(
-            { err: error, event: "discord_commands_synchronization_failed" },
-            "Failed to synchronize Discord commands",
-          );
-        });
+      this.trackPending(this.synchronizeCommandsSafely(readyClient));
     });
     this.messageListener = (message) => {
-      void this.handleMessage(message).catch((error: unknown) => {
-        this.logger?.error(
-          { err: error, event: "discord_message_handler_failed" },
-          "Failed to handle Discord message",
-        );
-      });
+      this.trackPending(
+        this.handleMessage(message).catch((error: unknown) => {
+          this.logger?.error(
+            { err: error, event: "discord_message_handler_failed" },
+            "Failed to handle Discord message",
+          );
+        }),
+      );
     };
     this.client.on(Events.MessageCreate, this.messageListener);
     if (onReaction) {
       this.reactionListener = (reaction, user) => {
-        void this.handleReactionAdd(reaction, user).catch((error: unknown) => {
-          this.logger?.error(
-            { err: error, event: "discord_reaction_handler_failed" },
-            "Failed to handle Discord message reaction",
-          );
-        });
+        this.trackPending(
+          this.handleReactionAdd(reaction, user).catch((error: unknown) => {
+            this.logger?.error(
+              { err: error, event: "discord_reaction_handler_failed" },
+              "Failed to handle Discord message reaction",
+            );
+          }),
+        );
       };
       this.client.on(Events.MessageReactionAdd, this.reactionListener);
     }
     this.interactionListener = (interaction) => {
-      void this.handleInteraction(interaction).catch((error: unknown) => {
-        this.logger?.error(
-          { err: error, event: "discord_interaction_handler_failed" },
-          "Failed to handle Discord interaction",
-        );
-      });
+      this.trackPending(
+        this.handleInteraction(interaction).catch((error: unknown) => {
+          this.logger?.error(
+            { err: error, event: "discord_interaction_handler_failed" },
+            "Failed to handle Discord interaction",
+          );
+        }),
+      );
     };
     this.client.on(Events.InteractionCreate, this.interactionListener);
     await this.client.login(this.token);
+  }
+
+  async flush(): Promise<void> {
+    while (this.pendingTasks.size > 0) {
+      await Promise.all(this.pendingTasks);
+    }
   }
 
   setActivity(name: string): void {
@@ -230,13 +401,13 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
 
   async getChannelLocation(channelId: string): Promise<DiscordChannelLocation> {
     const channel = await this.client.channels.fetch(channelId);
-    if (!channel?.isTextBased()) {
+    if (!isTextBasedChannel(channel)) {
       throw new Error(`Discord channel cannot contain messages: ${channelId}`);
     }
     const thread = channel.isThread() ? channel : undefined;
     const channelName = "name" in channel && typeof channel.name === "string" ? channel.name : "";
     return {
-      guildId: "guildId" in channel ? channel.guildId : undefined,
+      guildId: "guildId" in channel ? (channel.guildId ?? undefined) : undefined,
       channelId: thread?.parentId ?? channel.id,
       threadId: thread?.id,
       ...(channelName ? { channelName } : {}),
@@ -281,14 +452,14 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
     requester?: DiscordMessageRequester,
   ): Promise<DiscordMessage> {
     const channel = await this.client.channels.fetch(locator.channelId);
-    if (!channel?.isTextBased()) {
+    if (!isReadableChannel(channel)) {
       throw new Error(`Discord channel cannot contain messages: ${locator.channelId}`);
     }
 
     const thread = channel.isThread() ? channel : undefined;
     if (
       !this.accessPolicy.canReceive({
-        guildId: "guildId" in channel ? channel.guildId : undefined,
+        guildId: "guildId" in channel ? (channel.guildId ?? undefined) : undefined,
         channelId: thread?.parentId ?? channel.id,
         threadId: thread?.id,
         ...requester,
@@ -337,7 +508,7 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
     this.choiceRequester.clear();
     this.channels.clear();
     await this.voiceChatController?.stop();
-    this.client.destroy();
+    await this.client.destroy();
   }
 
   private async getChannel(channelId: string): Promise<SendableChannel> {
@@ -353,7 +524,7 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
     return channel;
   }
 
-  private async handleMessage(message: Message): Promise<void> {
+  private async handleMessage(message: DiscordServiceMessage): Promise<void> {
     if (!this.canAcceptMessages()) return;
     if (message.author.id === this.client.user?.id) return;
 
@@ -407,8 +578,8 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
   }
 
   private async handleReactionAdd(
-    reaction: MessageReaction | PartialMessageReaction,
-    user: User | PartialUser,
+    reaction: DiscordServiceReaction,
+    user: DiscordServiceUser,
   ): Promise<void> {
     if (!this.canAcceptMessages() || !this.onReaction) return;
 
@@ -438,7 +609,7 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
         channelId: parentChannelId ?? channelId,
         threadId: thread?.id,
         userId: resolvedUser.id,
-        userIsBot: Boolean(resolvedUser.bot),
+        userIsBot: resolvedUser.bot,
       })
     ) {
       return;
@@ -460,7 +631,7 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
         ? { messageContent: resolvedMessage.content }
         : {}),
       userId: resolvedUser.id,
-      userIsBot: Boolean(resolvedUser.bot),
+      userIsBot: resolvedUser.bot,
       occurredAt: new Date().toISOString(),
     };
 
@@ -471,7 +642,7 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
     return this.acceptingMessages && this.operatingState.isActive();
   }
 
-  private isBotMentioned(message: Message): boolean {
+  private isBotMentioned(message: DiscordServiceMessage): boolean {
     const botUserId = this.client.user?.id;
     return !!botUserId && message.mentions.users.has(botUserId);
   }
@@ -482,17 +653,42 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
     this.client.user.setStatus(this.operatingState.isActive() ? "online" : "idle");
   }
 
-  private async synchronizeCommands(readyClient: Client<true>): Promise<void> {
+  private trackPending(task: Promise<void>): void {
+    const tracked = task.finally(() => {
+      this.pendingTasks.delete(tracked);
+    });
+    this.pendingTasks.add(tracked);
+  }
+
+  private async synchronizeCommandsSafely(readyClient: DiscordServiceReadyClient): Promise<void> {
+    try {
+      await this.synchronizeCommands(readyClient);
+      this.logger?.info(
+        { event: "discord_commands_synchronized" },
+        "Synchronized Discord commands",
+      );
+    } catch (error) {
+      this.logger?.error(
+        { err: error, event: "discord_commands_synchronization_failed" },
+        "Failed to synchronize Discord commands",
+      );
+    }
+  }
+
+  private async synchronizeCommands(readyClient: DiscordServiceReadyClient): Promise<void> {
     await readyClient.application.commands.set([...this.interactionHandler.commands]);
   }
 
-  private async handleInteraction(interaction: Interaction): Promise<void> {
-    if (interaction.isButton?.() && (await this.choiceRequester.handleButton(interaction))) {
+  private async handleInteraction(interaction: DiscordServiceInteraction): Promise<void> {
+    if (
+      isButtonInteraction(interaction) &&
+      (await this.choiceRequester.handleButton(interaction))
+    ) {
       return;
     }
     if (
       this.channelAccessRequester &&
-      interaction.isButton?.() &&
+      isButtonInteraction(interaction) &&
       (await this.channelAccessRequester.handleButton(interaction))
     ) {
       return;

@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { isRecord } from "@shared/type-guards";
+
 import { QuickJsWatchCheckRunner } from "./quickjs-watch-check-runner";
 import type { WatchTool } from "./watch-tool";
 
@@ -18,8 +20,10 @@ const fetchTool: WatchTool = {
     required: ["body"],
   },
   async execute(args) {
-    const { url } = args as { url: string };
-    return { body: `fetched ${url}` };
+    if (!isRecord(args) || typeof args.url !== "string") {
+      throw new TypeError("args.url must be a string");
+    }
+    return { body: `fetched ${args.url}` };
   },
 };
 

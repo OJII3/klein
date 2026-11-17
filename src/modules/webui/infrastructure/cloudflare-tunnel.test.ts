@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { EventEmitter, once } from "node:events";
+import { once } from "node:events";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { join } from "node:path";
 import test from "node:test";
 
 import { createLogger } from "@app/logger";
+import { isRecord, parseJson } from "@shared/type-guards";
 import { startCloudflareTunnel } from "./cloudflare-tunnel";
 import { startWebUi } from "./elysia-webui-app";
 import { PiSessionReader } from "./pi-session-reader";
@@ -14,18 +15,38 @@ import { PinoJsonlReader } from "./pino-jsonl-reader";
 import { createTempDir } from "../../../testing/temp-dir";
 
 function captureLogs() {
-  const events = new EventEmitter();
   const records: Record<string, unknown>[] = [];
+  const waiters = new Map<string, ((record: Record<string, unknown>) => void)[]>();
   const logger = createLogger({
     destination: {
       write: (line) => {
-        const record = JSON.parse(line);
-        records.push(record);
-        events.emit(record.event, record);
+        const parsed = parseJson(line);
+        if (!isRecord(parsed)) return;
+        records.push(parsed);
+        if (typeof parsed.event !== "string") return;
+        const callbacks = waiters.get(parsed.event);
+        if (!callbacks || callbacks.length === 0) return;
+        waiters.delete(parsed.event);
+        for (const callback of callbacks) callback(parsed);
       },
     },
   });
-  return { events, logger, records };
+  const waitFor = (eventName: string, timeoutMs = 5_000): Promise<Record<string, unknown>> => {
+    const existing = records.find((item) => item.event === eventName);
+    if (existing) return Promise.resolve(existing);
+    return new Promise<Record<string, unknown>>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error(`Timed out waiting for log event: ${eventName}`));
+      }, timeoutMs);
+      const callbacks = waiters.get(eventName) ?? [];
+      callbacks.push((record) => {
+        clearTimeout(timer);
+        resolve(record);
+      });
+      waiters.set(eventName, callbacks);
+    });
+  };
+  return { logger, records, waitFor };
 }
 
 test("runs cloudflared without forwarding application secrets and stops its process", async () => {
@@ -33,7 +54,7 @@ test("runs cloudflared without forwarding application secrets and stops its proc
   const directory = temp.path;
   const originalPath = process.env.PATH;
   const originalSecret = process.env.KLEIN_TEST_SECRET;
-  const { events, logger, records } = captureLogs();
+  const { logger, records, waitFor } = captureLogs();
   let tunnel: Awaited<ReturnType<typeof startCloudflareTunnel>> | undefined;
 
   try {
@@ -49,17 +70,17 @@ while :; do /bin/sleep 1; done
     );
     process.env.PATH = directory;
     process.env.KLEIN_TEST_SECRET = "must-not-be-forwarded";
-    const output = once(events, "cloudflared_output", { signal: AbortSignal.timeout(5_000) });
+    const output = waitFor("cloudflared_output");
     tunnel = await startCloudflareTunnel("test-tunnel-token", logger);
     process.env.PATH = originalPath;
 
-    const [record] = await output;
+    const record = await output;
     assert.equal(record.output, "ready:[Redacted]:tunnel --no-autoupdate --grace-period 5s run");
     await tunnel.stop();
     await tunnel.stop();
-    assert.ok(records.some((record) => record.output === "stopped"));
-    assert.ok(records.some((record) => record.event === "cloudflared_stopped"));
-    assert.ok(!records.some((record) => record.event === "cloudflared_exited"));
+    assert.ok(records.some((entry) => entry.output === "stopped"));
+    assert.ok(records.some((entry) => entry.event === "cloudflared_stopped"));
+    assert.ok(!records.some((entry) => entry.event === "cloudflared_exited"));
   } finally {
     if (originalPath === undefined) delete process.env.PATH;
     else process.env.PATH = originalPath;
@@ -103,14 +124,14 @@ test("logs an unexpected cloudflared exit", async () => {
   await using temp = await createTempDir("klein-tunnel-exit-");
   const directory = temp.path;
   const originalPath = process.env.PATH;
-  const { events, logger } = captureLogs();
+  const { logger, waitFor } = captureLogs();
   try {
     await writeFile(join(directory, "cloudflared"), "#!/bin/sh\nexit 12\n", { mode: 0o700 });
     process.env.PATH = directory;
-    const exited = once(events, "cloudflared_exited", { signal: AbortSignal.timeout(5_000) });
+    const exited = waitFor("cloudflared_exited");
     const tunnel = await startCloudflareTunnel("test-tunnel-token", logger);
     process.env.PATH = originalPath;
-    const [record] = await exited;
+    const record = await exited;
     assert.equal(record.code, 12);
     await tunnel.stop();
   } finally {
@@ -129,7 +150,11 @@ test("serves local HTTP when cloudflared is disabled and releases the listener w
     await once(socket, "listening");
     const address = socket.address();
     assert.ok(address && typeof address !== "string");
-    await new Promise<void>((resolve) => socket.close(() => resolve()));
+    await new Promise<void>((resolve) => {
+      socket.close(() => {
+        resolve();
+      });
+    });
     await writeFile(join(directory, "index.html"), "<html>Klein</html>");
     await mkdir(join(directory, "assets"), { recursive: true });
     await writeFile(join(directory, "assets", "app.js"), "console.log('klein')");
@@ -147,7 +172,7 @@ test("serves local HTTP when cloudflared is disabled and releases the listener w
     const webUi = await startWebUi(options);
     try {
       const health = await fetch(`http://127.0.0.1:${address.port}/api/health`);
-      assert.deepEqual(await health.json(), { ok: true });
+      assert.deepEqual(parseJson(await health.text()), { ok: true });
 
       const index = await fetch(`http://127.0.0.1:${address.port}/`);
       assert.equal(index.headers.get("cache-control"), "no-store");
@@ -175,6 +200,12 @@ test("serves local HTTP when cloudflared is disabled and releases the listener w
   } finally {
     if (originalPath === undefined) delete process.env.PATH;
     else process.env.PATH = originalPath;
-    if (socket.listening) await new Promise<void>((resolve) => socket.close(() => resolve()));
+    if (socket.listening) {
+      await new Promise<void>((resolve) => {
+        socket.close(() => {
+          resolve();
+        });
+      });
+    }
   }
 });

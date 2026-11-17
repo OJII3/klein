@@ -14,6 +14,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { uuidv7, type ProviderHeaders } from "@earendil-works/pi-ai";
 import type { Logger } from "pino";
+import { toApiModel } from "./pi-model-runtime";
 import {
   buildHandoffSummaryPrompt,
   buildHandoffSummarySystemPrompt,
@@ -128,8 +129,9 @@ export function createBackgroundCompactionExtension(
       };
       state.pending = nextPending;
 
-      void summarize(preparation, context, controller.signal)
-        .then((result) => {
+      void (async () => {
+        try {
+          const result = await summarize(preparation, context, controller.signal);
           if (state.pending !== nextPending) return;
           if (
             !result ||
@@ -140,8 +142,7 @@ export function createBackgroundCompactionExtension(
             return;
           }
           nextPending.result = result;
-        })
-        .catch((error: unknown) => {
+        } catch (error: unknown) {
           if (state.pending !== nextPending) return;
           state.pending = undefined;
           if (!controller.signal.aborted) {
@@ -150,7 +151,8 @@ export function createBackgroundCompactionExtension(
               "Pi background compaction failed",
             );
           }
-        });
+        }
+      })();
     });
 
     pi.on("session_before_compact", (event, context) => {
@@ -177,7 +179,7 @@ export function createBackgroundCompactionExtension(
           });
       }
 
-      if (!pending) return;
+      if (!pending) return undefined;
 
       if (
         event.branchEntries.some((entry) => entry.type === "context_edit") ||
@@ -186,7 +188,7 @@ export function createBackgroundCompactionExtension(
         !isCompatible(pending, event.preparation, event.branchEntries)
       ) {
         cancelPending(state, pending);
-        return;
+        return undefined;
       }
 
       state.pending = undefined;
@@ -308,7 +310,7 @@ async function summarizeWithPi(
   signal: AbortSignal,
   settingsManager: SettingsManager,
 ): Promise<CompactionResult | undefined> {
-  const model = context.model;
+  const model = context.model ? toApiModel(context.model) : undefined;
   if (!model) return undefined;
 
   const auth = await context.modelRegistry.getApiKeyAndHeaders(model);
@@ -363,7 +365,7 @@ function prepareBackgroundCompaction(
 
   const messagesToSummarize = branchEntries
     .slice(boundaryStart, cutPoint.firstKeptEntryIndex)
-    .flatMap(sessionEntryToContextMessages);
+    .flatMap((entry) => sessionEntryToContextMessages(entry));
   if (messagesToSummarize.length === 0) return undefined;
 
   return {

@@ -18,6 +18,8 @@ const ACTIONS: Record<VoiceTranscriptQueueAction, string> = {
     "Combine the first and second queued transcripts because they form one utterance or thought, then classify the combined transcript again.",
 };
 
+const ACTION_KEYS: readonly VoiceTranscriptQueueAction[] = ["discard", "steer", "keep", "merge"];
+
 export class PiVoiceTranscriptQueueSelector implements VoiceTranscriptQueueSelector {
   constructor(
     private readonly modelRuntime: Pick<ModelRuntime, "classify">,
@@ -33,11 +35,10 @@ export class PiVoiceTranscriptQueueSelector implements VoiceTranscriptQueueSelec
   ): Promise<VoiceTranscriptQueueAction> {
     if (signal.aborted || input.queuedTranscripts.length === 0) return "keep";
 
-    const actions = Object.fromEntries(
-      (Object.keys(ACTIONS) as VoiceTranscriptQueueAction[])
-        .filter((action) => action !== "merge" || input.queuedTranscripts.length > 1)
-        .map((action) => [action, ACTIONS[action]]),
+    const availableActions = ACTION_KEYS.filter(
+      (action) => action !== "merge" || input.queuedTranscripts.length > 1,
     );
+    const actions = Object.fromEntries(availableActions.map((action) => [action, ACTIONS[action]]));
 
     try {
       const result = await this.modelRuntime.classify(
@@ -61,9 +62,7 @@ export class PiVoiceTranscriptQueueSelector implements VoiceTranscriptQueueSelec
       if (signal.aborted) return "keep";
       const answer = result.answers.action;
       if (result.stopReason !== "stop" || answer?.type !== "choice") return "keep";
-      return Object.hasOwn(actions, answer.choice)
-        ? (answer.choice as VoiceTranscriptQueueAction)
-        : "keep";
+      return availableActions.find((action) => action === answer.choice) ?? "keep";
     } catch {
       return "keep";
     }

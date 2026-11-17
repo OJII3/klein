@@ -17,6 +17,7 @@ interface SessionTimelineProps {
 }
 
 function roleTone(role: string | undefined): string {
+  if (!role) return "badge-ghost";
   switch (role) {
     case "user":
       return "badge-info badge-soft";

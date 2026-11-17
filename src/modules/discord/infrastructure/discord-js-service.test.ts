@@ -1,67 +1,129 @@
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
 import test from "node:test";
-import type { Interaction, Message, ModalBuilder } from "discord.js";
-import { Events, GatewayIntentBits, MessageFlags, Partials } from "discord.js";
+import {
+  Events,
+  GatewayIntentBits,
+  IntentsBitField,
+  MessageFlags,
+  Partials,
+  type ClientOptions,
+  type ContainerBuilder,
+  type InteractionReplyOptions,
+  type ModalBuilder,
+} from "discord.js";
 
+import { isRecord } from "@shared/type-guards";
 import { createDiscordAccessPolicy } from "../domain/discord-access-policy";
 import type { DiscordMessage } from "../domain/discord-message";
 import type { DiscordReactionEvent } from "../domain/discord-reaction";
 import { DiscordOperatingState } from "../domain/discord-operating-state";
-import type { DiscordMessageHandler, DiscordReactionHandler } from "../ports/discord-gateway";
-import { DiscordJsService } from "./discord-js-service";
+import type {
+  DiscordChatInputInteraction,
+  DiscordModalSubmitInteraction,
+} from "./discord-js-interaction-handler";
+import type { DiscordAdapterAttachment } from "./discord-js-message-adapter";
+import {
+  DiscordJsService,
+  type DiscordServiceChannel,
+  type DiscordServiceClient,
+  type DiscordServiceMessage,
+} from "./discord-js-service";
 
-type TestableDiscordJsService = {
-  readonly client: {
-    channels: { fetch: (id: string) => Promise<unknown> };
-    guilds: { cache: Map<string, { name?: string }> };
-    users: { fetch: (id: string) => Promise<unknown> };
-    user: {
-      id: string;
-      setActivity?: (name: string) => void;
-      setStatus?: (status: "online" | "idle") => void;
-    } | null;
+interface FakeDiscordChannel extends DiscordServiceChannel {
+  send?(payload: unknown): Promise<unknown>;
+}
+
+class FakeDiscordClient extends EventEmitter implements DiscordServiceClient {
+  user: {
+    id: string;
+    setActivity: (name: string) => void;
+    setStatus: (status: "online" | "idle") => void;
+  } | null = null;
+
+  channels: { fetch: (id: string) => Promise<FakeDiscordChannel | null> } = {
+    fetch: async () => null,
   };
-  acceptingMessages: boolean;
-  onMessage?: DiscordMessageHandler;
-  onReaction?: DiscordReactionHandler;
-  handleMessage(message: Message): Promise<void>;
-  handleReactionAdd(reaction: unknown, user: unknown): Promise<void>;
-  handleInteraction(interaction: Interaction): Promise<void>;
-};
+
+  users: {
+    fetch: (id: string) => Promise<{
+      send: (payload: {
+        components: ContainerBuilder[];
+        flags: MessageFlags.IsComponentsV2;
+      }) => Promise<unknown>;
+    }>;
+  } = {
+    fetch: async () => ({
+      send: async () => undefined,
+    }),
+  };
+
+  guilds: { cache: Map<string, { readonly name?: string }> } = {
+    cache: new Map(),
+  };
+
+  login = async (): Promise<string> => "token";
+  destroy = async (): Promise<void> => undefined;
+}
+
+function createBotUser(
+  overrides: {
+    setActivity?: (name: string) => void;
+    setStatus?: (status: "online" | "idle") => void;
+  } = {},
+) {
+  return {
+    id: "bot-123",
+    setActivity: overrides.setActivity ?? (() => undefined),
+    setStatus: overrides.setStatus ?? (() => undefined),
+  };
+}
 
 function createMessage(
   options: {
     author?: { bot?: boolean; id?: string };
     content?: string;
-    attachments?: Map<string, unknown>;
+    attachments?: Map<string, DiscordAdapterAttachment>;
     mentionedUserIds?: string[];
   } = {},
-): Message {
-  return {
+): DiscordServiceMessage {
+  const message: DiscordServiceMessage = {
     author: {
       bot: options.author?.bot ?? false,
       displayName: "さつき",
       id: options.author?.id ?? "user-123",
       username: "satsuki",
     },
-    channel: {
-      isThread: () => false,
-      send: async () => undefined,
-    },
+    channel: Object.assign(
+      {
+        id: "channel-123",
+        isThread: () => false,
+      },
+      {
+        send: async () => undefined,
+      },
+    ),
     channelId: "channel-123",
     content: options.content ?? "メンションなしのメッセージ",
     guildId: "guild-123",
     createdAt: new Date("2026-10-14T09:30:42.123Z"),
     id: "message-123",
-    attachments: options.attachments ?? new Map(),
+    attachments: options.attachments ?? new Map<string, DiscordAdapterAttachment>(),
     mentions: {
       roles: new Map(),
-      users: new Map((options.mentionedUserIds ?? []).map((id) => [id, { id }])),
+      users: new Map(
+        (options.mentionedUserIds ?? []).map((id) => [
+          id,
+          { bot: false, displayName: id, id, username: id },
+        ]),
+      ),
     },
-  } as unknown as Message;
+    fetchReference: async () => message,
+  };
+  return message;
 }
 
-function createImageAttachment() {
+function createImageAttachment(): DiscordAdapterAttachment {
   return {
     contentType: "image/png",
     id: "attachment-123",
@@ -71,22 +133,138 @@ function createImageAttachment() {
   };
 }
 
+function extractFirstTextContent(response: InteractionReplyOptions): string | undefined {
+  const firstComponent = response.components?.[0];
+  if (
+    !firstComponent ||
+    typeof firstComponent !== "object" ||
+    !("toJSON" in firstComponent) ||
+    typeof firstComponent.toJSON !== "function"
+  ) {
+    return undefined;
+  }
+  const json: unknown = firstComponent.toJSON();
+  if (!isRecord(json) || !Array.isArray(json.components)) return undefined;
+  const inner: unknown = json.components[0];
+  return isRecord(inner) && typeof inner.content === "string" ? inner.content : undefined;
+}
+
+function readReplyFlags(response: InteractionReplyOptions): number | undefined {
+  return typeof response.flags === "number" ? response.flags : undefined;
+}
+
+function createChatInputInteraction(overrides: {
+  id?: string;
+  commandName: string;
+  guildId?: string | null;
+  channelId?: string;
+  getSubcommand?: () => string;
+  fetchChannel?: (
+    id: string,
+  ) => Promise<{ id: string; name?: string | null; isThread(): boolean } | null>;
+  reply?: (response: InteractionReplyOptions) => Promise<unknown>;
+  showModal?: (modal: ModalBuilder) => Promise<unknown>;
+}): DiscordChatInputInteraction {
+  return {
+    id: overrides.id ?? "interaction-123",
+    commandName: overrides.commandName,
+    inGuild: () => true,
+    guildId: overrides.guildId ?? "guild-123",
+    channelId: overrides.channelId ?? "channel-123",
+    channel: { id: overrides.channelId ?? "channel-123", isThread: () => false },
+    client: {
+      channels: {
+        cache: new Map(),
+        fetch: overrides.fetchChannel ?? (async () => null),
+      },
+    },
+    guild: null,
+    user: { id: "user-123", bot: false },
+    isChatInputCommand: () => true,
+    isModalSubmit: () => false,
+    options: { getSubcommand: overrides.getSubcommand ?? (() => "") },
+    memberPermissions: { has: () => true },
+    reply: overrides.reply ?? (async () => undefined),
+    deferReply: async () => undefined,
+    editReply: async () => undefined,
+    showModal: overrides.showModal ?? (async () => undefined),
+  };
+}
+
+function createModalSubmitInteraction(overrides: {
+  id: string;
+  customId: string;
+  guildId?: string | null;
+  channelId: string;
+  getTextInputValue: (customId: string) => string;
+  reply: (response: InteractionReplyOptions) => Promise<unknown>;
+}): DiscordModalSubmitInteraction {
+  return {
+    id: overrides.id,
+    customId: overrides.customId,
+    guildId: overrides.guildId ?? "guild-123",
+    inGuild: () => true,
+    channelId: overrides.channelId,
+    channel: { id: overrides.channelId, isThread: () => false },
+    client: {
+      channels: {
+        cache: new Map(),
+        fetch: async () => null,
+      },
+    },
+    user: { id: "user-123", bot: false },
+    isChatInputCommand: () => false,
+    isModalSubmit: () => true,
+    memberPermissions: { has: () => true },
+    fields: {
+      getTextInputValue: overrides.getTextInputValue,
+    },
+    reply: overrides.reply,
+  };
+}
+
+function readRuleModal(modal: ModalBuilder): {
+  customId: string;
+  inputCustomId?: string;
+  inputValue?: string;
+} {
+  const json: unknown = modal.toJSON();
+  assert.ok(isRecord(json) && typeof json.custom_id === "string" && Array.isArray(json.components));
+  const firstRow: unknown = json.components[0];
+  assert.ok(isRecord(firstRow) && Array.isArray(firstRow.components));
+  const firstInput: unknown = firstRow.components[0];
+  assert.ok(isRecord(firstInput));
+  return {
+    customId: json.custom_id,
+    inputCustomId: typeof firstInput.custom_id === "string" ? firstInput.custom_id : undefined,
+    inputValue: typeof firstInput.value === "string" ? firstInput.value : undefined,
+  };
+}
+
 test("forwards guild messages without a bot mention", async () => {
+  const fakeClient = new FakeDiscordClient();
+  fakeClient.user = createBotUser();
   const service = new DiscordJsService(
     "token",
     createDiscordAccessPolicy({ default: "allow", directMessages: "allow" }),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    { createClient: () => fakeClient },
   );
-  const testableService = service as unknown as TestableDiscordJsService;
-  testableService.client.user = { id: "bot-123" };
-  testableService.acceptingMessages = true;
 
   const received: DiscordMessage[] = [];
-  testableService.onMessage = async (message) => {
-    received.push(message);
-  };
 
   try {
-    await testableService.handleMessage(createMessage());
+    await service.start(async (message) => {
+      received.push(message);
+    });
+    fakeClient.emit(Events.MessageCreate, createMessage());
+    await service.flush();
 
     assert.equal(received.length, 1);
     assert.equal(received[0]?.content, "メンションなしのメッセージ");
@@ -96,26 +274,36 @@ test("forwards guild messages without a bot mention", async () => {
 });
 
 test("ignores only messages sent by this bot", async () => {
+  const fakeClient = new FakeDiscordClient();
+  fakeClient.user = createBotUser();
   const service = new DiscordJsService(
     "token",
     createDiscordAccessPolicy({ default: "allow", directMessages: "allow" }),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    { createClient: () => fakeClient },
   );
-  const testableService = service as unknown as TestableDiscordJsService;
-  testableService.client.user = { id: "bot-123" };
-  testableService.acceptingMessages = true;
 
   const received: DiscordMessage[] = [];
-  testableService.onMessage = async (message) => {
-    received.push(message);
-  };
 
   try {
-    await testableService.handleMessage(
+    await service.start(async (message) => {
+      received.push(message);
+    });
+    fakeClient.emit(
+      Events.MessageCreate,
       createMessage({ author: { bot: true, id: "bot-123" }, content: "自分の送信メッセージ" }),
     );
-    await testableService.handleMessage(
+    fakeClient.emit(
+      Events.MessageCreate,
       createMessage({ author: { bot: true, id: "other-bot-456" }, content: "別 bot のメッセージ" }),
     );
+    await service.flush();
 
     assert.equal(received.length, 1);
     assert.equal(received[0]?.author.id, "other-bot-456");
@@ -126,19 +314,22 @@ test("ignores only messages sent by this bot", async () => {
 });
 
 test("forwards image attachments, including image-only messages", async () => {
+  const fakeClient = new FakeDiscordClient();
+  fakeClient.user = createBotUser();
   const service = new DiscordJsService(
     "token",
     createDiscordAccessPolicy({ default: "allow", directMessages: "allow" }),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    { createClient: () => fakeClient },
   );
-  const testableService = service as unknown as TestableDiscordJsService;
-  testableService.client.user = { id: "bot-123" };
-  testableService.acceptingMessages = true;
 
   const received: DiscordMessage[] = [];
-  testableService.onMessage = async (message) => {
-    received.push(message);
-  };
-
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () =>
     new Response(
@@ -150,12 +341,17 @@ test("forwards image attachments, including image-only messages", async () => {
     );
 
   try {
-    await testableService.handleMessage(
+    await service.start(async (message) => {
+      received.push(message);
+    });
+    fakeClient.emit(
+      Events.MessageCreate,
       createMessage({
         attachments: new Map([["attachment-123", createImageAttachment()]]),
         content: "",
       }),
     );
+    await service.flush();
 
     assert.equal(received.length, 1);
     assert.equal(received[0]?.content, "");
@@ -171,16 +367,23 @@ test("forwards image attachments, including image-only messages", async () => {
 });
 
 test("sets the bot activity", async () => {
+  const fakeClient = new FakeDiscordClient();
+  const activities: string[] = [];
+  fakeClient.user = createBotUser({
+    setActivity: (name) => activities.push(name),
+  });
   const service = new DiscordJsService(
     "token",
     createDiscordAccessPolicy({ default: "allow", directMessages: "allow" }),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    { createClient: () => fakeClient },
   );
-  const testableService = service as unknown as TestableDiscordJsService;
-  const activities: string[] = [];
-  testableService.client.user = {
-    id: "bot-123",
-    setActivity: (name) => activities.push(name),
-  };
 
   try {
     service.setActivity("65.5%/month (reset in 17 days)");
@@ -191,25 +394,31 @@ test("sets the bot activity", async () => {
 });
 
 test("pauses message handling while the bot is idle", async () => {
+  const fakeClient = new FakeDiscordClient();
+  fakeClient.user = createBotUser();
   const operatingState = new DiscordOperatingState();
   const service = new DiscordJsService(
     "token",
     createDiscordAccessPolicy({ default: "allow", directMessages: "allow" }),
     undefined,
     operatingState,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    { createClient: () => fakeClient },
   );
-  const testableService = service as unknown as TestableDiscordJsService;
-  testableService.client.user = { id: "bot-123", setStatus: () => undefined };
-  testableService.acceptingMessages = true;
 
   const received: DiscordMessage[] = [];
-  testableService.onMessage = async (message) => {
-    received.push(message);
-  };
 
   try {
+    await service.start(async (message) => {
+      received.push(message);
+    });
     service.setOperatingMode("paused");
-    await testableService.handleMessage(createMessage());
+    fakeClient.emit(Events.MessageCreate, createMessage());
+    await service.flush();
 
     assert.equal(operatingState.mode, "paused");
     assert.equal(received.length, 0);
@@ -219,19 +428,24 @@ test("pauses message handling while the bot is idle", async () => {
 });
 
 test("changes the Discord presence when the operating mode changes", async () => {
-  const operatingState = new DiscordOperatingState();
+  const fakeClient = new FakeDiscordClient();
   const statuses: string[] = [];
+  fakeClient.user = createBotUser({
+    setStatus: (status) => statuses.push(status),
+  });
+  const operatingState = new DiscordOperatingState();
   const service = new DiscordJsService(
     "token",
     createDiscordAccessPolicy({ default: "allow", directMessages: "allow" }),
     undefined,
     operatingState,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    { createClient: () => fakeClient },
   );
-  const testableService = service as unknown as TestableDiscordJsService;
-  testableService.client.user = {
-    id: "bot-123",
-    setStatus: (status) => statuses.push(status),
-  };
 
   try {
     service.setOperatingMode("paused");
@@ -245,50 +459,44 @@ test("changes the Discord presence when the operating mode changes", async () =>
 });
 
 test("handles status slash subcommands for members with Manage Server", async () => {
+  const fakeClient = new FakeDiscordClient();
+  fakeClient.user = createBotUser();
   const operatingState = new DiscordOperatingState();
   const service = new DiscordJsService(
     "token",
     createDiscordAccessPolicy({ default: "allow", directMessages: "allow" }),
     undefined,
     operatingState,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    { createClient: () => fakeClient },
   );
-  const testableService = service as unknown as TestableDiscordJsService;
-  testableService.client.user = {
-    id: "bot-123",
-    setStatus: () => undefined,
-  };
   const replies: Array<{ content: string | undefined; flags: number | undefined }> = [];
   let subcommand = "idle";
-  const interaction = {
+  const interaction = createChatInputInteraction({
     commandName: "status",
-    inGuild: () => true,
-    channelId: "channel-123",
-    channel: { isThread: () => false },
-    user: { id: "user-123", bot: false },
-    isChatInputCommand: () => true,
-    isModalSubmit: () => false,
-    options: { getSubcommand: () => subcommand },
-    memberPermissions: {
-      has: () => true,
-    },
-    reply: async (response: {
-      components: Array<{ toJSON: () => { components: Array<{ content?: string }> } }>;
-      flags?: number;
-    }) => {
+    getSubcommand: () => subcommand,
+    reply: async (response) => {
       replies.push({
-        content: response.components[0]?.toJSON().components[0]?.content,
-        flags: response.flags,
+        content: extractFirstTextContent(response),
+        flags: readReplyFlags(response),
       });
     },
-  } as unknown as Interaction;
+  });
 
   try {
-    await testableService.handleInteraction(interaction);
+    await service.start(async () => undefined);
+    fakeClient.emit(Events.InteractionCreate, interaction);
+    await service.flush();
 
     assert.equal(operatingState.mode, "paused");
 
     subcommand = "online";
-    await testableService.handleInteraction(interaction);
+    fakeClient.emit(Events.InteractionCreate, interaction);
+    await service.flush();
 
     assert.equal(operatingState.mode, "active");
     assert.deepEqual(replies, [
@@ -301,6 +509,7 @@ test("handles status slash subcommands for members with Manage Server", async ()
 });
 
 test("lists explicitly allowed channels and threads with their access levels", async () => {
+  const fakeClient = new FakeDiscordClient();
   const accessRuleStore = {
     async load() {},
     async setAccess() {},
@@ -335,8 +544,10 @@ test("lists explicitly allowed channels and threads with their access levels", a
     undefined,
     undefined,
     accessRuleStore,
+    undefined,
+    undefined,
+    { createClient: () => fakeClient },
   );
-  const testableService = service as unknown as TestableDiscordJsService;
   const names: Record<string, string> = {
     "channel-allow": "allow-name",
     "thread-allow": "thread-name",
@@ -344,33 +555,20 @@ test("lists explicitly allowed channels and threads with their access levels", a
   };
   let content: string | undefined;
   let flags: number | undefined;
-  const interaction = {
+  const interaction = createChatInputInteraction({
     commandName: "channels",
-    inGuild: () => true,
-    guildId: "guild-123",
     channelId: "channel-allow",
-    channel: { isThread: () => false },
-    client: {
-      channels: {
-        cache: new Map(),
-        fetch: async (id: string) => ({ id, name: names[id], isThread: () => false }),
-      },
+    fetchChannel: async (id) => ({ id, name: names[id], isThread: () => false }),
+    reply: async (response) => {
+      content = extractFirstTextContent(response);
+      flags = readReplyFlags(response);
     },
-    user: { id: "user-123", bot: false },
-    isChatInputCommand: () => true,
-    isModalSubmit: () => false,
-    memberPermissions: { has: () => true },
-    reply: async (response: {
-      components: Array<{ toJSON: () => { components: Array<{ content?: string }> } }>;
-      flags?: number;
-    }) => {
-      content = response.components[0]?.toJSON().components[0]?.content;
-      flags = response.flags;
-    },
-  } as unknown as Interaction;
+  });
 
   try {
-    await testableService.handleInteraction(interaction);
+    await service.start(async () => undefined);
+    fakeClient.emit(Events.InteractionCreate, interaction);
+    await service.flush();
 
     assert.equal(
       content,
@@ -389,20 +587,29 @@ test("lists explicitly allowed channels and threads with their access levels", a
 });
 
 test("owner channels only forward real owner messages", async () => {
+  const fakeClient = new FakeDiscordClient();
   const service = new DiscordJsService(
     "token",
     createDiscordAccessPolicy({ default: "owner", directMessages: "owner" }, "user-123"),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    { createClient: () => fakeClient },
   );
-  const testableService = service as unknown as TestableDiscordJsService;
-  testableService.acceptingMessages = true;
   const received: DiscordMessage[] = [];
-  testableService.onMessage = async (message) => {
-    received.push(message);
-  };
   try {
-    await testableService.handleMessage(createMessage({ author: { id: "other-user" } }));
-    await testableService.handleMessage(createMessage({ author: { id: "user-123", bot: true } }));
-    await testableService.handleMessage(createMessage());
+    await service.start(async (message) => {
+      received.push(message);
+    });
+    fakeClient.emit(Events.MessageCreate, createMessage({ author: { id: "other-user" } }));
+    fakeClient.emit(Events.MessageCreate, createMessage({ author: { id: "user-123", bot: true } }));
+    fakeClient.emit(Events.MessageCreate, createMessage());
+    await service.flush();
+
     assert.equal(received.length, 1);
     assert.equal(received[0]?.author.id, "user-123");
     assert.equal(received[0]?.author.bot, false);
@@ -412,6 +619,21 @@ test("owner channels only forward real owner messages", async () => {
 });
 
 test("message reads enforce inherited access and trusted requester identity", async () => {
+  const fakeClient = new FakeDiscordClient();
+  let reads = 0;
+  fakeClient.channels.fetch = async (id) => ({
+    id,
+    guildId: "guild-123",
+    isTextBased: () => true,
+    isThread: () => id === "public" || id === "private-thread",
+    parentId: "private",
+    messages: {
+      fetch: async () => {
+        reads += 1;
+        return createMessage();
+      },
+    },
+  });
   const service = new DiscordJsService(
     "token",
     createDiscordAccessPolicy(
@@ -431,22 +653,15 @@ test("message reads enforce inherited access and trusted requester identity", as
             : undefined,
       },
     ),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    { createClient: () => fakeClient },
   );
-  const testableService = service as unknown as TestableDiscordJsService;
-  let reads = 0;
-  testableService.client.channels.fetch = async (id) => ({
-    id,
-    guildId: "guild-123",
-    isTextBased: () => true,
-    isThread: () => id === "public" || id === "private-thread",
-    parentId: "private",
-    messages: {
-      fetch: async () => {
-        reads += 1;
-        return createMessage();
-      },
-    },
-  });
   const locator = { channelId: "private-thread", messageId: "message-123" };
   try {
     for (const requester of [
@@ -470,13 +685,9 @@ test("message reads enforce inherited access and trusted requester identity", as
 });
 
 test("resolves current channel locations, including thread parents and direct messages", async () => {
-  const service = new DiscordJsService(
-    "token",
-    createDiscordAccessPolicy({ default: "allow", directMessages: "allow" }),
-  );
-  const testableService = service as unknown as TestableDiscordJsService;
+  const fakeClient = new FakeDiscordClient();
   const fetched: string[] = [];
-  testableService.client.channels.fetch = async (id) => {
+  fakeClient.channels.fetch = async (id) => {
     fetched.push(id);
     if (id === "missing") return null;
     if (id === "voice") return { isTextBased: () => false };
@@ -489,6 +700,18 @@ test("resolves current channel locations, including thread parents and direct me
       isThread: () => id === "thread",
     };
   };
+  const service = new DiscordJsService(
+    "token",
+    createDiscordAccessPolicy({ default: "allow", directMessages: "allow" }),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    { createClient: () => fakeClient },
+  );
   try {
     assert.deepEqual(await service.getChannelLocation("channel"), {
       guildId: "guild-123",
@@ -516,31 +739,8 @@ test("resolves current channel locations, including thread parents and direct me
   }
 });
 
-interface RuleModalJson {
-  readonly custom_id: string;
-  readonly components: ReadonlyArray<{
-    readonly components: ReadonlyArray<{ readonly custom_id: string; readonly value?: string }>;
-  }>;
-}
-
-function createRuleCommandInteraction(channelId: string, interactionId: string): Interaction {
-  return {
-    id: interactionId,
-    commandName: "rule",
-    inGuild: () => true,
-    guildId: "guild-123",
-    channelId,
-    channel: { isThread: () => false },
-    user: { id: "user-123", bot: false },
-    isChatInputCommand: () => true,
-    isModalSubmit: () => false,
-    memberPermissions: { has: () => true },
-    reply: async () => undefined,
-    showModal: async () => undefined,
-  } as unknown as Interaction;
-}
-
 test("opens the rule modal with the channel's own rule and a fresh custom id", async () => {
+  const fakeClient = new FakeDiscordClient();
   const rules = new Map([
     ["channel-a", "チャンネルAのルール"],
     ["channel-b", "チャンネルBのルール"],
@@ -557,38 +757,41 @@ test("opens the rule modal with the channel's own rule and a fresh custom id", a
       },
       async set() {},
     },
+    undefined,
+    undefined,
+    undefined,
+    { createClient: () => fakeClient },
   );
-  const testableService = service as unknown as TestableDiscordJsService;
-  const modals: RuleModalJson[] = [];
-  const interactionFor = (channelId: string, interactionId: string) => {
-    const interaction = createRuleCommandInteraction(channelId, interactionId) as unknown as {
-      showModal: (modal: ModalBuilder) => Promise<void>;
-    };
-    interaction.showModal = async (modal) => {
-      modals.push(modal.toJSON() as unknown as RuleModalJson);
-    };
-    return interaction as unknown as Interaction;
-  };
+  const modals: Array<{ customId: string; inputCustomId?: string; inputValue?: string }> = [];
+  const interactionFor = (channelId: string, interactionId: string) =>
+    createChatInputInteraction({
+      id: interactionId,
+      commandName: "rule",
+      channelId,
+      showModal: async (modal) => {
+        modals.push(readRuleModal(modal));
+      },
+    });
 
   try {
-    await testableService.handleInteraction(interactionFor("channel-a", "interaction-a"));
-    await testableService.handleInteraction(interactionFor("channel-b", "interaction-b"));
+    await service.start(async () => undefined);
+    fakeClient.emit(Events.InteractionCreate, interactionFor("channel-a", "interaction-a"));
+    fakeClient.emit(Events.InteractionCreate, interactionFor("channel-b", "interaction-b"));
+    await service.flush();
 
     assert.deepEqual(
-      modals.map((modal) => modal.components[0]?.components[0]?.value),
+      modals.map((modal) => modal.inputValue),
       ["チャンネルAのルール", "チャンネルBのルール"],
     );
-    assert.notEqual(modals[0]?.custom_id, modals[1]?.custom_id);
-    assert.notEqual(
-      modals[0]?.components[0]?.components[0]?.custom_id,
-      modals[1]?.components[0]?.components[0]?.custom_id,
-    );
+    assert.notEqual(modals[0]?.customId, modals[1]?.customId);
+    assert.notEqual(modals[0]?.inputCustomId, modals[1]?.inputCustomId);
   } finally {
     await service.stop();
   }
 });
 
 test("saves a submitted rule under the interaction's channel", async () => {
+  const fakeClient = new FakeDiscordClient();
   const saved: Array<{ guildId: string; channelId: string; rule: string }> = [];
   const service = new DiscordJsService(
     "token",
@@ -604,35 +807,29 @@ test("saves a submitted rule under the interaction's channel", async () => {
         saved.push({ guildId, channelId, rule });
       },
     },
+    undefined,
+    undefined,
+    undefined,
+    { createClient: () => fakeClient },
   );
-  const testableService = service as unknown as TestableDiscordJsService;
   const replies: Array<string | undefined> = [];
-  const interaction = {
+  const interaction = createModalSubmitInteraction({
     id: "interaction-c",
     customId: "channel-rule-edit:1234567890",
-    guildId: "guild-123",
-    inGuild: () => true,
     channelId: "channel-b",
-    channel: { isThread: () => false },
-    user: { id: "user-123", bot: false },
-    isChatInputCommand: () => false,
-    isModalSubmit: () => true,
-    memberPermissions: { has: () => true },
-    fields: {
-      getTextInputValue: (customId: string) => {
-        assert.equal(customId, "channel-rule:1234567890");
-        return "  新しいルール  ";
-      },
+    getTextInputValue: (customId) => {
+      assert.equal(customId, "channel-rule:1234567890");
+      return "  新しいルール  ";
     },
-    reply: async (response: {
-      components: Array<{ toJSON: () => { components: Array<{ content?: string }> } }>;
-    }) => {
-      replies.push(response.components[0]?.toJSON().components[0]?.content);
+    reply: async (response) => {
+      replies.push(extractFirstTextContent(response));
     },
-  } as unknown as Interaction;
+  });
 
   try {
-    await testableService.handleInteraction(interaction);
+    await service.start(async () => undefined);
+    fakeClient.emit(Events.InteractionCreate, interaction);
+    await service.flush();
 
     assert.deepEqual(saved, [
       { guildId: "guild-123", channelId: "channel-b", rule: "  新しいルール  " },
@@ -644,6 +841,28 @@ test("saves a submitted rule under the interaction's channel", async () => {
 });
 
 test("asks the owner when mentioned in a channel that is not allowed and shows a pending notice", async () => {
+  const fakeClient = new FakeDiscordClient();
+  fakeClient.user = createBotUser();
+  const pendingMessages: unknown[] = [];
+  const ownerMessages: unknown[] = [];
+  fakeClient.channels.fetch = async () => ({
+    isTextBased: () => false,
+    send: async (payload: unknown) => {
+      pendingMessages.push(payload);
+      return { id: "pending-message" };
+    },
+    messages: {
+      fetch: async () => Object.assign(createMessage(), { edit: async () => undefined }),
+    },
+  });
+  fakeClient.users.fetch = async () => ({
+    send: async (payload: unknown) => {
+      ownerMessages.push(payload);
+      return { id: "owner-message" };
+    },
+  });
+  fakeClient.guilds.cache.set("guild-123", { name: "テストサーバー" });
+
   const accessRuleStore = {
     async load() {},
     async setAccess() {},
@@ -665,39 +884,20 @@ test("asks the owner when mentioned in a channel that is not allowed and shows a
     accessRuleStore,
     "owner-123",
     accessRequestStore,
+    { createClient: () => fakeClient },
   );
-  const testableService = service as unknown as TestableDiscordJsService;
-  testableService.client.user = { id: "bot-123" };
-  testableService.acceptingMessages = true;
-
-  const pendingMessages: unknown[] = [];
-  const ownerMessages: unknown[] = [];
-  testableService.client.channels.fetch = async () => ({
-    send: async (payload: unknown) => {
-      pendingMessages.push(payload);
-      return { id: "pending-message" };
-    },
-    messages: { fetch: async () => ({ edit: async () => undefined }) },
-  });
-  testableService.client.users = {
-    fetch: async () => ({
-      send: async (payload: unknown) => {
-        ownerMessages.push(payload);
-        return { id: "owner-message" };
-      },
-    }),
-  };
-  testableService.client.guilds = { cache: new Map([["guild-123", { name: "テストサーバー" }]]) };
 
   const received: DiscordMessage[] = [];
-  testableService.onMessage = async (message) => {
-    received.push(message);
-  };
 
   try {
-    await testableService.handleMessage(
+    await service.start(async (message) => {
+      received.push(message);
+    });
+    fakeClient.emit(
+      Events.MessageCreate,
       createMessage({ content: "<@bot-123> こんにちは", mentionedUserIds: ["bot-123"] }),
     );
+    await service.flush();
 
     assert.equal(received.length, 0);
     assert.equal(pendingMessages.length, 1);
@@ -708,6 +908,17 @@ test("asks the owner when mentioned in a channel that is not allowed and shows a
 });
 
 test("does not ask the owner when a denied channel message does not mention the bot", async () => {
+  const fakeClient = new FakeDiscordClient();
+  fakeClient.user = createBotUser();
+  const pendingMessages: unknown[] = [];
+  fakeClient.channels.fetch = async () => ({
+    isTextBased: () => false,
+    send: async (payload: unknown) => {
+      pendingMessages.push(payload);
+      return { id: "pending-message" };
+    },
+  });
+
   const accessRuleStore = {
     async load() {},
     async setAccess() {},
@@ -729,21 +940,13 @@ test("does not ask the owner when a denied channel message does not mention the 
     accessRuleStore,
     "owner-123",
     accessRequestStore,
+    { createClient: () => fakeClient },
   );
-  const testableService = service as unknown as TestableDiscordJsService;
-  testableService.client.user = { id: "bot-123" };
-  testableService.acceptingMessages = true;
-
-  const pendingMessages: unknown[] = [];
-  testableService.client.channels.fetch = async () => ({
-    send: async (payload: unknown) => {
-      pendingMessages.push(payload);
-      return { id: "pending-message" };
-    },
-  });
 
   try {
-    await testableService.handleMessage(createMessage({ content: "こんにちは" }));
+    await service.start(async () => undefined);
+    fakeClient.emit(Events.MessageCreate, createMessage({ content: "こんにちは" }));
+    await service.flush();
 
     assert.equal(pendingMessages.length, 0);
   } finally {
@@ -752,16 +955,24 @@ test("does not ask the owner when a denied channel message does not mention the 
 });
 
 test("returns sent message IDs from sendMessage", async () => {
-  const service = new DiscordJsService(
-    "token",
-    createDiscordAccessPolicy({ default: "allow", directMessages: "allow" }),
-  );
-  const testableService = service as unknown as TestableDiscordJsService;
+  const fakeClient = new FakeDiscordClient();
   let counter = 0;
-  testableService.client.channels.fetch = async () => ({
+  fakeClient.channels.fetch = async () => ({
     isTextBased: () => true,
     send: async () => ({ id: `sent-${++counter}` }),
   });
+  const service = new DiscordJsService(
+    "token",
+    createDiscordAccessPolicy({ default: "allow", directMessages: "allow" }),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    { createClient: () => fakeClient },
+  );
 
   try {
     const ids = await service.sendMessage("channel-123", `${"a".repeat(2_000)}b`);
@@ -772,6 +983,8 @@ test("returns sent message IDs from sendMessage", async () => {
 });
 
 test("forwards reactions on bot messages after resolving partials and filters unauthorized reactions", async () => {
+  const fakeClient = new FakeDiscordClient();
+  fakeClient.user = createBotUser();
   const service = new DiscordJsService(
     "token",
     createDiscordAccessPolicy(
@@ -790,19 +1003,29 @@ test("forwards reactions on bot messages after resolving partials and filters un
             : undefined,
       },
     ),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    { createClient: () => fakeClient },
   );
-  const testableService = service as unknown as TestableDiscordJsService;
-  testableService.client.user = { id: "bot-123" };
-  testableService.acceptingMessages = true;
 
   const received: DiscordReactionEvent[] = [];
-  testableService.onReaction = async (reaction) => {
-    received.push(reaction);
-  };
 
   try {
+    await service.start(
+      async () => undefined,
+      async (reaction) => {
+        received.push(reaction);
+      },
+    );
+
     // Partial reaction/message/user on a bot-authored message in an allowed channel -> forwarded
-    await testableService.handleReactionAdd(
+    fakeClient.emit(
+      Events.MessageReactionAdd,
       {
         partial: true,
         async fetch() {
@@ -835,7 +1058,8 @@ test("forwards reactions on bot messages after resolving partials and filters un
     );
 
     // Reaction on another user's message -> ignored
-    await testableService.handleReactionAdd(
+    fakeClient.emit(
+      Events.MessageReactionAdd,
       {
         partial: false,
         emoji: { name: "👎", identifier: "👎" },
@@ -844,6 +1068,7 @@ test("forwards reactions on bot messages after resolving partials and filters un
           id: "human-msg-1",
           channelId: "channel-allowed",
           guildId: "guild-123",
+          content: null,
           author: { id: "user-2" },
           channel: { isThread: () => false },
         },
@@ -852,7 +1077,8 @@ test("forwards reactions on bot messages after resolving partials and filters un
     );
 
     // Reaction in denied channel -> ignored
-    await testableService.handleReactionAdd(
+    fakeClient.emit(
+      Events.MessageReactionAdd,
       {
         partial: false,
         emoji: { name: "👎", identifier: "👎" },
@@ -861,6 +1087,7 @@ test("forwards reactions on bot messages after resolving partials and filters un
           id: "bot-msg-2",
           channelId: "channel-denied",
           guildId: "guild-123",
+          content: null,
           author: { id: "bot-123" },
           channel: { isThread: () => false },
         },
@@ -869,7 +1096,8 @@ test("forwards reactions on bot messages after resolving partials and filters un
     );
 
     // Reaction by a bot -> ignored
-    await testableService.handleReactionAdd(
+    fakeClient.emit(
+      Events.MessageReactionAdd,
       {
         partial: false,
         emoji: { name: "👎", identifier: "👎" },
@@ -878,12 +1106,15 @@ test("forwards reactions on bot messages after resolving partials and filters un
           id: "bot-msg-3",
           channelId: "channel-allowed",
           guildId: "guild-123",
+          content: null,
           author: { id: "bot-123" },
           channel: { isThread: () => false },
         },
       },
       { partial: false, id: "other-bot", bot: true },
     );
+
+    await service.flush();
 
     assert.equal(received.length, 1);
     assert.deepEqual(
@@ -912,9 +1143,27 @@ test("forwards reactions on bot messages after resolving partials and filters un
 });
 
 test("enables reaction intents, partials, and MessageReactionAdd listener only when opted in", async () => {
+  const defaultClient = new FakeDiscordClient();
+  const optInClient = new FakeDiscordClient();
+  let defaultOptions: ClientOptions | undefined;
+  let optInOptions: ClientOptions | undefined;
+
   const defaultService = new DiscordJsService(
     "token",
     createDiscordAccessPolicy({ default: "allow", directMessages: "allow" }),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    {
+      createClient: (options) => {
+        defaultOptions = options;
+        return defaultClient;
+      },
+    },
   );
   const optInService = new DiscordJsService(
     "token",
@@ -926,38 +1175,32 @@ test("enables reaction intents, partials, and MessageReactionAdd listener only w
     undefined,
     undefined,
     undefined,
-    { enableReactions: true },
+    {
+      enableReactions: true,
+      createClient: (options) => {
+        optInOptions = options;
+        return optInClient;
+      },
+    },
   );
 
-  type ClientInternals = {
-    options: {
-      intents: { has: (intent: GatewayIntentBits) => boolean };
-      partials?: readonly Partials[];
-    };
-    login: (token: string) => Promise<string>;
-    listenerCount: (event: string) => number;
-  };
-
-  const defaultClient = (defaultService as unknown as { client: ClientInternals }).client;
-  const optInClient = (optInService as unknown as { client: ClientInternals }).client;
-  defaultClient.login = async () => "token";
-  optInClient.login = async () => "token";
-
   try {
-    assert.equal(defaultClient.options.intents.has(GatewayIntentBits.GuildMessageReactions), false);
-    assert.equal(
-      defaultClient.options.intents.has(GatewayIntentBits.DirectMessageReactions),
-      false,
-    );
-    assert.equal(defaultClient.options.partials?.includes(Partials.Reaction), false);
-    assert.equal(defaultClient.options.partials?.includes(Partials.Message), false);
-    assert.equal(defaultClient.options.partials?.includes(Partials.User), false);
+    assert.ok(defaultOptions);
+    assert.ok(optInOptions);
+    const defaultIntents = new IntentsBitField(defaultOptions.intents);
+    const optInIntents = new IntentsBitField(optInOptions.intents);
 
-    assert.equal(optInClient.options.intents.has(GatewayIntentBits.GuildMessageReactions), true);
-    assert.equal(optInClient.options.intents.has(GatewayIntentBits.DirectMessageReactions), true);
-    assert.equal(optInClient.options.partials?.includes(Partials.Reaction), true);
-    assert.equal(optInClient.options.partials?.includes(Partials.Message), true);
-    assert.equal(optInClient.options.partials?.includes(Partials.User), true);
+    assert.equal(defaultIntents.has(GatewayIntentBits.GuildMessageReactions), false);
+    assert.equal(defaultIntents.has(GatewayIntentBits.DirectMessageReactions), false);
+    assert.equal(defaultOptions.partials?.includes(Partials.Reaction), false);
+    assert.equal(defaultOptions.partials?.includes(Partials.Message), false);
+    assert.equal(defaultOptions.partials?.includes(Partials.User), false);
+
+    assert.equal(optInIntents.has(GatewayIntentBits.GuildMessageReactions), true);
+    assert.equal(optInIntents.has(GatewayIntentBits.DirectMessageReactions), true);
+    assert.equal(optInOptions.partials?.includes(Partials.Reaction), true);
+    assert.equal(optInOptions.partials?.includes(Partials.Message), true);
+    assert.equal(optInOptions.partials?.includes(Partials.User), true);
 
     await defaultService.start(async () => undefined);
     assert.equal(defaultClient.listenerCount(Events.MessageReactionAdd), 0);

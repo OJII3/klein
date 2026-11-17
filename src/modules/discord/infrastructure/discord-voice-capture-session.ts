@@ -1,33 +1,70 @@
 import { randomUUID } from "node:crypto";
 import prism from "prism-media";
-import type { Logger } from "pino";
 import {
+  AudioPlayer,
   EndBehaviorType,
   VoiceConnectionStatus,
   entersState,
   joinVoiceChannel,
   type DiscordGatewayAdapterCreator,
-  type VoiceConnection,
 } from "@discordjs/voice";
 
 import type { AsrClient, AsrConnection, AsrRequest } from "@modules/asr/domain/asr-client";
 import { VadStream, type VadEvent } from "@modules/vad/domain/vad-stream";
 import { SileroVadModel } from "@modules/vad/infrastructure/silero-vad-model";
-import { DiscordVoicePlayback, type DiscordVoicePlaybackOptions } from "./discord-voice-playback";
+import {
+  DiscordVoicePlayback,
+  type DiscordVoicePlaybackOptions,
+  type VoiceLogger,
+  type VoicePlaybackConnection,
+} from "./discord-voice-playback";
 
 const VOICE_READY_TIMEOUT_MS = 15_000;
 const VAD_FRAME_DURATION_MS = 32;
 const MAX_VAD_IDLE_MS = 60_000;
 
+export interface VoiceAudioDecoder extends NodeJS.WritableStream {
+  destroy(): void;
+  on(event: "data", listener: (pcm: unknown) => void): this;
+  once(event: "data", listener: (pcm: Buffer) => void): this;
+  once(event: "end", listener: () => void): this;
+  once(event: "error", listener: (error: Error) => void): this;
+}
+
+export interface VoiceReceivedAudioStream {
+  destroy(): void;
+  pipe(destination: VoiceAudioDecoder): unknown;
+  on(event: "data", listener: () => void): unknown;
+  once(event: "data", listener: () => void): unknown;
+  once(event: "error", listener: (error: Error) => void): unknown;
+}
+
+export interface VoiceActivityDetector {
+  push(pcm: Uint8Array): Promise<readonly VadEvent[]>;
+  pushSilence(durationMs: number): Promise<readonly VadEvent[]>;
+  finish(): readonly VadEvent[];
+  reset(): void;
+  close?(): Promise<void>;
+}
+
+export interface VoiceCaptureConnection extends VoicePlaybackConnection {
+  destroy(): void;
+  readonly receiver: {
+    readonly speaking: {
+      on(event: "start", listener: (userId: string) => void): unknown;
+      off(event: "start", listener: (userId: string) => void): unknown;
+    };
+    subscribe(
+      userId: string,
+      options: { readonly end: { readonly behavior: EndBehaviorType.Manual } },
+    ): VoiceReceivedAudioStream;
+  };
+}
+
 interface ActiveInput {
   readonly receivedAudio: { destroy(): void };
-  readonly decoder: {
-    destroy(): void;
-    on(event: "data", listener: (pcm: Buffer) => void): unknown;
-    once(event: "end", listener: () => void): unknown;
-    once(event: "error", listener: (error: Error) => void): unknown;
-  };
-  silenceTimer: ReturnType<typeof setInterval>;
+  readonly decoder: VoiceAudioDecoder;
+  silenceTimer?: ReturnType<typeof setInterval>;
   lastPacketAt: number;
   processing: Promise<void>;
   pendingSilenceFrames: number;
@@ -44,13 +81,21 @@ interface ActiveAsrRequest {
 
 export interface DiscordVoiceCaptureSessionOptions extends Pick<
   DiscordVoicePlaybackOptions,
-  "audioResourceFactory" | "reactionPresets" | "tts"
+  "audioPlayerFactory" | "audioResourceFactory" | "reactionPresets" | "tts"
 > {
   readonly adapterCreator: DiscordGatewayAdapterCreator;
   readonly asr: AsrClient;
+  readonly connectVoice?: (options: {
+    readonly adapterCreator: DiscordGatewayAdapterCreator;
+    readonly channelId: string;
+    readonly guildId: string;
+    readonly selfDeaf: boolean;
+  }) => Promise<VoiceCaptureConnection>;
+  readonly createDecoder?: () => VoiceAudioDecoder;
+  readonly createVad?: () => Promise<VoiceActivityDetector>;
   readonly guildId: string;
   readonly language: string;
-  readonly logger?: Logger;
+  readonly logger?: VoiceLogger;
   readonly onError?: (error: Error) => void;
   readonly onTranscript: (text: string, requestId?: string) => Promise<void>;
   readonly userId: string;
@@ -58,12 +103,11 @@ export interface DiscordVoiceCaptureSessionOptions extends Pick<
 }
 
 export class DiscordVoiceCaptureSession {
-  private readonly logger?: Logger;
+  private readonly logger?: VoiceLogger;
   private readonly playback: DiscordVoicePlayback;
-  private connection?: VoiceConnection;
+  private connection?: VoiceCaptureConnection;
   private asrConnection?: AsrConnection;
-  private vad?: VadStream;
-  private vadModel?: SileroVadModel;
+  private vad?: VoiceActivityDetector;
   private activeInput?: ActiveInput;
   private activeAsrRequest?: ActiveAsrRequest;
   private transcriptQueue: Promise<void> = Promise.resolve();
@@ -79,6 +123,7 @@ export class DiscordVoiceCaptureSession {
       userId: options.userId,
     });
     this.playback = new DiscordVoicePlayback({
+      audioPlayerFactory: options.audioPlayerFactory,
       audioResourceFactory: options.audioResourceFactory,
       logger: this.logger,
       reactionPresets: options.reactionPresets,
@@ -99,29 +144,26 @@ export class DiscordVoiceCaptureSession {
       void this.stop();
     });
     this.logger?.info({ event: "discord_voice_vad_loading" }, "Loading voice activity detector");
-    this.vadModel = await SileroVadModel.create();
-    this.vad = new VadStream(this.vadModel);
+    this.vad = await (this.options.createVad?.() ?? createDefaultVad());
     this.logger?.info({ event: "discord_voice_vad_ready" }, "Voice activity detector is ready");
 
     this.logger?.info({ event: "discord_voice_connecting" }, "Connecting to Discord voice channel");
-    const connection = joinVoiceChannel({
+    const connection = await (this.options.connectVoice?.({
       adapterCreator: this.options.adapterCreator,
       channelId: this.options.voiceChannelId,
       guildId: this.options.guildId,
       selfDeaf: false,
-    });
-    this.connection = connection;
-    connection.on("stateChange", (previous, next) => {
-      this.logger?.info(
+    }) ??
+      connectDefaultVoice(
         {
-          event: "discord_voice_connection_state_changed",
-          previousStatus: previous.status,
-          status: next.status,
+          adapterCreator: this.options.adapterCreator,
+          channelId: this.options.voiceChannelId,
+          guildId: this.options.guildId,
+          selfDeaf: false,
         },
-        "Discord voice connection state changed",
-      );
-    });
-    await entersState(connection, VoiceConnectionStatus.Ready, VOICE_READY_TIMEOUT_MS);
+        this.logger,
+      ));
+    this.connection = connection;
     this.playback.start(connection);
 
     this.speakingListener = (userId) => {
@@ -155,8 +197,7 @@ export class DiscordVoiceCaptureSession {
     this.connection = undefined;
     this.asrConnection?.close();
     this.asrConnection = undefined;
-    await this.vadModel?.close();
-    this.vadModel = undefined;
+    await this.vad?.close?.();
     this.vad = undefined;
     this.logger?.info({ event: "discord_voice_capture_stopped" }, "Stopped voice capture");
   }
@@ -173,13 +214,14 @@ export class DiscordVoiceCaptureSession {
     const receivedAudio = connection.receiver.subscribe(this.options.userId, {
       end: { behavior: EndBehaviorType.Manual },
     });
-    const decoder = new prism.opus.Decoder({ channels: 2, frameSize: 960, rate: 48_000 });
+    const decoder: VoiceAudioDecoder =
+      this.options.createDecoder?.() ??
+      new prism.opus.Decoder({ channels: 2, frameSize: 960, rate: 48_000 });
     const input: ActiveInput = {
       receivedAudio,
       decoder,
       processing: Promise.resolve(),
       lastPacketAt: performance.now(),
-      silenceTimer: undefined as unknown as ReturnType<typeof setInterval>,
       pendingSilenceFrames: 0,
       silenceQueued: false,
       closed: false,
@@ -201,15 +243,11 @@ export class DiscordVoiceCaptureSession {
         "Decoded the first voice audio frame",
       );
     });
-    decoder.on("data", (pcm) => {
-      if (input.closed) return;
-      input.processing = input.processing
-        .then(async () => {
-          await this.handleVadEvents(await vad.push(downsampleTo16KhzMono(pcm)), asrConnection);
-        })
-        .catch((error: unknown) => {
-          this.failVoiceCapture(error);
-        });
+    decoder.on("data", (pcm: unknown) => {
+      if (input.closed || !Buffer.isBuffer(pcm)) return;
+      input.processing = this.runInputStep(input.processing, async () => {
+        await this.handleVadEvents(await vad.push(downsampleTo16KhzMono(pcm)), asrConnection);
+      });
     });
     const stopInput = (): void => {
       if (this.activeInput !== input) return;
@@ -217,15 +255,16 @@ export class DiscordVoiceCaptureSession {
       clearInterval(input.silenceTimer);
       receivedAudio.destroy();
       decoder.destroy();
-      input.processing = input.processing
-        .then(async () => {
+      input.processing = this.runInputStep(
+        input.processing,
+        async () => {
           await this.handleVadEvents(vad.finish(), asrConnection);
           vad.reset();
-        })
-        .catch((error: unknown) => this.failVoiceCapture(error))
-        .finally(() => {
+        },
+        () => {
           if (this.activeInput === input) this.activeInput = undefined;
-        });
+        },
+      );
     };
     input.silenceTimer = setInterval(() => {
       const idleMs = performance.now() - input.lastPacketAt;
@@ -237,19 +276,18 @@ export class DiscordVoiceCaptureSession {
       input.pendingSilenceFrames += 1;
       if (input.silenceQueued) return;
       input.silenceQueued = true;
-      input.processing = input.processing
-        .then(async () => {
+      input.processing = this.runInputStep(
+        input.processing,
+        async () => {
           while (input.pendingSilenceFrames > 0 && !input.closed) {
             input.pendingSilenceFrames -= 1;
             await this.handleVadEvents(await vad.pushSilence(VAD_FRAME_DURATION_MS), asrConnection);
           }
-        })
-        .catch((error: unknown) => {
-          this.failVoiceCapture(error);
-        })
-        .finally(() => {
+        },
+        () => {
           input.silenceQueued = false;
-        });
+        },
+      );
     }, VAD_FRAME_DURATION_MS);
     decoder.once("end", () => {
       if (!this.stopped && !input.closed)
@@ -265,6 +303,62 @@ export class DiscordVoiceCaptureSession {
     receivedAudio.once("error", (error: Error) => {
       if (!input.closed) this.failVoiceCapture(error);
     });
+  }
+
+  private async runInputStep(
+    previous: Promise<void>,
+    step: () => Promise<void>,
+    onFinally?: () => void,
+  ): Promise<void> {
+    await previous;
+    try {
+      await step();
+    } catch (error) {
+      this.failVoiceCapture(error);
+    } finally {
+      onFinally?.();
+    }
+  }
+
+  private async enqueueTranscriptDelivery(
+    previous: Promise<void>,
+    transcriptPromise: Promise<{ text: string; receivedAt: number }>,
+    requestId: string,
+    queuedAt: number,
+  ): Promise<void> {
+    await previous;
+    const { text, receivedAt } = await transcriptPromise;
+    if (this.stopped || !text.trim()) return;
+    const deliveryStartedAt = performance.now();
+    this.logger?.info(
+      {
+        event: "discord_voice_transcript_delivery_started",
+        requestId,
+        asrResultWaitMs: Math.round(receivedAt - queuedAt),
+        resultQueueWaitMs: Math.round(deliveryStartedAt - receivedAt),
+      },
+      "Delivering an ASR transcript to the conversation",
+    );
+    let failed = false;
+    try {
+      await this.options.onTranscript(text, requestId);
+    } catch (error) {
+      failed = true;
+      this.logger?.warn(
+        { err: error, event: "discord_voice_transcript_processing_failed", requestId },
+        "Failed to process a voice transcript",
+      );
+    } finally {
+      this.logger?.info(
+        {
+          event: "discord_voice_transcript_delivery_completed",
+          requestId,
+          durationMs: Math.round(performance.now() - deliveryStartedAt),
+          failed,
+        },
+        "Finished delivering an ASR transcript",
+      );
+    }
   }
 
   private async handleVadEvents(
@@ -293,40 +387,12 @@ export class DiscordVoiceCaptureSession {
             { event: "discord_voice_speech_started", requestId },
             "Detected speech and started an ASR request",
           );
-          this.transcriptQueue = this.transcriptQueue.then(async () => {
-            const { text, receivedAt } = await transcriptResult.promise;
-            if (this.stopped || !text.trim()) return;
-            const deliveryStartedAt = performance.now();
-            this.logger?.info(
-              {
-                event: "discord_voice_transcript_delivery_started",
-                requestId,
-                asrResultWaitMs: Math.round(receivedAt - queuedAt),
-                resultQueueWaitMs: Math.round(deliveryStartedAt - receivedAt),
-              },
-              "Delivering an ASR transcript to the conversation",
-            );
-            let failed = false;
-            try {
-              await this.options.onTranscript(text, requestId);
-            } catch (error) {
-              failed = true;
-              this.logger?.warn(
-                { err: error, event: "discord_voice_transcript_processing_failed", requestId },
-                "Failed to process a voice transcript",
-              );
-            } finally {
-              this.logger?.info(
-                {
-                  event: "discord_voice_transcript_delivery_completed",
-                  requestId,
-                  durationMs: Math.round(performance.now() - deliveryStartedAt),
-                  failed,
-                },
-                "Finished delivering an ASR transcript",
-              );
-            }
-          });
+          this.transcriptQueue = this.enqueueTranscriptDelivery(
+            this.transcriptQueue,
+            transcriptResult.promise,
+            requestId,
+            queuedAt,
+          );
           request.write(event.pcm);
         } catch (error) {
           this.failVoiceCapture(error);
@@ -369,28 +435,30 @@ export class DiscordVoiceCaptureSession {
       },
       "Committed voice audio for transcription",
     );
-    void active.request
-      .commit()
-      .then(({ text }) => {
-        this.logger?.info(
-          {
-            event: "discord_voice_asr_completed",
-            requestId: active.requestId,
-            durationMs: Math.round(performance.now() - startedAt),
-            textLength: text.length,
-            empty: !text.trim(),
-          },
-          "Received an ASR transcript",
-        );
-        active.resolveTranscript(text);
-      })
-      .catch((error: unknown) => {
-        active.resolveTranscript("");
-        this.logger?.warn(
-          { err: error, event: "discord_voice_asr_request_failed", requestId: active.requestId },
-          "ASR request failed",
-        );
-      });
+    void this.commitAsrRequest(active, startedAt);
+  }
+
+  private async commitAsrRequest(active: ActiveAsrRequest, startedAt: number): Promise<void> {
+    try {
+      const { text } = await active.request.commit();
+      this.logger?.info(
+        {
+          event: "discord_voice_asr_completed",
+          requestId: active.requestId,
+          durationMs: Math.round(performance.now() - startedAt),
+          textLength: text.length,
+          empty: !text.trim(),
+        },
+        "Received an ASR transcript",
+      );
+      active.resolveTranscript(text);
+    } catch (error) {
+      active.resolveTranscript("");
+      this.logger?.warn(
+        { err: error, event: "discord_voice_asr_request_failed", requestId: active.requestId },
+        "ASR request failed",
+      );
+    }
   }
 
   speak(text: string, toolCallId?: string): Promise<void> {
@@ -410,6 +478,19 @@ export class DiscordVoiceCaptureSession {
     return () => this.speechStartListeners.delete(listener);
   }
 
+  async flushInput(): Promise<void> {
+    await this.activeInput?.processing;
+  }
+
+  async flush(): Promise<void> {
+    await this.flushInput();
+    await this.transcriptQueue;
+  }
+
+  async waitForReactionsLoaded(): Promise<void> {
+    await this.playback.waitForReactionsLoaded();
+  }
+
   private failVoiceCapture(error: unknown): void {
     const normalized = error instanceof Error ? error : new Error(String(error));
     this.logger?.error(
@@ -421,6 +502,48 @@ export class DiscordVoiceCaptureSession {
     this.options.onError?.(normalized);
     void this.stop();
   }
+}
+
+async function createDefaultVad(): Promise<VoiceActivityDetector> {
+  const model = await SileroVadModel.create();
+  const stream = new VadStream(model);
+  return {
+    push: (pcm) => stream.push(pcm),
+    pushSilence: (durationMs) => stream.pushSilence(durationMs),
+    finish: () => stream.finish(),
+    reset: () => stream.reset(),
+    close: () => model.close(),
+  };
+}
+
+async function connectDefaultVoice(
+  options: {
+    readonly adapterCreator: DiscordGatewayAdapterCreator;
+    readonly channelId: string;
+    readonly guildId: string;
+    readonly selfDeaf: boolean;
+  },
+  logger?: VoiceLogger,
+): Promise<VoiceCaptureConnection> {
+  const connection = joinVoiceChannel(options);
+  connection.on("stateChange", (previous, next) => {
+    logger?.info(
+      {
+        event: "discord_voice_connection_state_changed",
+        previousStatus: previous.status,
+        status: next.status,
+      },
+      "Discord voice connection state changed",
+    );
+  });
+  await entersState(connection, VoiceConnectionStatus.Ready, VOICE_READY_TIMEOUT_MS);
+  return {
+    destroy: () => connection.destroy(),
+    receiver: connection.receiver,
+    subscribePlayer: (player) => {
+      if (player instanceof AudioPlayer) connection.subscribe(player);
+    },
+  };
 }
 
 function downsampleTo16KhzMono(pcm48KhzStereo: Buffer): Uint8Array {

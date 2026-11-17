@@ -105,7 +105,7 @@ export function createReminderTools(
               text:
                 reminders.length === 0
                   ? "この会話にリマインダーはありません。"
-                  : reminders.map(formatReminder).join("\n"),
+                  : reminders.map((reminder) => formatReminder(reminder)).join("\n"),
             },
           ],
           details: {
@@ -141,7 +141,7 @@ export function createReminderTools(
         };
       },
     }),
-  ];
+  ] as const;
 }
 
 function formatReminder(reminder: ReminderTask): string {

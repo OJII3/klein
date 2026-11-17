@@ -3,8 +3,8 @@ import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { AgentImageAnalyzer } from "@agents/core/agent-factory";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
 import type { WatchCheckRunner } from "@modules/scheduling/application/watch-check-runner";
-import type { ScheduledTaskAccessScope } from "@modules/scheduling/domain/scheduled-task";
 import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
+import { parseAccessScope } from "@shared/access";
 import { createWatchTools } from "@agents/tools/watch";
 import { createDiscordImageAnalysis, createDiscordReadTool } from "./discord-read";
 
@@ -24,6 +24,10 @@ export function createAttachedWorkerTools(
   requester?: Parameters<DiscordChannelApi["readMessage"]>[1],
   analyzeImage?: AgentImageAnalyzer,
 ): readonly ToolDefinition[] {
+  const parsedAccessScope = parseAccessScope(accessScope);
+  if (!parsedAccessScope) {
+    throw new Error(`Invalid access scope: ${accessScope}`);
+  }
   return [
     createDiscordReadTool(
       channelApi,
@@ -34,7 +38,7 @@ export function createAttachedWorkerTools(
     ...createWatchTools(
       scheduledTaskStore,
       channelId,
-      accessScope as ScheduledTaskAccessScope,
+      parsedAccessScope,
       watchCheckRunner,
       ownerTaskId,
     ),

@@ -1,3 +1,5 @@
+import { isRecord } from "@shared/type-guards";
+
 export const SCHEDULE_WEEKDAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
 
 /** One year. Keeps every interval well inside the range of a JavaScript Date. */
@@ -54,6 +56,10 @@ export function resolveSchedule(input: ScheduleInput, now: number): ResolvedSche
       const nextRunAt = getFirstRunAt(input, now);
       return { schedule: input, nextRunAt };
     }
+    default: {
+      const exhaustive: never = input;
+      throw new Error(`スケジュールの種類が不正です: ${String(exhaustive)}`);
+    }
   }
 }
 
@@ -76,6 +82,10 @@ export function formatSchedule(schedule: StoredSchedule): string {
       return `毎週 ${schedule.weekdays.join(",")} ${schedule.time} JST`;
     case "every":
       return `${schedule.minutes}分ごと`;
+    default: {
+      const exhaustive: never = schedule;
+      throw new Error(`スケジュールの種類が不正です: ${String(exhaustive)}`);
+    }
   }
 }
 
@@ -93,50 +103,46 @@ export function formatJapanDateTime(timestamp: string): string {
 }
 
 export function parseStoredSchedule(value: unknown): StoredSchedule {
-  if (typeof value !== "object" || value === null) {
-    throw new Error("スケジュールの保存形式が不正です。");
+  if (!isRecord(value)) {
+    throw new TypeError("スケジュールの保存形式が不正です。");
   }
-  const record = value as Record<string, unknown>;
-  switch (record.type) {
+  switch (value.type) {
     case "once":
-      if (typeof record.at !== "string" || !Number.isFinite(Date.parse(record.at))) {
-        throw new Error("一回だけのスケジュールには有効な日時が必要です。");
+      if (typeof value.at !== "string" || !Number.isFinite(Date.parse(value.at))) {
+        throw new TypeError("一回だけのスケジュールには有効な日時が必要です。");
       }
-      return { type: "once", at: record.at };
+      return { type: "once", at: value.at };
     case "daily":
-      if (typeof record.time !== "string") {
-        throw new Error("毎日のスケジュールには時刻が必要です。");
+      if (typeof value.time !== "string") {
+        throw new TypeError("毎日のスケジュールには時刻が必要です。");
       }
-      parseTime(record.time);
-      return { type: "daily", time: record.time };
+      parseTime(value.time);
+      return { type: "daily", time: value.time };
     case "weekly": {
-      if (typeof record.time !== "string") {
-        throw new Error("毎週のスケジュールには時刻が必要です。");
+      if (typeof value.time !== "string") {
+        throw new TypeError("毎週のスケジュールには時刻が必要です。");
       }
-      parseTime(record.time);
-      if (
-        !Array.isArray(record.weekdays) ||
-        record.weekdays.length === 0 ||
-        !record.weekdays.every(
-          (weekday) => typeof weekday === "string" && isScheduleWeekday(weekday),
-        )
-      ) {
+      parseTime(value.time);
+      if (!isScheduleWeekdays(value.weekdays)) {
         throw new Error("毎週のスケジュールには1つ以上の曜日が必要です。");
       }
       return {
         type: "weekly",
-        time: record.time,
-        weekdays: record.weekdays as ScheduleWeekday[],
+        time: value.time,
+        weekdays: value.weekdays,
       };
     }
     case "every":
-      if (!Number.isInteger(record.minutes) || (record.minutes as number) < 1) {
+      if (typeof value.minutes !== "number") {
+        throw new TypeError("間隔スケジュールには数値の分が必要です。");
+      }
+      if (!Number.isInteger(value.minutes) || value.minutes < 1) {
         throw new Error("間隔スケジュールは1分以上で指定してください。");
       }
-      if ((record.minutes as number) > MAX_SCHEDULE_INTERVAL_MINUTES) {
+      if (value.minutes > MAX_SCHEDULE_INTERVAL_MINUTES) {
         throw new Error("間隔スケジュールは1年以内で指定してください。");
       }
-      return { type: "every", minutes: record.minutes as number };
+      return { type: "every", minutes: value.minutes };
     default:
       throw new Error("スケジュールの種類が不正です。");
   }
@@ -160,11 +166,23 @@ function getNextRecurringTimestamp(schedule: RecurringSchedule, now: number): nu
         throw new Error("間隔は1年以内で指定してください。");
       }
       return now + schedule.minutes * 60_000;
+    default: {
+      const exhaustive: never = schedule;
+      throw new Error(`スケジュールの種類が不正です: ${String(exhaustive)}`);
+    }
   }
 }
 
-function isScheduleWeekday(value: string): value is ScheduleWeekday {
-  return (SCHEDULE_WEEKDAYS as readonly string[]).includes(value);
+function isScheduleWeekdays(value: unknown): value is ScheduleWeekday[] {
+  return (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.every((weekday): weekday is ScheduleWeekday => isScheduleWeekday(weekday))
+  );
+}
+
+function isScheduleWeekday(value: unknown): value is ScheduleWeekday {
+  return typeof value === "string" && SCHEDULE_WEEKDAYS.some((weekday) => weekday === value);
 }
 
 function parseJapanDateTime(date: string, time: string): number {
@@ -235,14 +253,14 @@ function getNextWeeklyTimestamp(
   const { hour, minute } = parseTime(time);
   const localNow = new Date(now + JAPAN_TIME_ZONE_OFFSET_MS);
   const today = Date.UTC(localNow.getUTCFullYear(), localNow.getUTCMonth(), localNow.getUTCDate());
-  const weekdayNumbers = weekdays.map((weekday) => SCHEDULE_WEEKDAYS.indexOf(weekday));
+  const weekdayNumbers = new Set(weekdays.map((weekday) => SCHEDULE_WEEKDAYS.indexOf(weekday)));
 
   for (let daysAhead = 0; daysAhead <= 7; daysAhead += 1) {
     const date = today + daysAhead * 24 * 60 * 60 * 1_000;
     const timestamp = date + (hour * 60 + minute) * 60_000;
     if (
       timestamp > now + JAPAN_TIME_ZONE_OFFSET_MS &&
-      weekdayNumbers.includes(new Date(date).getUTCDay())
+      weekdayNumbers.has(new Date(date).getUTCDay())
     ) {
       return timestamp - JAPAN_TIME_ZONE_OFFSET_MS;
     }

@@ -152,7 +152,7 @@ export function selectOwnerMemoryEntries(
       ? []
       : [...document.entries]
           .filter((entry) => !pinnedKindIds.has(entry.id) && !selectedIds.has(entry.id))
-          .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+          .toSorted((left, right) => right.updatedAt.localeCompare(left.updatedAt))
           .slice(0, Math.max(0, recentFallbackLimit - matched.length));
 
   const candidates = [...pinned, ...matched, ...recentFallback];

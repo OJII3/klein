@@ -1,6 +1,8 @@
 import { readdir } from "node:fs/promises";
 import { resolve } from "node:path";
 
+import { isFileNotFound } from "@shared/type-guards";
+
 export interface PiSessionDirectory {
   readonly channelKey: string;
   readonly directory: string;
@@ -15,7 +17,7 @@ export async function listPiSessionDirectories(
   try {
     entries = await readdir(sessionsDirectory, { withFileTypes: true });
   } catch (error) {
-    if (isNodeError(error) && error.code === "ENOENT") return [];
+    if (isFileNotFound(error)) return [];
     throw error;
   }
 
@@ -36,7 +38,7 @@ export async function listPiSessionFiles(agentDirectory: string): Promise<string
     try {
       entries = await readdir(directory, { withFileTypes: true });
     } catch (error) {
-      if (isNodeError(error) && error.code === "ENOENT") continue;
+      if (isFileNotFound(error)) continue;
       throw error;
     }
 
@@ -47,7 +49,7 @@ export async function listPiSessionFiles(agentDirectory: string): Promise<string
     }
   }
 
-  return files.sort();
+  return files.toSorted((left, right) => left.localeCompare(right));
 }
 
 function decodeChannelKey(directoryName: string): string | undefined {
@@ -56,8 +58,4 @@ function decodeChannelKey(directoryName: string): string | undefined {
   } catch {
     return undefined;
   }
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && "code" in error;
 }

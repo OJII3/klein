@@ -1,10 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { ButtonInteraction, Client } from "discord.js";
 
-import type { DiscordAccessPolicy } from "../domain/discord-access-policy";
+import { isRecord } from "@shared/type-guards";
+
+import { createDiscordAccessPolicy } from "../domain/discord-access-policy";
 import type { DiscordMessage } from "../domain/discord-message";
-import { DiscordChoiceRequester } from "./discord-choice-requester";
+import {
+  DiscordChoiceRequester,
+  type DiscordChoiceButtonInteraction,
+  type DiscordChoiceClient,
+} from "./discord-choice-requester";
 
 interface ContainerJson {
   readonly accent_color?: number;
@@ -14,25 +19,54 @@ interface ContainerJson {
   }>;
 }
 
-function toJson(payload: { components: Array<{ toJSON: () => unknown }> }): ContainerJson[] {
-  return payload.components.map((component) => component.toJSON() as ContainerJson);
+function parseContainerJson(value: unknown): ContainerJson {
+  assert.ok(isRecord(value));
+  assert.ok(Array.isArray(value.components));
+  return {
+    ...(typeof value.accent_color === "number" ? { accent_color: value.accent_color } : {}),
+    components: value.components.map((entry: unknown) => {
+      assert.ok(isRecord(entry));
+      const nested = Array.isArray(entry.components)
+        ? entry.components.map((button: unknown) => {
+            assert.ok(isRecord(button));
+            return {
+              ...(typeof button.custom_id === "string" ? { custom_id: button.custom_id } : {}),
+              ...(typeof button.label === "string" ? { label: button.label } : {}),
+            };
+          })
+        : undefined;
+      return {
+        ...(typeof entry.content === "string" ? { content: entry.content } : {}),
+        ...(nested ? { components: nested } : {}),
+      };
+    }),
+  };
+}
+
+function toJson(payload: {
+  components: ReadonlyArray<{ toJSON: () => unknown }>;
+}): ContainerJson[] {
+  return payload.components.map((component) => parseContainerJson(component.toJSON()));
 }
 
 function createHarness(accessAllowed = true) {
-  const sent: Array<{ components: Array<{ toJSON: () => unknown }>; flags: number }> = [];
+  const sent: Array<{ components: ReadonlyArray<{ toJSON: () => unknown }>; flags: number }> = [];
   const channel = {
-    send: async (payload: { components: Array<{ toJSON: () => unknown }>; flags: number }) => {
+    send: async (payload: {
+      components: ReadonlyArray<{ toJSON: () => unknown }>;
+      flags: number;
+    }) => {
       sent.push(payload);
       return { id: "choice-message-1" };
     },
   };
-  const client = {
+  const client: DiscordChoiceClient = {
     channels: { fetch: async (id: string) => (id === "channel-123" ? channel : null) },
-    user: { id: "bot-123", username: "klein", displayName: "Klein" },
-  } as unknown as Client;
-  const accessPolicy = {
-    canReceive: () => accessAllowed,
-  } as unknown as DiscordAccessPolicy;
+  };
+  const accessPolicy = createDiscordAccessPolicy({
+    default: accessAllowed ? "allow" : "deny",
+    directMessages: "allow",
+  });
   const answers: DiscordMessage[] = [];
   const requester = new DiscordChoiceRequester(client, accessPolicy, async (message) => {
     answers.push(message);
@@ -41,27 +75,27 @@ function createHarness(accessAllowed = true) {
   return { answers, client, requester, sent };
 }
 
-function createInteraction(
-  harness: ReturnType<typeof createHarness>,
-  customId: string,
-  userId = "user-123",
-) {
+function createInteraction(customId: string, userId = "user-123") {
   const replies: Array<{ content: string; flags?: number }> = [];
-  const updates: Array<{ components: Array<{ toJSON: () => unknown }>; flags: number }> = [];
-  const interaction = {
+  const updates: Array<{ components: ReadonlyArray<{ toJSON: () => unknown }>; flags: number }> =
+    [];
+  const interaction: DiscordChoiceButtonInteraction = {
+    id: "interaction-123",
     customId,
     user: { id: userId, username: "user", displayName: "ユーザー", bot: false },
     guildId: "guild-123",
     channelId: "channel-123",
-    channel: { name: "general", isThread: () => false },
-    client: harness.client,
-    reply: async (payload: { content: string; flags?: number }) => {
+    channel: { id: "channel-123", name: "general", isThread: () => false },
+    client: {
+      user: { id: "bot-123", username: "klein", displayName: "Klein" },
+    },
+    reply: async (payload) => {
       replies.push(payload);
     },
-    update: async (payload: { components: Array<{ toJSON: () => unknown }>; flags: number }) => {
+    update: async (payload) => {
       updates.push(payload);
     },
-  } as unknown as ButtonInteraction;
+  };
 
   return { interaction, replies, updates };
 }
@@ -72,7 +106,9 @@ async function sendQuestion(harness: ReturnType<typeof createHarness>): Promise<
     options: ["A", "B"],
     requesterUserId: "user-123",
   });
-  const customId = toJson(harness.sent[0]!)[0]?.components[1]?.components?.[1]?.custom_id;
+  const [firstSent] = harness.sent;
+  assert.ok(firstSent);
+  const customId = toJson(firstSent)[0]?.components[1]?.components?.[1]?.custom_id;
   assert.ok(customId);
   return customId;
 }
@@ -87,7 +123,9 @@ test("posts a question with buttons and returns the message id", async () => {
   });
 
   assert.equal(messageId, "choice-message-1");
-  const [container] = toJson(harness.sent[0]!);
+  const [firstSent] = harness.sent;
+  assert.ok(firstSent);
+  const [container] = toJson(firstSent);
   assert.equal(container?.components[0]?.content, "どちらにしますか？");
   assert.deepEqual(
     container?.components[1]?.components?.map((button) => button.label),
@@ -98,12 +136,13 @@ test("posts a question with buttons and returns the message id", async () => {
 test("turns the pressed button into a user message", async () => {
   const harness = createHarness();
   const customId = await sendQuestion(harness);
-  const { interaction, updates } = createInteraction(harness, customId);
+  const { interaction, updates } = createInteraction(customId);
 
   assert.equal(await harness.requester.handleButton(interaction), true);
 
   assert.equal(harness.answers.length, 1);
-  const answer = harness.answers[0]!;
+  const [answer] = harness.answers;
+  assert.ok(answer);
   assert.equal(answer.author.id, "user-123");
   assert.equal(answer.content, "B");
   assert.equal(answer.channelId, "channel-123");
@@ -112,13 +151,15 @@ test("turns the pressed button into a user message", async () => {
   assert.equal(answer.replyTo?.id, "choice-message-1");
   assert.equal(answer.replyTo?.content, "どちらにしますか？");
   assert.equal(answer.replyTo?.author?.id, "bot-123");
-  assert.match(toJson(updates[0]!)[0]?.components[0]?.content ?? "", /→ B/u);
+  const [firstUpdate] = updates;
+  assert.ok(firstUpdate);
+  assert.match(toJson(firstUpdate)[0]?.components[0]?.content ?? "", /→ B/u);
 });
 
 test("only lets the requesting user answer", async () => {
   const harness = createHarness();
   const customId = await sendQuestion(harness);
-  const { interaction, replies } = createInteraction(harness, customId, "other-user");
+  const { interaction, replies } = createInteraction(customId, "other-user");
 
   assert.equal(await harness.requester.handleButton(interaction), true);
   assert.equal(harness.answers.length, 0);
@@ -128,7 +169,7 @@ test("only lets the requesting user answer", async () => {
 test("does not deliver an answer when the channel access is denied", async () => {
   const harness = createHarness(false);
   const customId = await sendQuestion(harness);
-  const { interaction, replies } = createInteraction(harness, customId);
+  const { interaction, replies } = createInteraction(customId);
 
   assert.equal(await harness.requester.handleButton(interaction), true);
   assert.equal(harness.answers.length, 0);
@@ -137,7 +178,7 @@ test("does not deliver an answer when the channel access is denied", async () =>
 
 test("rejects a choice that is no longer pending", async () => {
   const harness = createHarness();
-  const { interaction, replies } = createInteraction(harness, "choice:missing:0");
+  const { interaction, replies } = createInteraction("choice:missing:0");
 
   assert.equal(await harness.requester.handleButton(interaction), true);
   assert.equal(harness.answers.length, 0);
@@ -147,8 +188,8 @@ test("rejects a choice that is no longer pending", async () => {
 test("accepts only the first answer", async () => {
   const harness = createHarness();
   const customId = await sendQuestion(harness);
-  const first = createInteraction(harness, customId);
-  const second = createInteraction(harness, customId);
+  const first = createInteraction(customId);
+  const second = createInteraction(customId);
 
   await harness.requester.handleButton(first.interaction);
   await harness.requester.handleButton(second.interaction);
@@ -159,7 +200,7 @@ test("accepts only the first answer", async () => {
 
 test("ignores buttons that belong to another feature", async () => {
   const harness = createHarness();
-  const { interaction } = createInteraction(harness, "channel-access:allow:1");
+  const { interaction } = createInteraction("channel-access:allow:1");
 
   assert.equal(await harness.requester.handleButton(interaction), false);
 });
