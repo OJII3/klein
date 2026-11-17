@@ -1,8 +1,10 @@
 import {
   CodemodeSandbox,
+  loadQuickJSWasm,
   type CodemodeOutputItem,
   type CodemodeTool,
 } from "@earendil-works/pi-codemode";
+import { resolveQuickJsWasmPath } from "@runtime/pi/quickjs-wasm";
 
 import type { WatchTask } from "../domain/scheduled-task";
 import {
@@ -48,6 +50,7 @@ export class QuickJsWatchCheckRunner implements WatchCheckRunner {
       timeoutMs: this.timeoutMs,
       memoryLimitBytes: this.memoryLimitBytes,
       tools: this.sandboxTools,
+      wasm: loadQuickJSWasm(resolveQuickJsWasmPath()),
     });
     try {
       const state = { ...watch.state };

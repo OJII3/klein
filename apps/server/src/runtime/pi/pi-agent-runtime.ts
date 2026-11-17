@@ -59,7 +59,8 @@ import {
   renderTurnContext,
   TURN_CONTEXT_CUSTOM_TYPE,
 } from "./pi-turn-context";
-import { loadMcpConfig } from "./pi-internals";
+import { loadMcpConfig, setEmbeddedQuickJSWasmPath } from "./pi-internals";
+import { resolveQuickJsWasmPath } from "./quickjs-wasm";
 import { PiImageAnalyzer, type ImageAnalyzer } from "./pi-image-analyzer";
 import {
   formatImageAnalysisFailureMessage,
@@ -508,6 +509,7 @@ export function createResourceLoader(
     readonly extraExtensions?: readonly ExtensionFactory[];
   },
 ): DefaultResourceLoader {
+  setEmbeddedQuickJSWasmPath(resolveQuickJsWasmPath());
   const wrap = (factory: ExtensionFactory) =>
     authorization ? authorization.wrap(factory) : factory;
   return new DefaultResourceLoader({
