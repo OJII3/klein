@@ -11,6 +11,8 @@ import {
 } from "discord.js";
 import type { Logger } from "pino";
 
+import { DiscordMessageIngest } from "../application/discord-message-ingest";
+import { DiscordReactionIngest } from "../application/discord-reaction-ingest";
 import type { DiscordAccessPolicy } from "../domain/discord-access-policy";
 import type { DiscordChoiceRequest } from "../domain/discord-choice";
 import {
@@ -18,7 +20,6 @@ import {
   type DiscordOperatingMode,
 } from "../domain/discord-operating-state";
 import { type DiscordMessage, type DiscordMessageLocator } from "../domain/discord-message";
-import type { DiscordReactionEvent } from "../domain/discord-reaction";
 import type {
   DiscordChannelApi,
   DiscordChannelLocation,
@@ -59,13 +60,7 @@ interface SendableChannel {
   sendTyping?(): Promise<void>;
 }
 
-export interface DiscordServiceMessage extends DiscordAdapterMessage {
-  readonly mentions: DiscordAdapterMessage["mentions"] & {
-    readonly users: DiscordAdapterMessage["mentions"]["users"] & {
-      has(id: string): boolean;
-    };
-  };
-}
+export type DiscordServiceMessage = DiscordAdapterMessage;
 
 export interface DiscordServiceTextChannel {
   readonly id: string;
@@ -246,6 +241,8 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
   private readonly voiceChatController?: DiscordVoiceChatController;
   private readonly interactionHandler: DiscordJsInteractionHandler;
   private readonly messageAdapter: DiscordJsMessageAdapter;
+  private readonly messageIngest: DiscordMessageIngest;
+  private readonly reactionIngest: DiscordReactionIngest;
   private readonly channelAccessRequester?: DiscordChannelAccessRequester;
   private readonly choiceRequester: DiscordChoiceRequester;
   private readonly pendingTasks = new Set<Promise<void>>();
@@ -318,6 +315,26 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
             this.logger,
           )
         : undefined;
+    this.messageIngest = new DiscordMessageIngest({
+      accessPolicy,
+      reader: this.messageAdapter,
+      selfUserId: () => this.client.user?.id,
+      canAccept: () => this.canAcceptMessages(),
+      onMessage: async (message) => {
+        await this.onMessage?.(message);
+      },
+      requestAccess: async (request) => {
+        await this.channelAccessRequester?.request(request);
+      },
+    });
+    this.reactionIngest = new DiscordReactionIngest({
+      accessPolicy,
+      selfUserId: () => this.client.user?.id,
+      canAccept: () => this.canAcceptMessages(),
+      onReaction: async (event) => {
+        await this.onReaction?.(event);
+      },
+    });
   }
 
   async start(
@@ -525,56 +542,9 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
   }
 
   private async handleMessage(message: DiscordServiceMessage): Promise<void> {
-    if (!this.canAcceptMessages()) return;
-    if (message.author.id === this.client.user?.id) return;
-
-    const content = message.content.trim();
-    if (!content && !this.messageAdapter.hasSupportedImageAttachment(message)) return;
     if (!isSendableChannel(message.channel)) return;
-
     this.channels.set(message.channelId, message.channel);
-
-    const normalizedMessage = this.messageAdapter.toDiscordMessage(message);
-
-    if (!this.canAcceptMessages()) return;
-
-    if (
-      !this.accessPolicy.canReceive({
-        guildId: normalizedMessage.guildId,
-        channelId: normalizedMessage.parentChannelId ?? normalizedMessage.channelId,
-        threadId: normalizedMessage.threadId,
-        userId: message.author.id,
-        userIsBot: message.author.bot,
-      })
-    ) {
-      if (normalizedMessage.guildId && !message.author.bot && this.isBotMentioned(message)) {
-        await this.channelAccessRequester?.request({
-          guildId: normalizedMessage.guildId,
-          channelId: normalizedMessage.parentChannelId ?? normalizedMessage.channelId,
-          ...(normalizedMessage.threadId ? { threadId: normalizedMessage.threadId } : {}),
-          pendingChannelId: normalizedMessage.channelId,
-          ...(normalizedMessage.channelName ? { channelName: normalizedMessage.channelName } : {}),
-          requesterUserId: normalizedMessage.author.id,
-        });
-      }
-      return;
-    }
-
-    if (!this.canAcceptMessages()) return;
-
-    const [images, replyTo] = await Promise.all([
-      this.messageAdapter.fetchImages(message),
-      this.messageAdapter.fetchReplyReference(message),
-    ]);
-
-    if (!this.canAcceptMessages()) return;
-    if (!content && images.length === 0) return;
-
-    await this.onMessage?.({
-      ...normalizedMessage,
-      images,
-      replyTo,
-    });
+    await this.messageIngest.handle(message);
   }
 
   private async handleReactionAdd(
@@ -590,61 +560,43 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
     const resolvedUser = user.partial ? await user.fetch() : user;
 
     if (!this.canAcceptMessages()) return;
-    if (resolvedUser.bot || resolvedUser.id === this.client.user?.id) return;
-
-    const botUserId = this.client.user?.id;
-    if (botUserId && resolvedMessage.author?.id !== botUserId) return;
 
     const channel = resolvedMessage.channel;
     const thread = channel?.isThread?.() ? channel : undefined;
-    const parentChannelId = thread?.parentId ?? undefined;
-    const channelId = resolvedMessage.channelId;
-    const guildId = resolvedMessage.guildId ?? undefined;
     const channelName =
-      channel && "name" in channel && typeof channel.name === "string" ? channel.name : undefined;
+      channel && "name" in channel && typeof channel.name === "string" && channel.name
+        ? channel.name
+        : undefined;
 
-    if (
-      !this.accessPolicy.canReceive({
-        guildId,
-        channelId: parentChannelId ?? channelId,
-        threadId: thread?.id,
-        userId: resolvedUser.id,
-        userIsBot: resolvedUser.bot,
-      })
-    ) {
-      return;
-    }
-
-    const emoji = resolvedReaction.emoji.name ?? resolvedReaction.emoji.identifier;
-    if (!emoji) return;
-
-    const event: DiscordReactionEvent = {
-      emoji,
-      messageId: resolvedMessage.id,
-      channelId,
-      ...(guildId ? { guildId } : {}),
-      ...(parentChannelId ? { parentChannelId } : {}),
-      ...(thread?.id ? { threadId: thread.id } : {}),
-      ...(channelName ? { channelName } : {}),
-      ...(resolvedMessage.author?.id ? { messageAuthorId: resolvedMessage.author.id } : {}),
-      ...(typeof resolvedMessage.content === "string" && resolvedMessage.content.length > 0
-        ? { messageContent: resolvedMessage.content }
-        : {}),
+    await this.reactionIngest.handle({
+      message: {
+        id: resolvedMessage.id,
+        channelId: resolvedMessage.channelId,
+        ...(resolvedMessage.guildId ? { guildId: resolvedMessage.guildId } : {}),
+        ...(typeof resolvedMessage.content === "string" && resolvedMessage.content.length > 0
+          ? { content: resolvedMessage.content }
+          : {}),
+        ...(resolvedMessage.author?.id ? { authorId: resolvedMessage.author.id } : {}),
+        ...(channel
+          ? {
+              channel: {
+                ...(channel.id ? { id: channel.id } : {}),
+                ...(channelName ? { name: channelName } : {}),
+                ...(channel.parentId ? { parentId: channel.parentId } : {}),
+                isThread: thread !== undefined,
+              },
+            }
+          : {}),
+      },
+      emojiName: resolvedReaction.emoji.name,
+      emojiIdentifier: resolvedReaction.emoji.identifier,
       userId: resolvedUser.id,
       userIsBot: resolvedUser.bot,
-      occurredAt: new Date().toISOString(),
-    };
-
-    await this.onReaction(event);
+    });
   }
 
   private canAcceptMessages(): boolean {
     return this.acceptingMessages && this.operatingState.isActive();
-  }
-
-  private isBotMentioned(message: DiscordServiceMessage): boolean {
-    const botUserId = this.client.user?.id;
-    return !!botUserId && message.mentions.users.has(botUserId);
   }
 
   private applyOperatingModePresence(): void {

@@ -1,13 +1,6 @@
-export interface PendingDiscordAccessRequest {
-  readonly requestId: string;
-  readonly guildId: string;
-  readonly channelId: string;
-  readonly threadId?: string;
-  readonly pendingChannelId: string;
-  readonly channelName?: string;
-  readonly requesterUserId: string;
-  readonly pendingMessageId?: string;
-}
+import type { PendingDiscordAccessRequest } from "../domain/discord-access-request";
+
+export type { PendingDiscordAccessRequest } from "../domain/discord-access-request";
 
 /** Persists owner approval requests so their buttons keep working after a restart. */
 export interface DiscordAccessRequestStore {

@@ -8,56 +8,16 @@ import {
   type DiscordReplyReference,
   type DiscordUser,
 } from "../domain/discord-message";
+import type {
+  DiscordGatewayAttachment,
+  DiscordGatewayChannel,
+  DiscordGatewayMessage,
+  DiscordGatewayMessageReader,
+} from "../ports/discord-gateway-message";
 
-export interface DiscordAdapterAttachment {
-  readonly id: string;
-  readonly name: string;
-  readonly size: number;
-  readonly url: string;
-  readonly contentType: string | null;
-}
-
-export interface DiscordAdapterChannel {
-  readonly id: string;
-  readonly name?: string | null;
-  readonly parentId?: string | null;
-  isThread(): boolean;
-}
-
-export interface DiscordAdapterMessage {
-  readonly id: string;
-  readonly channelId: string;
-  readonly guildId: string | null;
-  readonly content: string;
-  readonly createdAt: Date;
-  readonly author: {
-    readonly bot: boolean;
-    readonly id: string;
-    readonly username: string;
-    readonly displayName: string;
-  };
-  readonly member?: { readonly displayName: string } | null;
-  readonly channel: DiscordAdapterChannel;
-  readonly attachments: { values(): Iterable<DiscordAdapterAttachment> };
-  readonly mentions: {
-    readonly users: {
-      get(id: string):
-        | {
-            readonly bot: boolean;
-            readonly id: string;
-            readonly username: string;
-            readonly displayName: string;
-          }
-        | undefined;
-    };
-    readonly roles: {
-      get(id: string): { readonly id: string; readonly name: string } | undefined;
-    };
-    readonly members?: { get(id: string): { readonly displayName: string } | undefined } | null;
-  };
-  readonly reference?: { readonly messageId?: string; readonly channelId?: string } | null;
-  fetchReference(): Promise<DiscordAdapterMessage>;
-}
+export type DiscordAdapterAttachment = DiscordGatewayAttachment;
+export type DiscordAdapterChannel = DiscordGatewayChannel;
+export type DiscordAdapterMessage = DiscordGatewayMessage;
 
 const IMAGE_MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024;
 const IMAGE_FETCH_TIMEOUT_MS = 15_000;
@@ -119,7 +79,7 @@ function toDiscordUser(message: DiscordAdapterMessage): DiscordUser {
   };
 }
 
-export class DiscordJsMessageAdapter {
+export class DiscordJsMessageAdapter implements DiscordGatewayMessageReader {
   constructor(private readonly logger?: Logger) {}
 
   hasSupportedImageAttachment(message: DiscordAdapterMessage): boolean {
