@@ -1,11 +1,4 @@
-import {
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  ContainerBuilder,
-  MessageFlags,
-  TextDisplayBuilder,
-} from "discord.js";
+import { ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from "discord.js";
 import type { Logger } from "pino";
 
 import {
@@ -21,8 +14,8 @@ import type {
   DiscordChoiceRequest,
 } from "../domain/discord-choice";
 import type { DiscordMessage } from "../domain/discord-message";
+import { createTextContainer, type DiscordContainerMessage } from "./discord-component-message";
 
-const ANSWERED_ACCENT_COLOR = 0x747f8d;
 const REJECTION_MESSAGES: Readonly<Record<DiscordChoiceRejection, string>> = {
   expired: "この質問は既に回答済みか、期限切れです。",
   "not-requester": "この質問に回答できるのは、質問したユーザーだけです。",
@@ -31,10 +24,7 @@ const REJECTION_MESSAGES: Readonly<Record<DiscordChoiceRejection, string>> = {
 };
 
 interface SendableChoiceChannel {
-  send(payload: {
-    components: ContainerBuilder[];
-    flags: MessageFlags.IsComponentsV2;
-  }): Promise<{ id: string }>;
+  send(payload: DiscordContainerMessage): Promise<{ id: string }>;
 }
 
 function isSendableChoiceChannel(value: unknown): value is SendableChoiceChannel {
@@ -77,10 +67,7 @@ export interface DiscordChoiceButtonInteraction {
     } | null;
   };
   reply(options: { content: string; flags: MessageFlags.Ephemeral }): Promise<unknown>;
-  update(options: {
-    components: ContainerBuilder[];
-    flags: MessageFlags.IsComponentsV2;
-  }): Promise<unknown>;
+  update(options: DiscordContainerMessage): Promise<unknown>;
 }
 
 function toChoiceChannel(channel: DiscordChoiceChannelView): DiscordChoiceChannel {
@@ -172,21 +159,19 @@ export class DiscordChoiceRequester {
       throw new Error(`Discord channel is not sendable: ${view.channelId}`);
     }
 
+    const container = createTextContainer(view.question).addActionRowComponents(
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        ...view.options.map((label, index) =>
+          new ButtonBuilder()
+            .setCustomId(view.buttonIds[index] ?? "")
+            .setLabel(label)
+            .setStyle(ButtonStyle.Secondary),
+        ),
+      ),
+    );
+
     const message = await channel.send({
-      components: [
-        new ContainerBuilder()
-          .addTextDisplayComponents(new TextDisplayBuilder().setContent(view.question))
-          .addActionRowComponents(
-            new ActionRowBuilder<ButtonBuilder>().addComponents(
-              ...view.options.map((label, index) =>
-                new ButtonBuilder()
-                  .setCustomId(view.buttonIds[index] ?? "")
-                  .setLabel(label)
-                  .setStyle(ButtonStyle.Secondary),
-              ),
-            ),
-          ),
-      ],
+      components: [container],
       flags: MessageFlags.IsComponentsV2,
     });
 
@@ -200,13 +185,7 @@ export class DiscordChoiceRequester {
     try {
       await interaction.update({
         components: [
-          new ContainerBuilder()
-            .setAccentColor(ANSWERED_ACCENT_COLOR)
-            .addTextDisplayComponents(
-              new TextDisplayBuilder().setContent(
-                `${view.question}\n→ ${view.label}（<@${view.userId}>）`,
-              ),
-            ),
+          createTextContainer(`${view.question}\n→ ${view.label}（<@${view.userId}>）`, "neutral"),
         ],
         flags: MessageFlags.IsComponentsV2,
       });

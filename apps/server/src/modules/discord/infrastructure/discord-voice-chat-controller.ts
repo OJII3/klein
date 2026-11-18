@@ -1,10 +1,5 @@
 import type { Logger } from "pino";
-import {
-  ContainerBuilder,
-  MessageFlags,
-  SlashCommandBuilder,
-  TextDisplayBuilder,
-} from "discord.js";
+import { SlashCommandBuilder } from "discord.js";
 import type { DiscordGatewayAdapterCreator } from "@discordjs/voice";
 import type { AsrClient } from "@modules/asr/ports/asr-client";
 import type { TextToSpeech } from "@modules/tts/ports/text-to-speech";
@@ -15,6 +10,11 @@ import type {
   VoiceChatConversation,
   VoiceChatConversationFactory,
 } from "../ports/voice-chat-conversation";
+import {
+  createTextContainerMessage,
+  type DiscordContainerMessage,
+  type DiscordMessageTone,
+} from "./discord-component-message";
 import {
   DiscordVoiceCaptureSession,
   type DiscordVoiceCaptureSessionOptions,
@@ -79,7 +79,7 @@ interface ActiveVoiceChat {
 }
 
 interface SendableChannel {
-  send(options: { components: ContainerBuilder[]; flags: MessageFlags }): Promise<unknown>;
+  send(options: DiscordContainerMessage): Promise<unknown>;
 }
 
 function isSendableChannel(value: unknown): value is SendableChannel {
@@ -250,7 +250,7 @@ export class DiscordVoiceChatController {
         announcementChannel,
         "VCに参加しました",
         `<#${voiceChannel.id}> に${this.characterName}が参加しました。\n開始した人: <@${interaction.user.id}>`,
-        0x57f287,
+        "success",
         guildId,
       );
     } catch (error) {
@@ -301,7 +301,7 @@ export class DiscordVoiceChatController {
       interaction.channel,
       "VCから退出しました",
       `<#${active.voiceChannelId}> から${this.characterName}が退出しました。\n終了した人: <@${interaction.user.id}>`,
-      0x747f8d,
+      "neutral",
       guildId,
     );
   }
@@ -325,21 +325,12 @@ export class DiscordVoiceChatController {
     channel: unknown,
     title: string,
     description: string,
-    color: number,
+    tone: DiscordMessageTone,
     guildId: string,
   ): Promise<void> {
     if (!isSendableChannel(channel)) return;
     try {
-      await channel.send({
-        components: [
-          new ContainerBuilder()
-            .setAccentColor(color)
-            .addTextDisplayComponents(
-              new TextDisplayBuilder().setContent(`${title}\n${description}`),
-            ),
-        ],
-        flags: MessageFlags.IsComponentsV2,
-      });
+      await channel.send(createTextContainerMessage(`${title}\n${description}`, tone));
     } catch (error) {
       this.logger?.warn(
         { err: error, event: "discord_voice_chat_announcement_failed", guildId },

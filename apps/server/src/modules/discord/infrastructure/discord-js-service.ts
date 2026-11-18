@@ -6,8 +6,6 @@ import {
   AttachmentBuilder,
   type ApplicationCommandDataResolvable,
   type ClientOptions,
-  type ContainerBuilder,
-  type MessageFlags,
 } from "discord.js";
 import type { Logger } from "pino";
 
@@ -39,6 +37,7 @@ import {
   type DiscordChannelAccessButtonInteraction,
   type DiscordChannelAccessClient,
 } from "./discord-channel-access-request";
+import type { DiscordContainerMessage } from "./discord-component-message";
 import {
   DiscordChoiceRequester,
   type DiscordChoiceButtonInteraction,
@@ -153,12 +152,7 @@ export interface DiscordServiceClient extends DiscordChoiceClient, DiscordChanne
     fetch(id: string): Promise<DiscordServiceChannel | null>;
   };
   readonly users: {
-    fetch(id: string): Promise<{
-      send(payload: {
-        components: ContainerBuilder[];
-        flags: MessageFlags.IsComponentsV2;
-      }): Promise<unknown>;
-    }>;
+    fetch(id: string): Promise<{ send(payload: DiscordContainerMessage): Promise<unknown> }>;
   };
   once(
     event: Events.ClientReady,

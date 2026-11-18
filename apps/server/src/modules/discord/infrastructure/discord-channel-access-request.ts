@@ -2,9 +2,8 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  ContainerBuilder,
   MessageFlags,
-  TextDisplayBuilder,
+  type ContainerBuilder,
   type Message,
 } from "discord.js";
 import type { Logger } from "pino";
@@ -22,12 +21,15 @@ import {
 } from "../domain/discord-access-request";
 import type { DiscordAccessRequestStore } from "../ports/discord-access-request-store";
 import type { DiscordAccessRuleStore } from "../ports/discord-access-rule-store";
+import {
+  createTextContainer,
+  createTextContainerMessage,
+  type DiscordContainerMessage,
+  type DiscordMessageTone,
+} from "./discord-component-message";
 
 export type { DiscordChannelAccessRequest } from "../domain/discord-access-request";
 
-const PENDING_ACCENT_COLOR = 0xfee75c;
-const ALLOW_ACCENT_COLOR = 0x57f287;
-const DENY_ACCENT_COLOR = 0xed4245;
 const REJECTION_MESSAGES: Readonly<Record<DiscordChannelAccessRejection, string>> = {
   "owner-only": "この操作を実行できるのはオーナーだけです。",
   expired: "このリクエストは既に処理済みか、期限切れです。",
@@ -35,17 +37,11 @@ const REJECTION_MESSAGES: Readonly<Record<DiscordChannelAccessRejection, string>
 };
 
 interface SendableTextChannel {
-  send(payload: {
-    components: ContainerBuilder[];
-    flags: MessageFlags.IsComponentsV2;
-  }): Promise<Message>;
+  send(payload: DiscordContainerMessage): Promise<Message>;
 }
 
 interface EditableMessage {
-  edit(payload: {
-    components: ContainerBuilder[];
-    flags: MessageFlags.IsComponentsV2;
-  }): Promise<unknown>;
+  edit(payload: DiscordContainerMessage): Promise<unknown>;
 }
 
 interface FetchableMessageChannel {
@@ -81,26 +77,20 @@ function hasMessageFetch(value: unknown): value is FetchableMessageChannel {
   );
 }
 
-function createContainer(text: string, accentColor: number): ContainerBuilder {
-  return new ContainerBuilder()
-    .setAccentColor(accentColor)
-    .addTextDisplayComponents(new TextDisplayBuilder().setContent(text));
-}
-
 const NOTICE_TEXTS: Readonly<
-  Record<DiscordChannelAccessNoticeOutcome, { text: string; accentColor: number }>
+  Record<DiscordChannelAccessNoticeOutcome, { text: string; tone: DiscordMessageTone }>
 > = {
   allowed: {
     text: "### 許可されました\nこのチャンネルが許可されました。もう一度メンションしてください。",
-    accentColor: ALLOW_ACCENT_COLOR,
+    tone: "success",
   },
   denied: {
     text: "### 拒否されました\nこのチャンネルは許可されませんでした。",
-    accentColor: DENY_ACCENT_COLOR,
+    tone: "danger",
   },
   "owner-unreachable": {
     text: "### 確認できませんでした\nオーナーに確認できなかったため、このチャンネルでは返信できません。",
-    accentColor: DENY_ACCENT_COLOR,
+    tone: "danger",
   },
 };
 
@@ -110,12 +100,7 @@ export interface DiscordChannelAccessClient {
     readonly cache: { get(id: string): { readonly name?: string } | undefined };
   };
   readonly users: {
-    fetch(id: string): Promise<{
-      send(payload: {
-        components: ContainerBuilder[];
-        flags: MessageFlags.IsComponentsV2;
-      }): Promise<unknown>;
-    }>;
+    fetch(id: string): Promise<{ send(payload: DiscordContainerMessage): Promise<unknown> }>;
   };
 }
 
@@ -123,10 +108,7 @@ export interface DiscordChannelAccessButtonInteraction {
   readonly customId: string;
   readonly user: { readonly id: string };
   reply(options: { content: string; flags: MessageFlags.Ephemeral }): Promise<unknown>;
-  update(options: {
-    components: ContainerBuilder[];
-    flags: MessageFlags.IsComponentsV2;
-  }): Promise<unknown>;
+  update(options: DiscordContainerMessage): Promise<unknown>;
 }
 
 /**
@@ -189,19 +171,16 @@ export class DiscordChannelAccessRequester implements DiscordChannelAccessPresen
     const channel = await this.client.channels.fetch(pending.pendingChannelId);
     if (!isSendableTextChannel(channel)) return {};
 
-    const message = await channel.send({
-      components: [
-        createContainer(
-          [
-            "### 承認待ち",
-            `<@${pending.requesterUserId}> からのメンションを受け取りましたが、このチャンネルは許可されていません。`,
-            "オーナーに確認しています。",
-          ].join("\n"),
-          PENDING_ACCENT_COLOR,
-        ),
-      ],
-      flags: MessageFlags.IsComponentsV2,
-    });
+    const message = await channel.send(
+      createTextContainerMessage(
+        [
+          "### 承認待ち",
+          `<@${pending.requesterUserId}> からのメンションを受け取りましたが、このチャンネルは許可されていません。`,
+          "オーナーに確認しています。",
+        ].join("\n"),
+        "warning",
+      ),
+    );
 
     return { messageId: message.id };
   }
@@ -210,31 +189,28 @@ export class DiscordChannelAccessRequester implements DiscordChannelAccessPresen
     if (!this.ownerUserId) return;
     const owner = await this.client.users.fetch(this.ownerUserId);
 
-    await owner.send({
-      components: [
-        createContainer(
-          [
-            "### チャンネルの許可リクエスト",
-            ...this.describeLocation(pending),
-            "",
-            "このチャンネルを許可しますか？",
-          ].join("\n"),
-          PENDING_ACCENT_COLOR,
-        ).addActionRowComponents(
-          new ActionRowBuilder<ButtonBuilder>().addComponents(
-            new ButtonBuilder()
-              .setCustomId(createDiscordChannelAccessButtonId("allow", pending.requestId))
-              .setLabel("許可")
-              .setStyle(ButtonStyle.Success),
-            new ButtonBuilder()
-              .setCustomId(createDiscordChannelAccessButtonId("deny", pending.requestId))
-              .setLabel("拒否")
-              .setStyle(ButtonStyle.Danger),
-          ),
-        ),
-      ],
-      flags: MessageFlags.IsComponentsV2,
-    });
+    const container = createTextContainer(
+      [
+        "### チャンネルの許可リクエスト",
+        ...this.describeLocation(pending),
+        "",
+        "このチャンネルを許可しますか？",
+      ].join("\n"),
+      "warning",
+    ).addActionRowComponents(
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+          .setCustomId(createDiscordChannelAccessButtonId("allow", pending.requestId))
+          .setLabel("許可")
+          .setStyle(ButtonStyle.Success),
+        new ButtonBuilder()
+          .setCustomId(createDiscordChannelAccessButtonId("deny", pending.requestId))
+          .setLabel("拒否")
+          .setStyle(ButtonStyle.Danger),
+      ),
+    );
+
+    await owner.send({ components: [container], flags: MessageFlags.IsComponentsV2 });
   }
 
   async updatePendingNotice(
@@ -250,7 +226,7 @@ export class DiscordChannelAccessRequester implements DiscordChannelAccessPresen
       if (!isEditableMessage(message)) return;
       const notice = NOTICE_TEXTS[outcome];
       await message.edit({
-        components: [createContainer(notice.text, notice.accentColor)],
+        components: [createTextContainer(notice.text, notice.tone)],
         flags: MessageFlags.IsComponentsV2,
       });
     } catch (error) {
@@ -270,14 +246,14 @@ export class DiscordChannelAccessRequester implements DiscordChannelAccessPresen
     pending: PendingDiscordAccessRequest,
     allowed: boolean,
   ): ContainerBuilder {
-    return createContainer(
+    return createTextContainer(
       [
         allowed ? "### 許可しました" : "### 拒否しました",
         ...this.describeLocation(pending),
         "",
         allowed ? "このチャンネルを許可しました。" : "このチャンネルは許可しませんでした。",
       ].join("\n"),
-      allowed ? ALLOW_ACCENT_COLOR : DENY_ACCENT_COLOR,
+      allowed ? "success" : "danger",
     );
   }
 
