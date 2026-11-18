@@ -54,6 +54,13 @@ test("serves client-side routes without enumerating views on the server", async 
   assert.equal(await asset.text(), "console.log('app')");
   assert.match(asset.headers.get("cache-control") ?? "", /immutable/);
 
+  // A rebuild writes new hashed files while the process keeps running.
+  await writeFile(join(staticDirectory, "assets", "late.js"), "console.log('late')");
+  const lateAsset = await app.handle(new Request("http://localhost/assets/late.js"));
+  assert.equal(lateAsset.status, 200);
+  assert.equal(await lateAsset.text(), "console.log('late')");
+  assert.match(lateAsset.headers.get("cache-control") ?? "", /immutable/);
+
   const missingApi = await app.handle(new Request("http://localhost/api/nope"));
   assert.equal(missingApi.status, 404);
   assert.deepEqual(await missingApi.json(), { error: "Not found" });
