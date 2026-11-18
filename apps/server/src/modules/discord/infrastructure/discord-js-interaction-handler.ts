@@ -1,22 +1,33 @@
 import {
   ActionRowBuilder,
-  ContainerBuilder,
   MessageFlags,
   ModalBuilder,
   PermissionFlagsBits,
   SlashCommandBuilder,
   TextInputBuilder,
   TextInputStyle,
-  TextDisplayBuilder,
   type ApplicationCommandDataResolvable,
   type InteractionReplyOptions,
 } from "discord.js";
 
-import { formatAllowedDiscordChannels } from "../application/discord-channel-list";
+import { buildAllowedDiscordChannelLines } from "../application/discord-channel-list";
+import {
+  DiscordChannelRuleCommand,
+  type DiscordChannelRuleCommandRejection,
+} from "../application/discord-channel-rule-command";
+import {
+  decideDiscordOperatingModeCommand,
+  type DiscordOperatingModeCommandRejection,
+} from "../application/discord-operating-mode-command";
 import type { DiscordOperatingMode } from "../domain/discord-operating-state";
 import type { DiscordAccessPolicy } from "../domain/discord-access-policy";
 import type { DiscordAccessRuleStore } from "../ports/discord-access-rule-store";
 import type { DiscordChannelRuleStore } from "../ports/discord-channel-rule-store";
+import {
+  createTextContainer,
+  createTextContainerMessage,
+  truncateTextLines,
+} from "./discord-component-message";
 import {
   DiscordVoiceChatController,
   VOICE_COMMAND,
@@ -42,6 +53,23 @@ const ALLOWED_CHANNELS_COMMAND = new SlashCommandBuilder()
   .setDMPermission(false);
 const CHANNEL_RULE_MODAL_ID = "channel-rule-edit";
 const CHANNEL_RULE_INPUT_ID = "channel-rule";
+const OPERATING_MODE_REJECTION_MESSAGES: Readonly<
+  Record<DiscordOperatingModeCommandRejection, string>
+> = {
+  "guild-only": "このコマンドはサーバー内でのみ使用できます。",
+  "missing-permission": "このコマンドを実行する権限がありません。",
+};
+const RULE_EDIT_REJECTION_MESSAGES: Readonly<Record<DiscordChannelRuleCommandRejection, string>> = {
+  "guild-only": "このコマンドはサーバー内でのみ使用できます。",
+  "missing-permission": "このコマンドを実行する権限がありません。",
+  "unknown-channel": "チャンネルを特定できませんでした。",
+};
+const RULE_SUBMIT_REJECTION_MESSAGES: Readonly<Record<DiscordChannelRuleCommandRejection, string>> =
+  {
+    "guild-only": "この操作はサーバー内でのみ使用できます。",
+    "missing-permission": "この操作を実行する権限がありません。",
+    "unknown-channel": "チャンネルを特定できませんでした。",
+  };
 
 /**
  * Discord clients cache modal input values per custom id, even across channels and bots, until the
@@ -132,14 +160,16 @@ async function fetchChannelName(
 
 export class DiscordJsInteractionHandler {
   readonly commands: readonly ApplicationCommandDataResolvable[];
+  private readonly channelRuleCommand: DiscordChannelRuleCommand;
 
   constructor(
     private readonly accessPolicy: DiscordAccessPolicy,
     private readonly setOperatingMode: (mode: DiscordOperatingMode) => void,
     private readonly voiceChatController?: DiscordVoiceChatController,
-    private readonly channelRuleStore?: DiscordChannelRuleStore,
+    channelRuleStore?: DiscordChannelRuleStore,
     private readonly accessRuleStore?: DiscordAccessRuleStore,
   ) {
+    this.channelRuleCommand = new DiscordChannelRuleCommand(channelRuleStore);
     this.commands = [
       OPERATING_MODE_COMMAND,
       CHANNEL_RULE_COMMAND,
@@ -196,41 +226,31 @@ export class DiscordJsInteractionHandler {
 
     const subcommand =
       interaction.commandName === "status" ? interaction.options.getSubcommand() : undefined;
-    const mode =
-      subcommand === "idle"
-        ? ("paused" as const)
-        : subcommand === "online"
-          ? ("active" as const)
-          : undefined;
-    if (!mode) return;
+    if (subcommand === undefined) return;
 
-    if (!interaction.inGuild()) {
-      await interaction.reply({
-        content: "このコマンドはサーバー内でのみ使用できます。",
-        ephemeral: true,
-      });
-      return;
-    }
-
-    if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
-      await interaction.reply({
-        content: "このコマンドを実行する権限がありません。",
-        ephemeral: true,
-      });
-      return;
-    }
-
-    this.setOperatingMode(mode);
-    await interaction.reply({
-      components: [
-        new ContainerBuilder().addTextDisplayComponents(
-          new TextDisplayBuilder().setContent(
-            mode === "active" ? "Botを再開しました。" : "Botを一時停止しました。",
-          ),
-        ),
-      ],
-      flags: MessageFlags.IsComponentsV2,
+    const result = decideDiscordOperatingModeCommand({
+      subcommand,
+      inGuild: interaction.inGuild(),
+      canManageGuild: interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild) ?? false,
     });
+    switch (result.kind) {
+      case "ignored":
+        return;
+      case "rejected":
+        await interaction.reply({
+          content: OPERATING_MODE_REJECTION_MESSAGES[result.reason],
+          ephemeral: true,
+        });
+        return;
+      case "changed":
+        this.setOperatingMode(result.mode);
+        await interaction.reply(
+          createTextContainerMessage(
+            result.mode === "active" ? "Botを再開しました。" : "Botを一時停止しました。",
+          ),
+        );
+        return;
+    }
   }
 
   private async canUseCommandsInChannel(
@@ -265,7 +285,7 @@ export class DiscordJsInteractionHandler {
     }
 
     const guildId = interaction.guildId;
-    const text = await formatAllowedDiscordChannels(
+    const lines = await buildAllowedDiscordChannelLines(
       {
         guildId,
         userId: interaction.user.id,
@@ -279,31 +299,24 @@ export class DiscordJsInteractionHandler {
     );
 
     await interaction.reply({
-      components: [
-        new ContainerBuilder().addTextDisplayComponents(new TextDisplayBuilder().setContent(text)),
-      ],
+      components: [createTextContainer(truncateTextLines(lines))],
       flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
     });
   }
 
   private async openChannelRuleEditor(interaction: DiscordChatInputInteraction): Promise<void> {
-    if (!interaction.inGuild() || !interaction.guildId) {
-      await interaction.reply({
-        content: "このコマンドはサーバー内でのみ使用できます。",
-      });
-      return;
-    }
-    if (!interaction.memberPermissions?.has(PermissionFlagsBits.UseApplicationCommands)) {
-      await interaction.reply({
-        content: "このコマンドを実行する権限がありません。",
-      });
+    const result = await this.channelRuleCommand.getRuleForEdit({
+      inGuild: interaction.inGuild(),
+      canUseApplicationCommands:
+        interaction.memberPermissions?.has(PermissionFlagsBits.UseApplicationCommands) ?? false,
+      guildId: interaction.guildId ?? undefined,
+      channelId: interaction.channelId,
+    });
+    if (result.kind === "rejected") {
+      await interaction.reply({ content: RULE_EDIT_REJECTION_MESSAGES[result.reason] });
       return;
     }
 
-    const existingRule = await this.channelRuleStore?.get(
-      interaction.guildId,
-      interaction.channelId,
-    );
     const { modalId, inputId } = createChannelRuleComponentIds(interaction.id);
     const input = new TextInputBuilder()
       .setCustomId(inputId)
@@ -312,7 +325,7 @@ export class DiscordJsInteractionHandler {
       .setStyle(TextInputStyle.Paragraph)
       .setRequired(false)
       .setMaxLength(4_000);
-    if (existingRule) input.setValue(existingRule);
+    if (result.rule) input.setValue(result.rule);
 
     const modal = new ModalBuilder()
       .setCustomId(modalId)
@@ -322,45 +335,31 @@ export class DiscordJsInteractionHandler {
   }
 
   private async saveChannelRule(interaction: DiscordModalSubmitInteraction): Promise<void> {
-    if (!interaction.inGuild()) {
-      await interaction.reply({
-        content: "この操作はサーバー内でのみ使用できます。",
-      });
-      return;
-    }
-    if (!interaction.memberPermissions?.has(PermissionFlagsBits.UseApplicationCommands)) {
-      await interaction.reply({
-        content: "この操作を実行する権限がありません。",
-      });
-      return;
-    }
-
     const rule = interaction.fields.getTextInputValue(
       interaction.customId.replace(`${CHANNEL_RULE_MODAL_ID}:`, `${CHANNEL_RULE_INPUT_ID}:`),
     );
-    const guildId = interaction.guildId;
-    const channelId = interaction.channelId;
-    if (!guildId || !channelId) {
-      await interaction.reply({
-        content: "チャンネルを特定できませんでした。",
-      });
+    const result = await this.channelRuleCommand.applyRuleEdit(
+      {
+        inGuild: interaction.inGuild(),
+        canUseApplicationCommands:
+          interaction.memberPermissions?.has(PermissionFlagsBits.UseApplicationCommands) ?? false,
+        guildId: interaction.guildId ?? undefined,
+        channelId: interaction.channelId ?? undefined,
+      },
+      rule,
+    );
+    if (result.kind === "rejected") {
+      await interaction.reply({ content: RULE_SUBMIT_REJECTION_MESSAGES[result.reason] });
       return;
     }
 
-    await this.channelRuleStore?.set(guildId, channelId, rule);
-    await interaction.reply({
-      components: [
-        new ContainerBuilder()
-          .setAccentColor(rule.trim() ? 0x57f287 : 0x747f8d)
-          .addTextDisplayComponents(
-            new TextDisplayBuilder().setContent(
-              rule.trim()
-                ? "このチャンネル／スレッドのルールを保存しました。"
-                : "このチャンネル／スレッドのルールを削除しました。",
-            ),
-          ),
-      ],
-      flags: MessageFlags.IsComponentsV2,
-    });
+    await interaction.reply(
+      createTextContainerMessage(
+        result.kind === "saved"
+          ? "このチャンネル／スレッドのルールを保存しました。"
+          : "このチャンネル／スレッドのルールを削除しました。",
+        result.kind === "saved" ? "success" : "neutral",
+      ),
+    );
   }
 }

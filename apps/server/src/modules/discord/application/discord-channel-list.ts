@@ -4,7 +4,6 @@ import type {
   DiscordGuildAccessRule,
 } from "../domain/discord-access-policy";
 
-const CONTAINER_TEXT_LIMIT = 4_000;
 const ACCESS_LABELS: Readonly<Record<DiscordAccess, string>> = {
   allow: "許可",
   deny: "拒否",
@@ -23,28 +22,14 @@ export interface DiscordAllowedChannelListInput {
   readonly userIsBot?: boolean;
 }
 
-export function truncateDiscordContainerText(lines: readonly string[], limit: number): string {
-  let text = "";
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index] ?? "";
-    const candidate = text ? `${text}\n${line}` : line;
-    if (candidate.length > limit) {
-      const remaining = lines.length - index;
-      return `${text}\n…ほか ${remaining} 件`;
-    }
-    text = candidate;
-  }
-  return text;
-}
-
 /**
  * Builds the body of the `/channels` command. Only channels and threads whose
  * resolved access is not `deny` are listed.
  */
-export async function formatAllowedDiscordChannels(
+export async function buildAllowedDiscordChannelLines(
   input: DiscordAllowedChannelListInput,
   dependencies: DiscordAllowedChannelListDependencies,
-): Promise<string> {
+): Promise<readonly string[]> {
   const guildRule = dependencies.getGuildRule(input.guildId);
   const resolve = (target: { channelId: string; threadId?: string }): DiscordAccess =>
     dependencies.resolveAccess({
@@ -92,5 +77,5 @@ export async function formatAllowedDiscordChannels(
     );
   }
 
-  return truncateDiscordContainerText(lines, CONTAINER_TEXT_LIMIT);
+  return lines;
 }

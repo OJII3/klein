@@ -6,8 +6,7 @@ import {
   type DiscordGuildAccessRule,
 } from "../domain/discord-access-policy";
 import {
-  formatAllowedDiscordChannels,
-  truncateDiscordContainerText,
+  buildAllowedDiscordChannelLines,
   type DiscordAllowedChannelListDependencies,
 } from "./discord-channel-list";
 
@@ -53,44 +52,36 @@ function createDependencies(
 }
 
 test("lists channels and threads with their resolved access", async () => {
-  const text = await formatAllowedDiscordChannels(
+  const lines = await buildAllowedDiscordChannelLines(
     { guildId: "guild-123", userId: "user-123" },
     createDependencies(rules),
   );
 
-  assert.equal(
-    text,
-    [
-      "### 許可されたチャンネルとスレッド",
-      "ギルド全体: 許可",
-      "・#general（許可）",
-      "　└ #owners（オーナーのみ）",
-      "・#private / #visible（許可）",
-    ].join("\n"),
-  );
+  assert.deepEqual(lines, [
+    "### 許可されたチャンネルとスレッド",
+    "ギルド全体: 許可",
+    "・#general（許可）",
+    "　└ #owners（オーナーのみ）",
+    "・#private / #visible（許可）",
+  ]);
 });
 
 test("reports when no channel or thread is explicitly allowed", async () => {
-  const noRules = await formatAllowedDiscordChannels(
+  const noRules = await buildAllowedDiscordChannelLines(
     { guildId: "guild-123", userId: "user-123" },
     createDependencies(undefined),
   );
-  assert.match(noRules, /明示的に許可されたチャンネルやスレッドはありません/u);
+  assert.match(noRules.join("\n"), /明示的に許可されたチャンネルやスレッドはありません/u);
 
-  const denyGuild = await formatAllowedDiscordChannels(
+  const denyGuild = await buildAllowedDiscordChannelLines(
     { guildId: "guild-123", userId: "user-123" },
     createDependencies({ access: "deny" }),
   );
-  assert.match(denyGuild, /明示的に許可されたチャンネルやスレッドはありません/u);
+  assert.match(denyGuild.join("\n"), /明示的に許可されたチャンネルやスレッドはありません/u);
 
-  const allowGuild = await formatAllowedDiscordChannels(
+  const allowGuild = await buildAllowedDiscordChannelLines(
     { guildId: "guild-123", userId: "user-123" },
     createDependencies({ access: "allow" }),
   );
-  assert.match(allowGuild, /個別に許可されたチャンネルやスレッドはありません/u);
-});
-
-test("truncates long lists and reports the remaining line count", () => {
-  assert.equal(truncateDiscordContainerText(["a", "b", "c"], 2), "a\n…ほか 2 件");
-  assert.equal(truncateDiscordContainerText(["a", "b"], 10), "a\nb");
+  assert.match(allowGuild.join("\n"), /個別に許可されたチャンネルやスレッドはありません/u);
 });
