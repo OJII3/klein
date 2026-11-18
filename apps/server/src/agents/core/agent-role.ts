@@ -17,11 +17,8 @@ export type StandaloneAgentRole = { readonly kind: "standalone" };
 export type AgentRole = ConversationAgentRole | AttachedAgentRole | StandaloneAgentRole;
 
 export interface AgentPolicy {
-  /** Who may write to the conversation surface. */
   readonly surface: "owner" | "none";
-  /** How long the agent's session lives. */
   readonly lifetime: "conversation" | "task" | "call";
-  /** Where a completed turn's assistant text goes. */
   readonly assistantText: "none" | "caller";
 }
 
@@ -39,12 +36,6 @@ export function resolveAgentPolicy(role: AgentRole): AgentPolicy {
     }
   }
 }
-
-/**
- * Tools that write to the conversation surface declare themselves with
- * `surface: true`. Only a conversation agent may hold them; an attached or
- * standalone agent returns its result to its caller instead of speaking.
- */
 export function findSurfaceTool(role: AgentRole, tools: readonly AgentTool[]): string | undefined {
   if (resolveAgentPolicy(role).surface === "owner") return undefined;
   return tools.find((tool) => tool.surface === true)?.name;

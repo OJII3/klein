@@ -26,7 +26,6 @@ export interface DiscordGatewayChannel {
   isThread(): boolean;
 }
 
-/** The message shape a gateway adapter provides to the ingestion logic. */
 export interface DiscordGatewayMessage {
   readonly id: string;
   readonly channelId: string;
@@ -51,7 +50,6 @@ export interface DiscordGatewayMessage {
   fetchReference(): Promise<DiscordGatewayMessage>;
 }
 
-/** Reads the domain message and its attachments from a gateway message. */
 export interface DiscordGatewayMessageReader {
   hasSupportedImageAttachment(message: DiscordGatewayMessage): boolean;
   toDiscordMessage(message: DiscordGatewayMessage): DiscordMessage;

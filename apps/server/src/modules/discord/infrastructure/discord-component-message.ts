@@ -28,11 +28,6 @@ export function createTextContainer(text: string, tone?: DiscordMessageTone): Co
 
   return tone ? container.setAccentColor(TONE_ACCENT_COLORS[tone]) : container;
 }
-
-/**
- * Builds a Components v2 message whose body is a single text display. Without
- * a tone the container keeps the default accent color.
- */
 export function createTextContainerMessage(
   text: string,
   tone?: DiscordMessageTone,

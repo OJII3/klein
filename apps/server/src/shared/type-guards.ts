@@ -1,5 +1,3 @@
-/** Runtime type guards and safe parsing helpers. */
-
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }

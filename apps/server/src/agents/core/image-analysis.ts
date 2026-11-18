@@ -5,7 +5,6 @@ export type ImageAnalysisFailureReason =
 
 export interface ImageAnalysisFailure {
   readonly reason: ImageAnalysisFailureReason;
-  /** HTTP status reported by the provider, when the error carries one. */
   readonly status?: number;
   /** Whether asking the user to send the image again could succeed. */
   readonly retryable: boolean;
@@ -56,9 +55,7 @@ function extractHttpStatus(message: string): number | undefined {
     try {
       const status = findHttpStatus(parseJson(message.slice(jsonStart)));
       if (status !== undefined) return status;
-    } catch {
-      // Not JSON; fall through to the textual patterns.
-    }
+    } catch {}
   }
 
   for (const pattern of STATUS_PATTERNS) {

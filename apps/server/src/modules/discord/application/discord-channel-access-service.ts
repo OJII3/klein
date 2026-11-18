@@ -14,7 +14,6 @@ import {
 import type { DiscordAccessRequestStore } from "../ports/discord-access-request-store";
 import type { DiscordAccessRuleStore } from "../ports/discord-access-rule-store";
 
-/** Renders the pending notice and the owner's approval request. */
 export interface DiscordChannelAccessPresentation {
   postPendingNotice(request: PendingDiscordAccessRequest): Promise<{ messageId?: string }>;
   sendOwnerRequest(request: PendingDiscordAccessRequest): Promise<void>;
@@ -109,7 +108,6 @@ export class DiscordChannelAccessService {
     await this.save(pending);
   }
 
-  /** Returns the decision when the interaction was one of this requester's buttons. */
   async handleButton(button: {
     readonly customId: string;
     readonly userId: string;

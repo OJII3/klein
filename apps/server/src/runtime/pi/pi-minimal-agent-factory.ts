@@ -18,12 +18,6 @@ export interface PiMinimalAgentFactoryOptions {
   readonly cwd: string;
   readonly thinkingLevel?: ThinkingLevel;
 }
-
-/**
- * Creates standalone agents on the minimal Pi session profile. Implements
- * {@link StandaloneAgentFactory} so standalone agents receive plain prompts
- * directly without wrapping them in event metadata or turn contexts.
- */
 export function createPiMinimalAgentFactory(
   options: PiMinimalAgentFactoryOptions,
 ): StandaloneAgentFactory<PiTool> {

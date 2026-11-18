@@ -2,11 +2,6 @@ import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
 import type { AttachedTaskControl, AttachedTaskScope } from "@agents/core/attached-agent";
-
-/**
- * Conversation-side controls for attached tasks. The attached agent itself
- * does not see these tools; it only receives the prompts and returns results.
- */
 export function createAttachedControlTools(
   target: AttachedTaskControl,
   channelId: string,

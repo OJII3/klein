@@ -137,7 +137,6 @@ export class DiscordChannelAccessRequester implements DiscordChannelAccessPresen
     return this.service.request(request, this);
   }
 
-  /** Returns true when the interaction was one of this requester's buttons. */
   async handleButton(interaction: DiscordChannelAccessButtonInteraction): Promise<boolean> {
     const result = await this.service.handleButton({
       customId: interaction.customId,

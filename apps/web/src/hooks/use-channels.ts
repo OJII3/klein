@@ -2,7 +2,6 @@ import { useEffect, useState } from "preact/hooks";
 
 import { listChannels } from "../api";
 
-/** Loads the persisted Discord channel name mapping. */
 export function useChannels(active: boolean): ReadonlyMap<string, string> {
   const [channelNames, setChannelNames] = useState<ReadonlyMap<string, string>>(new Map());
 

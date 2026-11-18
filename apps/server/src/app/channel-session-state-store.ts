@@ -50,7 +50,6 @@ const rotationDateFormatter = new Intl.DateTimeFormat("en-CA", {
   year: "numeric",
 });
 
-/** Identifies the rotation window (a 4-hour block in JST) that contains `timestamp`. */
 export function getChannelRotationBucket(timestamp: number): string {
   const parts = Object.fromEntries(
     rotationDateFormatter

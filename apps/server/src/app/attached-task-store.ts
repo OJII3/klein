@@ -22,12 +22,6 @@ export interface AttachedTaskStore {
   save(task: StoredAttachedTask): Promise<void>;
   delete(id: string): Promise<void>;
 }
-
-/**
- * Stores one JSON file per attached task. A task is restored from this file
- * after a restart, and its Pi session is resumed when the conversation sends
- * the next prompt.
- */
 export class FileAttachedTaskStore implements AttachedTaskStore {
   constructor(private readonly directory: string) {}
 

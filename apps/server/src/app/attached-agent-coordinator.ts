@@ -222,10 +222,6 @@ export class AttachedAgentCoordinator implements AttachedTaskControl {
       }));
   }
 
-  /**
-   * Closes non-running tasks that have been idle past `idleCloseMs` and own no
-   * scheduled watches.
-   */
   async closeIdleTasks(now = Date.now()): Promise<number> {
     if (this.disposed || this.idleCleanupRunning) return 0;
     this.idleCleanupRunning = true;
@@ -265,7 +261,6 @@ export class AttachedAgentCoordinator implements AttachedTaskControl {
     }
   }
 
-  /** Stops the runtimes but keeps the saved tasks so the next process can restore them. */
   dispose(): Promise<void> {
     if (this.disposePromise) return this.disposePromise;
     this.disposePromise = this.performDispose();

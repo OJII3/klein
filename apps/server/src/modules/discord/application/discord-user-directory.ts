@@ -16,7 +16,6 @@ export type { KnownDiscordUser } from "../ports/discord-user-resolver";
 
 /**
  * Shared username to numeric user ID index for the users Klein has seen in messages.
- * Memory tools resolve @username here, and future mention features can use the same lookup.
  */
 export class DiscordUserDirectory implements DiscordUserResolver {
   private readonly store: DiscordUserStore;

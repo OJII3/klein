@@ -127,7 +127,6 @@ export class DiscordChoiceRequester {
     return this.service.send(channelId, request, (view) => this.postQuestion(view));
   }
 
-  /** Returns true when the interaction was one of this requester's buttons. */
   async handleButton(interaction: DiscordChoiceButtonInteraction): Promise<boolean> {
     const result = this.service.handleButton(toChoiceButton(interaction));
 

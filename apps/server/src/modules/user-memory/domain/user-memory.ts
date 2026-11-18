@@ -57,7 +57,6 @@ export interface UserMemoryIdentity {
 export interface UserMemorySummary {
   /** Numeric Discord user ID, which is also the file key. */
   readonly userId: string;
-  /** User-set Discord username, not the numeric snowflake ID. */
   readonly discordId: string;
   readonly displayName: string;
   readonly summary: string;
@@ -73,7 +72,6 @@ export interface UserMemoryMessage {
   readonly content: string;
 }
 
-/** Whether the memory holds anything beyond the defaults written for a newly seen user. */
 export function hasUserMemoryContent(memory: UserMemory): boolean {
   return (
     memory.summary.trim().length > 0 ||

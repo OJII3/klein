@@ -1184,9 +1184,7 @@ async function loadFeedbackTraceEntries(
       if (parsed.length > 0) {
         return parsed;
       }
-    } catch {
-      // Fall back to the snapshot session file when the original file is unavailable.
-    }
+    } catch {}
   }
   return loadedCase.entries;
 }
@@ -1754,18 +1752,14 @@ function cloneJsonPayload(value: unknown): unknown {
 async function copyIfExists(src: string, dest: string): Promise<void> {
   try {
     await copyFile(src, dest);
-  } catch {
-    // Optional file may not exist.
-  }
+  } catch {}
 }
 
 async function copyOptionalDir(src: string, dest: string): Promise<void> {
   try {
     const { cp } = await import("node:fs/promises");
     await cp(src, dest, { recursive: true });
-  } catch {
-    // Optional directory may not exist.
-  }
+  } catch {}
 }
 
 function extractUserMessageParts(content: unknown): {

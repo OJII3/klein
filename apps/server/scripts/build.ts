@@ -85,7 +85,7 @@ for (const entry of await readdir(outdir)) {
 const bundlePortabilityPlugin: BunPlugin = {
   name: "klein-bundle-portability",
   setup(build) {
-    // 1. Statically re-export Pi internals so Bun.build bundles them without node_modules paths.
+    // Statically re-export Pi internals so Bun.build bundles them without node_modules paths.
     build.onLoad({ filter: new RegExp(`^${escapeRegex(piInternalsPath)}$`) }, () => {
       const mcpConfigPath = JSON.stringify(resolve(piPackageDir, "dist/extensions/mcp/config.js"));
       const mcpCliPath = JSON.stringify(resolve(piPackageDir, "dist/extensions/mcp/cli.js"));
@@ -100,7 +100,7 @@ const bundlePortabilityPlugin: BunPlugin = {
       };
     });
 
-    // 2. Keep @snazzah/davey's native .node lookup anchored to the bundle directory.
+    // Keep @snazzah/davey's native .node lookup anchored to the bundle directory.
     build.onLoad({ filter: new RegExp(`^${escapeRegex(daveyEntryPath)}$`) }, async (args) => {
       const contents = replaceOnce(
         await readFile(args.path, "utf8"),
@@ -111,7 +111,7 @@ const bundlePortabilityPlugin: BunPlugin = {
       return { contents, loader: "js" };
     });
 
-    // 3. prism-media probes optional ffmpeg-static inside try/catch; fail cleanly without npm install.
+    // prism-media probes optional ffmpeg-static inside try/catch; fail cleanly without npm install.
     build.onResolve({ filter: /^ffmpeg-static$/ }, () => ({
       path: "ffmpeg-static",
       namespace: "klein-missing-optional",
@@ -122,7 +122,7 @@ const bundlePortabilityPlugin: BunPlugin = {
       loader: "js",
     }));
 
-    // 4. Resolve opusscript WASM next to the bundle instead of the build machine's node_modules.
+    // Resolve opusscript WASM next to the bundle instead of the build machine's node_modules.
     build.onLoad({ filter: new RegExp(`^${escapeRegex(opusScriptWasmJsPath)}$`) }, async (args) => {
       const contents = replaceOnce(
         await readFile(args.path, "utf8"),
@@ -133,7 +133,7 @@ const bundlePortabilityPlugin: BunPlugin = {
       return { contents, loader: "js" };
     });
 
-    // 5. Resolve photon WASM next to the bundle instead of the build machine's node_modules.
+    // Resolve photon WASM next to the bundle instead of the build machine's node_modules.
     build.onLoad({ filter: new RegExp(`^${escapeRegex(photonJsPath)}$`) }, async (args) => {
       const contents = replaceOnce(
         await readFile(args.path, "utf8"),

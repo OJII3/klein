@@ -29,7 +29,6 @@ export interface AttachedTaskScope {
 }
 
 export interface AttachedTaskStartInput extends AttachedTaskScope {
-  /** Whether the conversation allows owner-only tools for this task. */
   readonly ownerFeaturesAllowed: boolean;
   readonly prompt: string;
   /**
@@ -38,13 +37,6 @@ export interface AttachedTaskStartInput extends AttachedTaskScope {
    */
   readonly closeAfterResult?: boolean;
 }
-
-/**
- * The conversation-side controls for attached tasks. The conversation agent
- * starts a task, sends follow-ups, closes it, and lists its own tasks. The
- * attached agent never writes to the conversation surface; results return
- * through the coordinator's result callback.
- */
 export interface AttachedTaskControl {
   start(input: AttachedTaskStartInput): Promise<string>;
   send(scope: AttachedTaskScope, taskId: string, message: string): Promise<boolean>;

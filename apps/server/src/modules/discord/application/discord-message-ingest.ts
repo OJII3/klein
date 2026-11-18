@@ -24,16 +24,9 @@ function isSendableChannel(value: unknown): boolean {
     typeof value.send === "function"
   );
 }
-
-/**
- * Decides which gateway messages reach the conversation: skips the bot's own
- * messages and empty messages, applies channel access, and asks the owner for
- * access when the bot is mentioned in a channel that is not allowed.
- */
 export class DiscordMessageIngest {
   constructor(private readonly dependencies: DiscordMessageIngestDependencies) {}
 
-  /** Returns true when the message was delivered to the conversation. */
   async handle(message: DiscordGatewayMessage): Promise<boolean> {
     if (!this.dependencies.canAccept()) return false;
     if (message.author.id === this.dependencies.selfUserId()) return false;

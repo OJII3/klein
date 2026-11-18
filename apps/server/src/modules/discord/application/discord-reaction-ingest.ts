@@ -29,11 +29,6 @@ export interface DiscordReactionIngestDependencies {
   readonly canAccept: () => boolean;
   readonly onReaction: (event: DiscordReactionEvent) => Promise<void>;
 }
-
-/**
- * Turns a reaction on a message the bot posted into a domain event. Reactions
- * on other messages, from bots, and in channels without access are ignored.
- */
 export class DiscordReactionIngest {
   constructor(private readonly dependencies: DiscordReactionIngestDependencies) {}
 
