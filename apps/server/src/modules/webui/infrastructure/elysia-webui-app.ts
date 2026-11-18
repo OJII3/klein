@@ -32,14 +32,17 @@ const IMMUTABLE_ASSET_CACHE_CONTROL = "public, max-age=31536000, immutable";
 const HTML_CACHE_CONTROL = "no-store";
 
 export async function createWebUiServerApp(options: WebUiServerOptions) {
+  // Resolve assets from disk on every request. Registering the files that
+  // exist at startup would make every file a rebuild adds return 404 until the
+  // process restarts, even though the SPA entry point already points at it.
   const staticApp = await staticPlugin({
-    assets: resolve(options.staticDirectory),
-    alwaysStatic: true,
+    assets: resolve(options.staticDirectory, "assets"),
+    alwaysStatic: false,
     bunFullstack: false,
     // The SPA entry point is served below so that every request reads the
     // current index.html instead of a copy cached at startup.
     indexHTML: false,
-    prefix: "/",
+    prefix: "/assets",
   });
   // Read on every request: a running process must serve the index that matches
   // the assets currently on disk, even after a rebuild.
