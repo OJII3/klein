@@ -1023,7 +1023,6 @@ test("forwards reactions on bot messages after resolving partials and filters un
       },
     );
 
-    // Partial reaction/message/user on a bot-authored message in an allowed channel -> forwarded
     fakeClient.emit(
       Events.MessageReactionAdd,
       {
@@ -1057,7 +1056,6 @@ test("forwards reactions on bot messages after resolving partials and filters un
       },
     );
 
-    // Reaction on another user's message -> ignored
     fakeClient.emit(
       Events.MessageReactionAdd,
       {
@@ -1076,7 +1074,6 @@ test("forwards reactions on bot messages after resolving partials and filters un
       { partial: false, id: "user-1", bot: false },
     );
 
-    // Reaction in denied channel -> ignored
     fakeClient.emit(
       Events.MessageReactionAdd,
       {
@@ -1095,7 +1092,6 @@ test("forwards reactions on bot messages after resolving partials and filters un
       { partial: false, id: "user-1", bot: false },
     );
 
-    // Reaction by a bot -> ignored
     fakeClient.emit(
       Events.MessageReactionAdd,
       {

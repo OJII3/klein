@@ -317,7 +317,6 @@ test("SessionEvalCaseStore snapshots session up to pre-message boundary on negat
   assert.equal(recorded.slice.turnContextEntryId, "tc1");
   assert.equal(recorded.recordedResponse.content, "問題の返信メッセージ");
 
-  // Duplicate reaction with same messageId + emoji returns the existing case without creating a second file.
   const duplicate = await store.recordReactionFeedback({
     emoji: "👎",
     userId: "owner-1",

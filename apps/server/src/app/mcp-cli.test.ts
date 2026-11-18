@@ -82,7 +82,6 @@ async function startOAuthMcpServer(): Promise<OAuthMcpServer> {
       return;
     }
     if (url.pathname === "/mcp") {
-      // No server-to-client stream.
       response.writeHead(405).end();
       return;
     }
@@ -217,7 +216,6 @@ test("mcp login signs in through the loopback callback", async () => {
         log: (message) => logs.push(message),
         error: (message) => errors.push(message),
         openUrl: (url) => {
-          // Give the sign-in a moment to wait for the callback, like a browser loading a page would.
           setTimeout(() => {
             void (async () => {
               try {
@@ -242,7 +240,6 @@ test("mcp login signs in through the loopback callback", async () => {
       }
       assert.equal(serverEntry.tokens.access_token, ACCESS_TOKEN);
 
-      // A second sign-in reuses the stored token instead of starting the browser flow again.
       const again: string[] = [];
       assert.equal(
         await runMcpCommand(["login", "docs"], {
@@ -291,7 +288,6 @@ test("mcp list reports the configured servers", async () => {
         log: (message) => logs.push(message),
         error: () => undefined,
       });
-      // The server needs a sign-in, so list reports it rather than connecting.
       assert.equal(code, 1);
       const report = parseJson(logs.join("\n"));
       if (!isRecord(report) || !Array.isArray(report.servers)) {

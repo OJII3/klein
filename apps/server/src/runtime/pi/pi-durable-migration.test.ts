@@ -55,7 +55,7 @@ function createTestDurableSqlite(sqlitePath: string): void {
       "INSERT INTO entries (id, conversation_id, record) VALUES (?, ?, ?)",
     );
 
-    // 1. Channel session state with base + delta revisions
+    // Channel session state with base + delta revisions
     insertDoc.run(
       1,
       "session\0klein.conversation-state\0discord:channel-123",
@@ -97,7 +97,7 @@ function createTestDurableSqlite(sqlitePath: string): void {
       ]),
     );
 
-    // 2. Legacy channel session state (klein.discord-channel-state with channelId)
+    // Legacy channel session state (klein.discord-channel-state with channelId)
     insertDoc.run(
       2,
       "session\0klein.discord-channel-state\0legacy-channel",
@@ -126,7 +126,7 @@ function createTestDurableSqlite(sqlitePath: string): void {
       }),
     );
 
-    // 3. Session conversations index for discord-channel:channel-123:owner:user-1:2 (conversations 10 and 20)
+    // Session conversations index for discord-channel:channel-123:owner:user-1:2 (conversations 10 and 20)
     const sessionKey = "discord-channel:channel-123:owner:user-1:2";
     insertDoc.run(
       3,

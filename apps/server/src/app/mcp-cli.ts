@@ -7,7 +7,6 @@ import { loadConfig } from "./config";
 export interface McpCommandIo {
   log: (message: string) => void;
   error: (message: string) => void;
-  /** Tests and other callers can supply the browser instead of the platform browser. */
   openUrl?: (url: string) => void;
 }
 

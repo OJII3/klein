@@ -1,10 +1,5 @@
 import { hasUserMemoryContent, type UserMemory, type UserMemoryIdentity } from "./user-memory";
 import { renderUserMemory } from "./user-memory-format";
-
-/**
- * Describes a user who speaks in a Pi session for the first time, with their memory when one
- * exists. An empty memory is presented as a first meeting instead of as an empty document.
- */
 export function renderFirstSpeakerUserMemory(
   identity: UserMemoryIdentity,
   memory: UserMemory | undefined,

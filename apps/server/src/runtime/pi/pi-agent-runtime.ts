@@ -626,7 +626,6 @@ export function normalizeCompletedAssistantText<TMessage extends AgentMessage>(
       (block) => block.type !== "text",
     );
     if (!content.some((block) => block.type === "toolCall")) {
-      // Record the completed outcome so silence is not mistaken for a pending reply.
       content.push({
         type: "text",
         text: summarizeSurfaceOutcome(usedSurfaceTools, primarySurfaceToolName, surfaceOutcomes),
@@ -702,8 +701,6 @@ export function createPiAgentFactory({
   const imageModel = llm.image
     ? resolveConfiguredImageModel(llm.image.provider, llm.image.model, modelRuntime)
     : undefined;
-  // Pi advertises skills through a read tool, so replace the excluded built-in reader with one
-  // restricted to the configured skills directory.
   const skillReadTool = skillsDirectory ? createSkillReadTool(skillsDirectory) : undefined;
 
   return {

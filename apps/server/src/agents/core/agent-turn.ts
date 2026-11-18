@@ -1,6 +1,5 @@
 import type { AgentEvent } from "./agent-event";
 
-/** A named block of reference material the runtime presents to the model. */
 export interface AgentContextBlock {
   /** Element name the runtime wraps the content in. */
   readonly name: string;
@@ -14,7 +13,6 @@ export interface AgentContextBlock {
 export interface AgentTurnContext {
   readonly ownerMemory?: string;
   readonly userMemory?: string;
-  /** Platform-specific reference material, in the order the runtime should present it. */
   readonly blocks?: readonly AgentContextBlock[];
   /** The user who started this turn, when a user started it. */
   readonly requesterId?: string;

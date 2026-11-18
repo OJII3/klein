@@ -205,7 +205,6 @@ test("owner access changes replace cached agents and preserve private session sc
     lastActivityAt: Date.now() - 2 * 60 * 60 * 1000,
     lastRotationDate: "2000-01-01",
   });
-  // Restart removes the recent inbound timestamp while preserving the persisted private scope.
   await harness.coordinator.dispose();
   const resumed = createHarness(store, rule);
   try {

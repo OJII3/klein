@@ -318,9 +318,7 @@ export class SentMessageSessionIndex {
         if (isSentDiscordMessageRecord(parsed)) {
           this.byMessageId.set(parsed.discordMessageId, parsed);
         }
-      } catch {
-        // Ignore malformed trailing lines.
-      }
+      } catch {}
     }
   }
 }
@@ -447,9 +445,7 @@ export class SessionEvalCaseStore {
         if (isEvalFeedbackCase(parsed)) {
           cases.push(parsed);
         }
-      } catch {
-        // Ignore malformed case files.
-      }
+      } catch {}
     }
 
     return cases.toSorted(
@@ -513,9 +509,7 @@ export class SessionEvalCaseStore {
       try {
         await readFile(record.sessionFile, "utf8");
         return record.sessionFile;
-      } catch {
-        // Fall back to searching sessions directory by sessionId.
-      }
+      } catch {}
     }
 
     const sessionsRoot = join(this.agentDir, "sessions", "conversation");

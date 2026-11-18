@@ -1,11 +1,8 @@
 import type { DiscordMessage, DiscordUser } from "./discord-message";
 
 export interface DiscordChoiceRequest {
-  /** The question shown above the buttons. */
   readonly question: string;
-  /** Button labels, in display order. */
   readonly options: readonly string[];
-  /** The Discord user who may answer. */
   readonly requesterUserId: string;
 }
 
@@ -16,7 +13,6 @@ export interface DiscordChoiceChannel {
   readonly isThread: boolean;
 }
 
-/** The parts of a button interaction that decide whether and how an answer is accepted. */
 export interface DiscordChoiceButton {
   readonly id: string;
   readonly customId: string;
@@ -27,7 +23,6 @@ export interface DiscordChoiceButton {
   readonly botUser?: DiscordUser;
 }
 
-/** A choice question, its button identifiers and the message the buttons belong to. */
 export interface PendingDiscordChoice extends DiscordChoiceRequest {
   readonly nonce: string;
   readonly channelId: string;
@@ -50,7 +45,6 @@ export function parseDiscordChoiceButtonId(
   return { nonce, index };
 }
 
-/** Builds the user message that carries a pressed choice into the conversation. */
 export function createDiscordChoiceAnswerMessage(
   button: DiscordChoiceButton,
   pending: PendingDiscordChoice,

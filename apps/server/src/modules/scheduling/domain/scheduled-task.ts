@@ -31,7 +31,6 @@ export interface WatchTask extends ScheduledTaskBase {
    * session instead of the conversation session.
    */
   readonly ownerTaskId?: string;
-  /** Disabled watches keep their settings but are not checked. */
   readonly enabled: boolean;
   /** Values the script kept with `store()`. */
   readonly state?: Readonly<Record<string, unknown>>;

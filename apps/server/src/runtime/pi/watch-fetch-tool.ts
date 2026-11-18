@@ -78,7 +78,6 @@ const fetchContentOutputSchema: CodemodeJsonSchema = {
 
 export interface WatchFetchToolOptions {
   readonly agentDir: string;
-  /** Overrides the core loader; tests use this to exercise load failures. */
   readonly loadCore?: (agentDir: string) => Promise<WatchFetchCore>;
 }
 

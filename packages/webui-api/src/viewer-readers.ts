@@ -29,7 +29,6 @@ export interface ViewerSessionReader {
   get(sessionId: string, query?: ViewerSessionQuery): Promise<ViewerSessionDetail | undefined>;
 }
 
-/** Reads the persisted Discord channel id to channel name mapping. */
 export interface ChannelNameReader {
   read(): Promise<ReadonlyMap<string, string>>;
 }

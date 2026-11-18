@@ -1,7 +1,6 @@
 import { formatDiscordMessage, type DiscordMessage } from "@modules/discord/domain/discord-message";
 import type { AgentTurn } from "../core/agent-turn";
 
-/** Discord-specific reference material for one turn. */
 export interface DiscordTurnContext {
   readonly ownerMemory?: string;
   readonly userMemory?: string;

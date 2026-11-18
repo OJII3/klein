@@ -83,9 +83,7 @@ async function parseOptions(argv: readonly string[]): Promise<CliOptions> {
     configModel = config.llm.model;
     configThinkingLevel = config.llm.thinkingLevel;
     configAgentDir = config.runtime.agentDir;
-  } catch {
-    // Fall back to defaults when config/config.jsonc is absent.
-  }
+  } catch {}
 
   const args = [...argv];
   if (args.length === 0 || args[0] === "--help" || args[0] === "-h") {
@@ -310,9 +308,7 @@ async function runCasesCommand(options: CliOptions): Promise<void> {
             userPreview = toPreview(extractEventBody(trace.userText), 100);
           }
         }
-      } catch {
-        // Ignore preview extraction failure.
-      }
+      } catch {}
       return {
         caseId: item.caseId,
         occurredAt: item.reaction.occurredAt,
@@ -683,9 +679,7 @@ async function discoverSessionFiles(sessionsDir: string): Promise<DiscoveredSess
           mtimeMs: info.mtimeMs,
           mtimeIso: new Date(info.mtimeMs).toISOString(),
         });
-      } catch {
-        // Ignore unreadable files.
-      }
+      } catch {}
     }
   }
 
@@ -705,9 +699,7 @@ async function resolveSessionTarget(
         sessionKey: inferSessionKeyFromPath(directPath),
       };
     }
-  } catch {
-    // Fall back to searching discovered sessions.
-  }
+  } catch {}
 
   const discovered = await discoverSessionFiles(sessionsDir);
   const matched = discovered.find(
