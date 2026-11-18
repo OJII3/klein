@@ -11,6 +11,9 @@ export default defineConfig({
     },
   },
   build: {
+    // Android Chrome on older devices may not parse the newest syntax. The
+    // dashboard has no features that need it.
+    target: "es2019",
     outDir: "../../dist/web",
     // Keep the previous hashed assets. A document cached by a browser or the
     // Cloudflare edge must still find the chunks it references after a rebuild.

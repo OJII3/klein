@@ -62,6 +62,18 @@ export async function createWebUiServerApp(options: WebUiServerOptions) {
       set.headers["cache-control"] = pathname.startsWith("/assets/")
         ? IMMUTABLE_ASSET_CACHE_CONTROL
         : HTML_CACHE_CONTROL;
+      if (!pathname.startsWith("/api/")) {
+        options.logger?.info(
+          {
+            event: "webui_request",
+            method: request.method,
+            path: pathname,
+            status: set.status,
+            userAgent: request.headers.get("user-agent"),
+          },
+          "Web UI request",
+        );
+      }
     })
     .get("/", serveIndex)
     .get("/*", async ({ request, set }) => {
