@@ -34,6 +34,7 @@ import {
   createSignalDedupeKey,
   formatSignal,
   isSignalExpired,
+  markSignalDismissed,
   markSignalExpired,
   markSignalSurfaced,
   type ProactiveSignal,
@@ -327,6 +328,35 @@ export class ProactiveCoordinator {
         ? markFollowUpDone(followUp, now)
         : { ...followUp, status: "dismissed", updatedAt: new Date(now).toISOString() };
     await this.options.followUpStore.update(updated);
+    return true;
+  }
+
+  async listQueuedSignals(
+    channelId: string,
+    accessScope: AccessScope,
+  ): Promise<readonly ProactiveSignal[]> {
+    const now = this.now();
+    const queued = await this.options.signalStore.listQueued(channelId, accessScope);
+    const visible: ProactiveSignal[] = [];
+
+    for (const signal of queued) {
+      if (isSignalExpired(signal, now)) {
+        await this.options.signalStore.update(markSignalExpired(signal, now));
+        continue;
+      }
+      visible.push(signal);
+    }
+
+    return visible;
+  }
+
+  async dismissSignal(channelId: string, accessScope: AccessScope, id: string): Promise<boolean> {
+    const signal = await this.options.signalStore.get(id);
+    if (!signal || signal.channelId !== channelId || signal.accessScope !== accessScope) {
+      return false;
+    }
+
+    await this.options.signalStore.update(markSignalDismissed(signal, this.now()));
     return true;
   }
 

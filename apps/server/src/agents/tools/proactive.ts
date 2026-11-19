@@ -8,11 +8,17 @@ import type {
   ProactivePreferences,
   ProactiveTopicMode,
 } from "@modules/proactivity/domain/proactive-preference";
+import type { ProactiveSignal } from "@modules/proactivity/domain/proactive-signal";
 import { isOwnerAccessScope, type AccessScope } from "@shared/access";
 
 export type ProactiveToolCoordinator = Pick<
   ProactiveCoordinator,
-  "updatePreference" | "createFollowUp" | "listFollowUps" | "closeFollowUp"
+  | "updatePreference"
+  | "createFollowUp"
+  | "listFollowUps"
+  | "closeFollowUp"
+  | "listQueuedSignals"
+  | "dismissSignal"
 >;
 
 const preferenceChangeSchema = Type.Union([
@@ -31,6 +37,7 @@ const preferenceChangeSchema = Type.Union([
     topic: Type.String({ minLength: 1 }),
     mode: Type.Union([Type.Literal("allow"), Type.Literal("mute"), Type.Literal("urgent-only")]),
     until: Type.Optional(Type.String({ minLength: 1 })),
+    permanent: Type.Optional(Type.Boolean()),
   }),
   Type.Object({
     kind: Type.Literal("remove_topic"),
@@ -72,9 +79,28 @@ export function createProactiveTools(
           throw new Error("好みの変更は所有者だけができます。");
         }
 
-        const preferences = await coordinator.updatePreference(
-          params.change as ProactivePreferenceChange,
-        );
+        const request = params.change;
+        if (
+          request.kind === "set_topic" &&
+          request.mode === "mute" &&
+          request.until === undefined &&
+          request.permanent !== true
+        ) {
+          throw new Error(
+            "一度の拒否を恒久化しないため、mute には until を指定するか、恒久を意図するなら permanent: true を指定してください。",
+          );
+        }
+
+        const change: ProactivePreferenceChange =
+          request.kind === "set_topic"
+            ? {
+                kind: "set_topic",
+                topic: request.topic,
+                mode: request.mode,
+                ...(request.until !== undefined ? { until: request.until } : {}),
+              }
+            : request;
+        const preferences = await coordinator.updatePreference(change);
         return {
           content: [{ type: "text", text: formatPreferencesSummary(preferences) }],
           details: {
@@ -182,7 +208,76 @@ export function createProactiveTools(
         };
       },
     }),
+    defineTool({
+      name: "proactive_signal_list",
+      label: "List Proactive Signals",
+      description:
+        "List the queued signals that may be worth mentioning in this conversation, one line per signal.",
+      parameters: Type.Object({}),
+      exposure: "deferred",
+      async execute() {
+        const signals = await coordinator.listQueuedSignals(channelId, accessScope);
+        if (signals.length === 0) {
+          return {
+            content: [{ type: "text", text: "この会話に保留中の候補はありません。" }],
+            details: { signals: [] },
+          };
+        }
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: signals.map((signal) => formatSignalLine(signal)).join("\n"),
+            },
+          ],
+          details: {
+            signals: signals.map((signal) => ({
+              id: signal.id,
+              topic: signal.topic,
+              summary: signal.summary,
+              urgency: signal.urgency,
+            })),
+          },
+        };
+      },
+    }),
+    defineTool({
+      name: "proactive_signal_dismiss",
+      label: "Dismiss Proactive Signal",
+      description:
+        "Dismiss a queued signal in this conversation. Dismissing stores it as dismissed so the same dedupeKey is not notified again. Use proactive_signal_list to find its ID.",
+      parameters: Type.Object({ id: Type.String({ minLength: 1 }) }),
+      exposure: "deferred",
+      async execute(_toolCallId, params) {
+        const dismissed = await coordinator.dismissSignal(channelId, accessScope, params.id);
+        return {
+          content: [
+            {
+              type: "text",
+              text: dismissed
+                ? "候補を取り下げました。"
+                : `この会話にID ${params.id} の候補はありません。`,
+            },
+          ],
+          details: { id: params.id, dismissed },
+        };
+      },
+    }),
   ] as const;
+}
+
+function formatSignalLine(signal: ProactiveSignal): string {
+  return [
+    `ID: ${signal.id}`,
+    `話題: ${normalizeInlineText(signal.topic)}`,
+    `要約: ${normalizeInlineText(signal.summary)}`,
+    `緊急度: ${signal.urgency}`,
+  ].join(" / ");
+}
+
+function normalizeInlineText(value: string): string {
+  return value.replaceAll(/\s+/gu, " ").trim();
 }
 
 function formatPreferencesSummary(preferences: ProactivePreferences): string {

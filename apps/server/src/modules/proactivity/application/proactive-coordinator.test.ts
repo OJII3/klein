@@ -348,6 +348,56 @@ test("closes only follow-ups in the same channel and scope", async () => {
   );
 });
 
+test("lists queued signals in scope and expires overdue ones", async () => {
+  await withCoordinator(async ({ coordinator, signalStore }) => {
+    await signalStore.create(makeSignal("queued", { delivery: { mode: "attach" } }));
+    await signalStore.create(
+      makeSignal("expired", {
+        expiresAt: new Date(NOW).toISOString(),
+        delivery: { mode: "attach" },
+      }),
+    );
+    await signalStore.create(
+      makeSignal("other-channel", {
+        channelId: "channel-b",
+        delivery: { mode: "attach" },
+      }),
+    );
+    await signalStore.create(
+      makeSignal("other-scope", {
+        accessScope: "public",
+        audience: "public",
+        delivery: { mode: "attach" },
+      }),
+    );
+
+    const visible = await coordinator.listQueuedSignals("channel-a", "owner:123");
+
+    assert.deepEqual(
+      visible.map((signal) => signal.id),
+      ["queued"],
+    );
+    assert.equal((await signalStore.get("expired"))?.status, "expired");
+    assert.equal((await signalStore.get("other-channel"))?.status, "queued");
+    assert.equal((await signalStore.get("other-scope"))?.status, "queued");
+  });
+});
+
+test("dismisses only signals in the same channel and scope", async () => {
+  await withCoordinator(async ({ coordinator, signalStore }) => {
+    await signalStore.create(makeSignal("dismiss-me", { delivery: { mode: "attach" } }));
+
+    assert.equal(await coordinator.dismissSignal("channel-b", "owner:123", "dismiss-me"), false);
+    assert.equal(await coordinator.dismissSignal("channel-a", "public", "dismiss-me"), false);
+    assert.equal(await coordinator.dismissSignal("channel-a", "owner:123", "missing"), false);
+    assert.equal((await signalStore.get("dismiss-me"))?.status, "queued");
+
+    assert.equal(await coordinator.dismissSignal("channel-a", "owner:123", "dismiss-me"), true);
+    assert.equal((await signalStore.get("dismiss-me"))?.status, "dismissed");
+    assert.deepEqual(await coordinator.listQueuedSignals("channel-a", "owner:123"), []);
+  });
+});
+
 test("turns a watch wake into a queued signal and ignores a duplicate", async () => {
   await withCoordinator(async ({ coordinator, signalStore }) => {
     const first = await coordinator.ingestWatchSignal({

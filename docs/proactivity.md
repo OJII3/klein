@@ -58,7 +58,7 @@ Klein はチャンネルのメッセージに反応するだけではなく、�
 
 `Delivery` は配信ゲートが読む。`Topics` は話題ごとの許可、禁止、緊急時だけの許可を表す。`Notes` は自由文で、モデルが文脈として読む。パースできない行は無視し、ファイル全体は毎ターンのコンテキストに含める。ツールは既知の行だけを書き換え、他の行と節を保持する。
 
-`until` を省略した話題の禁止は無期限とする。`mute` は `until` まで、または無期限に候補を保存だけにする。`urgent-only` は `now` の候補だけを通す。
+`until` を省略した話題の禁止は無期限とする。ただし `proactive_preference_update` で無期限の `mute` を作るには `permanent: true` を明示する必要があり、省略すると一度の拒否を恒久化しないためのエラーになる。`mute` は `until` まで、または無期限に候補を保存だけにする。`urgent-only` は `now` の候補だけを通す。
 
 ### 約束の台帳
 
@@ -158,11 +158,11 @@ watch の wake と付随タスクの結果を届けるときも同じブロッ�
 
 すべて `features.proactivity.enabled` が真のときだけ会話エージェントに渡す。
 
-- `proactive_preference_update` は好みを更新する。`set_delivery`、`set_topic`、`remove_topic`、`add_note` を受ける。所有者以外の呼び出しは拒否する。
+- `proactive_preference_update` は好みを更新する。`set_delivery`、`set_topic`、`remove_topic`、`add_note` を受ける。`set_topic` で `until` を省略した `mute` は、恒久を意図する場合に限り `permanent: true` を必要とする。所有者以外の呼び出しは拒否する。
 - `follow_up_create` は監視、リマインダー、付随タスクを指定して約束を作る。watcher が見つからなければ失敗する。
 - `follow_up_list` はこのチャンネルの有効な約束を返す。
 - `follow_up_close` は約束を `done` または `dismissed` にする。
-- `proactive_signal_list` はキューにある候補を返す。
+- `proactive_signal_list` はこの会話のキューにある期限切れでない候補を返す。
 - `proactive_signal_dismiss` は候補を `dismissed` にし、同じ `dedupeKey` の再通知を止める。
 
 ## 約束の監査
@@ -206,6 +206,7 @@ watch の wake と付随タスクの結果を届けるときも同じブロッ�
 - watch の wake の候補化、配信ゲート、`attach` と `digest` のキュー、当日の配信数、重複排除
 - `AgentCoordinator.deliverDueDigests` によるダイジェスト配信と、スケジュール確認と同じ間隔での起動
 - `discord_send` の約束監査 (`off`、`log`、`block`)
+- `proactive_signal_list` と `proactive_signal_dismiss`、期限切れの除外、恒久 mute に必要な `permanent: true`
 - `config/PROACTIVITY.md` と `docs/features.md` の更新
 
 確認は `bun fmt`、`bun lint:fix`、`bun test`、`bun run typecheck`、`bun run build` で行う。

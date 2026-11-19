@@ -4,6 +4,7 @@ import test from "node:test";
 import { createStubExtensionToolContext } from "@agents/testing/test-stubs";
 import type { FollowUp } from "@modules/proactivity/domain/follow-up";
 import type { ProactivePreferences } from "@modules/proactivity/domain/proactive-preference";
+import type { ProactiveSignal } from "@modules/proactivity/domain/proactive-signal";
 import { isRecord } from "@shared/type-guards";
 
 import { createProactiveTools, type ProactiveToolCoordinator } from "./proactive";
@@ -27,6 +28,21 @@ const followUp: FollowUp = {
   updatedAt: "2026-11-20T00:00:00.000Z",
 };
 
+const signal: ProactiveSignal = {
+  version: 1,
+  id: "signal-1",
+  channelId: "channel-a",
+  accessScope: "owner:123",
+  audience: "owner",
+  source: { kind: "watch", ref: "watch-1" },
+  topic: "在庫監視",
+  summary: "在庫が3個になりました",
+  urgency: "today",
+  dedupeKey: "dedupe-1",
+  observedAt: "2026-11-20T00:00:00.000Z",
+  status: "queued",
+};
+
 function createCoordinator(
   overrides: Partial<ProactiveToolCoordinator> = {},
 ): ProactiveToolCoordinator {
@@ -41,6 +57,12 @@ function createCoordinator(
       return [];
     },
     async closeFollowUp() {
+      return true;
+    },
+    async listQueuedSignals() {
+      return [];
+    },
+    async dismissSignal() {
       return true;
     },
     ...overrides,
@@ -103,6 +125,54 @@ test("updates preferences only for the owner who started the turn", async () => 
   assert.match(text, /配信: 既定=attach, 1日の上限=2/u);
   assert.match(text, /話題: weather: 禁止 until 2026-12-01/u);
   assert.doesNotMatch(text, /このメモはツールの応答に出さない/u);
+});
+
+test("requires permanent: true for an open-ended mute", async () => {
+  const changes: unknown[] = [];
+  const tools = createProactiveTools(
+    createCoordinator({
+      async updatePreference(change) {
+        changes.push(change);
+        return preferences;
+      },
+    }),
+    "channel-a",
+    "owner:user-1",
+    () => "user-1",
+    "user-1",
+  );
+  const ctx = await createStubExtensionToolContext();
+  const update = tools[0];
+
+  await update.execute(
+    "tool-call",
+    { change: { kind: "set_topic", topic: "weather", mode: "mute", until: "2026-12-01" } },
+    undefined,
+    undefined,
+    ctx,
+  );
+  await update.execute(
+    "tool-call",
+    { change: { kind: "set_topic", topic: "weather", mode: "mute", permanent: true } },
+    undefined,
+    undefined,
+    ctx,
+  );
+  await assert.rejects(
+    update.execute(
+      "tool-call",
+      { change: { kind: "set_topic", topic: "weather", mode: "mute" } },
+      undefined,
+      undefined,
+      ctx,
+    ),
+    /一度の拒否を恒久化しないため、mute には until を指定するか、恒久を意図するなら permanent: true を指定してください。/u,
+  );
+
+  assert.deepEqual(changes, [
+    { kind: "set_topic", topic: "weather", mode: "mute", until: "2026-12-01" },
+    { kind: "set_topic", topic: "weather", mode: "mute" },
+  ]);
 });
 
 test("creates follow-ups and reports the watcher cadence", async () => {
@@ -191,6 +261,57 @@ test("lists follow-ups one line each or reports an empty ledger", async () => {
   assert.deepEqual(textOf(result).split("\n"), [
     "天気を確認する（5分ごと / 追跡中）",
     "リリースを確認する（5分ごと / 追跡中）",
+  ]);
+});
+
+test("lists queued signals and dismisses them by id", async () => {
+  const dismissed: unknown[] = [];
+  const tools = createProactiveTools(
+    createCoordinator({
+      async listQueuedSignals() {
+        return [signal, { ...signal, id: "signal-2", summary: "二つ目" }];
+      },
+      async dismissSignal(channelId, accessScope, id) {
+        dismissed.push({ channelId, accessScope, id });
+        return id === "signal-1";
+      },
+    }),
+    "channel-a",
+    "owner:123",
+    () => "user-1",
+    "user-1",
+  );
+  const ctx = await createStubExtensionToolContext();
+
+  const list = await tools[4].execute("tool-call", {}, undefined, undefined, ctx);
+  assert.deepEqual(textOf(list).split("\n"), [
+    "ID: signal-1 / 話題: 在庫監視 / 要約: 在庫が3個になりました / 緊急度: today",
+    "ID: signal-2 / 話題: 在庫監視 / 要約: 二つ目 / 緊急度: today",
+  ]);
+
+  const empty = createProactiveTools(
+    createCoordinator(),
+    "channel-a",
+    "owner:123",
+    () => "user-1",
+    "user-1",
+  );
+  const emptyResult = await empty[4].execute("tool-call", {}, undefined, undefined, ctx);
+  assert.equal(textOf(emptyResult), "この会話に保留中の候補はありません。");
+
+  const removed = await tools[5].execute(
+    "tool-call",
+    { id: "signal-1" },
+    undefined,
+    undefined,
+    ctx,
+  );
+  assert.equal(textOf(removed), "候補を取り下げました。");
+  const missing = await tools[5].execute("tool-call", { id: "missing" }, undefined, undefined, ctx);
+  assert.match(textOf(missing), /ありません/u);
+  assert.deepEqual(dismissed, [
+    { channelId: "channel-a", accessScope: "owner:123", id: "signal-1" },
+    { channelId: "channel-a", accessScope: "owner:123", id: "missing" },
   ]);
 });
 
