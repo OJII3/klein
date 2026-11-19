@@ -1,22 +1,22 @@
-export type GuildMemoryScope =
+export type SharedMemoryScope =
   | { readonly type: "guild" }
   | { readonly type: "channel"; readonly channelId: string }
   | { readonly type: "thread"; readonly channelId: string; readonly threadId: string };
 
-export interface GuildMemory {
+export interface SharedMemory {
   readonly facts: readonly string[];
   readonly preferences: readonly string[];
 }
 
-export interface GuildMemoryFile extends GuildMemory {
-  readonly scope: GuildMemoryScope;
+export interface SharedMemoryFile extends SharedMemory {
+  readonly scope: SharedMemoryScope;
   readonly content: string;
   readonly updatedAt: string;
 }
 
-export interface GuildMemoryGuild {
+export interface SharedMemoryGuild {
   readonly guildId: string;
-  readonly files: readonly GuildMemoryFile[];
+  readonly files: readonly SharedMemoryFile[];
 }
 
 export type MemoryScope = { readonly type: "guild"; readonly guildId: string };
@@ -29,12 +29,12 @@ export interface MemoryScopeSummary {
 
 export interface MemoryScopeReader {
   listScopes(): Promise<readonly MemoryScopeSummary[]>;
-  readGuild(guildId: string): Promise<GuildMemoryGuild>;
+  readGuild(guildId: string): Promise<SharedMemoryGuild>;
 }
 
-export interface GuildMemoryEditor {
-  writeFile(guildId: string, scope: GuildMemoryScope, content: string): Promise<void>;
-  deleteFile(guildId: string, scope: GuildMemoryScope): Promise<void>;
+export interface SharedMemoryEditor {
+  writeFile(guildId: string, scope: SharedMemoryScope, content: string): Promise<void>;
+  deleteFile(guildId: string, scope: SharedMemoryScope): Promise<void>;
 }
 
 export const USER_MEMORY_SECTION_KEYS = ["facts", "history", "inCommon", "strengthening"] as const;

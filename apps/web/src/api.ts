@@ -1,9 +1,9 @@
 import { treaty } from "@elysia/eden";
 
 import type {
-  GuildMemoryFile,
-  GuildMemoryGuild,
-  GuildMemoryScope,
+  SharedMemoryFile,
+  SharedMemoryGuild,
+  SharedMemoryScope,
   McpServerUsageStat,
   MemoryScope,
   MemoryScopeSummary,
@@ -23,9 +23,9 @@ import type {
 } from "@klein/webui-api";
 
 export type {
-  GuildMemoryFile,
-  GuildMemoryGuild,
-  GuildMemoryScope,
+  SharedMemoryFile,
+  SharedMemoryGuild,
+  SharedMemoryScope,
   McpServerUsageStat,
   MemoryScope,
   MemoryScopeSummary,
@@ -73,9 +73,9 @@ export interface UserMemoryResponse {
   memory: UserMemory;
 }
 
-export interface GuildMemoryResponse {
+export interface SharedMemoryResponse {
   guildId: string;
-  files: readonly GuildMemoryFile[];
+  files: readonly SharedMemoryFile[];
 }
 
 const apiOrigin = typeof window === "undefined" ? "http://127.0.0.1:4310" : window.location.origin;
@@ -176,13 +176,13 @@ export function getToolUsage(): Promise<ToolUsageReport> {
   return unwrap<ToolUsageReport>(client.api.tools.get());
 }
 
-export function getGuildMemory(guildId: string): Promise<GuildMemoryResponse> {
-  return unwrap<GuildMemoryResponse>(client.api.memory.guild({ guildId }).get());
+export function getSharedMemory(guildId: string): Promise<SharedMemoryResponse> {
+  return unwrap<SharedMemoryResponse>(client.api.memory.guild({ guildId }).get());
 }
 
-export function saveGuildMemoryFile(
+export function saveSharedMemoryFile(
   guildId: string,
-  scope: GuildMemoryScope,
+  scope: SharedMemoryScope,
   content: string,
 ): Promise<{ saved: boolean }> {
   return unwrap<{ saved: boolean }>(
@@ -190,9 +190,9 @@ export function saveGuildMemoryFile(
   );
 }
 
-export function deleteGuildMemoryFile(
+export function deleteSharedMemoryFile(
   guildId: string,
-  scope: GuildMemoryScope,
+  scope: SharedMemoryScope,
 ): Promise<{ deleted: boolean }> {
   return unwrap<{ deleted: boolean }>(client.api.memory.guild({ guildId }).file.delete({ scope }));
 }
@@ -210,7 +210,7 @@ export function memoryScopeKey(scope: MemorySelection): string {
   return `guild:${scope.guildId}`;
 }
 
-export function guildMemoryScopeKey(scope: GuildMemoryScope): string {
+export function sharedMemoryScopeKey(scope: SharedMemoryScope): string {
   if (scope.type === "guild") return "guild";
   if (scope.type === "channel") return `channel:${scope.channelId}`;
   return `thread:${scope.channelId}:${scope.threadId}`;

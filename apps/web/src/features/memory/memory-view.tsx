@@ -2,10 +2,10 @@ import type { ComponentChildren } from "preact";
 import { useEffect, useMemo, useState } from "preact/hooks";
 
 import {
-  guildMemoryScopeKey,
+  sharedMemoryScopeKey,
   memoryScopeKey,
-  type GuildMemoryFile,
-  type GuildMemoryScope,
+  type SharedMemoryFile,
+  type SharedMemoryScope,
   type MemoryScopeSummary,
   type MemorySelection,
   type UserMemory,
@@ -24,7 +24,7 @@ interface MemoryViewProps {
   scopes: readonly MemoryScopeSummary[];
   users: readonly UserMemorySummary[];
   selectedScope: MemorySelection | null;
-  guildMemory: readonly GuildMemoryFile[] | null;
+  sharedMemory: readonly SharedMemoryFile[] | null;
   userMemory: UserMemory | null;
   loading: boolean;
   loadingDetail: boolean;
@@ -36,8 +36,8 @@ interface MemoryViewProps {
   fileError: string | null;
   onSelect: (scope: MemorySelection) => void;
   onDeleteUserMemory: (userId: string) => void;
-  onSaveFile: (scope: GuildMemoryScope, content: string) => Promise<boolean>;
-  onDeleteFile: (scope: GuildMemoryScope) => Promise<boolean>;
+  onSaveFile: (scope: SharedMemoryScope, content: string) => Promise<boolean>;
+  onDeleteFile: (scope: SharedMemoryScope) => Promise<boolean>;
   onDismissFileError: () => void;
   onRetry: () => void;
   onRetryDetail: () => void;
@@ -58,7 +58,7 @@ export function MemoryView(props: MemoryViewProps) {
     scopes,
     users,
     selectedScope,
-    guildMemory,
+    sharedMemory,
     userMemory,
     loading,
     loadingDetail,
@@ -164,7 +164,7 @@ export function MemoryView(props: MemoryViewProps) {
                         subtitle={
                           summary.scope.type === "guild" ? summary.scope.guildId : undefined
                         }
-                        title="ギルドのメモリ"
+                        title="共有メモリ"
                       />
                     ))
                   )}
@@ -220,10 +220,10 @@ export function MemoryView(props: MemoryViewProps) {
                   <EmptyState>ユーザーメモリを読み込めませんでした</EmptyState>
                 )
               ) : selectedScope?.type === "guild" ? (
-                <GuildMemoryDetail
+                <SharedMemoryDetail
                   channelNames={channelNames}
                   deletingFileKey={deletingFileKey}
-                  files={guildMemory ?? []}
+                  files={sharedMemory ?? []}
                   guildId={selectedScope.guildId}
                   onDelete={onDeleteFile}
                   onSave={onSaveFile}
@@ -306,7 +306,7 @@ function ScopeItem({
   );
 }
 
-function GuildMemoryDetail({
+function SharedMemoryDetail({
   files,
   guildId,
   channelNames,
@@ -315,13 +315,13 @@ function GuildMemoryDetail({
   onSave,
   onDelete,
 }: {
-  files: readonly GuildMemoryFile[];
+  files: readonly SharedMemoryFile[];
   guildId: string;
   channelNames: ReadonlyMap<string, string>;
   savingFileKey: string | null;
   deletingFileKey: string | null;
-  onSave: (scope: GuildMemoryScope, content: string) => Promise<boolean>;
-  onDelete: (scope: GuildMemoryScope) => Promise<boolean>;
+  onSave: (scope: SharedMemoryScope, content: string) => Promise<boolean>;
+  onDelete: (scope: SharedMemoryScope) => Promise<boolean>;
 }) {
   const visibleFiles = files.filter((file) => file.content.trim().length > 0);
 
@@ -329,7 +329,7 @@ function GuildMemoryDetail({
     <div className="flex min-w-0 flex-col">
       <header className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-4 py-4">
         <div className="min-w-0">
-          <h2 className="text-[1.05rem] font-semibold text-ink">ギルドのメモリ</h2>
+          <h2 className="text-[1.05rem] font-semibold text-ink">共有メモリ</h2>
           <p className="mt-1 truncate font-mono text-[0.64rem] text-ink-faint">guild {guildId}</p>
         </div>
         <p className="shrink-0 font-mono text-[0.68rem] text-ink-faint">
@@ -338,18 +338,18 @@ function GuildMemoryDetail({
       </header>
 
       {visibleFiles.length === 0 ? (
-        <EmptyState>このギルドのメモリは空です</EmptyState>
+        <EmptyState>このギルドの共有メモリは空です</EmptyState>
       ) : (
         <div className="divide-y divide-line">
           {visibleFiles.map((file) => (
-            <GuildMemoryFileCard
+            <SharedMemoryFileCard
               channelNames={channelNames}
-              deleting={deletingFileKey === guildMemoryScopeKey(file.scope)}
+              deleting={deletingFileKey === sharedMemoryScopeKey(file.scope)}
               file={file}
-              key={guildMemoryScopeKey(file.scope)}
+              key={sharedMemoryScopeKey(file.scope)}
               onDelete={() => onDelete(file.scope)}
               onSave={(content) => onSave(file.scope, content)}
-              saving={savingFileKey === guildMemoryScopeKey(file.scope)}
+              saving={savingFileKey === sharedMemoryScopeKey(file.scope)}
             />
           ))}
         </div>
@@ -358,7 +358,7 @@ function GuildMemoryDetail({
   );
 }
 
-function GuildMemoryFileCard({
+function SharedMemoryFileCard({
   file,
   channelNames,
   saving,
@@ -366,7 +366,7 @@ function GuildMemoryFileCard({
   onSave,
   onDelete,
 }: {
-  file: GuildMemoryFile;
+  file: SharedMemoryFile;
   channelNames: ReadonlyMap<string, string>;
   saving: boolean;
   deleting: boolean;
@@ -380,7 +380,7 @@ function GuildMemoryFileCard({
     if (!editing) setDraft(file.content);
   }, [editing, file.content]);
 
-  const label = guildMemoryScopeLabel(file.scope, channelNames);
+  const label = sharedMemoryScopeLabel(file.scope, channelNames);
 
   return (
     <section className="px-4 py-4">
@@ -388,7 +388,7 @@ function GuildMemoryFileCard({
         <div className="min-w-0">
           <h3 className="text-[0.9rem] font-semibold text-ink">{label}</h3>
           <p className="mt-0.5 font-mono text-[0.62rem] text-ink-faint">
-            {guildMemoryRelativePath(file.scope)} · 更新 {formatCompactTimestamp(file.updatedAt)}
+            {sharedMemoryRelativePath(file.scope)} · 更新 {formatCompactTimestamp(file.updatedAt)}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
@@ -482,14 +482,14 @@ function MemoryItems({ label, items }: { label: string; items: readonly string[]
   );
 }
 
-function guildMemoryRelativePath(scope: GuildMemoryScope): string {
+function sharedMemoryRelativePath(scope: SharedMemoryScope): string {
   if (scope.type === "guild") return "MEMORY.md";
   if (scope.type === "channel") return `${scope.channelId}/MEMORY.md`;
   return `${scope.channelId}/${scope.threadId}/MEMORY.md`;
 }
 
-function guildMemoryScopeLabel(
-  scope: GuildMemoryScope,
+function sharedMemoryScopeLabel(
+  scope: SharedMemoryScope,
   channelNames: ReadonlyMap<string, string>,
 ): string {
   const label = (channelId: string): string => channelNames.get(channelId) ?? channelId;

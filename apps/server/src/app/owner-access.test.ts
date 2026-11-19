@@ -102,7 +102,7 @@ function createHarness(store: ChannelSessionStateStore, channelRule: { access: D
         tools: () => [],
       }),
     channelApi: service,
-    memoryCoordinator: {
+    sharedMemoryCoordinator: {
       async getContext() {
         return "shared memory";
       },

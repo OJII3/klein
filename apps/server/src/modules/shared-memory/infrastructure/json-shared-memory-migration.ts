@@ -6,17 +6,17 @@ import type { Logger } from "pino";
 import { isFileNotFound, isRecord, parseJson } from "@shared/type-guards";
 
 import {
-  guildMemoryScopeKey,
-  isValidGuildMemoryId,
-  type GuildMemory,
-  type GuildMemoryScope,
-} from "../domain/guild-memory";
-import { MarkdownGuildMemoryStore } from "./markdown-guild-memory-store";
+  sharedMemoryScopeKey,
+  isValidSharedMemoryId,
+  type SharedMemory,
+  type SharedMemoryScope,
+} from "../domain/shared-memory";
+import { MarkdownSharedMemoryStore } from "./markdown-shared-memory-store";
 
 const LEGACY_FILE_NAME = "MEMORY.json";
 const MIGRATED_FILE_NAME = "MEMORY.json.migrated";
 
-export async function migrateLegacyGuildMemory(
+export async function migrateLegacySharedMemory(
   directory: string,
   logger?: Pick<Logger, "info" | "warn">,
 ): Promise<void> {
@@ -26,12 +26,12 @@ export async function migrateLegacyGuildMemory(
     entries = await readdir(root, { withFileTypes: true });
   } catch (error) {
     if (isFileNotFound(error)) return;
-    throw new Error(`Failed to list guild memory directory: ${root}`, { cause: error });
+    throw new Error(`Failed to list shared memory directory: ${root}`, { cause: error });
   }
 
-  const store = new MarkdownGuildMemoryStore(root);
+  const store = new MarkdownSharedMemoryStore(root);
   for (const entry of entries) {
-    if (!entry.isDirectory() || !isValidGuildMemoryId(entry.name)) continue;
+    if (!entry.isDirectory() || !isValidSharedMemoryId(entry.name)) continue;
     const legacyPath = join(root, entry.name, LEGACY_FILE_NAME);
 
     let content: string;
@@ -39,7 +39,7 @@ export async function migrateLegacyGuildMemory(
       content = await readFile(legacyPath, "utf8");
     } catch (error) {
       if (isFileNotFound(error)) continue;
-      throw new Error(`Failed to read legacy guild memory file: ${legacyPath}`, { cause: error });
+      throw new Error(`Failed to read legacy shared memory file: ${legacyPath}`, { cause: error });
     }
 
     let legacyEntries;
@@ -47,8 +47,8 @@ export async function migrateLegacyGuildMemory(
       legacyEntries = parseLegacyEntries(content);
     } catch (error) {
       logger?.warn(
-        { err: error, event: "guild_memory_migration_failed", path: legacyPath },
-        "Failed to parse legacy guild memory",
+        { err: error, event: "shared_memory_migration_failed", path: legacyPath },
+        "Failed to parse legacy shared memory",
       );
       continue;
     }
@@ -63,11 +63,11 @@ export async function migrateLegacyGuildMemory(
     await rename(legacyPath, join(root, entry.name, MIGRATED_FILE_NAME));
     logger?.info(
       {
-        event: "guild_memory_migrated",
+        event: "shared_memory_migrated",
         guildId: entry.name,
         scopeCount: memories.length,
       },
-      "Migrated legacy guild memory",
+      "Migrated legacy shared memory",
     );
   }
 }
@@ -87,11 +87,11 @@ function parseLegacyEntries(content: string): LegacyMemoryEntry[] {
   try {
     value = parseJson(content);
   } catch (error) {
-    throw new Error("Legacy guild memory file contains invalid JSON", { cause: error });
+    throw new Error("Legacy shared memory file contains invalid JSON", { cause: error });
   }
 
   if (!isRecord(value) || !Array.isArray(value.entries)) {
-    throw new Error("Legacy guild memory file contains an invalid document");
+    throw new Error("Legacy shared memory file contains an invalid document");
   }
 
   return value.entries.map((entry) => {
@@ -102,7 +102,7 @@ function parseLegacyEntries(content: string): LegacyMemoryEntry[] {
       !isRecord(entry.scope) ||
       typeof entry.scope.type !== "string"
     ) {
-      throw new Error("Legacy guild memory file contains a malformed entry");
+      throw new Error("Legacy shared memory file contains a malformed entry");
     }
 
     return {
@@ -119,17 +119,17 @@ function parseLegacyEntries(content: string): LegacyMemoryEntry[] {
 
 function groupLegacyEntries(
   entries: readonly LegacyMemoryEntry[],
-): { readonly memory: GuildMemory; readonly scope: GuildMemoryScope }[] {
+): { readonly memory: SharedMemory; readonly scope: SharedMemoryScope }[] {
   const groups = new Map<
     string,
-    { readonly scope: GuildMemoryScope; readonly facts: string[]; readonly preferences: string[] }
+    { readonly scope: SharedMemoryScope; readonly facts: string[]; readonly preferences: string[] }
   >();
 
   for (const entry of entries) {
     const scope = parseLegacyScope(entry.scope);
     if (!scope) continue;
 
-    const key = guildMemoryScopeKey(scope);
+    const key = sharedMemoryScopeKey(scope);
     const group = groups.get(key) ?? { facts: [], preferences: [], scope };
     group.facts.push(entry.title ? `${entry.title}: ${entry.content}` : entry.content);
     groups.set(key, group);
@@ -145,17 +145,17 @@ function parseLegacyScope(scope: {
   readonly type: string;
   readonly channelId?: string;
   readonly threadId?: string;
-}): GuildMemoryScope | undefined {
+}): SharedMemoryScope | undefined {
   if (scope.type === "guild") return { type: "guild" };
-  if (scope.type === "channel" && scope.channelId && isValidGuildMemoryId(scope.channelId)) {
+  if (scope.type === "channel" && scope.channelId && isValidSharedMemoryId(scope.channelId)) {
     return { channelId: scope.channelId, type: "channel" };
   }
   if (
     scope.type === "thread" &&
     scope.channelId &&
     scope.threadId &&
-    isValidGuildMemoryId(scope.channelId) &&
-    isValidGuildMemoryId(scope.threadId)
+    isValidSharedMemoryId(scope.channelId) &&
+    isValidSharedMemoryId(scope.threadId)
   ) {
     return { channelId: scope.channelId, threadId: scope.threadId, type: "thread" };
   }

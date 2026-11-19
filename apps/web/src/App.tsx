@@ -107,7 +107,7 @@ export default function App() {
           enabled={memory.enabled}
           error={memory.scopesError}
           fileError={memory.fileError}
-          guildMemory={memory.guildMemory}
+          sharedMemory={memory.sharedMemory}
           loading={memory.scopesLoading}
           loadingDetail={memory.detailLoading}
           onDeleteFile={memory.deleteFile}

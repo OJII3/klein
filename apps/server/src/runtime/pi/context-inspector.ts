@@ -2053,7 +2053,7 @@ function classifyMessageKind(message: Message, customType?: string): string {
     if (text.includes("<image-analysis")) return "image-analysis";
     if (
       text.includes("<user-memory>") ||
-      text.includes("<guild-memory>") ||
+      text.includes("<shared-memory>") ||
       text.includes("<channel-rule>")
     ) {
       return "turn-context";

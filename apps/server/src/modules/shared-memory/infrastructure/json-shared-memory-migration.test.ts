@@ -5,12 +5,12 @@ import test from "node:test";
 
 import { isFileNotFound } from "@shared/type-guards";
 
-import { migrateLegacyGuildMemory } from "./json-guild-memory-migration";
-import { MarkdownGuildMemoryStore } from "./markdown-guild-memory-store";
+import { migrateLegacySharedMemory } from "./json-shared-memory-migration";
+import { MarkdownSharedMemoryStore } from "./markdown-shared-memory-store";
 import { createTempDir } from "../../../testing/temp-dir";
 
 test("migrates legacy JSON entries into per-scope markdown files", async () => {
-  await using temp = await createTempDir("klein-guild-memory-migration-");
+  await using temp = await createTempDir("klein-shared-memory-migration-");
   const guildDirectory = join(temp.path, "guild-a");
   await mkdir(guildDirectory, { recursive: true });
   await writeFile(
@@ -29,9 +29,9 @@ test("migrates legacy JSON entries into per-scope markdown files", async () => {
     "utf8",
   );
 
-  await migrateLegacyGuildMemory(temp.path);
+  await migrateLegacySharedMemory(temp.path);
 
-  const store = new MarkdownGuildMemoryStore(temp.path);
+  const store = new MarkdownSharedMemoryStore(temp.path);
   assert.deepEqual(await store.read("guild-a", { type: "guild" }), {
     facts: ["ギルドの事実: ギルド全体"],
     preferences: [],
@@ -57,12 +57,12 @@ test("migrates legacy JSON entries into per-scope markdown files", async () => {
 });
 
 test("leaves a malformed legacy file untouched", async () => {
-  await using temp = await createTempDir("klein-guild-memory-migration-");
+  await using temp = await createTempDir("klein-shared-memory-migration-");
   const guildDirectory = join(temp.path, "guild-a");
   await mkdir(guildDirectory, { recursive: true });
   await writeFile(join(guildDirectory, "MEMORY.json"), "{", "utf8");
 
-  await migrateLegacyGuildMemory(temp.path);
+  await migrateLegacySharedMemory(temp.path);
 
   await access(join(guildDirectory, "MEMORY.json"));
 });

@@ -4,16 +4,16 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
-  GUILD_MEMORY_FILE_HEADER,
-  MarkdownGuildMemoryStore,
-  parseGuildMemory,
-  renderGuildMemory,
-} from "./markdown-guild-memory-store";
+  SHARED_MEMORY_FILE_HEADER,
+  MarkdownSharedMemoryStore,
+  parseSharedMemory,
+  renderSharedMemory,
+} from "./markdown-shared-memory-store";
 import { createTempDir } from "../../../testing/temp-dir";
 
 test("writes each scope to its own channel or thread directory", async () => {
-  await using temp = await createTempDir("klein-guild-memory-");
-  const store = new MarkdownGuildMemoryStore(temp.path);
+  await using temp = await createTempDir("klein-shared-memory-");
+  const store = new MarkdownSharedMemoryStore(temp.path);
 
   await store.write(
     "guild-a",
@@ -71,9 +71,9 @@ test("writes each scope to its own channel or thread directory", async () => {
   );
 });
 
-test("lists guild memory files with their scopes", async () => {
-  await using temp = await createTempDir("klein-guild-memory-");
-  const store = new MarkdownGuildMemoryStore(temp.path);
+test("lists shared memory files with their scopes", async () => {
+  await using temp = await createTempDir("klein-shared-memory-");
+  const store = new MarkdownSharedMemoryStore(temp.path);
 
   await store.write("guild-a", { type: "guild" }, { facts: ["事実"], preferences: [] });
   await store.write(
@@ -108,8 +108,8 @@ test("lists guild memory files with their scopes", async () => {
 });
 
 test("treats missing files as empty memory and deletes emptied files", async () => {
-  await using temp = await createTempDir("klein-guild-memory-");
-  const store = new MarkdownGuildMemoryStore(temp.path);
+  await using temp = await createTempDir("klein-shared-memory-");
+  const store = new MarkdownSharedMemoryStore(temp.path);
   const scope = { channelId: "channel-1", type: "channel" } as const;
 
   assert.deepEqual(await store.read("guild-a", scope), { facts: [], preferences: [] });
@@ -120,8 +120,8 @@ test("treats missing files as empty memory and deletes emptied files", async () 
 });
 
 test("writes and deletes raw markdown content", async () => {
-  await using temp = await createTempDir("klein-guild-memory-");
-  const store = new MarkdownGuildMemoryStore(temp.path);
+  await using temp = await createTempDir("klein-shared-memory-");
+  const store = new MarkdownSharedMemoryStore(temp.path);
   const scope = { channelId: "channel-1", type: "channel" } as const;
   const content = "# MEMORY.md\n\n## Facts\n\n- 直接編集した事実\n";
 
@@ -136,7 +136,7 @@ test("writes and deletes raw markdown content", async () => {
 
 test("parses loosely structured markdown into facts and preferences", () => {
   assert.deepEqual(
-    parseGuildMemory(`${GUILD_MEMORY_FILE_HEADER}
+    parseSharedMemory(`${SHARED_MEMORY_FILE_HEADER}
 
 Some intro line.
 
@@ -159,8 +159,8 @@ Some intro line.
 
 test("renders the MEMORY.md header and both sections", () => {
   assert.equal(
-    renderGuildMemory({ facts: ["事実"], preferences: ["好み"] }),
-    `${GUILD_MEMORY_FILE_HEADER}
+    renderSharedMemory({ facts: ["事実"], preferences: ["好み"] }),
+    `${SHARED_MEMORY_FILE_HEADER}
 
 ## Facts
 
@@ -174,19 +174,19 @@ test("renders the MEMORY.md header and both sections", () => {
 });
 
 test("rejects unsafe guild, channel, and thread ids", async () => {
-  await using temp = await createTempDir("klein-guild-memory-");
-  const store = new MarkdownGuildMemoryStore(temp.path);
+  await using temp = await createTempDir("klein-shared-memory-");
+  const store = new MarkdownSharedMemoryStore(temp.path);
 
   await assert.rejects(
     store.read("../escape", { type: "guild" }),
-    /Invalid guild memory guild id/u,
+    /Invalid shared memory guild id/u,
   );
   await assert.rejects(
     store.read("guild-a", { channelId: "../escape", type: "channel" }),
-    /Invalid guild memory channel id/u,
+    /Invalid shared memory channel id/u,
   );
   await assert.rejects(
     store.read("guild-a", { channelId: "channel-1", threadId: "../escape", type: "thread" }),
-    /Invalid guild memory thread id/u,
+    /Invalid shared memory thread id/u,
   );
 });

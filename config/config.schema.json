@@ -327,9 +327,9 @@
     },
     "features": {
       "type": "object",
-      "required": ["memory", "minecraft"],
+      "required": ["sharedMemory", "minecraft"],
       "properties": {
-        "memory": {
+        "sharedMemory": {
           "type": "object",
           "required": ["enabled"],
           "properties": {

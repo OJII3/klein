@@ -41,7 +41,7 @@
     }
   },
   "features": {
-    "memory": {
+    "sharedMemory": {
       "enabled": false,
       "directory": ".runtime/memory",
       "llm": {

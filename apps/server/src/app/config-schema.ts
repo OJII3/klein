@@ -73,7 +73,7 @@ const MemoryModelConfigurationSchema = Type.Object(
   { additionalProperties: false },
 );
 
-const MemoryConfigurationSchema = Type.Object(
+const SharedMemoryConfigurationSchema = Type.Object(
   {
     enabled: Type.Boolean(),
     directory: Type.Optional(Type.String({ minLength: 1 })),
@@ -194,7 +194,9 @@ export const ConfigSchema = Type.Object(
     ),
     features: Type.Object(
       {
-        memory: Type.Object(MemoryConfigurationSchema.properties, { additionalProperties: false }),
+        sharedMemory: Type.Object(SharedMemoryConfigurationSchema.properties, {
+          additionalProperties: false,
+        }),
         userMemory: Type.Optional(UserMemoryConfigurationSchema),
         minecraft: Type.Object(
           {

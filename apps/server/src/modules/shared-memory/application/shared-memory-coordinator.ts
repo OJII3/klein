@@ -3,35 +3,35 @@ import type { Logger } from "pino";
 import { formatDiscordMessage, type DiscordMessage } from "@modules/discord/domain/discord-message";
 import { IdleBatchQueue } from "@app/idle-batch-queue";
 import type { TaskCoordinator } from "@app/task-coordinator";
-import { renderGuildMemoryContext } from "../domain/guild-memory-context-renderer";
+import { renderSharedMemoryContext } from "../domain/shared-memory-context-renderer";
 import {
-  guildMemoryScopeKey,
-  type GuildMemoryLocation,
-  type GuildMemoryMessage,
-  type GuildMemoryScope,
-  type GuildMemoryScopeState,
-  type GuildMemorySummary,
-} from "../domain/guild-memory";
-import type { MemoryProcessor } from "../ports/memory-processor";
-import type { GuildMemoryReader, GuildMemoryStore } from "../ports/guild-memory-store";
+  sharedMemoryScopeKey,
+  type SharedMemoryLocation,
+  type SharedMemoryMessage,
+  type SharedMemoryScope,
+  type SharedMemoryScopeState,
+  type SharedMemorySummary,
+} from "../domain/shared-memory";
+import type { SharedMemoryProcessor } from "../ports/shared-memory-processor";
+import type { SharedMemoryReader, SharedMemoryStore } from "../ports/shared-memory-store";
 
-export interface MemoryCoordinatorOptions {
-  readonly store: GuildMemoryStore;
+export interface SharedMemoryCoordinatorOptions {
+  readonly store: SharedMemoryStore;
   readonly idleSeconds: number;
   readonly maxBatchAgeSeconds: number;
   readonly maxBatchMessages: number;
   readonly logger: Logger;
-  readonly processor: MemoryProcessor;
+  readonly processor: SharedMemoryProcessor;
   readonly taskCoordinator: TaskCoordinator;
 }
 
-export class MemoryCoordinator implements GuildMemoryReader {
+export class SharedMemoryCoordinator implements SharedMemoryReader {
   private readonly logger: Logger;
   private readonly queue: IdleBatchQueue<string, DiscordMessage>;
   private readonly guildOperations = new Map<string, Promise<void>>();
   private disposed = false;
 
-  constructor(private readonly options: MemoryCoordinatorOptions) {
+  constructor(private readonly options: SharedMemoryCoordinatorOptions) {
     this.logger = options.logger.child({ component: "memory-coordinator" });
     this.queue = new IdleBatchQueue({
       idleSeconds: options.idleSeconds,
@@ -43,11 +43,11 @@ export class MemoryCoordinator implements GuildMemoryReader {
           {
             durationMs,
             err: error,
-            event: "guild_memory_processing_failed",
+            event: "shared_memory_processing_failed",
             guildId,
             messageCount: batch.length,
           },
-          "Failed to process guild memory",
+          "Failed to process shared memory",
         );
       },
       run: (guildId, messages) => this.processGuild(guildId, messages),
@@ -60,11 +60,11 @@ export class MemoryCoordinator implements GuildMemoryReader {
     this.queue.enqueue(message);
   }
 
-  async getContext(location: GuildMemoryLocation): Promise<string | undefined> {
+  async getContext(location: SharedMemoryLocation): Promise<string | undefined> {
     if (this.disposed) return undefined;
 
     try {
-      const scopes: GuildMemoryScope[] = [
+      const scopes: SharedMemoryScope[] = [
         { type: "guild" },
         { channelId: location.channelId, type: "channel" },
         ...(location.threadId
@@ -83,22 +83,22 @@ export class MemoryCoordinator implements GuildMemoryReader {
           scope,
         })),
       );
-      return renderGuildMemoryContext(states);
+      return renderSharedMemoryContext(states);
     } catch (error) {
       this.logger.warn(
-        { err: error, event: "guild_memory_context_read_failed", guildId: location.guildId },
-        "Failed to read guild memory context",
+        { err: error, event: "shared_memory_context_read_failed", guildId: location.guildId },
+        "Failed to read shared memory context",
       );
       return undefined;
     }
   }
 
-  async listGuilds(): Promise<readonly GuildMemorySummary[]> {
+  async listGuilds(): Promise<readonly SharedMemorySummary[]> {
     if (this.disposed) return [];
 
     const guildIds = await this.options.store.listGuildIds();
     const summaries = await Promise.all(
-      guildIds.map(async (guildId): Promise<GuildMemorySummary | undefined> => {
+      guildIds.map(async (guildId): Promise<SharedMemorySummary | undefined> => {
         const files = await this.options.store.listFiles(guildId);
         if (files.length === 0) return undefined;
         return {
@@ -116,7 +116,7 @@ export class MemoryCoordinator implements GuildMemoryReader {
       }),
     );
 
-    return summaries.filter((summary): summary is GuildMemorySummary => summary !== undefined);
+    return summaries.filter((summary): summary is SharedMemorySummary => summary !== undefined);
   }
 
   async readGuild(guildId: string) {
@@ -124,14 +124,14 @@ export class MemoryCoordinator implements GuildMemoryReader {
     return { files: await this.options.store.listFiles(guildId), guildId };
   }
 
-  writeFile(guildId: string, scope: GuildMemoryScope, content: string): Promise<void> {
+  writeFile(guildId: string, scope: SharedMemoryScope, content: string): Promise<void> {
     if (this.disposed) return Promise.reject(new Error("Memory coordinator is disposed"));
     return this.runGuildOperation(guildId, () =>
       this.options.store.writeContent(guildId, scope, content),
     );
   }
 
-  deleteFile(guildId: string, scope: GuildMemoryScope): Promise<void> {
+  deleteFile(guildId: string, scope: SharedMemoryScope): Promise<void> {
     if (this.disposed) return Promise.reject(new Error("Memory coordinator is disposed"));
     return this.runGuildOperation(guildId, () => this.options.store.delete(guildId, scope));
   }
@@ -153,18 +153,18 @@ export class MemoryCoordinator implements GuildMemoryReader {
       await this.options.processor.process(
         guildId,
         states,
-        messages.map((message) => toGuildMemoryMessage(message)),
+        messages.map((message) => toSharedMemoryMessage(message)),
       );
 
       this.logger.info(
         {
           durationMs: Date.now() - startedAt,
-          event: "guild_memory_processed",
+          event: "shared_memory_processed",
           guildId,
           messageCount: messages.length,
           scopeCount: states.length,
         },
-        "Processed guild memory",
+        "Processed shared memory",
       );
     });
   }
@@ -172,23 +172,23 @@ export class MemoryCoordinator implements GuildMemoryReader {
   private async readScopeStates(
     guildId: string,
     messages: readonly DiscordMessage[],
-  ): Promise<GuildMemoryScopeState[]> {
-    const scopes = new Map<string, GuildMemoryScope>();
-    const guildScope: GuildMemoryScope = { type: "guild" };
-    scopes.set(guildMemoryScopeKey(guildScope), guildScope);
+  ): Promise<SharedMemoryScopeState[]> {
+    const scopes = new Map<string, SharedMemoryScope>();
+    const guildScope: SharedMemoryScope = { type: "guild" };
+    scopes.set(sharedMemoryScopeKey(guildScope), guildScope);
 
     for (const message of messages) {
       const channelId = message.parentChannelId ?? message.channelId;
-      const channelScope: GuildMemoryScope = { channelId, type: "channel" };
-      scopes.set(guildMemoryScopeKey(channelScope), channelScope);
+      const channelScope: SharedMemoryScope = { channelId, type: "channel" };
+      scopes.set(sharedMemoryScopeKey(channelScope), channelScope);
 
       if (message.threadId) {
-        const threadScope: GuildMemoryScope = {
+        const threadScope: SharedMemoryScope = {
           channelId,
           threadId: message.threadId,
           type: "thread",
         };
-        scopes.set(guildMemoryScopeKey(threadScope), threadScope);
+        scopes.set(sharedMemoryScopeKey(threadScope), threadScope);
       }
     }
 
@@ -217,7 +217,7 @@ export class MemoryCoordinator implements GuildMemoryReader {
   }
 }
 
-function toGuildMemoryMessage(message: DiscordMessage): GuildMemoryMessage {
+function toSharedMemoryMessage(message: DiscordMessage): SharedMemoryMessage {
   return {
     channelId: message.channelId,
     content: formatDiscordMessage(message),

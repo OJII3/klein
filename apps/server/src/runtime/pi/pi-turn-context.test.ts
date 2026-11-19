@@ -19,13 +19,13 @@ test("renders turn context in a stable order", () => {
     renderTurnContext({
       userMemory: "user context",
       blocks: [
-        { name: "guild-memory", content: "guild context" },
+        { name: "shared-memory", content: "guild context" },
         { name: "channel-rule", content: "channel rule" },
       ],
     }),
     [
       "<user-memory>\nuser context\n</user-memory>",
-      "<guild-memory>\nguild context\n</guild-memory>",
+      "<shared-memory>\nguild context\n</shared-memory>",
       "<channel-rule>\nchannel rule\n</channel-rule>",
     ].join("\n\n"),
   );

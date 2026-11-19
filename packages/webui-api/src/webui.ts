@@ -1,5 +1,5 @@
 import type {
-  GuildMemoryEditor,
+  SharedMemoryEditor,
   MemoryScopeReader,
   UserMemoryEditor,
   UserMemoryReader,
@@ -19,7 +19,7 @@ export interface WebUiDependencies {
   readonly displayName: string;
   readonly channelNames?: ChannelNameReader;
   readonly memory?: MemoryScopeReader;
-  readonly memoryEditor?: GuildMemoryEditor;
+  readonly memoryEditor?: SharedMemoryEditor;
   readonly userMemory?: UserMemoryReader;
   readonly userMemoryEditor?: UserMemoryEditor;
   readonly pinoLogs: ViewerLogReader;

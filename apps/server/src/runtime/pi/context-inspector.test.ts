@@ -386,7 +386,7 @@ test("records a 👎 feedback case, inspects original trace + raw context, and r
     await agent.promptMessage(
       createDiscordMessage({ id: "u-bad-1", content: "これについて教えて <@bot>" }),
       {
-        guildMemory: "正確な情報だけを答えるチャンネル",
+        sharedMemory: "正確な情報だけを答えるチャンネル",
       },
     );
 

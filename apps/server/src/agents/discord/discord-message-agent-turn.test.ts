@@ -19,7 +19,7 @@ const message: DiscordMessage = {
 };
 
 test("converts Discord messages to AgentTurn and applies bot guidance by option", () => {
-  const context = { guildMemory: "guild context" };
+  const context = { sharedMemory: "guild context" };
   const userTurn = createDiscordMessageAgentTurn(message, context, {
     botMessageGuidance: "Bot guidance",
   });
@@ -30,7 +30,7 @@ test("converts Discord messages to AgentTurn and applies bot guidance by option"
   );
 
   assert.equal(userTurn.event.id, message.id);
-  assert.deepEqual(userTurn.context.blocks, [{ name: "guild-memory", content: "guild context" }]);
+  assert.deepEqual(userTurn.context.blocks, [{ name: "shared-memory", content: "guild context" }]);
   assert.equal(userTurn.context.requesterId, "user-123");
   assert.equal(botTurn.context.requesterId, undefined);
   assert.equal(userTurn.event.content[0]?.type, "text");

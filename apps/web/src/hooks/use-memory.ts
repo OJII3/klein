@@ -1,19 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 
 import {
-  deleteGuildMemoryFile,
+  deleteSharedMemoryFile,
   deleteUserMemory as requestDeleteUserMemory,
-  getGuildMemory,
+  getSharedMemory,
   getUserMemory,
-  guildMemoryScopeKey,
+  sharedMemoryScopeKey,
   listMemoryScopes,
-  type GuildMemoryFile,
-  type GuildMemoryScope,
+  type SharedMemoryFile,
+  type SharedMemoryScope,
   type MemorySelection,
   memoryScopeKey,
   parseMemoryScopeKey,
   type MemoryScopeSummary,
-  saveGuildMemoryFile,
+  saveSharedMemoryFile,
   type UserMemory,
   type UserMemorySummary,
 } from "../api";
@@ -50,7 +50,7 @@ export function useMemory({ active, onUpdated, selectedScopeKey }: UseMemoryOpti
     const firstUser = users[0];
     return firstUser ? { type: "user", userId: firstUser.userId } : null;
   }, [scopes, selectedScope, users]);
-  const [guildMemory, setGuildMemory] = useState<readonly GuildMemoryFile[] | null>(null);
+  const [sharedMemory, setSharedMemory] = useState<readonly SharedMemoryFile[] | null>(null);
   const [userMemory, setUserMemory] = useState<UserMemory | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
@@ -73,7 +73,7 @@ export function useMemory({ active, onUpdated, selectedScopeKey }: UseMemoryOpti
       setScopes(response.items);
       setUsers(response.users);
       if (response.items.length === 0 && response.users.length === 0) {
-        setGuildMemory(null);
+        setSharedMemory(null);
         setUserMemory(null);
       }
       onUpdated();
@@ -112,12 +112,12 @@ export function useMemory({ active, onUpdated, selectedScopeKey }: UseMemoryOpti
         if (effectiveScope.type === "user") {
           const response = await getUserMemory(effectiveScope.userId);
           if (!current) return;
-          setGuildMemory(null);
+          setSharedMemory(null);
           setUserMemory(response.memory);
         } else {
-          const response = await getGuildMemory(effectiveScope.guildId);
+          const response = await getSharedMemory(effectiveScope.guildId);
           if (!current) return;
-          setGuildMemory(response.files);
+          setSharedMemory(response.files);
           setUserMemory(null);
         }
         detailScopeKeyRef.current = scopeKey;
@@ -150,13 +150,13 @@ export function useMemory({ active, onUpdated, selectedScopeKey }: UseMemoryOpti
   }, []);
 
   const saveFile = useCallback(
-    async (scope: GuildMemoryScope, content: string): Promise<boolean> => {
+    async (scope: SharedMemoryScope, content: string): Promise<boolean> => {
       if (effectiveScope?.type !== "guild" || savingFileKey !== null) return false;
-      const key = guildMemoryScopeKey(scope);
+      const key = sharedMemoryScopeKey(scope);
       setSavingFileKey(key);
       setFileError(null);
       try {
-        await saveGuildMemoryFile(effectiveScope.guildId, scope, content);
+        await saveSharedMemoryFile(effectiveScope.guildId, scope, content);
         setDetailReloadKey((value) => value + 1);
         void load();
         return true;
@@ -173,15 +173,15 @@ export function useMemory({ active, onUpdated, selectedScopeKey }: UseMemoryOpti
   );
 
   const deleteFile = useCallback(
-    async (scope: GuildMemoryScope): Promise<boolean> => {
+    async (scope: SharedMemoryScope): Promise<boolean> => {
       if (effectiveScope?.type !== "guild" || deletingFileKey !== null) return false;
-      const key = guildMemoryScopeKey(scope);
+      const key = sharedMemoryScopeKey(scope);
       setDeletingFileKey(key);
       setFileError(null);
       try {
-        await deleteGuildMemoryFile(effectiveScope.guildId, scope);
-        setGuildMemory((current) =>
-          current ? current.filter((file) => guildMemoryScopeKey(file.scope) !== key) : current,
+        await deleteSharedMemoryFile(effectiveScope.guildId, scope);
+        setSharedMemory((current) =>
+          current ? current.filter((file) => sharedMemoryScopeKey(file.scope) !== key) : current,
         );
         void load();
         return true;
@@ -207,7 +207,7 @@ export function useMemory({ active, onUpdated, selectedScopeKey }: UseMemoryOpti
         await requestDeleteUserMemory(userId);
         setUsers((current) => current.filter((user) => user.userId !== userId));
         setUserMemory(null);
-        setGuildMemory(null);
+        setSharedMemory(null);
         void load();
       } catch (requestError) {
         setFileError(
@@ -235,7 +235,7 @@ export function useMemory({ active, onUpdated, selectedScopeKey }: UseMemoryOpti
     scopesLoading,
     scopesError,
     selectedScope: effectiveScope,
-    guildMemory,
+    sharedMemory,
     userMemory,
     detailLoading,
     detailError,

@@ -156,7 +156,7 @@ export function createWebUiApp(dependencies: WebUiDependencies) {
         try {
           return await dependencies.memory.readGuild(params.guildId);
         } catch (error) {
-          return handleRouteError(set, dependencies.logger, error, "Failed to read guild memory");
+          return handleRouteError(set, dependencies.logger, error, "Failed to read shared memory");
         }
       },
       { params: MemoryGuildParamsSchema },
@@ -173,7 +173,7 @@ export function createWebUiApp(dependencies: WebUiDependencies) {
           await dependencies.memoryEditor.writeFile(params.guildId, body.scope, body.content);
           return { saved: true };
         } catch (error) {
-          return handleRouteError(set, dependencies.logger, error, "Failed to save guild memory");
+          return handleRouteError(set, dependencies.logger, error, "Failed to save shared memory");
         }
       },
       { body: MemoryGuildFileBodySchema, params: MemoryGuildParamsSchema },
@@ -190,7 +190,12 @@ export function createWebUiApp(dependencies: WebUiDependencies) {
           await dependencies.memoryEditor.deleteFile(params.guildId, body.scope);
           return { deleted: true };
         } catch (error) {
-          return handleRouteError(set, dependencies.logger, error, "Failed to delete guild memory");
+          return handleRouteError(
+            set,
+            dependencies.logger,
+            error,
+            "Failed to delete shared memory",
+          );
         }
       },
       { body: MemoryGuildDeleteBodySchema, params: MemoryGuildParamsSchema },

@@ -5,51 +5,51 @@ import { dirname, join, resolve } from "node:path";
 import { isFileNotFound } from "@shared/type-guards";
 
 import {
-  guildMemoryRelativePath,
-  guildMemoryScopeKey,
-  isValidGuildMemoryId,
-  type GuildMemory,
-  type GuildMemoryFile,
-  type GuildMemoryScope,
-} from "../domain/guild-memory";
-import type { GuildMemoryStore } from "../ports/guild-memory-store";
+  sharedMemoryRelativePath,
+  sharedMemoryScopeKey,
+  isValidSharedMemoryId,
+  type SharedMemory,
+  type SharedMemoryFile,
+  type SharedMemoryScope,
+} from "../domain/shared-memory";
+import type { SharedMemoryStore } from "../ports/shared-memory-store";
 
 const MEMORY_FILE_NAME = "MEMORY.md";
 
-export const GUILD_MEMORY_FILE_HEADER = `# MEMORY.md
+export const SHARED_MEMORY_FILE_HEADER = `# MEMORY.md
 
 <!-- Your curated long-term memory: durable facts, preferences, and commitments. Keep it tight: promote what lasts here, and leave raw day-to-day detail in your daily notes. -->`;
 
-export class MarkdownGuildMemoryStore implements GuildMemoryStore {
+export class MarkdownSharedMemoryStore implements SharedMemoryStore {
   private readonly directory: string;
 
   constructor(directory: string) {
     this.directory = resolve(directory);
   }
 
-  async read(guildId: string, scope: GuildMemoryScope): Promise<GuildMemory> {
+  async read(guildId: string, scope: SharedMemoryScope): Promise<SharedMemory> {
     const filePath = this.filePath(guildId, scope);
     let content: string;
     try {
       content = await readFile(filePath, "utf8");
     } catch (error) {
-      if (isFileNotFound(error)) return emptyGuildMemory();
-      throw new Error(`Failed to read guild memory file: ${filePath}`, { cause: error });
+      if (isFileNotFound(error)) return emptySharedMemory();
+      throw new Error(`Failed to read shared memory file: ${filePath}`, { cause: error });
     }
 
-    return parseGuildMemory(content);
+    return parseSharedMemory(content);
   }
 
-  async write(guildId: string, scope: GuildMemoryScope, memory: GuildMemory): Promise<void> {
+  async write(guildId: string, scope: SharedMemoryScope, memory: SharedMemory): Promise<void> {
     if (memory.facts.length === 0 && memory.preferences.length === 0) {
       await this.delete(guildId, scope);
       return;
     }
 
-    await this.writeContent(guildId, scope, renderGuildMemory(memory));
+    await this.writeContent(guildId, scope, renderSharedMemory(memory));
   }
 
-  async writeContent(guildId: string, scope: GuildMemoryScope, content: string): Promise<void> {
+  async writeContent(guildId: string, scope: SharedMemoryScope, content: string): Promise<void> {
     if (content.trim().length === 0) {
       await this.delete(guildId, scope);
       return;
@@ -66,19 +66,19 @@ export class MarkdownGuildMemoryStore implements GuildMemoryStore {
     }
   }
 
-  async delete(guildId: string, scope: GuildMemoryScope): Promise<void> {
+  async delete(guildId: string, scope: SharedMemoryScope): Promise<void> {
     const filePath = this.filePath(guildId, scope);
     await unlink(filePath).catch((error: unknown) => {
       if (!isFileNotFound(error)) throw error;
     });
   }
 
-  async listFiles(guildId: string): Promise<readonly GuildMemoryFile[]> {
-    assertGuildMemoryId(guildId, "guild");
+  async listFiles(guildId: string): Promise<readonly SharedMemoryFile[]> {
+    assertSharedMemoryId(guildId, "guild");
     const guildDirectory = join(this.directory, guildId);
-    const files: GuildMemoryFile[] = [];
+    const files: SharedMemoryFile[] = [];
 
-    const guildFile = await readGuildMemoryFile(guildDirectory, { type: "guild" });
+    const guildFile = await readSharedMemoryFile(guildDirectory, { type: "guild" });
     if (guildFile) files.push(guildFile);
 
     let entries;
@@ -86,13 +86,15 @@ export class MarkdownGuildMemoryStore implements GuildMemoryStore {
       entries = await readdir(guildDirectory, { withFileTypes: true });
     } catch (error) {
       if (isFileNotFound(error)) return files;
-      throw new Error(`Failed to list guild memory directory: ${guildDirectory}`, { cause: error });
+      throw new Error(`Failed to list shared memory directory: ${guildDirectory}`, {
+        cause: error,
+      });
     }
 
     for (const entry of entries) {
-      if (!entry.isDirectory() || !isValidGuildMemoryId(entry.name)) continue;
+      if (!entry.isDirectory() || !isValidSharedMemoryId(entry.name)) continue;
       const channelDirectory = join(guildDirectory, entry.name);
-      const channelFile = await readGuildMemoryFile(channelDirectory, {
+      const channelFile = await readSharedMemoryFile(channelDirectory, {
         channelId: entry.name,
         type: "channel",
       });
@@ -109,8 +111,8 @@ export class MarkdownGuildMemoryStore implements GuildMemoryStore {
       }
 
       for (const threadEntry of threadEntries) {
-        if (!threadEntry.isDirectory() || !isValidGuildMemoryId(threadEntry.name)) continue;
-        const threadFile = await readGuildMemoryFile(join(channelDirectory, threadEntry.name), {
+        if (!threadEntry.isDirectory() || !isValidSharedMemoryId(threadEntry.name)) continue;
+        const threadFile = await readSharedMemoryFile(join(channelDirectory, threadEntry.name), {
           channelId: entry.name,
           threadId: threadEntry.name,
           type: "thread",
@@ -122,7 +124,7 @@ export class MarkdownGuildMemoryStore implements GuildMemoryStore {
     return files.toSorted((left, right) => {
       const rankDifference = scopeRank(left.scope) - scopeRank(right.scope);
       if (rankDifference !== 0) return rankDifference;
-      return guildMemoryScopeKey(left.scope).localeCompare(guildMemoryScopeKey(right.scope));
+      return sharedMemoryScopeKey(left.scope).localeCompare(sharedMemoryScopeKey(right.scope));
     });
   }
 
@@ -132,36 +134,38 @@ export class MarkdownGuildMemoryStore implements GuildMemoryStore {
       entries = await readdir(this.directory, { withFileTypes: true });
     } catch (error) {
       if (isFileNotFound(error)) return [];
-      throw new Error(`Failed to list guild memory directory: ${this.directory}`, { cause: error });
+      throw new Error(`Failed to list shared memory directory: ${this.directory}`, {
+        cause: error,
+      });
     }
 
     return entries
-      .filter((entry) => entry.isDirectory() && isValidGuildMemoryId(entry.name))
+      .filter((entry) => entry.isDirectory() && isValidSharedMemoryId(entry.name))
       .map((entry) => entry.name)
       .toSorted((left, right) => left.localeCompare(right));
   }
 
-  private filePath(guildId: string, scope: GuildMemoryScope): string {
-    assertGuildMemoryId(guildId, "guild");
+  private filePath(guildId: string, scope: SharedMemoryScope): string {
+    assertSharedMemoryId(guildId, "guild");
     switch (scope.type) {
       case "guild":
-        return join(this.directory, guildId, guildMemoryRelativePath(scope));
+        return join(this.directory, guildId, sharedMemoryRelativePath(scope));
       case "channel":
-        assertGuildMemoryId(scope.channelId, "channel");
-        return join(this.directory, guildId, guildMemoryRelativePath(scope));
+        assertSharedMemoryId(scope.channelId, "channel");
+        return join(this.directory, guildId, sharedMemoryRelativePath(scope));
       case "thread":
-        assertGuildMemoryId(scope.channelId, "channel");
-        assertGuildMemoryId(scope.threadId, "thread");
-        return join(this.directory, guildId, guildMemoryRelativePath(scope));
+        assertSharedMemoryId(scope.channelId, "channel");
+        assertSharedMemoryId(scope.threadId, "thread");
+        return join(this.directory, guildId, sharedMemoryRelativePath(scope));
       default: {
         const exhaustive: never = scope;
-        throw new Error(`Unsupported guild memory scope: ${String(exhaustive)}`);
+        throw new Error(`Unsupported shared memory scope: ${String(exhaustive)}`);
       }
     }
   }
 }
 
-export function parseGuildMemory(content: string): GuildMemory {
+export function parseSharedMemory(content: string): SharedMemory {
   const facts: string[] = [];
   const preferences: string[] = [];
   let section: "facts" | "preferences" | undefined;
@@ -193,18 +197,18 @@ export function parseGuildMemory(content: string): GuildMemory {
   return { facts: unique(facts), preferences: unique(preferences) };
 }
 
-export function renderGuildMemory(memory: GuildMemory): string {
+export function renderSharedMemory(memory: SharedMemory): string {
   return `${[
-    GUILD_MEMORY_FILE_HEADER,
+    SHARED_MEMORY_FILE_HEADER,
     renderSection("Facts", memory.facts),
     renderSection("Preferences", memory.preferences),
   ].join("\n\n")}\n`;
 }
 
-async function readGuildMemoryFile(
+async function readSharedMemoryFile(
   directory: string,
-  scope: GuildMemoryScope,
-): Promise<GuildMemoryFile | undefined> {
+  scope: SharedMemoryScope,
+): Promise<SharedMemoryFile | undefined> {
   const filePath = join(directory, MEMORY_FILE_NAME);
   let content: string;
   let mtime: Date;
@@ -214,15 +218,15 @@ async function readGuildMemoryFile(
     mtime = fileStat.mtime;
   } catch (error) {
     if (isFileNotFound(error)) return undefined;
-    throw new Error(`Failed to read guild memory file: ${filePath}`, { cause: error });
+    throw new Error(`Failed to read shared memory file: ${filePath}`, { cause: error });
   }
 
-  const memory = parseGuildMemory(content);
+  const memory = parseSharedMemory(content);
   if (memory.facts.length === 0 && memory.preferences.length === 0) return undefined;
   return { ...memory, content, scope, updatedAt: mtime.toISOString() };
 }
 
-function scopeRank(scope: GuildMemoryScope): number {
+function scopeRank(scope: SharedMemoryScope): number {
   switch (scope.type) {
     case "guild":
       return 0;
@@ -232,7 +236,7 @@ function scopeRank(scope: GuildMemoryScope): number {
       return 2;
     default: {
       const exhaustive: never = scope;
-      throw new Error(`Unsupported guild memory scope: ${String(exhaustive)}`);
+      throw new Error(`Unsupported shared memory scope: ${String(exhaustive)}`);
     }
   }
 }
@@ -245,13 +249,13 @@ function renderBullets(items: readonly string[]): string {
   return items.map((item) => `- ${item}`).join("\n");
 }
 
-function emptyGuildMemory(): GuildMemory {
+function emptySharedMemory(): SharedMemory {
   return { facts: [], preferences: [] };
 }
 
-function assertGuildMemoryId(value: string, kind: string): void {
-  if (!isValidGuildMemoryId(value)) {
-    throw new Error(`Invalid guild memory ${kind} id: ${value}`);
+function assertSharedMemoryId(value: string, kind: string): void {
+  if (!isValidSharedMemoryId(value)) {
+    throw new Error(`Invalid shared memory ${kind} id: ${value}`);
   }
 }
 

@@ -164,7 +164,7 @@ async function createWorkspace(root: string, mcpUrl: string): Promise<Workspace>
       llm: { provider: "opencode-go", model: "test-model" },
       runtime: { agentDir },
       discord: { access: { default: "deny", directMessages: "deny" } },
-      features: { memory: { enabled: false }, minecraft: { enabled: false } },
+      features: { sharedMemory: { enabled: false }, minecraft: { enabled: false } },
     }),
   );
   await writeFile(

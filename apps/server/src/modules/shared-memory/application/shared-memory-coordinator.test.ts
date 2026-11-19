@@ -6,22 +6,22 @@ import pino from "pino";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import { TaskCoordinator } from "@app/task-coordinator";
 
-import type { GuildMemoryMessage, GuildMemoryScopeState } from "../domain/guild-memory";
-import { MarkdownGuildMemoryStore } from "../infrastructure/markdown-guild-memory-store";
-import type { MemoryProcessor } from "../ports/memory-processor";
-import { MemoryCoordinator } from "./memory-coordinator";
+import type { SharedMemoryMessage, SharedMemoryScopeState } from "../domain/shared-memory";
+import { MarkdownSharedMemoryStore } from "../infrastructure/markdown-shared-memory-store";
+import type { SharedMemoryProcessor } from "../ports/shared-memory-processor";
+import { SharedMemoryCoordinator } from "./shared-memory-coordinator";
 import { createTempDir } from "../../../testing/temp-dir";
 
-test("batches recent guild messages and keeps guild memory files separate", async () => {
+test("batches recent guild messages and keeps shared memory files separate", async () => {
   await using temp = await createTempDir("klein-memory-");
   const directory = temp.path;
   const processed: string[][] = [];
-  const store = new MarkdownGuildMemoryStore(directory);
-  const processor: MemoryProcessor = {
+  const store = new MarkdownSharedMemoryStore(directory);
+  const processor: SharedMemoryProcessor = {
     async process(
       guildId: string,
-      _scopes: readonly GuildMemoryScopeState[],
-      messages: readonly GuildMemoryMessage[],
+      _scopes: readonly SharedMemoryScopeState[],
+      messages: readonly SharedMemoryMessage[],
     ): Promise<void> {
       processed.push(messages.map((message) => message.id));
       const channelId = messages[0]?.channelId ?? "unknown";
@@ -36,7 +36,7 @@ test("batches recent guild messages and keeps guild memory files separate", asyn
     },
   };
   const taskCoordinator = new TaskCoordinator();
-  const coordinator = new MemoryCoordinator({
+  const coordinator = new SharedMemoryCoordinator({
     store,
     idleSeconds: 0.01,
     logger: pino({ level: "silent" }),
@@ -93,21 +93,21 @@ test("batches recent guild messages and keeps guild memory files separate", asyn
   }
 });
 
-test("flushes pending guild memory when asked", async () => {
+test("flushes pending shared memory when asked", async () => {
   await using temp = await createTempDir("klein-memory-");
   const processed: string[][] = [];
-  const processor: MemoryProcessor = {
+  const processor: SharedMemoryProcessor = {
     async process(
       _guildId: string,
-      _scopes: readonly GuildMemoryScopeState[],
-      messages: readonly GuildMemoryMessage[],
+      _scopes: readonly SharedMemoryScopeState[],
+      messages: readonly SharedMemoryMessage[],
     ): Promise<void> {
       processed.push(messages.map((message) => message.id));
     },
   };
   const taskCoordinator = new TaskCoordinator();
-  const coordinator = new MemoryCoordinator({
-    store: new MarkdownGuildMemoryStore(join(temp.path, "memory")),
+  const coordinator = new SharedMemoryCoordinator({
+    store: new MarkdownSharedMemoryStore(join(temp.path, "memory")),
     idleSeconds: 60,
     logger: pino({ level: "silent" }),
     maxBatchAgeSeconds: 60,
@@ -127,7 +127,7 @@ test("flushes pending guild memory when asked", async () => {
 
 test("passes guild, channel, and thread memory to the processor", async () => {
   await using temp = await createTempDir("klein-memory-");
-  const store = new MarkdownGuildMemoryStore(temp.path);
+  const store = new MarkdownSharedMemoryStore(temp.path);
   await store.write("guild-a", { type: "guild" }, { facts: ["ギルド"], preferences: [] });
   await store.write(
     "guild-a",
@@ -146,14 +146,14 @@ test("passes guild, channel, and thread memory to the processor", async () => {
     },
   );
 
-  let received: readonly GuildMemoryScopeState[] = [];
-  const processor: MemoryProcessor = {
+  let received: readonly SharedMemoryScopeState[] = [];
+  const processor: SharedMemoryProcessor = {
     async process(_guildId, scopes): Promise<void> {
       received = scopes;
     },
   };
   const taskCoordinator = new TaskCoordinator();
-  const coordinator = new MemoryCoordinator({
+  const coordinator = new SharedMemoryCoordinator({
     store,
     idleSeconds: 1,
     logger: pino({ level: "silent" }),
@@ -177,7 +177,7 @@ test("passes guild, channel, and thread memory to the processor", async () => {
       guildId: "guild-a",
       threadId: "thread-1",
     });
-    assert.match(context ?? "", /## Guild\n\n### Facts\n\n- ギルド/u);
+    assert.match(context ?? "", /## Guild-wide\n\n### Facts\n\n- ギルド/u);
     assert.match(context ?? "", /## Channel \(channel-1\)\n\n### Facts\n\n- チャンネル/u);
     assert.match(
       context ?? "",

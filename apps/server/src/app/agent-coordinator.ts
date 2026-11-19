@@ -8,7 +8,7 @@ import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import type { DiscordOperatingState } from "@modules/discord/domain/discord-operating-state";
 import type { DiscordUserDirectory } from "@modules/discord/application/discord-user-directory";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
-import type { MemoryCoordinator } from "@modules/memory/application/memory-coordinator";
+import type { SharedMemoryCoordinator } from "@modules/shared-memory/application/shared-memory-coordinator";
 import type { UserMemoryCoordinator } from "@modules/user-memory/application/user-memory-coordinator";
 import { renderFirstSpeakerUserMemory } from "@modules/user-memory/domain/user-memory-context-renderer";
 import type { UserMemoryStore } from "@modules/user-memory/ports/user-memory-store";
@@ -46,7 +46,7 @@ export interface AgentCoordinatorDependencies {
   readonly channelSessionStateStore?: ChannelSessionStateStore;
   readonly channelRuleStore?: DiscordChannelRuleStore;
   readonly logger: Logger;
-  readonly memoryCoordinator?: Pick<MemoryCoordinator, "getContext" | "enqueue">;
+  readonly sharedMemoryCoordinator?: Pick<SharedMemoryCoordinator, "getContext" | "enqueue">;
   readonly operatingState: DiscordOperatingState;
   readonly scheduledTaskStore?: ScheduledTaskStore;
   readonly userMemoryCoordinator?: Pick<UserMemoryCoordinator, "observe">;
@@ -209,8 +209,8 @@ export class AgentCoordinator {
         accessScope,
         async (agent, state) => {
           const userMemory = await this.resolveFirstSpeakerMemory(message, state.sessionKey);
-          const guildMemory = message.guildId
-            ? await this.dependencies.memoryCoordinator?.getContext({
+          const sharedMemory = message.guildId
+            ? await this.dependencies.sharedMemoryCoordinator?.getContext({
                 channelId: message.parentChannelId ?? message.channelId,
                 guildId: message.guildId,
                 ...(message.threadId ? { threadId: message.threadId } : {}),
@@ -221,7 +221,7 @@ export class AgentCoordinator {
             : undefined;
           await agent.promptMessage(message, {
             userMemory,
-            guildMemory,
+            sharedMemory,
             channelRule,
           });
           logger.debug(
@@ -248,7 +248,7 @@ export class AgentCoordinator {
         "ごめん、今はうまく返答できないみたい。",
       );
     } finally {
-      if (!ownerFeaturesAllowed) this.dependencies.memoryCoordinator?.enqueue(message);
+      if (!ownerFeaturesAllowed) this.dependencies.sharedMemoryCoordinator?.enqueue(message);
     }
   }
 
