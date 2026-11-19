@@ -42,17 +42,20 @@ Klein はチャンネルのメッセージに反応するだけではなく、�
 # Proactive preferences
 
 ## Delivery
+
 - default: attach
 - quiet_hours: 23:00-08:00
 - digest_at: 09:00
 - max_per_day: 3
 
 ## Topics
+
 - weather: mute until 2026-12-01
 - CI failure: allow urgent
 - release: mute
 
 ## Notes
+
 - 作業中は短く。リンクは求められたときだけ。
 ```
 
@@ -68,9 +71,7 @@ Klein はチャンネルのメッセージに反応するだけではなく、�
 type FollowUpStatus = "active" | "notified" | "done" | "orphaned" | "expired" | "dismissed";
 
 type FollowUpWatcher =
-  | { kind: "watch"; id: string }
-  | { kind: "reminder"; id: string }
-  | { kind: "task"; id: string };
+  { kind: "watch"; id: string } | { kind: "reminder"; id: string } | { kind: "task"; id: string };
 
 interface FollowUp {
   version: 1;
@@ -190,9 +191,9 @@ watch の wake と付随タスクの結果を届けるときも同じブロッ�
       "digestAt": "09:00",
       "maxPerDay": 3,
       "publicChannels": false,
-      "promiseGuard": "log"
-    }
-  }
+      "promiseGuard": "log",
+    },
+  },
 }
 ```
 
