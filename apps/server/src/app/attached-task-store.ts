@@ -3,6 +3,7 @@ import { mkdir, readFile, readdir, rename, unlink, writeFile } from "node:fs/pro
 import { resolve } from "node:path";
 
 import type { AttachedTaskScope, AttachedTaskStatus } from "@agents/core/attached-agent";
+import { parseAccessScope } from "@shared/access";
 import { isConversationKey } from "@shared/conversation-key";
 import { isFileNotFound, isRecord, parseJson } from "@shared/type-guards";
 
@@ -78,7 +79,7 @@ function isStoredAttachedTask(value: unknown): value is StoredAttachedTask {
     typeof value.id === "string" &&
     value.id.length > 0 &&
     isConversationKey(value.conversationKey) &&
-    typeof value.accessScope === "string" &&
+    parseAccessScope(value.accessScope) !== undefined &&
     typeof value.ownerFeaturesAllowed === "boolean" &&
     typeof value.prompt === "string" &&
     (value.status === "running" ||

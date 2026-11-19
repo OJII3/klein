@@ -3,6 +3,7 @@ import test from "node:test";
 import pino from "pino";
 
 import type { AttachedTaskScope, AttachedTaskStartInput } from "@agents/core/attached-agent";
+import type { AccessScope } from "@shared/access";
 import type {
   AgentCreationOptions,
   AgentFactory,
@@ -19,7 +20,7 @@ import {
 import type { AttachedTaskStore, StoredAttachedTask } from "./attached-task-store";
 import { TaskCoordinator } from "./task-coordinator";
 
-function scope(channelId: string, accessScope = "public"): AttachedTaskScope {
+function scope(channelId: string, accessScope: AccessScope = "public"): AttachedTaskScope {
   return {
     conversationKey: { kind: "discord", channelId },
     accessScope,
@@ -30,7 +31,7 @@ function startInput(
   channelId: string,
   prompt: string,
   options: {
-    readonly accessScope?: string;
+    readonly accessScope?: AccessScope;
     readonly ownerFeaturesAllowed?: boolean;
     readonly closeAfterResult?: boolean;
   } = {},

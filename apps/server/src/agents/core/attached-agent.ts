@@ -1,3 +1,4 @@
+import type { AccessScope } from "@shared/access";
 import type { ConversationKey } from "@shared/conversation-key";
 
 /**
@@ -24,7 +25,7 @@ export interface AttachedTaskResult {
 
 export interface AttachedTaskScope {
   readonly conversationKey: ConversationKey;
-  readonly accessScope: string;
+  readonly accessScope: AccessScope;
 }
 
 export interface AttachedTaskStartInput extends AttachedTaskScope {

@@ -14,6 +14,7 @@ import type {
   AttachedTaskStartInput,
   AttachedTaskStatus,
 } from "@agents/core/attached-agent";
+import type { AccessScope } from "@shared/access";
 import { isSameConversationKey } from "@shared/conversation-key";
 import type { AttachedTaskStore } from "./attached-task-store";
 import type { ConversationKey } from "./channel-session-state-store";
@@ -49,7 +50,7 @@ export interface AttachedAgentCoordinatorOptions {
   readonly hasOwnedWatches?: (task: AttachedTaskReference) => Promise<boolean>;
   readonly createTools: (
     conversationKey: ConversationKey,
-    accessScope: string,
+    accessScope: AccessScope,
     taskId: string,
     toolContext: AgentToolContext,
   ) => readonly ToolDefinition[];
@@ -60,7 +61,7 @@ export interface AttachedAgentCoordinatorOptions {
 interface AttachedTask {
   readonly id: string;
   readonly conversationKey: ConversationKey;
-  readonly accessScope: string;
+  readonly accessScope: AccessScope;
   readonly ownerFeaturesAllowed: boolean;
   readonly prompt: string;
   readonly createdAt: string;
