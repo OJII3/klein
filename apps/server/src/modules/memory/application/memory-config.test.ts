@@ -18,7 +18,7 @@ function createConfig(overrides: Partial<AppConfig> = {}): AppConfig {
 test("applies the default memory settings", () => {
   assert.deepEqual(resolveMemoryConfig(createConfig()), {
     enabled: false,
-    filePath: ".runtime/memory/{guildId}/MEMORY.json",
+    directory: ".runtime/memory",
     idleSeconds: 180,
     maxBatchAgeSeconds: 1800,
     maxBatchMessages: 32,
@@ -31,7 +31,7 @@ test("keeps configured values", () => {
     features: {
       memory: {
         enabled: true,
-        filePath: "custom/MEMORY.json",
+        directory: "custom/memory",
         idleSeconds: 30,
         maxBatchAgeSeconds: 60,
         maxBatchMessages: 8,
@@ -43,7 +43,7 @@ test("keeps configured values", () => {
 
   assert.deepEqual(resolveMemoryConfig(config), {
     enabled: true,
-    filePath: "custom/MEMORY.json",
+    directory: "custom/memory",
     idleSeconds: 30,
     maxBatchAgeSeconds: 60,
     maxBatchMessages: 8,

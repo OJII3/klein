@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 
-import { JsonMemoryStore, listMemoryGuildIds, renderMemoryDocument } from "./json-memory-store";
-import { renderMemoryContext } from "../domain/memory-context-renderer";
+import { JsonMemoryStore, renderMemoryDocument } from "./json-memory-store";
+import { renderOwnerMemoryContext } from "../domain/memory-context-renderer";
 import { createTempDir } from "../../../testing/temp-dir";
 
 test("applies memory operations to a JSON file", async () => {
@@ -16,9 +16,9 @@ test("applies memory operations to a JSON file", async () => {
   const addResult = await store.apply(
     [
       {
-        content: "このギルドでは毎週金曜日に定例会を行う。",
+        content: "オーナーは土曜日に定例会を行う。",
         kind: "rule",
-        scope: { type: "guild" },
+        scope: { type: "owner" },
         title: "定例会の曜日",
         type: "add",
       },
@@ -32,16 +32,16 @@ test("applies memory operations to a JSON file", async () => {
   assert.deepEqual(addResult.updated, []);
   assert.deepEqual(addResult.deleted, []);
   assert.equal(added.kind, "rule");
-  assert.deepEqual(added.scope, { type: "guild" });
+  assert.deepEqual(added.scope, { type: "owner" });
   assert.deepEqual(added.sourceMessageIds, ["message-1"]);
 
   const updateResult = await store.apply(
     [
       {
-        content: "このギルドでは毎週土曜日に定例会を行う。",
+        content: "オーナーは日曜日に定例会を行う。",
         id: added.id,
         kind: "decision",
-        scope: { channelId: "channel-1", type: "channel" },
+        scope: { type: "owner" },
         title: "定例会の曜日",
         type: "update",
       },
@@ -54,9 +54,8 @@ test("applies memory operations to a JSON file", async () => {
   assert.deepEqual(updateResult.updated, [updated]);
   assert.deepEqual(updateResult.created, []);
   assert.deepEqual(updateResult.deleted, []);
-  assert.equal(updated.content, "このギルドでは毎週土曜日に定例会を行う。");
+  assert.equal(updated.content, "オーナーは日曜日に定例会を行う。");
   assert.equal(updated.kind, "decision");
-  assert.deepEqual(updated.scope, { channelId: "channel-1", type: "channel" });
   assert.deepEqual(updated.sourceMessageIds, ["message-1", "message-2"]);
 
   const deleteResult = await store.apply([{ id: updated.id, type: "delete" }], ["message-3"]);
@@ -93,32 +92,7 @@ test("rejects invalid JSON memory documents", async () => {
   await assert.rejects(store.read(), /invalid JSON/u);
 });
 
-test("lists guilds with persisted memory files", async () => {
-  await using temp = await createTempDir("klein-memory-");
-  const directory = temp.path;
-
-  const filePath = join(directory, "{guildId}", "MEMORY.json");
-  const entry = {
-    content: "本文",
-    createdAt: "2026-09-11T00:00:00.000Z",
-    id: "mem-1",
-    kind: "fact" as const,
-    scope: { type: "guild" as const },
-    sourceMessageIds: [],
-    title: "事実",
-    updatedAt: "2026-09-11T00:00:00.000Z",
-  };
-  await mkdir(join(directory, "guild-a"));
-  await writeFile(
-    join(directory, "guild-a", "MEMORY.json"),
-    renderMemoryDocument({ entries: [entry] }),
-    "utf8",
-  );
-
-  assert.deepEqual(await listMemoryGuildIds(filePath), ["guild-a"]);
-});
-
-test("renders compact guild memory context without storage metadata", () => {
+test("renders compact owner memory context without storage metadata", () => {
   const document = {
     entries: [
       {
@@ -126,7 +100,7 @@ test("renders compact guild memory context without storage metadata", () => {
         createdAt: "2026-09-10T12:30:00.000Z",
         id: "mem-1",
         kind: "rule" as const,
-        scope: { channelId: "channel-1", type: "channel" as const },
+        scope: { type: "owner" as const },
         sourceMessageIds: ["message-1"],
         title: "発言について",
         updatedAt: "2026-10-05T03:26:33.905Z",
@@ -134,15 +108,18 @@ test("renders compact guild memory context without storage metadata", () => {
     ],
   };
 
-  const context = renderMemoryContext(document);
-  assert.match(context, /Shared memory across channels in this guild\./u);
-  assert.match(context, /Kind: rule · Scope: channel · Updated: 2026-10-05/u);
+  const context = renderOwnerMemoryContext(document);
+  assert.match(context, /Shared memory across the owner's communication channels\./u);
+  assert.match(context, /Kind: rule · Updated: 2026-10-05/u);
   assert.match(context, /### 発言について\n\n/u);
   assert.match(context, /本文/u);
-  assert.doesNotMatch(context, /mem-1|message-1|channel-1|createdAt|T03:26:33/u);
+  assert.doesNotMatch(context, /mem-1|message-1|createdAt|T03:26:33/u);
 
-  const processingContext = renderMemoryContext(document, { includeIds: true });
-  assert.match(processingContext, /Scope: channel:channel-1/u);
+  const processingContext = renderOwnerMemoryContext(document, { includeIds: true });
   assert.match(processingContext, /Memory ID: mem-1/u);
   assert.doesNotMatch(processingContext, /message-1|T03:26:33/u);
+});
+
+test("renders a JSON memory document", () => {
+  assert.equal(renderMemoryDocument({ entries: [] }), '{\n  "entries": []\n}\n');
 });

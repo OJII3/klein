@@ -43,7 +43,7 @@
   "features": {
     "memory": {
       "enabled": false,
-      "filePath": ".runtime/memory/{guildId}/MEMORY.json",
+      "directory": ".runtime/memory",
       "llm": {
         "provider": "opencode-go",
         "model": "qwen3.8-flash",

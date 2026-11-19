@@ -3,6 +3,8 @@ import { useMemo, useState } from "preact/hooks";
 
 import {
   memoryScopeKey,
+  type GuildMemoryFile,
+  type GuildMemoryScope,
   type MemoryEntry,
   type MemoryEntryScope,
   type MemoryKind,
@@ -26,6 +28,7 @@ interface MemoryViewProps {
   users: readonly UserMemorySummary[];
   selectedScope: MemorySelection | null;
   entries: readonly MemoryEntry[];
+  guildMemory: readonly GuildMemoryFile[] | null;
   userMemory: UserMemory | null;
   loading: boolean;
   loadingDetail: boolean;
@@ -79,6 +82,7 @@ export function MemoryView(props: MemoryViewProps) {
     users,
     selectedScope,
     entries,
+    guildMemory,
     userMemory,
     loading,
     loadingDetail,
@@ -261,6 +265,12 @@ export function MemoryView(props: MemoryViewProps) {
                 ) : (
                   <EmptyState>ユーザーメモリを読み込めませんでした</EmptyState>
                 )
+              ) : selectedScope?.type === "guild" ? (
+                <GuildMemoryDetail
+                  channelNames={channelNames}
+                  files={guildMemory ?? []}
+                  guildId={selectedScope.guildId}
+                />
               ) : selectedScope ? (
                 <MemoryEntries
                   addingRule={addingRule}
@@ -348,6 +358,85 @@ function ScopeItem({
       <span className="font-mono text-[0.62rem] text-ink-faint">{meta}</span>
     </button>
   );
+}
+
+function GuildMemoryDetail({
+  files,
+  guildId,
+  channelNames,
+}: {
+  files: readonly GuildMemoryFile[];
+  guildId: string;
+  channelNames: ReadonlyMap<string, string>;
+}) {
+  const visibleFiles = files.filter((file) => file.facts.length > 0 || file.preferences.length > 0);
+
+  return (
+    <div className="flex min-w-0 flex-col">
+      <header className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-4 py-4">
+        <div className="min-w-0">
+          <h2 className="text-[1.05rem] font-semibold text-ink">ギルドのメモリ</h2>
+          <p className="mt-1 truncate font-mono text-[0.64rem] text-ink-faint">guild {guildId}</p>
+        </div>
+        <p className="shrink-0 font-mono text-[0.68rem] text-ink-faint">
+          {visibleFiles.length.toLocaleString("ja-JP")} ファイル
+        </p>
+      </header>
+
+      {visibleFiles.length === 0 ? (
+        <EmptyState>このギルドのメモリは空です</EmptyState>
+      ) : (
+        <div className="divide-y divide-line">
+          {visibleFiles.map((file) => (
+            <section className="px-4 py-4" key={guildMemoryScopeKey(file.scope)}>
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <h3 className="text-[0.9rem] font-semibold text-ink">
+                  {guildMemoryScopeLabel(file.scope, channelNames)}
+                </h3>
+                <span className="font-mono text-[0.62rem] text-ink-faint">
+                  更新 {formatCompactTimestamp(file.updatedAt)}
+                </span>
+              </div>
+              <MemoryItems label="Facts" items={file.facts} />
+              <MemoryItems label="Preferences" items={file.preferences} />
+            </section>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MemoryItems({ label, items }: { label: string; items: readonly string[] }) {
+  if (items.length === 0) return null;
+  return (
+    <div className="mt-3">
+      <h4 className="text-[0.66rem] font-medium tracking-wide text-ink-faint">{label}</h4>
+      <ul className="mt-1 list-disc space-y-1 pl-5 text-[0.82rem] leading-6 text-ink-soft">
+        {items.map((item) => (
+          <li className="break-words" key={item}>
+            {item}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function guildMemoryScopeKey(scope: GuildMemoryScope): string {
+  if (scope.type === "guild") return "guild";
+  if (scope.type === "channel") return `channel:${scope.channelId}`;
+  return `thread:${scope.channelId}:${scope.threadId}`;
+}
+
+function guildMemoryScopeLabel(
+  scope: GuildMemoryScope,
+  channelNames: ReadonlyMap<string, string>,
+): string {
+  const label = (channelId: string): string => channelNames.get(channelId) ?? channelId;
+  if (scope.type === "guild") return "ギルド全体";
+  if (scope.type === "channel") return `#${label(scope.channelId)}`;
+  return `${label(scope.threadId)} (#${label(scope.channelId)})`;
 }
 
 function MemoryEntries({

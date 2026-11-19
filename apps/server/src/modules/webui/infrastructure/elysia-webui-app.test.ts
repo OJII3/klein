@@ -68,27 +68,38 @@ test("serves health, logs, Pi sessions, and scoped memory through Elysia", async
           updatedAt: "2026-09-11T00:00:00.000Z",
         },
       ],
-      read: async (scope) => ({
+      read: async () => ({
         entries: [
           {
             content: "本文",
             createdAt: "2026-09-11T00:00:00.000Z",
             id: "mem-1",
             kind: "fact" as const,
-            scope: { type: "guild" as const },
+            scope: { type: "owner" as const },
             sourceMessageIds: [],
-            title: scope.type === "owner" ? "オーナーの事実" : `${scope.guildId} の事実`,
+            title: "オーナーの事実",
             updatedAt: "2026-09-11T00:00:00.000Z",
           },
         ],
       }),
+      readGuild: async (guildId) => ({
+        files: [
+          {
+            facts: ["ギルドの事実"],
+            preferences: [],
+            scope: { type: "guild" as const },
+            updatedAt: "2026-09-11T00:00:00.000Z",
+          },
+        ],
+        guildId,
+      }),
     },
     memoryEditor: {
-      addRule: async (scope) => {
-        assert.ok(scope.type === "owner" || scope.guildId === "guild-a");
+      addRule: async (title, content) => {
+        assert.equal(title, "ルール");
+        assert.equal(content, "内容");
       },
-      deleteEntry: async (scope, entryId) => {
-        assert.deepEqual(scope, { type: "guild", guildId: "guild-a" });
+      deleteEntry: async (entryId) => {
         assert.equal(entryId, "mem-1");
       },
     },
@@ -245,10 +256,12 @@ test("serves health, logs, Pi sessions, and scoped memory through Elysia", async
   const memory = await app.handle(new Request("http://localhost/api/memory/guild/guild-a"));
   assert.equal(memory.status, 200);
   const memoryBody = assertRecord(await readJson(memory));
-  assert.equal(assertRecord(assertArray(memoryBody.entries)[0]).title, "guild-a の事実");
+  assert.equal(memoryBody.guildId, "guild-a");
+  const memoryFile = assertRecord(assertArray(memoryBody.files)[0]);
+  assert.deepEqual(memoryFile.facts, ["ギルドの事実"]);
 
   const deletedMemory = await app.handle(
-    new Request("http://localhost/api/memory/guild/guild-a/mem-1", { method: "DELETE" }),
+    new Request("http://localhost/api/memory/owner/mem-1", { method: "DELETE" }),
   );
   assert.equal(deletedMemory.status, 200);
   assert.deepEqual(await readJson(deletedMemory), { deleted: true });
@@ -274,11 +287,6 @@ test("serves health, logs, Pi sessions, and scoped memory through Elysia", async
     new Request("http://localhost/api/memory/user/not-a-snowflake", { method: "DELETE" }),
   );
   assert.equal(invalidDeletedUserMemory.status, 422);
-
-  const invalidMemoryEntry = await app.handle(
-    new Request("http://localhost/api/memory/guild/guild-a/mem.1", { method: "DELETE" }),
-  );
-  assert.equal(invalidMemoryEntry.status, 422);
 
   const invalid = await app.handle(new Request("http://localhost/api/logs?limit=0"));
   assert.equal(invalid.status, 422);

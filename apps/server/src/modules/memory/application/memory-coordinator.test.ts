@@ -6,12 +6,12 @@ import pino from "pino";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import { TaskCoordinator } from "@app/task-coordinator";
 
-import {
-  MemoryEntryNotFoundError,
-  type MemoryMessage,
-  type MemoryOperation,
-} from "../domain/memory";
-import { JsonGuildMemoryStore, JsonMemoryStore } from "../infrastructure/json-memory-store";
+import type {
+  GuildMemoryMessage,
+  GuildMemoryScopeState,
+  GuildMemoryUpdate,
+} from "../domain/guild-memory";
+import { MarkdownGuildMemoryStore } from "../infrastructure/markdown-guild-memory-store";
 import type { MemoryProcessor } from "../ports/memory-processor";
 import { MemoryCoordinator } from "./memory-coordinator";
 import { createTempDir } from "../../../testing/temp-dir";
@@ -22,24 +22,24 @@ test("batches recent guild messages and keeps guild memory files separate", asyn
   const processed: string[][] = [];
   const processor: MemoryProcessor = {
     async process(
-      _document,
-      messages: readonly MemoryMessage[],
-    ): Promise<readonly MemoryOperation[]> {
+      _scopes: readonly GuildMemoryScopeState[],
+      messages: readonly GuildMemoryMessage[],
+    ): Promise<readonly GuildMemoryUpdate[]> {
       processed.push(messages.map((message) => message.id));
       return [
         {
-          content: `処理済み: ${messages.map((message) => message.id).join(", ")}`,
-          kind: "fact",
+          memory: {
+            facts: [`処理済み: ${messages.map((message) => message.id).join(", ")}`],
+            preferences: [],
+          },
           scope: { channelId: messages[0]?.channelId ?? "unknown", type: "channel" },
-          title: "処理結果",
-          type: "add",
         },
       ];
     },
   };
   const taskCoordinator = new TaskCoordinator();
   const coordinator = new MemoryCoordinator({
-    store: new JsonGuildMemoryStore(join(directory, "{guildId}", "MEMORY.json")),
+    store: new MarkdownGuildMemoryStore(directory),
     idleSeconds: 0.01,
     logger: pino({ level: "silent" }),
     maxBatchAgeSeconds: 1,
@@ -62,35 +62,32 @@ test("batches recent guild messages and keeps guild memory files separate", asyn
       [["message-a1", "message-a2"], ["message-b1"]].toSorted(byFirstId),
     );
     assert.match(
-      (await coordinator.getContext(
-        { channelId: "guild-a-channel", guildId: "guild-a" },
-        "処理済み",
-      )) ?? "",
+      (await coordinator.getContext({
+        channelId: "guild-a-channel",
+        guildId: "guild-a",
+      })) ?? "",
       /message-a1/u,
     );
     assert.equal(
-      await coordinator.getContext({ channelId: "other-channel", guildId: "guild-a" }, "処理済み"),
+      await coordinator.getContext({ channelId: "other-channel", guildId: "guild-a" }),
       undefined,
     );
     assert.match(
-      (await coordinator.getContext(
-        { channelId: "guild-b-channel", guildId: "guild-b" },
-        "処理済み",
-      )) ?? "",
+      (await coordinator.getContext({
+        channelId: "guild-b-channel",
+        guildId: "guild-b",
+      })) ?? "",
       /message-b1/u,
     );
     assert.equal(
-      await coordinator.getContext(
-        { channelId: "guild-c-channel", guildId: "guild-c" },
-        "何もない",
-      ),
+      await coordinator.getContext({ channelId: "guild-c-channel", guildId: "guild-c" }),
       undefined,
     );
     assert.deepEqual(
-      (await coordinator.listGuilds()).map(({ entryCount, guildId }) => ({ entryCount, guildId })),
+      (await coordinator.listGuilds()).map(({ guildId, itemCount }) => ({ guildId, itemCount })),
       [
-        { entryCount: 1, guildId: "guild-a" },
-        { entryCount: 1, guildId: "guild-b" },
+        { guildId: "guild-a", itemCount: 1 },
+        { guildId: "guild-b", itemCount: 1 },
       ],
     );
   } finally {
@@ -103,16 +100,16 @@ test("flushes pending guild memory when asked", async () => {
   const processed: string[][] = [];
   const processor: MemoryProcessor = {
     async process(
-      _document,
-      messages: readonly MemoryMessage[],
-    ): Promise<readonly MemoryOperation[]> {
+      _scopes: readonly GuildMemoryScopeState[],
+      messages: readonly GuildMemoryMessage[],
+    ): Promise<readonly GuildMemoryUpdate[]> {
       processed.push(messages.map((message) => message.id));
       return [];
     },
   };
   const taskCoordinator = new TaskCoordinator();
   const coordinator = new MemoryCoordinator({
-    store: new JsonGuildMemoryStore(join(temp.path, "{guildId}", "MEMORY.json")),
+    store: new MarkdownGuildMemoryStore(join(temp.path, "memory")),
     idleSeconds: 60,
     logger: pino({ level: "silent" }),
     maxBatchAgeSeconds: 60,
@@ -130,44 +127,80 @@ test("flushes pending guild memory when asked", async () => {
   }
 });
 
-test("deletes a persisted memory entry for a guild", async () => {
+test("passes guild, channel, and thread memory to the processor", async () => {
   await using temp = await createTempDir("klein-memory-");
-  const directory = temp.path;
+  const store = new MarkdownGuildMemoryStore(temp.path);
+  await store.write("guild-a", { type: "guild" }, { facts: ["ギルド"], preferences: [] });
+  await store.write(
+    "guild-a",
+    { channelId: "channel-1", type: "channel" },
+    {
+      facts: ["チャンネル"],
+      preferences: [],
+    },
+  );
+  await store.write(
+    "guild-a",
+    { channelId: "channel-1", threadId: "thread-1", type: "thread" },
+    {
+      facts: ["スレッド"],
+      preferences: [],
+    },
+  );
+
+  let received: readonly GuildMemoryScopeState[] = [];
+  const processor: MemoryProcessor = {
+    async process(scopes): Promise<readonly GuildMemoryUpdate[]> {
+      received = scopes;
+      return [];
+    },
+  };
   const taskCoordinator = new TaskCoordinator();
   const coordinator = new MemoryCoordinator({
-    store: new JsonGuildMemoryStore(join(directory, "{guildId}", "MEMORY.json")),
+    store,
     idleSeconds: 1,
     logger: pino({ level: "silent" }),
     maxBatchAgeSeconds: 1,
     maxBatchMessages: 10,
-    processor: {
-      async process(): Promise<readonly MemoryOperation[]> {
-        return [];
-      },
-    },
+    processor,
     taskCoordinator,
   });
 
   try {
-    const store = new JsonMemoryStore(join(directory, "guild-a", "MEMORY.json"));
-    await store.apply(
+    coordinator.enqueue({
+      ...createMessage("guild-a", "message-a1", "スレッド内"),
+      channelId: "thread-1",
+      parentChannelId: "channel-1",
+      threadId: "thread-1",
+    });
+    await coordinator.flush();
+
+    const context = await coordinator.getContext({
+      channelId: "channel-1",
+      guildId: "guild-a",
+      threadId: "thread-1",
+    });
+    assert.match(context ?? "", /## Guild\n\n### Facts\n\n- ギルド/u);
+    assert.match(context ?? "", /## Channel \(channel-1\)\n\n### Facts\n\n- チャンネル/u);
+    assert.match(
+      context ?? "",
+      /## Thread \(thread-1, channel channel-1\)\n\n### Facts\n\n- スレッド/u,
+    );
+
+    assert.deepEqual(
+      received.map(({ memory, scope }) => ({ memory, scope })),
       [
+        { memory: { facts: ["ギルド"], preferences: [] }, scope: { type: "guild" } },
         {
-          content: "削除対象の本文",
-          kind: "fact",
-          scope: { type: "guild" },
-          title: "削除対象",
-          type: "add",
+          memory: { facts: ["チャンネル"], preferences: [] },
+          scope: { channelId: "channel-1", type: "channel" },
+        },
+        {
+          memory: { facts: ["スレッド"], preferences: [] },
+          scope: { channelId: "channel-1", threadId: "thread-1", type: "thread" },
         },
       ],
-      [],
     );
-    const entry = (await store.read()).entries[0];
-    assert.ok(entry);
-
-    await coordinator.deleteEntry("guild-a", entry.id);
-    assert.deepEqual((await store.read()).entries, []);
-    await assert.rejects(coordinator.deleteEntry("guild-a", entry.id), MemoryEntryNotFoundError);
   } finally {
     coordinator.dispose();
   }

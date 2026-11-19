@@ -38,12 +38,6 @@ export interface MemoryScopeSummary {
   readonly updatedAt: string | null;
 }
 
-export interface MemoryGuildSummary {
-  readonly guildId: string;
-  readonly entryCount: number;
-  readonly updatedAt: string | null;
-}
-
 export class MemoryEntryNotFoundError extends Error {
   constructor(scope: MemoryScope, entryId: string) {
     const scopeLabel = scope.type === "owner" ? "owner" : scope.guildId;
@@ -80,12 +74,4 @@ export interface MemoryApplyResult {
   readonly created: readonly MemoryEntry[];
   readonly updated: readonly MemoryEntry[];
   readonly deleted: readonly MemoryEntry[];
-}
-
-export interface MemoryMessage {
-  readonly id: string;
-  readonly channelId: string;
-  readonly parentChannelId?: string;
-  readonly threadId?: string;
-  readonly content: string;
 }

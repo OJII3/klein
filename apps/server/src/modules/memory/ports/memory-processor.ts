@@ -1,8 +1,12 @@
-import type { MemoryDocument, MemoryMessage, MemoryOperation } from "../domain/memory";
+import type {
+  GuildMemoryMessage,
+  GuildMemoryScopeState,
+  GuildMemoryUpdate,
+} from "../domain/guild-memory";
 
 export interface MemoryProcessor {
   process(
-    document: MemoryDocument,
-    messages: readonly MemoryMessage[],
-  ): Promise<readonly MemoryOperation[]>;
+    scopes: readonly GuildMemoryScopeState[],
+    messages: readonly GuildMemoryMessage[],
+  ): Promise<readonly GuildMemoryUpdate[]>;
 }

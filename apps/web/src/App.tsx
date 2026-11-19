@@ -109,6 +109,7 @@ export default function App() {
           addRuleError={memory.addRuleError}
           enabled={memory.enabled}
           entries={memory.entries}
+          guildMemory={memory.guildMemory}
           error={memory.scopesError}
           scopes={memory.scopes}
           users={memory.users}

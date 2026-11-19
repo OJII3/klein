@@ -1,6 +1,9 @@
 import { treaty } from "@elysia/eden";
 
 import type {
+  GuildMemoryFile,
+  GuildMemoryGuild,
+  GuildMemoryScope,
   McpServerUsageStat,
   MemoryEntry,
   MemoryEntryScope,
@@ -23,6 +26,9 @@ import type {
 } from "@klein/webui-api";
 
 export type {
+  GuildMemoryFile,
+  GuildMemoryGuild,
+  GuildMemoryScope,
   McpServerUsageStat,
   MemoryEntry,
   MemoryEntryScope,
@@ -76,6 +82,11 @@ export interface UserMemoryResponse {
 export interface MemoryDetailResponse {
   scope: MemoryScope;
   entries: readonly MemoryEntry[];
+}
+
+export interface GuildMemoryResponse {
+  guildId: string;
+  files: readonly GuildMemoryFile[];
 }
 
 const apiOrigin = typeof window === "undefined" ? "http://127.0.0.1:4310" : window.location.origin;
@@ -176,11 +187,12 @@ export function getToolUsage(): Promise<ToolUsageReport> {
   return unwrap<ToolUsageReport>(client.api.tools.get());
 }
 
-export function getMemory(scope: MemoryScope): Promise<MemoryDetailResponse> {
-  if (scope.type === "owner") {
-    return unwrap<MemoryDetailResponse>(client.api.memory.owner.get());
-  }
-  return unwrap<MemoryDetailResponse>(client.api.memory.guild({ guildId: scope.guildId }).get());
+export function getOwnerMemory(): Promise<MemoryDetailResponse> {
+  return unwrap<MemoryDetailResponse>(client.api.memory.owner.get());
+}
+
+export function getGuildMemory(guildId: string): Promise<GuildMemoryResponse> {
+  return unwrap<GuildMemoryResponse>(client.api.memory.guild({ guildId }).get());
 }
 
 export function getUserMemory(userId: string): Promise<UserMemoryResponse> {
@@ -191,25 +203,15 @@ export function deleteUserMemory(userId: string): Promise<{ deleted: boolean }> 
   return unwrap<{ deleted: boolean }>(client.api.memory.user({ userId }).delete());
 }
 
-export function deleteMemory(scope: MemoryScope, entryId: string): Promise<{ deleted: boolean }> {
-  if (scope.type === "owner") {
-    return unwrap<{ deleted: boolean }>(client.api.memory.owner({ entryId }).delete());
-  }
-  return unwrap<{ deleted: boolean }>(
-    client.api.memory.guild({ guildId: scope.guildId })({ entryId }).delete(),
-  );
+export function deleteOwnerMemoryEntry(entryId: string): Promise<{ deleted: boolean }> {
+  return unwrap<{ deleted: boolean }>(client.api.memory.owner({ entryId }).delete());
 }
 
-export function addMemoryRule(
-  scope: MemoryScope,
-  input: { title: string; content: string },
-): Promise<{ created: boolean }> {
-  if (scope.type === "owner") {
-    return unwrap<{ created: boolean }>(client.api.memory.owner.rules.post(input));
-  }
-  return unwrap<{ created: boolean }>(
-    client.api.memory.guild({ guildId: scope.guildId }).rules.post(input),
-  );
+export function addOwnerMemoryRule(input: {
+  title: string;
+  content: string;
+}): Promise<{ created: boolean }> {
+  return unwrap<{ created: boolean }>(client.api.memory.owner.rules.post(input));
 }
 
 export function memoryScopeKey(scope: MemorySelection): string {

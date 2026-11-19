@@ -3,17 +3,17 @@ import type { Logger } from "pino";
 import { formatDiscordMessage, type DiscordMessage } from "@modules/discord/domain/discord-message";
 import { IdleBatchQueue } from "@app/idle-batch-queue";
 import type { TaskCoordinator } from "@app/task-coordinator";
-import { selectMemoryEntries } from "./memory-context-selector";
-import { renderMemoryContext } from "../domain/memory-context-renderer";
+import { renderGuildMemoryContext } from "../domain/guild-memory-context-renderer";
 import {
-  MemoryEntryNotFoundError,
-  type MemoryDocument,
-  type MemoryGuildSummary,
-  type MemoryLocation,
-  type MemoryMessage,
-} from "../domain/memory";
+  guildMemoryScopeKey,
+  type GuildMemoryLocation,
+  type GuildMemoryMessage,
+  type GuildMemoryScope,
+  type GuildMemoryScopeState,
+  type GuildMemorySummary,
+} from "../domain/guild-memory";
 import type { MemoryProcessor } from "../ports/memory-processor";
-import type { GuildMemoryEditor, GuildMemoryReader, GuildMemoryStore } from "../ports/memory-store";
+import type { GuildMemoryReader, GuildMemoryStore } from "../ports/guild-memory-store";
 
 export interface MemoryCoordinatorOptions {
   readonly store: GuildMemoryStore;
@@ -25,7 +25,7 @@ export interface MemoryCoordinatorOptions {
   readonly taskCoordinator: TaskCoordinator;
 }
 
-export class MemoryCoordinator implements GuildMemoryReader, GuildMemoryEditor {
+export class MemoryCoordinator implements GuildMemoryReader {
   private readonly logger: Logger;
   private readonly queue: IdleBatchQueue<string, DiscordMessage>;
   private readonly guildOperations = new Map<string, Promise<void>>();
@@ -60,15 +60,30 @@ export class MemoryCoordinator implements GuildMemoryReader, GuildMemoryEditor {
     this.queue.enqueue(message);
   }
 
-  async getContext(location: MemoryLocation, query: string): Promise<string | undefined> {
+  async getContext(location: GuildMemoryLocation): Promise<string | undefined> {
     if (this.disposed) return undefined;
 
     try {
-      const document = await this.read(location.guildId);
-      const selectedDocument = selectMemoryEntries(document, query, { location });
-      return selectedDocument.entries.length > 0
-        ? renderMemoryContext(selectedDocument)
-        : undefined;
+      const scopes: GuildMemoryScope[] = [
+        { type: "guild" },
+        { channelId: location.channelId, type: "channel" },
+        ...(location.threadId
+          ? [
+              {
+                channelId: location.channelId,
+                threadId: location.threadId,
+                type: "thread" as const,
+              },
+            ]
+          : []),
+      ];
+      const states = await Promise.all(
+        scopes.map(async (scope) => ({
+          memory: await this.options.store.read(location.guildId, scope),
+          scope,
+        })),
+      );
+      return renderGuildMemoryContext(states);
     } catch (error) {
       this.logger.warn(
         { err: error, event: "guild_memory_context_read_failed", guildId: location.guildId },
@@ -78,49 +93,34 @@ export class MemoryCoordinator implements GuildMemoryReader, GuildMemoryEditor {
     }
   }
 
-  async listGuilds(): Promise<readonly MemoryGuildSummary[]> {
+  async listGuilds(): Promise<readonly GuildMemorySummary[]> {
     if (this.disposed) return [];
 
     const guildIds = await this.options.store.listGuildIds();
-    return Promise.all(
-      guildIds.map(async (guildId) => {
-        const document = await this.read(guildId);
+    const summaries = await Promise.all(
+      guildIds.map(async (guildId): Promise<GuildMemorySummary | undefined> => {
+        const files = await this.options.store.listFiles(guildId);
+        if (files.length === 0) return undefined;
         return {
-          entryCount: document.entries.length,
           guildId,
-          updatedAt: latestUpdatedAt(document),
+          itemCount: files.reduce(
+            (total, file) => total + file.facts.length + file.preferences.length,
+            0,
+          ),
+          updatedAt: files.reduce<string | null>(
+            (latest, file) =>
+              latest === null || file.updatedAt > latest ? file.updatedAt : latest,
+            null,
+          ),
         };
       }),
     );
+
+    return summaries.filter((summary): summary is GuildMemorySummary => summary !== undefined);
   }
 
-  async read(guildId: string): Promise<MemoryDocument> {
-    return this.options.store.forGuild(guildId).read();
-  }
-
-  deleteEntry(guildId: string, entryId: string): Promise<void> {
-    if (this.disposed) return Promise.reject(new Error("Memory coordinator is disposed"));
-
-    return this.runGuildOperation(guildId, async () => {
-      const store = this.options.store.forGuild(guildId);
-      const document = await store.read();
-      if (!document.entries.some((entry) => entry.id === entryId)) {
-        throw new MemoryEntryNotFoundError({ guildId, type: "guild" }, entryId);
-      }
-
-      await store.apply([{ id: entryId, type: "delete" }], []);
-    });
-  }
-
-  addRule(guildId: string, title: string, content: string): Promise<void> {
-    if (this.disposed) return Promise.reject(new Error("Memory coordinator is disposed"));
-    return this.runGuildOperation(guildId, async () => {
-      const store = this.options.store.forGuild(guildId);
-      await store.apply(
-        [{ type: "add", kind: "rule", scope: { type: "guild" }, title, content }],
-        [],
-      );
-    });
+  async readGuild(guildId: string) {
+    return { files: await this.options.store.listFiles(guildId), guildId };
   }
 
   dispose(): void {
@@ -136,27 +136,63 @@ export class MemoryCoordinator implements GuildMemoryReader, GuildMemoryEditor {
   private processGuild(guildId: string, messages: readonly DiscordMessage[]): Promise<void> {
     const startedAt = Date.now();
     return this.runGuildOperation(guildId, async () => {
-      const store = this.options.store.forGuild(guildId);
-      const document = await store.read();
-      const operations = await this.options.processor.process(
-        document,
-        messages.map((message) => toMemoryMessage(message)),
+      const states = await this.readScopeStates(guildId, messages);
+      const updates = await this.options.processor.process(
+        states,
+        messages.map((message) => toGuildMemoryMessage(message)),
       );
-      await store.apply(
-        operations,
-        messages.map((message) => message.id),
-      );
+      const knownScopes = new Set(states.map(({ scope }) => guildMemoryScopeKey(scope)));
+
+      for (const update of updates) {
+        const key = guildMemoryScopeKey(update.scope);
+        if (!knownScopes.has(key)) {
+          throw new Error(`Memory processing returned an unknown scope: ${key}`);
+        }
+        await this.options.store.write(guildId, update.scope, update.memory);
+      }
+
       this.logger.info(
         {
           durationMs: Date.now() - startedAt,
           event: "guild_memory_processed",
           guildId,
           messageCount: messages.length,
-          operationCount: operations.filter((operation) => operation.type !== "noop").length,
+          updateCount: updates.length,
         },
         "Processed guild memory",
       );
     });
+  }
+
+  private async readScopeStates(
+    guildId: string,
+    messages: readonly DiscordMessage[],
+  ): Promise<GuildMemoryScopeState[]> {
+    const scopes = new Map<string, GuildMemoryScope>();
+    const guildScope: GuildMemoryScope = { type: "guild" };
+    scopes.set(guildMemoryScopeKey(guildScope), guildScope);
+
+    for (const message of messages) {
+      const channelId = message.parentChannelId ?? message.channelId;
+      const channelScope: GuildMemoryScope = { channelId, type: "channel" };
+      scopes.set(guildMemoryScopeKey(channelScope), channelScope);
+
+      if (message.threadId) {
+        const threadScope: GuildMemoryScope = {
+          channelId,
+          threadId: message.threadId,
+          type: "thread",
+        };
+        scopes.set(guildMemoryScopeKey(threadScope), threadScope);
+      }
+    }
+
+    return Promise.all(
+      [...scopes.values()].map(async (scope) => ({
+        memory: await this.options.store.read(guildId, scope),
+        scope,
+      })),
+    );
   }
 
   private runGuildOperation(guildId: string, operation: () => Promise<void>): Promise<void> {
@@ -176,7 +212,7 @@ export class MemoryCoordinator implements GuildMemoryReader, GuildMemoryEditor {
   }
 }
 
-function toMemoryMessage(message: DiscordMessage): MemoryMessage {
+function toGuildMemoryMessage(message: DiscordMessage): GuildMemoryMessage {
   return {
     channelId: message.channelId,
     content: formatDiscordMessage(message),
@@ -184,11 +220,4 @@ function toMemoryMessage(message: DiscordMessage): MemoryMessage {
     ...(message.parentChannelId ? { parentChannelId: message.parentChannelId } : {}),
     ...(message.threadId ? { threadId: message.threadId } : {}),
   };
-}
-
-function latestUpdatedAt(document: MemoryDocument): string | null {
-  return document.entries.reduce<string | null>(
-    (latest, entry) => (latest === null || entry.updatedAt > latest ? entry.updatedAt : latest),
-    null,
-  );
 }

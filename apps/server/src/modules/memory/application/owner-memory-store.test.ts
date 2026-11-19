@@ -62,8 +62,8 @@ test("OwnerMemoryStore supports CRUD, context selection, and WebUI access", asyn
     },
   ]);
 
-  await accessor.deleteEntry({ type: "owner" }, tempEntry.id);
-  const afterDelete = await accessor.read({ type: "owner" });
+  await accessor.deleteEntry(tempEntry.id);
+  const afterDelete = await accessor.read();
   assert.deepEqual(
     afterDelete.entries.map((entry) => entry.id),
     [ruleEntry.id],

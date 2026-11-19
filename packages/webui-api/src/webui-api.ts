@@ -2,7 +2,6 @@ import { Elysia } from "elysia";
 
 import {
   LogsQuerySchema,
-  MemoryGuildEntryParamsSchema,
   MemoryGuildParamsSchema,
   MemoryOwnerEntryParamsSchema,
   MemoryRuleBodySchema,
@@ -153,9 +152,8 @@ export function createWebUiApp(dependencies: WebUiDependencies) {
       }
 
       try {
-        const scope = { type: "owner" } as const;
-        const document = await dependencies.memory.read(scope);
-        return { entries: document.entries, scope };
+        const document = await dependencies.memory.read();
+        return { entries: document.entries, scope: { type: "owner" } as const };
       } catch (error) {
         return handleRouteError(set, dependencies.logger, error, "Failed to read owner memory");
       }
@@ -169,9 +167,7 @@ export function createWebUiApp(dependencies: WebUiDependencies) {
         }
 
         try {
-          const scope = { guildId: params.guildId, type: "guild" } as const;
-          const document = await dependencies.memory.read(scope);
-          return { entries: document.entries, scope };
+          return await dependencies.memory.readGuild(params.guildId);
         } catch (error) {
           return handleRouteError(set, dependencies.logger, error, "Failed to read guild memory");
         }
@@ -191,7 +187,7 @@ export function createWebUiApp(dependencies: WebUiDependencies) {
         }
 
         try {
-          await dependencies.memoryEditor.deleteEntry({ type: "owner" }, params.entryId);
+          await dependencies.memoryEditor.deleteEntry(params.entryId);
           return { deleted: true };
         } catch (error) {
           if (isMemoryNotFound(dependencies, error)) {
@@ -211,11 +207,7 @@ export function createWebUiApp(dependencies: WebUiDependencies) {
           return { error: "Memory editing is disabled" };
         }
         try {
-          await dependencies.memoryEditor.addRule(
-            { type: "owner" },
-            body.title.trim(),
-            body.content.trim(),
-          );
+          await dependencies.memoryEditor.addRule(body.title.trim(), body.content.trim());
           return { created: true };
         } catch (error) {
           return handleRouteError(
@@ -227,59 +219,6 @@ export function createWebUiApp(dependencies: WebUiDependencies) {
         }
       },
       { body: MemoryRuleBodySchema },
-    )
-    .delete(
-      "/api/memory/guild/:guildId/:entryId",
-      async ({ params, set }) => {
-        if (!dependencies.memory) {
-          set.status = 404;
-          return { error: "Memory is disabled" };
-        }
-        if (!dependencies.memoryEditor) {
-          set.status = 405;
-          return { error: "Memory editing is disabled" };
-        }
-
-        try {
-          await dependencies.memoryEditor.deleteEntry(
-            { guildId: params.guildId, type: "guild" },
-            params.entryId,
-          );
-          return { deleted: true };
-        } catch (error) {
-          if (isMemoryNotFound(dependencies, error)) {
-            set.status = 404;
-            return { error: "Memory entry not found" };
-          }
-          return handleRouteError(set, dependencies.logger, error, "Failed to delete guild memory");
-        }
-      },
-      { params: MemoryGuildEntryParamsSchema },
-    )
-    .post(
-      "/api/memory/guild/:guildId/rules",
-      async ({ params, body, set }) => {
-        if (!dependencies.memory || !dependencies.memoryEditor) {
-          set.status = 404;
-          return { error: "Memory editing is disabled" };
-        }
-        try {
-          await dependencies.memoryEditor.addRule(
-            { guildId: params.guildId, type: "guild" },
-            body.title.trim(),
-            body.content.trim(),
-          );
-          return { created: true };
-        } catch (error) {
-          return handleRouteError(
-            set,
-            dependencies.logger,
-            error,
-            "Failed to add guild memory rule",
-          );
-        }
-      },
-      { params: MemoryGuildParamsSchema, body: MemoryRuleBodySchema },
     );
 }
 

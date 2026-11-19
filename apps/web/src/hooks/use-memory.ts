@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 
 import {
-  deleteMemory,
+  addOwnerMemoryRule,
+  deleteOwnerMemoryEntry,
   deleteUserMemory as requestDeleteUserMemory,
-  addMemoryRule,
-  getMemory,
+  getGuildMemory,
+  getOwnerMemory,
   getUserMemory,
   listMemoryScopes,
+  type GuildMemoryFile,
   type MemoryEntry,
   type MemorySelection,
   memoryScopeKey,
@@ -49,6 +51,7 @@ export function useMemory({ active, onUpdated, selectedScopeKey }: UseMemoryOpti
     return firstUser ? { type: "user", userId: firstUser.userId } : null;
   }, [scopes, selectedScope, users]);
   const [entries, setEntries] = useState<readonly MemoryEntry[]>([]);
+  const [guildMemory, setGuildMemory] = useState<readonly GuildMemoryFile[] | null>(null);
   const [userMemory, setUserMemory] = useState<UserMemory | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
@@ -73,6 +76,7 @@ export function useMemory({ active, onUpdated, selectedScopeKey }: UseMemoryOpti
       setUsers(response.users);
       if (response.items.length === 0 && response.users.length === 0) {
         setEntries([]);
+        setGuildMemory(null);
         setUserMemory(null);
       }
       onUpdated();
@@ -112,11 +116,19 @@ export function useMemory({ active, onUpdated, selectedScopeKey }: UseMemoryOpti
           const response = await getUserMemory(effectiveScope.userId);
           if (!current) return;
           setEntries([]);
+          setGuildMemory(null);
           setUserMemory(response.memory);
-        } else {
-          const response = await getMemory(effectiveScope);
+        } else if (effectiveScope.type === "owner") {
+          const response = await getOwnerMemory();
           if (!current) return;
           setEntries(response.entries);
+          setGuildMemory(null);
+          setUserMemory(null);
+        } else {
+          const response = await getGuildMemory(effectiveScope.guildId);
+          if (!current) return;
+          setEntries([]);
+          setGuildMemory(response.files);
           setUserMemory(null);
         }
         detailScopeKeyRef.current = scopeKey;
@@ -150,11 +162,11 @@ export function useMemory({ active, onUpdated, selectedScopeKey }: UseMemoryOpti
 
   const createRule = useCallback(
     async (title: string, content: string) => {
-      if (!effectiveScope || effectiveScope.type === "user" || addingRule) return;
+      if (effectiveScope?.type !== "owner" || addingRule) return;
       setAddingRule(true);
       setAddRuleError(null);
       try {
-        await addMemoryRule(effectiveScope, { title, content });
+        await addOwnerMemoryRule({ title, content });
         setDetailReloadKey((key) => key + 1);
         void load();
       } catch (requestError) {
@@ -170,12 +182,12 @@ export function useMemory({ active, onUpdated, selectedScopeKey }: UseMemoryOpti
 
   const deleteEntry = useCallback(
     async (entryId: string) => {
-      if (!effectiveScope || effectiveScope.type === "user" || deletingEntryId) return;
+      if (effectiveScope?.type !== "owner" || deletingEntryId) return;
 
       setDeletingEntryId(entryId);
       setDeleteError(null);
       try {
-        await deleteMemory(effectiveScope, entryId);
+        await deleteOwnerMemoryEntry(entryId);
         setEntries((current) => current.filter((entry) => entry.id !== entryId));
         void load();
       } catch (requestError) {
@@ -200,6 +212,7 @@ export function useMemory({ active, onUpdated, selectedScopeKey }: UseMemoryOpti
         setUsers((current) => current.filter((user) => user.userId !== userId));
         setUserMemory(null);
         setEntries([]);
+        setGuildMemory(null);
         void load();
       } catch (requestError) {
         setDeleteError(
@@ -228,6 +241,7 @@ export function useMemory({ active, onUpdated, selectedScopeKey }: UseMemoryOpti
     scopesError,
     selectedScope: effectiveScope,
     entries,
+    guildMemory,
     userMemory,
     detailLoading,
     detailError,

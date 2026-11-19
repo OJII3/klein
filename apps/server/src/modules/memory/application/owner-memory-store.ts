@@ -5,17 +5,11 @@ import {
   type MemoryEntry,
   type MemoryKind,
   type MemoryOperation,
-  type MemoryScope,
   type MemoryScopeSummary,
 } from "../domain/memory";
 import { renderOwnerMemoryContext } from "../domain/memory-context-renderer";
-import type {
-  GuildMemoryEditor,
-  GuildMemoryReader,
-  MemoryScopeEditor,
-  MemoryScopeReader,
-  MemoryStore,
-} from "../ports/memory-store";
+import type { GuildMemoryGuild, GuildMemoryReader } from "../ports/guild-memory-store";
+import type { MemoryStore, OwnerMemoryEditor, OwnerMemoryReader } from "../ports/memory-store";
 import { selectMemoryEntries } from "./memory-context-selector";
 
 const DEFAULT_RECENT_FALLBACK_LIMIT = 5;
@@ -173,10 +167,15 @@ export function selectOwnerMemoryEntries(
   return { entries };
 }
 
+export interface WebUiMemoryAccessor extends OwnerMemoryReader, OwnerMemoryEditor {
+  listScopes(): Promise<readonly MemoryScopeSummary[]>;
+  readGuild(guildId: string): Promise<GuildMemoryGuild>;
+}
+
 export function createWebUiMemoryAccessor(
   ownerMemory?: OwnerMemoryStore,
-  guildMemory?: GuildMemoryReader & GuildMemoryEditor,
-): MemoryScopeReader & MemoryScopeEditor {
+  guildMemory?: GuildMemoryReader,
+): WebUiMemoryAccessor {
   return {
     async listScopes(): Promise<readonly MemoryScopeSummary[]> {
       const ownerSummaries = ownerMemory
@@ -184,38 +183,27 @@ export function createWebUiMemoryAccessor(
         : [];
       const guildSummaries = guildMemory
         ? (await guildMemory.listGuilds()).map((summary): MemoryScopeSummary => ({
-            entryCount: summary.entryCount,
+            entryCount: summary.itemCount,
             scope: { guildId: summary.guildId, type: "guild" },
             updatedAt: summary.updatedAt,
           }))
         : [];
       return [...ownerSummaries, ...guildSummaries];
     },
-    async read(scope: MemoryScope): Promise<MemoryDocument> {
-      if (scope.type === "owner") {
-        return ownerMemory ? ownerMemory.read() : { entries: [] };
-      }
-      if (!guildMemory) return { entries: [] };
-      return guildMemory.read(scope.guildId);
+    async read(): Promise<MemoryDocument> {
+      return ownerMemory ? ownerMemory.read() : { entries: [] };
     },
-    async addRule(scope: MemoryScope, title: string, content: string): Promise<void> {
-      if (scope.type === "owner") {
-        if (!ownerMemory) throw new Error("Owner memory is disabled");
-        await ownerMemory.addEntry({ kind: "rule", title, content, sourceId: "webui" });
-        return;
-      }
-      if (!guildMemory) throw new Error("Guild memory is disabled");
-      await guildMemory.addRule(scope.guildId, title, content);
+    async readGuild(guildId: string): Promise<GuildMemoryGuild> {
+      return guildMemory ? guildMemory.readGuild(guildId) : { files: [], guildId };
     },
-    async deleteEntry(scope: MemoryScope, entryId: string): Promise<void> {
-      if (scope.type === "owner") {
-        if (!ownerMemory || !(await ownerMemory.deleteEntry(entryId))) {
-          throw new MemoryEntryNotFoundError(scope, entryId);
-        }
-        return;
+    async addRule(title: string, content: string): Promise<void> {
+      if (!ownerMemory) throw new Error("Owner memory is disabled");
+      await ownerMemory.addEntry({ kind: "rule", title, content, sourceId: "webui" });
+    },
+    async deleteEntry(entryId: string): Promise<void> {
+      if (!ownerMemory || !(await ownerMemory.deleteEntry(entryId))) {
+        throw new MemoryEntryNotFoundError({ type: "owner" }, entryId);
       }
-      if (!guildMemory) throw new MemoryEntryNotFoundError(scope, entryId);
-      await guildMemory.deleteEntry(scope.guildId, entryId);
     },
   };
 }

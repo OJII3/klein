@@ -1,0 +1,174 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import test from "node:test";
+
+import {
+  GUILD_MEMORY_FILE_HEADER,
+  MarkdownGuildMemoryStore,
+  parseGuildMemory,
+  renderGuildMemory,
+} from "./markdown-guild-memory-store";
+import { createTempDir } from "../../../testing/temp-dir";
+
+test("writes each scope to its own channel or thread directory", async () => {
+  await using temp = await createTempDir("klein-guild-memory-");
+  const store = new MarkdownGuildMemoryStore(temp.path);
+
+  await store.write(
+    "guild-a",
+    { type: "guild" },
+    {
+      facts: ["ギルド全体の事実"],
+      preferences: ["丁寧な口調を好む"],
+    },
+  );
+  await store.write(
+    "guild-a",
+    { channelId: "channel-1", type: "channel" },
+    {
+      facts: ["チャンネルの事実"],
+      preferences: [],
+    },
+  );
+  await store.write(
+    "guild-a",
+    { channelId: "channel-1", threadId: "thread-1", type: "thread" },
+    {
+      facts: [],
+      preferences: ["スレッドの好み"],
+    },
+  );
+
+  assert.deepEqual(await store.read("guild-a", { type: "guild" }), {
+    facts: ["ギルド全体の事実"],
+    preferences: ["丁寧な口調を好む"],
+  });
+  assert.deepEqual(await store.read("guild-a", { channelId: "channel-1", type: "channel" }), {
+    facts: ["チャンネルの事実"],
+    preferences: [],
+  });
+  assert.deepEqual(
+    await store.read("guild-a", {
+      channelId: "channel-1",
+      threadId: "thread-1",
+      type: "thread",
+    }),
+    { facts: [], preferences: ["スレッドの好み"] },
+  );
+
+  assert.match(
+    await readFile(join(temp.path, "guild-a", "MEMORY.md"), "utf8"),
+    /^# MEMORY\.md\n\n<!-- Your curated long-term memory/u,
+  );
+  assert.match(
+    await readFile(join(temp.path, "guild-a", "channel-1", "MEMORY.md"), "utf8"),
+    /## Facts\n\n- チャンネルの事実/u,
+  );
+  assert.match(
+    await readFile(join(temp.path, "guild-a", "channel-1", "thread-1", "MEMORY.md"), "utf8"),
+    /## Preferences\n\n- スレッドの好み/u,
+  );
+});
+
+test("lists guild memory files with their scopes", async () => {
+  await using temp = await createTempDir("klein-guild-memory-");
+  const store = new MarkdownGuildMemoryStore(temp.path);
+
+  await store.write("guild-a", { type: "guild" }, { facts: ["事実"], preferences: [] });
+  await store.write(
+    "guild-a",
+    { channelId: "channel-1", type: "channel" },
+    {
+      facts: ["チャンネル"],
+      preferences: ["好み"],
+    },
+  );
+  await store.write(
+    "guild-a",
+    { channelId: "channel-1", threadId: "thread-1", type: "thread" },
+    {
+      facts: ["スレッド"],
+      preferences: [],
+    },
+  );
+
+  assert.deepEqual(
+    (await store.listFiles("guild-a")).map(({ scope }) => scope),
+    [
+      { type: "guild" },
+      { channelId: "channel-1", type: "channel" },
+      { channelId: "channel-1", threadId: "thread-1", type: "thread" },
+    ],
+  );
+  assert.deepEqual(await store.listGuildIds(), ["guild-a"]);
+});
+
+test("treats missing files as empty memory and deletes emptied files", async () => {
+  await using temp = await createTempDir("klein-guild-memory-");
+  const store = new MarkdownGuildMemoryStore(temp.path);
+  const scope = { channelId: "channel-1", type: "channel" } as const;
+
+  assert.deepEqual(await store.read("guild-a", scope), { facts: [], preferences: [] });
+  await store.write("guild-a", scope, { facts: ["事実"], preferences: [] });
+  await store.write("guild-a", scope, { facts: [], preferences: [] });
+  assert.deepEqual(await store.read("guild-a", scope), { facts: [], preferences: [] });
+  assert.deepEqual(await store.listFiles("guild-a"), []);
+});
+
+test("parses loosely structured markdown into facts and preferences", () => {
+  assert.deepEqual(
+    parseGuildMemory(`${GUILD_MEMORY_FILE_HEADER}
+
+Some intro line.
+
+## Facts
+
+- 箇条書きの事実
+* アスタリスクの事実
+飾りなしの事実
+
+## Preferences
+
++ 好み
+`),
+    {
+      facts: ["箇条書きの事実", "アスタリスクの事実", "飾りなしの事実"],
+      preferences: ["好み"],
+    },
+  );
+});
+
+test("renders the MEMORY.md header and both sections", () => {
+  assert.equal(
+    renderGuildMemory({ facts: ["事実"], preferences: ["好み"] }),
+    `${GUILD_MEMORY_FILE_HEADER}
+
+## Facts
+
+- 事実
+
+## Preferences
+
+- 好み
+`,
+  );
+});
+
+test("rejects unsafe guild, channel, and thread ids", async () => {
+  await using temp = await createTempDir("klein-guild-memory-");
+  const store = new MarkdownGuildMemoryStore(temp.path);
+
+  await assert.rejects(
+    store.read("../escape", { type: "guild" }),
+    /Invalid guild memory guild id/u,
+  );
+  await assert.rejects(
+    store.read("guild-a", { channelId: "../escape", type: "channel" }),
+    /Invalid guild memory channel id/u,
+  );
+  await assert.rejects(
+    store.read("guild-a", { channelId: "channel-1", threadId: "../escape", type: "thread" }),
+    /Invalid guild memory thread id/u,
+  );
+});

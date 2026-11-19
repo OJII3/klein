@@ -1,6 +1,6 @@
-import { mkdir, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
-import { basename, dirname, resolve, sep } from "node:path";
+import { dirname, resolve } from "node:path";
 
 import { isFileNotFound, isRecord, parseJson } from "@shared/type-guards";
 
@@ -13,9 +13,7 @@ import {
   type MemoryKind,
   type MemoryOperation,
 } from "../domain/memory";
-import type { GuildMemoryStore, MemoryStore } from "../ports/memory-store";
-
-const MEMORY_GUILD_ID_TOKEN = "{guildId}";
+import type { MemoryStore } from "../ports/memory-store";
 
 export class JsonMemoryStore implements MemoryStore {
   private readonly filePath: string;
@@ -114,22 +112,6 @@ export class JsonMemoryStore implements MemoryStore {
   }
 }
 
-export class JsonGuildMemoryStore implements GuildMemoryStore {
-  constructor(private readonly filePathPattern: string) {}
-
-  forGuild(guildId: string): MemoryStore {
-    return new JsonMemoryStore(resolveMemoryFilePath(this.filePathPattern, guildId));
-  }
-
-  listGuildIds(): Promise<string[]> {
-    return listMemoryGuildIds(this.filePathPattern);
-  }
-}
-
-export function resolveMemoryFilePath(filePath: string, guildId: string): string {
-  return filePath.replaceAll(MEMORY_GUILD_ID_TOKEN, guildId);
-}
-
 function emptyApplyResult(): MemoryApplyResult {
   return { created: [], updated: [], deleted: [] };
 }
@@ -157,57 +139,8 @@ export function parseMemoryDocument(content: string): MemoryDocument {
   return { entries };
 }
 
-export async function listMemoryGuildIds(filePath: string): Promise<string[]> {
-  const guildIds = await listGuildIdsForPath(filePath);
-  return guildIds.toSorted((left, right) => left.localeCompare(right));
-}
-
 export function renderMemoryDocument(document: MemoryDocument): string {
   return `${JSON.stringify(document, null, 2)}\n`;
-}
-
-async function listGuildIdsForPath(filePath: string): Promise<string[]> {
-  const absolutePath = resolve(filePath);
-  const tokenIndex = absolutePath.indexOf(MEMORY_GUILD_ID_TOKEN);
-  if (tokenIndex === -1) return [];
-
-  const prefix = absolutePath.slice(0, tokenIndex);
-  const suffix = absolutePath.slice(tokenIndex + MEMORY_GUILD_ID_TOKEN.length);
-  const hasDirectoryPrefix = prefix.endsWith(sep);
-  const directory = hasDirectoryPrefix ? prefix.slice(0, -1) || sep : dirname(prefix);
-  const namePrefix = hasDirectoryPrefix ? "" : basename(prefix);
-
-  let entries;
-  try {
-    entries = await readdir(directory, { withFileTypes: true });
-  } catch (error) {
-    if (isFileNotFound(error)) return [];
-    throw error;
-  }
-
-  const guildIds: string[] = [];
-  for (const entry of entries) {
-    if (!hasDirectoryPrefix && !entry.name.startsWith(namePrefix)) continue;
-    if (hasDirectoryPrefix && !entry.isDirectory()) continue;
-    if (!hasDirectoryPrefix && suffix && !entry.name.endsWith(suffix)) continue;
-
-    const guildId = hasDirectoryPrefix
-      ? entry.name
-      : entry.name.slice(namePrefix.length, entry.name.length - suffix.length);
-    if (!guildId || guildId.includes("/") || guildId.includes("\\")) continue;
-
-    const candidate = hasDirectoryPrefix
-      ? resolve(directory, entry.name) + suffix
-      : resolve(directory, entry.name);
-
-    try {
-      if ((await stat(candidate)).isFile()) guildIds.push(guildId);
-    } catch (error) {
-      if (!isFileNotFound(error)) throw error;
-    }
-  }
-
-  return guildIds;
 }
 
 function parseMemoryEntry(value: unknown): MemoryEntry {

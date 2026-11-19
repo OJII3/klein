@@ -214,14 +214,11 @@ export class AgentCoordinator {
           const query = buildMemoryQuery(message);
           const userMemory = await this.resolveFirstSpeakerMemory(message, state.sessionKey);
           const guildMemory = message.guildId
-            ? await this.dependencies.memoryCoordinator?.getContext(
-                {
-                  channelId: message.parentChannelId ?? message.channelId,
-                  guildId: message.guildId,
-                  ...(message.threadId ? { threadId: message.threadId } : {}),
-                },
-                query,
-              )
+            ? await this.dependencies.memoryCoordinator?.getContext({
+                channelId: message.parentChannelId ?? message.channelId,
+                guildId: message.guildId,
+                ...(message.threadId ? { threadId: message.threadId } : {}),
+              })
             : undefined;
           const channelRule = message.guildId
             ? await this.dependencies.channelRuleStore?.get(message.guildId, message.channelId)

@@ -23,6 +23,26 @@ export interface MemoryDocument {
   readonly entries: readonly MemoryEntry[];
 }
 
+export type GuildMemoryScope =
+  | { readonly type: "guild" }
+  | { readonly type: "channel"; readonly channelId: string }
+  | { readonly type: "thread"; readonly channelId: string; readonly threadId: string };
+
+export interface GuildMemory {
+  readonly facts: readonly string[];
+  readonly preferences: readonly string[];
+}
+
+export interface GuildMemoryFile extends GuildMemory {
+  readonly scope: GuildMemoryScope;
+  readonly updatedAt: string;
+}
+
+export interface GuildMemoryGuild {
+  readonly guildId: string;
+  readonly files: readonly GuildMemoryFile[];
+}
+
 export type MemoryScope =
   { readonly type: "owner" } | { readonly type: "guild"; readonly guildId: string };
 
@@ -34,12 +54,13 @@ export interface MemoryScopeSummary {
 
 export interface MemoryScopeReader {
   listScopes(): Promise<readonly MemoryScopeSummary[]>;
-  read(scope: MemoryScope): Promise<MemoryDocument>;
+  read(): Promise<MemoryDocument>;
+  readGuild(guildId: string): Promise<GuildMemoryGuild>;
 }
 
 export interface MemoryScopeEditor {
-  addRule(scope: MemoryScope, title: string, content: string): Promise<void>;
-  deleteEntry(scope: MemoryScope, entryId: string): Promise<void>;
+  addRule(title: string, content: string): Promise<void>;
+  deleteEntry(entryId: string): Promise<void>;
 }
 
 export const USER_MEMORY_SECTION_KEYS = ["facts", "history", "inCommon", "strengthening"] as const;

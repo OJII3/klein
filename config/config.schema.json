@@ -340,7 +340,7 @@
             "enabled": {
               "type": "boolean"
             },
-            "filePath": {
+            "directory": {
               "type": "string",
               "minLength": 1
             },

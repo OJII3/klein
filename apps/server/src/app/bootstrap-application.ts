@@ -49,10 +49,9 @@ import { FileDiscordChannelRuleStore } from "@modules/discord/infrastructure/fil
 import { FileDiscordUserStore } from "@modules/discord/infrastructure/file-discord-user-store";
 import { MemoryCoordinator } from "@modules/memory/application/memory-coordinator";
 import { resolveMemoryConfig } from "@modules/memory/application/memory-config";
-import {
-  JsonGuildMemoryStore,
-  JsonMemoryStore,
-} from "@modules/memory/infrastructure/json-memory-store";
+import { JsonMemoryStore } from "@modules/memory/infrastructure/json-memory-store";
+import { MarkdownGuildMemoryStore } from "@modules/memory/infrastructure/markdown-guild-memory-store";
+import { migrateLegacyGuildMemory } from "@modules/memory/infrastructure/json-guild-memory-migration";
 import {
   createWebUiMemoryAccessor,
   OwnerMemoryStore,
@@ -376,9 +375,12 @@ export async function bootstrapApplication(): Promise<void> {
     { enableReactions: true },
   );
   const memorySessionId = `memory-${randomUUID()}`;
+  if (memoryConfig.enabled) {
+    await migrateLegacyGuildMemory(memoryConfig.directory, logger);
+  }
   const memoryCoordinator = memoryConfig.enabled
     ? new MemoryCoordinator({
-        store: new JsonGuildMemoryStore(memoryConfig.filePath),
+        store: new MarkdownGuildMemoryStore(memoryConfig.directory),
         idleSeconds: memoryConfig.idleSeconds,
         logger,
         maxBatchAgeSeconds: memoryConfig.maxBatchAgeSeconds,

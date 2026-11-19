@@ -5,7 +5,7 @@ import { resolveConfiguredModel } from "./pi-model-runtime";
 import { MEMORY_PROCESSING_SYSTEM_PROMPT, PiMemoryProcessor } from "./pi-memory-processor";
 import { createStubAssistantMessage } from "./pi-test-helpers";
 
-test("asks the configured model for structured memory operations", async () => {
+test("asks the configured model for complete facts and preferences per scope", async () => {
   let received:
     | {
         readonly content: unknown;
@@ -29,13 +29,11 @@ test("asks the configured model for structured memory operations", async () => {
           {
             type: "text",
             text: JSON.stringify({
-              operations: [
+              updates: [
                 {
-                  content: "このギルドでは毎週土曜日に定例会を行う。",
-                  kind: "rule",
+                  facts: ["定例会は毎週土曜日に開催する。"],
+                  preferences: ["返信は簡潔にする。"],
                   scope: { type: "guild" },
-                  title: "定例会の曜日",
-                  type: "add",
                 },
               ],
             }),
@@ -45,21 +43,20 @@ test("asks the configured model for structured memory operations", async () => {
     },
   );
 
-  const operations = await processor.process(
-    {
-      entries: [
-        {
-          content: "このギルドでは毎週金曜日に定例会を行う。",
-          createdAt: "2026-09-11T12:00:00.000Z",
-          id: "mem-existing",
-          kind: "rule",
-          scope: { type: "guild" },
-          sourceMessageIds: ["old-message"],
-          title: "定例会の曜日",
-          updatedAt: "2026-10-05T03:26:33.905Z",
+  const updates = await processor.process(
+    [
+      {
+        memory: {
+          facts: ["定例会は毎週金曜日に開催する。"],
+          preferences: [],
         },
-      ],
-    },
+        scope: { type: "guild" },
+      },
+      {
+        memory: { facts: [], preferences: [] },
+        scope: { channelId: "channel-1", type: "channel" },
+      },
+    ],
     [
       {
         channelId: "channel-1",
@@ -69,136 +66,91 @@ test("asks the configured model for structured memory operations", async () => {
     ],
   );
 
-  assert.deepEqual(operations, [
+  assert.deepEqual(updates, [
     {
-      content: "このギルドでは毎週土曜日に定例会を行う。",
-      kind: "rule",
+      memory: {
+        facts: ["定例会は毎週土曜日に開催する。"],
+        preferences: ["返信は簡潔にする。"],
+      },
       scope: { type: "guild" },
-      title: "定例会の曜日",
-      type: "add",
     },
   ]);
   assert.equal(received?.modelId, "deepseek-v4.1-flash");
   assert.equal(received?.reasoning, "low");
   assert.equal(received?.systemPrompt, MEMORY_PROCESSING_SYSTEM_PROMPT);
-  assert.match(String(received?.content), /message-1/u);
+  assert.match(String(received?.content), /channel=channel-1/u);
   assert.match(String(received?.content), /Available scopes:/u);
   assert.match(String(received?.content), /- channel: channel-1/u);
-  assert.match(String(received?.content), /Memory ID: mem-existing/u);
-  assert.match(String(received?.content), /Scope: guild/u);
-  assert.match(String(received?.content), /Updated: 2026-10-05/u);
-  assert.doesNotMatch(String(received?.content), /old-message|T03:26:33/u);
+  assert.match(String(received?.content), /定例会は毎週金曜日に開催する。/u);
+  assert.match(String(received?.content), /## Guild/u);
+  assert.doesNotMatch(String(received?.content), /Memory ID:|Kind:|Updated:/u);
 });
 
-test("accepts a fenced JSON response and rejects unsupported operations", async () => {
+test("accepts a fenced JSON response and rejects malformed updates", async () => {
   const model = resolveConfiguredModel("opencode-go", "deepseek-v4.1-flash");
   const fencedProcessor = new PiMemoryProcessor(model, undefined, async () => {
-    return createStubAssistantMessage({
-      content: [{ type: "text", text: '```json\n{"operations":[{"type":"noop"}]}\n```' }],
-    });
-  });
-  assert.deepEqual(await fencedProcessor.process({ entries: [] }, []), [{ type: "noop" }]);
-
-  const invalidProcessor = new PiMemoryProcessor(model, undefined, async () => {
-    return createStubAssistantMessage({
-      content: [{ type: "text", text: '{"operations":[{"type":"merge"}]}' }],
-    });
-  });
-  await assert.rejects(
-    invalidProcessor.process({ entries: [] }, []),
-    /unsupported operation: merge/u,
-  );
-});
-
-test("parses scopes from the batch and rejects unknown channels", async () => {
-  const model = resolveConfiguredModel("opencode-go", "deepseek-v4.1-flash");
-  const respondWith = (scope: unknown) =>
-    new PiMemoryProcessor(model, undefined, async () => {
-      return createStubAssistantMessage({
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify({
-              operations: [
-                { content: "本文", kind: "fact", scope, title: "タイトル", type: "add" },
-              ],
-            }),
-          },
-        ],
-      });
-    });
-  const messages = [{ channelId: "channel-1", content: "hello", id: "message-1" }];
-
-  assert.deepEqual(
-    await respondWith({ channelId: "channel-1", type: "channel" }).process(
-      { entries: [] },
-      messages,
-    ),
-    [
-      {
-        content: "本文",
-        kind: "fact",
-        scope: { channelId: "channel-1", type: "channel" },
-        title: "タイトル",
-        type: "add",
-      },
-    ],
-  );
-
-  await assert.rejects(
-    respondWith({ channelId: "unknown", type: "channel" }).process({ entries: [] }, messages),
-    /unknown channel: unknown/u,
-  );
-
-  const existingScope = { channelId: "channel-9", type: "channel" as const };
-  const updateProcessor = new PiMemoryProcessor(model, undefined, async () => {
     return createStubAssistantMessage({
       content: [
         {
           type: "text",
-          text: JSON.stringify({
-            operations: [
-              {
-                content: "新本文",
-                id: "mem-existing",
-                kind: "fact",
-                scope: existingScope,
-                title: "新タイトル",
-                type: "update",
-              },
-            ],
-          }),
+          text: '```json\n{"updates":[{"scope":{"type":"guild"},"facts":["- 事実"],"preferences":[" 好み "]}]}\n```',
         },
       ],
     });
   });
   assert.deepEqual(
-    await updateProcessor.process(
-      {
-        entries: [
-          {
-            content: "旧本文",
-            createdAt: "2026-01-01T00:00:00.000Z",
-            id: "mem-existing",
-            kind: "fact",
-            scope: existingScope,
-            sourceMessageIds: [],
-            title: "旧タイトル",
-            updatedAt: "2026-01-01T00:00:00.000Z",
-          },
-        ],
-      },
-      messages,
-    ),
+    await fencedProcessor.process([{ memory: emptyMemory(), scope: { type: "guild" } }], []),
     [
       {
-        content: "新本文",
-        id: "mem-existing",
-        kind: "fact",
-        scope: existingScope,
-        title: "新タイトル",
-        type: "update",
+        memory: { facts: ["事実"], preferences: ["好み"] },
+        scope: { type: "guild" },
       },
     ],
   );
+
+  const invalidProcessor = new PiMemoryProcessor(model, undefined, async () => {
+    return createStubAssistantMessage({
+      content: [
+        { type: "text", text: '{"updates":[{"scope":{"type":"guild"},"facts":"not-array"}]}' },
+      ],
+    });
+  });
+  await assert.rejects(
+    invalidProcessor.process([{ memory: emptyMemory(), scope: { type: "guild" } }], []),
+    /invalid update.facts/u,
+  );
 });
+
+test("rejects unknown and duplicate scopes", async () => {
+  const model = resolveConfiguredModel("opencode-go", "deepseek-v4.1-flash");
+  const respondWith = (updates: unknown) =>
+    new PiMemoryProcessor(model, undefined, async () => {
+      return createStubAssistantMessage({
+        content: [{ type: "text", text: JSON.stringify({ updates }) }],
+      });
+    });
+  const scopes = [{ memory: emptyMemory(), scope: { type: "guild" as const } }];
+
+  await assert.rejects(
+    respondWith([
+      {
+        facts: [],
+        preferences: [],
+        scope: { channelId: "channel-1", type: "channel" },
+      },
+    ]).process(scopes, []),
+    /unknown scope: channel:channel-1/u,
+  );
+
+  await assert.rejects(
+    respondWith([
+      { facts: [], preferences: [], scope: { type: "guild" } },
+      { facts: [], preferences: [], scope: { type: "guild" } },
+    ]).process(scopes, []),
+    /duplicate scope: guild/u,
+  );
+});
+
+function emptyMemory() {
+  return { facts: [], preferences: [] };
+}

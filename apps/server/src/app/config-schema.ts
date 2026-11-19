@@ -76,7 +76,7 @@ const MemoryModelConfigurationSchema = Type.Object(
 const MemoryConfigurationSchema = Type.Object(
   {
     enabled: Type.Boolean(),
-    filePath: Type.Optional(Type.String({ minLength: 1 })),
+    directory: Type.Optional(Type.String({ minLength: 1 })),
     llm: Type.Optional(MemoryModelConfigurationSchema),
     idleSeconds: Type.Optional(Type.Integer({ minimum: 1, maximum: 3600 })),
     maxBatchAgeSeconds: Type.Optional(Type.Integer({ minimum: 1, maximum: 86400 })),
