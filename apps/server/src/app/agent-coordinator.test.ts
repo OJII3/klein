@@ -931,6 +931,9 @@ test("reschedules a disallowed watch instead of rechecking it every tick", async
     const stored = watches.getStored();
     assert.ok(stored?.kind === "watch");
     assert.equal(stored.nextRunAt, "2026-10-14T00:10:00.000Z");
+    assert.equal(stored.lastStatus, "error");
+    assert.match(stored.lastError ?? "", /アクセス権/u);
+    assert.equal(stored.lastCheckedAt, undefined);
     assert.equal(harness.channelLocationCalls.length, 1);
     assert.equal(harness.prompts.size, 0);
 

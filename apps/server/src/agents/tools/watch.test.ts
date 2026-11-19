@@ -223,6 +223,35 @@ test("keeps a watch disabled when the dry run fails on re-enable", async () => {
   assert.equal(stored?.lastStatus, undefined);
 });
 
+test("keeps an enabled watch unchanged when editing its script fails the dry run", async () => {
+  const { store, getStored } = createSingleWatchStore();
+  const { runner, fail } = createRunner();
+  const tools = createWatchTools(store, "channel-a", "public", runner);
+  const { updateTool } = unpackWatchTools(tools);
+  const ctx = await createStubExtensionToolContext();
+
+  await addWatch(tools);
+  const created = getStored();
+  if (!created) {
+    assert.fail("expected watch to be created");
+  }
+
+  fail("監視スクリプトが失敗しました: boom");
+  await assert.rejects(
+    updateTool.execute(
+      "tool-call",
+      { id: created.id, script: "text('broken');" },
+      undefined,
+      undefined,
+      ctx,
+    ),
+    /監視を更新しませんでした。.*boom/u,
+  );
+  const stored = getStored();
+  assert.equal(stored?.script, "text(args[0]); silent();");
+  assert.equal(stored?.enabled, true);
+});
+
 const baseWatch: WatchTask = {
   kind: "watch",
   id: "watch-conversation",

@@ -43,6 +43,9 @@ interface TriggeredWatch {
   readonly event: AgentEvent;
 }
 
+const ACCESS_DENIED_MESSAGE =
+  "このチャンネルへのアクセス権がないため、監視を実行できませんでした。";
+
 export class ScheduledTaskDeliveryCoordinator {
   private checkRunning = false;
   private readonly skippedTasks = new Set<string>();
@@ -129,15 +132,38 @@ export class ScheduledTaskDeliveryCoordinator {
     const store = this.dependencies.scheduledTaskStore;
     if (!store) return;
     const nextRunAt = getNextRunAt(task.schedule, now);
-    if (nextRunAt) {
-      if (await this.taskStillExists(task)) {
-        await store.update({ ...task, nextRunAt });
+    if (!nextRunAt) {
+      // A one-time task has no next occurrence, so remember it for this process instead of
+      // rechecking it every tick.
+      this.skippedTasks.add(taskKey(task));
+      return;
+    }
+    if (!(await this.taskStillExists(task))) return;
+    if (task.kind === "watch") {
+      let newlyDenied = false;
+      await this.updateWatch(task, (current) => {
+        newlyDenied = current.lastError !== ACCESS_DENIED_MESSAGE;
+        return {
+          ...current,
+          lastStatus: "error",
+          lastError: ACCESS_DENIED_MESSAGE,
+          nextRunAt,
+        };
+      });
+      if (newlyDenied) {
+        this.dependencies.logger.warn(
+          {
+            event: "scheduled_task_skipped",
+            taskId: task.id,
+            taskKind: task.kind,
+            reason: "access_denied",
+          },
+          "Skipped a watch because its channel is not accessible",
+        );
       }
       return;
     }
-    // A one-time task has no next occurrence, so remember it for this process instead of
-    // rechecking it every tick.
-    this.skippedTasks.add(taskKey(task));
+    await store.update({ ...task, nextRunAt });
   }
 
   private pruneSkippedTasks(tasks: readonly ScheduledTask[]): void {

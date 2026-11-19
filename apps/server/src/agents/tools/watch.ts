@@ -121,6 +121,7 @@ export function createWatchTools(
       description:
         "Update one watch in the current conversation by its ID. Use it to edit the name, schedule, script, args, or notification message, and to disable or re-enable the watch with `enabled`. " +
         "Changing the schedule or enabling a disabled watch schedules the next check from now. " +
+        "Changing the script or args of an enabled watch runs the script once first; if that run fails, the watch is not updated. " +
         "Enabling a disabled watch runs the script once first; if that run fails, the watch stays disabled. " +
         "Use watch_list to find the ID.",
       parameters: Type.Object({
@@ -172,11 +173,15 @@ export function createWatchTools(
         if (!updated.name || !updated.script || !updated.message) {
           throw new Error("監視名・スクリプト・通知内容を入力してください。");
         }
-        if (updated.enabled && !current.enabled) {
+        const changesScript = params.script !== undefined && updated.script !== current.script;
+        const changesArgs = params.args !== undefined && !equalStrings(params.args, current.args);
+        if (updated.enabled && (!current.enabled || changesScript || changesArgs)) {
           await requireSuccessfulDryRun(
             watchCheckRunner,
             updated,
-            "監視スクリプトの確認実行に失敗したため、監視を有効にしませんでした。",
+            current.enabled
+              ? "監視スクリプトの確認実行に失敗したため、監視を更新しませんでした。"
+              : "監視スクリプトの確認実行に失敗したため、監視を有効にしませんでした。",
           );
         }
         await store.update(updated);
@@ -299,6 +304,10 @@ interface WatchListItem {
   lastTriggeredAt?: string;
   lastStatus?: WatchTask["lastStatus"];
   lastError?: string;
+}
+
+function equalStrings(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
 function serializeWatchListItem(watch: WatchTask): WatchListItem {
