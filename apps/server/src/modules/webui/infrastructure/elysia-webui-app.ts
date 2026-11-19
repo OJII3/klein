@@ -39,8 +39,6 @@ export async function createWebUiServerApp(options: WebUiServerOptions) {
     assets: resolve(options.staticDirectory, "assets"),
     alwaysStatic: false,
     bunFullstack: false,
-    // The SPA entry point is served below so that every request reads the
-    // current index.html instead of a copy cached at startup.
     indexHTML: false,
     prefix: "/assets",
   });

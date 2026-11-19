@@ -4,7 +4,7 @@
 
 ## セッション
 
-セッションの履歴とローテーションの状態は `<runtime.agentDir>/sessions` と `<runtime.agentDir>/channel-sessions` に保存する。既存の `pi-durable` SQLite データベースは起動時に自動で移行する。`bun run build`、`bun run build:web`、`bun run build:server` も使える。
+セッションの履歴とローテーションの状態は `<runtime.agentDir>/sessions` と `<runtime.agentDir>/channel-sessions` に保存する。既存の `pi-durable` SQLite データベースは起動時に自動で移行する。
 
 ## Discord
 

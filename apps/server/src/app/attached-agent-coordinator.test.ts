@@ -716,7 +716,6 @@ test("isolates send, close, and list across channels and accessScopes", async ()
     [publicTaskId],
   );
 
-  // Another channel cannot send to or close tasks in channel-1.
   assert.equal(
     await harness.coordinator.send(scope("channel-2", "owner:123"), ownerTaskId, "cross-channel"),
     false,
@@ -726,7 +725,6 @@ test("isolates send, close, and list across channels and accessScopes", async ()
     false,
   );
 
-  // Another accessScope in the same channel cannot send to or close the task.
   assert.equal(
     await harness.coordinator.send(scope("channel-1", "public"), ownerTaskId, "cross-scope"),
     false,
@@ -737,7 +735,6 @@ test("isolates send, close, and list across channels and accessScopes", async ()
   assert.equal(harness.prompts.length, 2);
   assert.equal(harness.disposed.length, 0);
 
-  // The owning scope can still send and close.
   assert.equal(
     await harness.coordinator.send(scope("channel-1", "owner:123"), ownerTaskId, "owner follow-up"),
     true,
