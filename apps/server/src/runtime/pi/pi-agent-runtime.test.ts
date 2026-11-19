@@ -1129,7 +1129,7 @@ test("loads skills from the default profile directory", async () => {
       .getSkills()
       .skills.map((skill) => skill.name)
       .toSorted(),
-    ["honkai-character-dialogue"],
+    ["browser-automation", "honkai-character-dialogue"],
   );
   assert.deepEqual(loader.getSkills().diagnostics, []);
 });
