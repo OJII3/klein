@@ -62,6 +62,21 @@
         "thinkingLevel": "low"
       }
     },
+    "proactivity": {
+      "enabled": false,
+      "preferencesFile": ".runtime/pi/proactive/preferences.md",
+      "followUpDirectory": ".runtime/pi/proactive/follow-ups",
+      "signalDirectory": ".runtime/pi/proactive/signals",
+      "defaultMode": "attach",
+      "quietHours": {
+        "start": "23:00",
+        "end": "08:00"
+      },
+      "digestAt": "09:00",
+      "maxPerDay": 3,
+      "publicChannels": false,
+      "promiseGuard": "log"
+    },
     "minecraft": {
       "enabled": false
     },

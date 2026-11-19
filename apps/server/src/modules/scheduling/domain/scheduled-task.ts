@@ -5,6 +5,7 @@ import { isRecurringSchedule, parseStoredSchedule, type StoredSchedule } from ".
 
 export type ScheduledTaskAccessScope = AccessScope;
 export type WatchStatus = "ok" | "error";
+export type WatchPriority = "normal" | "urgent";
 
 interface ScheduledTaskBase {
   readonly id: string;
@@ -26,6 +27,11 @@ export interface WatchTask extends ScheduledTaskBase {
   readonly script: string;
   readonly args: readonly string[];
   readonly message: string;
+  /**
+   * How urgently the wake should reach the conversation. Older saved watches
+   * without this field are read as "normal".
+   */
+  readonly priority?: WatchPriority;
   /**
    * The attached task that registered the watch. Its wake goes to that worker
    * session instead of the conversation session.
@@ -95,6 +101,7 @@ export function parseScheduledTask(value: unknown): ScheduledTask {
       script,
       args,
       message,
+      priority,
       ownerTaskId,
       enabled,
       state,
@@ -112,6 +119,7 @@ export function parseScheduledTask(value: unknown): ScheduledTask {
       !isStringArray(args) ||
       typeof message !== "string" ||
       message.length === 0 ||
+      (priority !== undefined && priority !== "normal" && priority !== "urgent") ||
       (ownerTaskId !== undefined &&
         (typeof ownerTaskId !== "string" || ownerTaskId.length === 0)) ||
       (enabled !== undefined && typeof enabled !== "boolean") ||
@@ -141,6 +149,7 @@ export function parseScheduledTask(value: unknown): ScheduledTask {
       script,
       args,
       message,
+      priority: priority ?? "normal",
       ...(ownerTaskId !== undefined ? { ownerTaskId } : {}),
       enabled: enabled !== false,
       ...(state !== undefined ? { state } : {}),

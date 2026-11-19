@@ -51,6 +51,36 @@ test("converts Discord messages to AgentTurn and applies bot guidance by option"
   );
 });
 
+test("orders proactive blocks after the existing context blocks", () => {
+  const turn = createDiscordMessageAgentTurn(message, {
+    sharedMemory: "guild context",
+    channelRule: "rule",
+    proactivePreferences: "preferences",
+    waitingOn: "follow-up",
+    pendingSignals: "signal",
+  });
+
+  assert.deepEqual(turn.context.blocks, [
+    { name: "shared-memory", content: "guild context" },
+    { name: "channel-rule", content: "rule" },
+    { name: "proactive-preferences", content: "preferences" },
+    { name: "waiting-on", content: "follow-up" },
+    { name: "pending-signals", content: "signal" },
+  ]);
+});
+
+test("omits empty context blocks", () => {
+  const turn = createDiscordMessageAgentTurn(message, {
+    sharedMemory: "",
+    channelRule: "",
+    proactivePreferences: "",
+    waitingOn: "",
+    pendingSignals: "",
+  });
+
+  assert.equal(turn.context.blocks, undefined);
+});
+
 test("validates owner messages during conversion when configured", () => {
   assert.throws(
     () =>

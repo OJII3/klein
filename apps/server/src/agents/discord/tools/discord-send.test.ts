@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createStubExtensionToolContext } from "@agents/testing/test-stubs";
+import type { PromiseGuard } from "../../tools/promise-guard";
 import { createDiscordSendTool } from "./discord-send";
 
 test("returns the sent content in the tool result", async () => {
@@ -56,4 +57,35 @@ test("records returned Discord message IDs in details", async () => {
   );
 
   assert.deepEqual(result.details, { messageIds: ["msg-101", "msg-102"] });
+});
+
+test("does not send a blocked promise", async () => {
+  let sent = false;
+  const guard: PromiseGuard = {
+    async check() {
+      return { action: "block", reason: "no-active-follow-up" };
+    },
+  };
+  const tool = createDiscordSendTool(
+    {
+      async sendTyping() {},
+      async sendMessage() {
+        sent = true;
+      },
+    },
+    "current-channel",
+    guard,
+  );
+
+  await assert.rejects(
+    tool.execute(
+      "tool-call",
+      { content: "後で報告します" },
+      undefined,
+      undefined,
+      await createStubExtensionToolContext(),
+    ),
+    /follow_up_create を先に成功させる/u,
+  );
+  assert.equal(sent, false);
 });

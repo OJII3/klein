@@ -5,6 +5,7 @@ import type { AttachedTaskControl } from "@agents/core/attached-agent";
 import type { DiscordAccessPolicy } from "@modules/discord/domain/discord-access-policy";
 import type { DiscordOperatingState } from "@modules/discord/domain/discord-operating-state";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
+import type { ProactiveCoordinator } from "@modules/proactivity/application/proactive-coordinator";
 import {
   getNextRunAt,
   isRecurringSchedule,
@@ -30,6 +31,10 @@ export interface ScheduledTaskDeliveryCoordinatorDependencies {
   readonly logger: Logger;
   readonly operatingState: DiscordOperatingState;
   readonly ownerUserId?: string;
+  readonly proactive?: Pick<
+    ProactiveCoordinator,
+    "ingestWatchSignal" | "markSignalsSurfaced" | "markWatcherCompleted"
+  >;
   readonly scheduledTaskStore?: ScheduledTaskStore;
   readonly watchCheckRunner: WatchCheckRunner;
   readonly sessionManager: ChannelSessionManager;
@@ -39,6 +44,7 @@ export interface ScheduledTaskDeliveryCoordinatorDependencies {
 interface TriggeredWatch {
   readonly watch: WatchTask;
   readonly event: AgentEvent;
+  readonly output: string;
 }
 
 export class ScheduledTaskDeliveryCoordinator {
@@ -99,7 +105,7 @@ export class ScheduledTaskDeliveryCoordinator {
       if (!triggered) return;
       // The watch may have been deleted while its check ran outside the conversation lock.
       if (!(await this.taskStillExists(triggered.watch))) return;
-      await this.deliverWatch(triggered);
+      await this.processTriggeredWatch(triggered, now);
       return;
     }
 
@@ -266,6 +272,7 @@ export class ScheduledTaskDeliveryCoordinator {
 
     return {
       watch: withoutError,
+      output: result.output,
       event: {
         id: `watch:${task.id}:${task.nextRunAt}`,
         occurredAt: new Date().toISOString(),
@@ -288,14 +295,56 @@ export class ScheduledTaskDeliveryCoordinator {
     };
   }
 
-  private async deliverWatch(triggered: TriggeredWatch): Promise<void> {
-    const ownerTaskId = triggered.watch.ownerTaskId;
-    if (ownerTaskId) {
-      await this.deliverWatchToWorker(triggered, ownerTaskId);
+  private async processTriggeredWatch(triggered: TriggeredWatch, now: number): Promise<void> {
+    const proactive = this.dependencies.proactive;
+    if (triggered.watch.ownerTaskId || !proactive) {
+      await this.deliverWatch(triggered);
       return;
     }
+
+    let result;
+    try {
+      result = await proactive.ingestWatchSignal({
+        watch: triggered.watch,
+        output: triggered.output,
+        now,
+      });
+    } catch (error) {
+      this.dependencies.logger.warn(
+        { err: error, event: "proactive_signal_ingest_failed", taskId: triggered.watch.id },
+        "Failed to ingest a watch wake as a proactive signal; delivering the wake directly",
+      );
+      await this.deliverWatch(triggered);
+      return;
+    }
+
+    if (result.decision.mode !== "interrupt") {
+      await this.completeWatch(triggered.watch);
+      this.dependencies.logger.info(
+        {
+          event: "scheduled_task_deferred",
+          taskId: triggered.watch.id,
+          taskKind: triggered.watch.kind,
+          signalId: result.signal.id,
+          deliveryMode: result.decision.mode,
+        },
+        "Held a watch wake for later delivery",
+      );
+      return;
+    }
+
+    const delivered = await this.deliverWatch(triggered);
+    if (!delivered) return;
+    await proactive.markSignalsSurfaced([result.signal], "interrupt", now);
+  }
+
+  private async deliverWatch(triggered: TriggeredWatch): Promise<boolean> {
+    const ownerTaskId = triggered.watch.ownerTaskId;
+    if (ownerTaskId) {
+      return this.deliverWatchToWorker(triggered, ownerTaskId);
+    }
     const conversationKey = { kind: "discord", channelId: triggered.watch.channelId } as const;
-    await this.deliverEvent(conversationKey, triggered.watch, triggered.event);
+    return this.deliverEvent(conversationKey, triggered.watch, triggered.event);
   }
 
   /**
@@ -306,7 +355,7 @@ export class ScheduledTaskDeliveryCoordinator {
   private async deliverWatchToWorker(
     triggered: TriggeredWatch,
     ownerTaskId: string,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const { watch, event } = triggered;
     let sent: boolean;
     try {
@@ -329,7 +378,7 @@ export class ScheduledTaskDeliveryCoordinator {
         },
         "Failed to deliver a watch wake to its worker",
       );
-      return;
+      return false;
     }
 
     if (!sent) {
@@ -345,8 +394,11 @@ export class ScheduledTaskDeliveryCoordinator {
       );
       await this.releaseWatchOwner(watch, ownerTaskId);
       const { ownerTaskId: _ownerTaskId, ...unownedWatch } = watch;
-      await this.deliverEvent({ kind: "discord", channelId: watch.channelId }, unownedWatch, event);
-      return;
+      return this.deliverEvent(
+        { kind: "discord", channelId: watch.channelId },
+        unownedWatch,
+        event,
+      );
     }
 
     await this.completeWatch(watch);
@@ -360,15 +412,17 @@ export class ScheduledTaskDeliveryCoordinator {
       },
       "Delivered scheduled task to its worker",
     );
+    return true;
   }
 
   private async deliverEvent(
     conversationKey: ConversationKey,
     task: WatchTask,
     event: AgentEvent,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const store = this.dependencies.scheduledTaskStore;
-    if (!store) return;
+    if (!store) return false;
+    let delivered = false;
     await this.dependencies.sessionManager.runForConversation(conversationKey, async () => {
       if (!this.dependencies.operatingState.isActive()) return;
       await this.dependencies.sessionManager.runTurn(
@@ -378,6 +432,7 @@ export class ScheduledTaskDeliveryCoordinator {
           try {
             await agent.promptEvent(event);
             await this.completeWatch(task);
+            delivered = true;
             this.dependencies.logger.info(
               {
                 event: "scheduled_task_delivered",
@@ -403,6 +458,7 @@ export class ScheduledTaskDeliveryCoordinator {
         },
       );
     });
+    return delivered;
   }
 
   private async completeReminder(task: ReminderTask): Promise<void> {
@@ -410,6 +466,19 @@ export class ScheduledTaskDeliveryCoordinator {
     if (!store) return;
     const nextRunAt = getNextRunAt(task.schedule, Date.now());
     if (!nextRunAt) {
+      try {
+        await this.dependencies.proactive?.markWatcherCompleted("reminder", task.id);
+      } catch (error) {
+        this.dependencies.logger.warn(
+          {
+            err: error,
+            event: "proactive_watcher_completion_failed",
+            watcherKind: "reminder",
+            watcherId: task.id,
+          },
+          "Failed to mark follow-ups for a one-time reminder as done",
+        );
+      }
       await store.delete("reminder", task.channelId, task.accessScope, task.id);
       return;
     }

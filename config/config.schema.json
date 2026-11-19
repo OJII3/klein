@@ -490,6 +490,91 @@
           },
           "additionalProperties": false
         },
+        "proactivity": {
+          "type": "object",
+          "required": ["enabled"],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "preferencesFile": {
+              "type": "string",
+              "minLength": 1
+            },
+            "followUpDirectory": {
+              "type": "string",
+              "minLength": 1
+            },
+            "signalDirectory": {
+              "type": "string",
+              "minLength": 1
+            },
+            "defaultMode": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "const": "interrupt"
+                },
+                {
+                  "type": "string",
+                  "const": "attach"
+                },
+                {
+                  "type": "string",
+                  "const": "digest"
+                },
+                {
+                  "type": "string",
+                  "const": "silent"
+                }
+              ]
+            },
+            "quietHours": {
+              "type": "object",
+              "required": ["start", "end"],
+              "properties": {
+                "start": {
+                  "type": "string",
+                  "pattern": "^\\d{2}:\\d{2}$"
+                },
+                "end": {
+                  "type": "string",
+                  "pattern": "^\\d{2}:\\d{2}$"
+                }
+              },
+              "additionalProperties": false
+            },
+            "digestAt": {
+              "type": "string",
+              "pattern": "^\\d{2}:\\d{2}$"
+            },
+            "maxPerDay": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 20
+            },
+            "publicChannels": {
+              "type": "boolean"
+            },
+            "promiseGuard": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "const": "off"
+                },
+                {
+                  "type": "string",
+                  "const": "log"
+                },
+                {
+                  "type": "string",
+                  "const": "block"
+                }
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
         "minecraft": {
           "type": "object",
           "required": ["enabled"],

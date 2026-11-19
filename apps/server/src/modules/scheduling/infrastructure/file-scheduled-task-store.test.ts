@@ -27,6 +27,7 @@ const watch: WatchTask = {
   script: "text(args[0]); silent();",
   args: ["--json"],
   message: "在庫の変化を確認してください。",
+  priority: "normal",
   enabled: true,
   state: { cursor: "abc" },
   consecutiveFailures: 0,
@@ -119,4 +120,34 @@ test("round-trips the worker that owns a watch", async () => {
   const workerWatch: WatchTask = { ...watch, ownerTaskId: "attached-1" };
   await store.create(workerWatch);
   assert.deepEqual(await store.listForScope("watch", "channel-a", "owner:123"), [workerWatch]);
+});
+
+test("round-trips an urgent watch priority", async () => {
+  await using temp = await createTempDir("klein-schedules-");
+  const store = new FileScheduledTaskStore(temp.path);
+  const urgentWatch: WatchTask = { ...watch, priority: "urgent" };
+  await store.create(urgentWatch);
+  assert.deepEqual(await store.listForScope("watch", "channel-a", "owner:123"), [urgentWatch]);
+});
+
+test("treats a watch without priority as normal", async () => {
+  await using temp = await createTempDir("klein-schedules-");
+  const directory = temp.path;
+  const store = new FileScheduledTaskStore(directory);
+  const { priority: _priority, ...legacyWatch } = watch;
+  await writeFile(join(directory, "legacy-priority.json"), JSON.stringify(legacyWatch));
+  const parsed = await store.listForScope("watch", "channel-a", "owner:123");
+  assert.deepEqual(parsed, [watch]);
+  assert.equal(parsed[0]?.priority, "normal");
+});
+
+test("rejects an invalid watch priority", async () => {
+  await using temp = await createTempDir("klein-schedules-");
+  const directory = temp.path;
+  const store = new FileScheduledTaskStore(directory);
+  await writeFile(
+    join(directory, "invalid-priority.json"),
+    JSON.stringify({ ...watch, priority: "critical" }),
+  );
+  await assert.rejects(store.listForScope("watch", "channel-a", "owner:123"), /監視設定/u);
 });

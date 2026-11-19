@@ -13,7 +13,7 @@ import { loadConfig } from "./config";
 import { resolveCredentials } from "./credentials";
 import { createLogFilePath, createLogger, flushLogger } from "./logger";
 import { collectModelsInUse } from "./model-configuration";
-import { loadPromptFile } from "./prompt";
+import { loadConversationSystemPrompt, loadPromptFile, PROACTIVITY_PROMPT_PATH } from "./prompt";
 import { loadProfile } from "./profile";
 import { createShutdownRunner } from "./shutdown";
 import { TaskCoordinator } from "./task-coordinator";
@@ -52,6 +52,11 @@ import { resolveSharedMemoryConfig } from "@modules/shared-memory/application/sh
 import { MarkdownSharedMemoryStore } from "@modules/shared-memory/infrastructure/markdown-shared-memory-store";
 import { migrateLegacySharedMemory } from "@modules/shared-memory/infrastructure/json-shared-memory-migration";
 import { createWebUiSharedMemoryAccessor } from "@modules/shared-memory/application/shared-memory-web-accessor";
+import { ProactiveCoordinator } from "@modules/proactivity/application/proactive-coordinator";
+import { resolveProactivityConfig } from "@modules/proactivity/application/proactive-config";
+import { FileFollowUpStore } from "@modules/proactivity/infrastructure/file-follow-up-store";
+import { FileProactivePreferenceStore } from "@modules/proactivity/infrastructure/file-proactive-preference-store";
+import { FileProactiveSignalStore } from "@modules/proactivity/infrastructure/file-proactive-signal-store";
 import { MarkdownUserMemoryStore } from "@modules/user-memory/infrastructure/markdown-user-memory-store";
 import { UserMemoryCoordinator } from "@modules/user-memory/application/user-memory-coordinator";
 import { resolveUserMemoryConfig } from "@modules/user-memory/application/user-memory-config";
@@ -90,7 +95,12 @@ export async function bootstrapApplication(): Promise<void> {
   const piUsageReporter = createPiUsageReporterFromEnv({ logger });
   logger.info({ event: "application_starting" }, "Starting Klein");
 
-  const systemPrompt = await loadPromptFile(profile.systemPromptFile);
+  const agentDir = resolve(config.runtime.agentDir);
+  const proactivityConfig = resolveProactivityConfig(config, agentDir);
+  const systemPrompt = await loadConversationSystemPrompt({
+    systemPromptFile: profile.systemPromptFile,
+    ...(proactivityConfig.enabled ? { proactivityPromptFile: PROACTIVITY_PROMPT_PATH } : {}),
+  });
   const voiceChatConfig = resolveVoiceChatConfig(config);
   const sharedMemoryConfig = resolveSharedMemoryConfig(config);
   const modelsInUse = collectModelsInUse(config);
@@ -102,7 +112,6 @@ export async function bootstrapApplication(): Promise<void> {
     : undefined;
   const taskCoordinator = new TaskCoordinator();
   const tts = config.features.tts?.enabled ? new Sbv2Tts(config.features.tts.serverUrl) : undefined;
-  const agentDir = resolve(config.runtime.agentDir);
   await migratePiDurableStorage({ agentDir, logger });
   const discordUserDirectory = new DiscordUserDirectory(
     new FileDiscordUserStore(resolve(agentDir, "discord-users.json")),
@@ -264,6 +273,17 @@ export async function bootstrapApplication(): Promise<void> {
       }
     },
   });
+  const proactiveCoordinator = proactivityConfig.enabled
+    ? new ProactiveCoordinator({
+        preferenceStore: new FileProactivePreferenceStore(proactivityConfig.preferencesFile),
+        followUpStore: new FileFollowUpStore(proactivityConfig.followUpDirectory),
+        signalStore: new FileProactiveSignalStore(proactivityConfig.signalDirectory),
+        scheduledTaskStore,
+        attachedTasks: attachedAgentCoordinator,
+        defaults: proactivityConfig.defaults,
+        logger,
+      })
+    : undefined;
   const createDiscordAgent = (
     channelId: string,
     sessionKey: string,
@@ -289,6 +309,8 @@ export async function bootstrapApplication(): Promise<void> {
           userMemoryStore,
           watchCheckRunner,
           attachedTasks: attachedAgentCoordinator,
+          promiseGuard: { mode: proactivityConfig.promiseGuard, logger },
+          ...(proactiveCoordinator ? { proactive: proactiveCoordinator } : {}),
         }),
     });
   const userMemoryCoordinator =
@@ -405,6 +427,7 @@ export async function bootstrapApplication(): Promise<void> {
     discordUserDirectory,
     sharedMemoryCoordinator,
     operatingState: discordOperatingState,
+    ...(proactiveCoordinator ? { proactive: proactiveCoordinator } : {}),
     scheduledTaskStore,
     userMemoryCoordinator,
     userMemoryStore,
@@ -590,8 +613,10 @@ export async function bootstrapApplication(): Promise<void> {
     ATTACHED_TASK_IDLE_CHECK_INTERVAL_MS,
   );
   void agentCoordinator.deliverDueTasks();
+  void agentCoordinator.deliverDueDigests();
   scheduledTaskCheckInterval = setInterval(() => {
     void agentCoordinator.deliverDueTasks();
+    void agentCoordinator.deliverDueDigests();
   }, SCHEDULED_TASK_CHECK_INTERVAL_MS);
   await updateDiscordUsageStatus();
   usageStatusInterval = setInterval(() => {

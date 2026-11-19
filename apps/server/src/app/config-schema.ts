@@ -94,6 +94,39 @@ const UserMemoryConfigurationSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const ProactiveDeliveryModeSchema = Type.Union([
+  Type.Literal("interrupt"),
+  Type.Literal("attach"),
+  Type.Literal("digest"),
+  Type.Literal("silent"),
+]);
+
+const ProactivityConfigurationSchema = Type.Object(
+  {
+    enabled: Type.Boolean(),
+    preferencesFile: Type.Optional(Type.String({ minLength: 1 })),
+    followUpDirectory: Type.Optional(Type.String({ minLength: 1 })),
+    signalDirectory: Type.Optional(Type.String({ minLength: 1 })),
+    defaultMode: Type.Optional(ProactiveDeliveryModeSchema),
+    quietHours: Type.Optional(
+      Type.Object(
+        {
+          start: Type.String({ pattern: "^\\d{2}:\\d{2}$" }),
+          end: Type.String({ pattern: "^\\d{2}:\\d{2}$" }),
+        },
+        { additionalProperties: false },
+      ),
+    ),
+    digestAt: Type.Optional(Type.String({ pattern: "^\\d{2}:\\d{2}$" })),
+    maxPerDay: Type.Optional(Type.Integer({ minimum: 0, maximum: 20 })),
+    publicChannels: Type.Optional(Type.Boolean()),
+    promiseGuard: Type.Optional(
+      Type.Union([Type.Literal("off"), Type.Literal("log"), Type.Literal("block")]),
+    ),
+  },
+  { additionalProperties: false },
+);
+
 const WebUiConfigurationSchema = Type.Object(
   {
     enabled: Type.Boolean(),
@@ -198,6 +231,7 @@ export const ConfigSchema = Type.Object(
           additionalProperties: false,
         }),
         userMemory: Type.Optional(UserMemoryConfigurationSchema),
+        proactivity: Type.Optional(ProactivityConfigurationSchema),
         minecraft: Type.Object(
           {
             enabled: Type.Boolean(),

@@ -20,6 +20,8 @@ import {
 } from "@modules/discord/domain/discord-access-policy";
 import { DiscordOperatingState } from "@modules/discord/domain/discord-operating-state";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
+import type { ProactiveDigestBatch } from "@modules/proactivity/application/proactive-coordinator";
+import type { ProactiveSignal } from "@modules/proactivity/domain/proactive-signal";
 import type { UserMemory } from "@modules/user-memory/domain/user-memory";
 
 import type {
@@ -59,6 +61,7 @@ function createHarness(
     | "ownerUserId"
     | "userMemoryCoordinator"
     | "userMemoryStore"
+    | "proactive"
   > = {},
   watchCheckRunner?: WatchCheckRunner,
   attachedSendResult = false,
@@ -153,6 +156,25 @@ function createHarness(
     createdSessionKeys,
     prompts,
     ownerFeaturesAllowed,
+  };
+}
+
+function createProactiveStub(
+  overrides: Partial<NonNullable<AgentCoordinatorDependencies["proactive"]>> = {},
+): NonNullable<AgentCoordinatorDependencies["proactive"]> {
+  return {
+    async getContext() {
+      return {};
+    },
+    async ingestWatchSignal() {
+      throw new Error("Unexpected watch signal ingest");
+    },
+    async markSignalsSurfaced() {},
+    async collectDueDigests() {
+      return [];
+    },
+    async markWatcherCompleted() {},
+    ...overrides,
   };
 }
 
@@ -274,6 +296,153 @@ test("injects user memory only when a user first speaks in a session", async () 
     assert.match(turns?.[0]?.context.userMemory ?? "", /TypeScriptが好きなユーザー/u);
     assert.equal(turns?.[1]?.context.userMemory, undefined);
     assert.match(turns?.[2]?.context.userMemory ?? "", /first meeting/u);
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+test("passes proactive preferences, waiting follow-ups, and pending signals to the turn", async () => {
+  const calls: { channelId: string; accessScope: string }[] = [];
+  const harness = createHarness(undefined, undefined, {
+    proactive: createProactiveStub({
+      async getContext(input) {
+        calls.push(input);
+        return {
+          preferences: "# Proactive preferences\n\n## Notes\n- 短く",
+          waitingOn: "天気を確認する（5分ごと / 追跡中）",
+          pendingSignals: "在庫が3個（在庫監視 / 今日中）",
+        };
+      },
+    }),
+  });
+
+  try {
+    await harness.agentCoordinator.handleDiscordMessage(
+      createMessage("channel-a", "message-a", "こんにちは"),
+    );
+
+    assert.deepEqual(calls, [{ channelId: "channel-a", accessScope: "public" }]);
+    assert.deepEqual(harness.prompts.get("channel-a")?.[0]?.context.blocks, [
+      {
+        name: "proactive-preferences",
+        content: "# Proactive preferences\n\n## Notes\n- 短く",
+      },
+      { name: "waiting-on", content: "天気を確認する（5分ごと / 追跡中）" },
+      { name: "pending-signals", content: "在庫が3個（在庫監視 / 今日中）" },
+    ]);
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+const digestSignal: ProactiveSignal = {
+  version: 1,
+  id: "signal-1",
+  channelId: "channel-a",
+  accessScope: "public",
+  audience: "public",
+  source: { kind: "watch", ref: "watch-1" },
+  topic: "在庫監視",
+  summary: "在庫が3個になりました",
+  urgency: "digest",
+  dedupeKey: "dedupe-digest-1",
+  observedAt: "2026-11-19T23:00:00.000Z",
+  status: "queued",
+  delivery: { mode: "digest" },
+};
+
+test("delivers due digests to the conversation as proactive events", async () => {
+  const collectedAt: number[] = [];
+  const batch: ProactiveDigestBatch = {
+    channelId: "channel-a",
+    accessScope: "public",
+    signals: [digestSignal],
+    text: "まとめて伝える候補があります。\n在庫が3個になりました（在庫監視 / まとめ）",
+  };
+  const harness = createHarness(undefined, undefined, {
+    proactive: createProactiveStub({
+      async collectDueDigests(now) {
+        collectedAt.push(now);
+        return [batch];
+      },
+    }),
+  });
+
+  try {
+    await harness.agentCoordinator.deliverDueDigests(1234);
+
+    assert.deepEqual(collectedAt, [1234]);
+    const events = harness.prompts.get("channel-a");
+    assert.equal(events?.length, 1);
+    assert.equal(events?.[0]?.event.type, "proactive.digest");
+    assert.equal(events?.[0]?.event.source, "proactivity");
+    assert.equal(events?.[0]?.event.id, "proactive:digest:channel-a:signal-1");
+    assert.match(eventText(events?.[0]?.event), /在庫が3個になりました/u);
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+test("keeps running when digest collection fails", async () => {
+  const harness = createHarness(undefined, undefined, {
+    proactive: createProactiveStub({
+      async collectDueDigests() {
+        throw new Error("collection failed");
+      },
+    }),
+  });
+
+  try {
+    await harness.agentCoordinator.deliverDueDigests(1234);
+    assert.equal(harness.prompts.size, 0);
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+test("marks task follow-ups done after delivering an attached task result", async () => {
+  const completed: { kind: string; id: string }[] = [];
+  const harness = createHarness(undefined, undefined, {
+    proactive: createProactiveStub({
+      async markWatcherCompleted(kind, id) {
+        completed.push({ kind, id });
+      },
+    }),
+  });
+
+  try {
+    await harness.agentCoordinator.deliverAttachedTaskResult(
+      { kind: "discord", channelId: "test-channel" },
+      "public",
+      { taskId: "task-1", status: "completed", text: "found it" },
+    );
+
+    assert.deepEqual(completed, [{ kind: "task", id: "task-1" }]);
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+test("does not complete task follow-ups when delivery access is denied", async () => {
+  const completed: { kind: string; id: string }[] = [];
+  const harness = createHarness(undefined, undefined, {
+    accessPolicy: createDiscordAccessPolicy({ default: "deny", directMessages: "deny" }),
+    proactive: createProactiveStub({
+      async markWatcherCompleted(kind, id) {
+        completed.push({ kind, id });
+      },
+    }),
+  });
+
+  try {
+    await harness.agentCoordinator.deliverAttachedTaskResult(
+      { kind: "discord", channelId: "test-channel" },
+      "public",
+      { taskId: "task-1", status: "completed", text: "found it" },
+    );
+
+    assert.deepEqual(completed, []);
+    assert.equal(harness.prompts.size, 0);
   } finally {
     await harness.agentCoordinator.dispose();
   }
