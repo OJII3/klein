@@ -5,6 +5,9 @@ export interface DiscordTurnContext {
   readonly userMemory?: string;
   readonly sharedMemory?: string;
   readonly channelRule?: string;
+  readonly proactivePreferences?: string;
+  readonly waitingOn?: string;
+  readonly pendingSignals?: string;
 }
 
 export interface DiscordMessageAgentTurnOptions {
@@ -45,7 +48,11 @@ export function createDiscordMessageAgentTurn(
     },
     context: {
       ...(context.userMemory ? { userMemory: context.userMemory } : {}),
-      ...(context.sharedMemory || context.channelRule
+      ...(context.sharedMemory ||
+      context.channelRule ||
+      context.proactivePreferences ||
+      context.waitingOn ||
+      context.pendingSignals
         ? {
             blocks: [
               ...(context.sharedMemory
@@ -53,6 +60,13 @@ export function createDiscordMessageAgentTurn(
                 : []),
               ...(context.channelRule
                 ? [{ name: "channel-rule", content: context.channelRule }]
+                : []),
+              ...(context.proactivePreferences
+                ? [{ name: "proactive-preferences", content: context.proactivePreferences }]
+                : []),
+              ...(context.waitingOn ? [{ name: "waiting-on", content: context.waitingOn }] : []),
+              ...(context.pendingSignals
+                ? [{ name: "pending-signals", content: context.pendingSignals }]
                 : []),
             ],
           }

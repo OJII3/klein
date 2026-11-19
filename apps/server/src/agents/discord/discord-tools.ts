@@ -10,6 +10,7 @@ import type { TextToSpeech } from "@modules/tts/ports/text-to-speech";
 import type { UserMemoryStore } from "@modules/user-memory/ports/user-memory-store";
 import { ownerAccessScope, PUBLIC_ACCESS_SCOPE } from "@shared/access";
 import { createReminderTools } from "../tools/reminder";
+import { createProactiveTools, type ProactiveToolCoordinator } from "../tools/proactive";
 import { createUserMemoryTools } from "../tools/user-memory";
 import { createWatchTools } from "../tools/watch";
 import { createDiscordAskTool } from "./tools/discord-ask";
@@ -36,6 +37,7 @@ export interface DiscordAgentToolsOptions {
   readonly userMemoryStore?: UserMemoryStore;
   readonly discordUserDirectory?: DiscordUserResolver;
   readonly attachedTasks?: AttachedTaskControl;
+  readonly proactive?: ProactiveToolCoordinator;
 }
 
 /**
@@ -87,6 +89,15 @@ export function createDiscordAgentTools(
       : []),
     ...(options.userMemoryStore && options.discordUserDirectory
       ? createUserMemoryTools(options.userMemoryStore, options.discordUserDirectory)
+      : []),
+    ...(options.proactive
+      ? createProactiveTools(
+          options.proactive,
+          options.channelId,
+          accessScope,
+          options.requesterUserId ?? (() => undefined),
+          ownerUserId,
+        )
       : []),
   ];
 }

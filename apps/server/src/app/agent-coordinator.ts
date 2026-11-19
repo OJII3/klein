@@ -9,6 +9,10 @@ import type { DiscordOperatingState } from "@modules/discord/domain/discord-oper
 import type { DiscordUserDirectory } from "@modules/discord/application/discord-user-directory";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
 import type { SharedMemoryCoordinator } from "@modules/shared-memory/application/shared-memory-coordinator";
+import type {
+  ProactiveContext,
+  ProactiveCoordinator,
+} from "@modules/proactivity/application/proactive-coordinator";
 import type { UserMemoryCoordinator } from "@modules/user-memory/application/user-memory-coordinator";
 import { renderFirstSpeakerUserMemory } from "@modules/user-memory/domain/user-memory-context-renderer";
 import type { UserMemoryStore } from "@modules/user-memory/ports/user-memory-store";
@@ -47,6 +51,7 @@ export interface AgentCoordinatorDependencies {
   readonly channelRuleStore?: DiscordChannelRuleStore;
   readonly logger: Logger;
   readonly sharedMemoryCoordinator?: Pick<SharedMemoryCoordinator, "getContext" | "enqueue">;
+  readonly proactive?: Pick<ProactiveCoordinator, "getContext">;
   readonly operatingState: DiscordOperatingState;
   readonly scheduledTaskStore?: ScheduledTaskStore;
   readonly userMemoryCoordinator?: Pick<UserMemoryCoordinator, "observe">;
@@ -219,10 +224,17 @@ export class AgentCoordinator {
           const channelRule = message.guildId
             ? await this.dependencies.channelRuleStore?.get(message.guildId, message.channelId)
             : undefined;
+          const proactive = await this.resolveProactiveContext(
+            message.channelId,
+            accessScope,
+            logger,
+          );
           await agent.promptMessage(message, {
             userMemory,
             sharedMemory,
             channelRule,
+            ...(proactive?.preferences ? { proactivePreferences: proactive.preferences } : {}),
+            ...(proactive?.waitingOn ? { waitingOn: proactive.waitingOn } : {}),
           });
           logger.debug(
             {
@@ -249,6 +261,25 @@ export class AgentCoordinator {
       );
     } finally {
       if (!ownerFeaturesAllowed) this.dependencies.sharedMemoryCoordinator?.enqueue(message);
+    }
+  }
+
+  private async resolveProactiveContext(
+    channelId: string,
+    accessScope: AccessScope,
+    logger: Logger,
+  ): Promise<ProactiveContext | undefined> {
+    const proactive = this.dependencies.proactive;
+    if (!proactive) return undefined;
+
+    try {
+      return await proactive.getContext({ channelId, accessScope });
+    } catch (error) {
+      logger.warn(
+        { err: error, event: "proactive_context_read_failed", channelId },
+        "Failed to read proactive context",
+      );
+      return undefined;
     }
   }
 
