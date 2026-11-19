@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createDiscordAccessPolicy } from "../domain/discord-access-policy";
+import { createDiscordAccessPolicy, type DiscordAccess } from "../domain/discord-access-policy";
 import type { DiscordChannelAccessRequest } from "../domain/discord-access-request";
 import type { DiscordMessage } from "../domain/discord-message";
 import type {
@@ -106,7 +106,8 @@ function createReader(hasImage = false): DiscordGatewayMessageReader {
 
 function createIngest(
   options: {
-    accessAllowed?: boolean;
+    access?: DiscordAccess;
+    ownerUserId?: string;
     hasImage?: boolean;
     canAccept?: () => boolean;
     onMessage?: (message: DiscordMessage) => Promise<void>;
@@ -117,10 +118,13 @@ function createIngest(
   const delivered: DiscordMessage[] = [];
   const requests: DiscordChannelAccessRequest[] = [];
   const ingest = new DiscordMessageIngest({
-    accessPolicy: createDiscordAccessPolicy({
-      default: options.accessAllowed === false ? "deny" : "allow",
-      directMessages: "allow",
-    }),
+    accessPolicy: createDiscordAccessPolicy(
+      {
+        default: options.access ?? "allow",
+        directMessages: "allow",
+      },
+      options.ownerUserId,
+    ),
     reader: createReader(options.hasImage),
     selfUserId: () => options.selfUserId ?? "bot-123",
     canAccept: options.canAccept ?? (() => true),
@@ -168,7 +172,7 @@ test("delivers image-only messages when the attachment is supported", async () =
 });
 
 test("asks the owner when the bot is mentioned in a denied thread", async () => {
-  const harness = createIngest({ accessAllowed: false });
+  const harness = createIngest({ access: "deny" });
 
   const delivered = await harness.ingest.handle(createMessage({ mentionsBot: true, thread: true }));
 
@@ -185,8 +189,25 @@ test("asks the owner when the bot is mentioned in a denied thread", async () => 
   ]);
 });
 
+test("does not ask the owner when the bot is mentioned in an owner-only channel", async () => {
+  const harness = createIngest({ access: "owner", ownerUserId: "owner-123" });
+
+  const delivered = await harness.ingest.handle(createMessage({ mentionsBot: true }));
+
+  assert.equal(delivered, false);
+  assert.equal(harness.requests.length, 0);
+});
+
+test("delivers the owner's messages in an owner-only channel", async () => {
+  const harness = createIngest({ access: "owner", ownerUserId: "owner-123" });
+
+  const delivered = await harness.ingest.handle(createMessage({ authorId: "owner-123" }));
+
+  assert.equal(delivered, true);
+});
+
 test("does not ask the owner without a mention and stops when acceptance is closed", async () => {
-  const harness = createIngest({ accessAllowed: false });
+  const harness = createIngest({ access: "deny" });
   assert.equal(await harness.ingest.handle(createMessage()), false);
   assert.equal(harness.requests.length, 0);
 

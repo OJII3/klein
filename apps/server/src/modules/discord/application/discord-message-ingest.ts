@@ -8,7 +8,7 @@ import type {
 } from "../ports/discord-gateway-message";
 
 export interface DiscordMessageIngestDependencies {
-  readonly accessPolicy: Pick<DiscordAccessPolicy, "canReceive">;
+  readonly accessPolicy: Pick<DiscordAccessPolicy, "canReceive" | "resolveAccess">;
   readonly reader: DiscordGatewayMessageReader;
   readonly selfUserId: () => string | undefined;
   readonly canAccept: () => boolean;
@@ -39,16 +39,18 @@ export class DiscordMessageIngest {
 
     if (!this.dependencies.canAccept()) return false;
 
-    if (
-      !this.dependencies.accessPolicy.canReceive({
-        guildId: normalizedMessage.guildId,
-        channelId: normalizedMessage.parentChannelId ?? normalizedMessage.channelId,
-        threadId: normalizedMessage.threadId,
-        userId: message.author.id,
-        userIsBot: message.author.bot,
-      })
-    ) {
-      await this.requestAccessWhenMentioned(message, normalizedMessage);
+    const accessTarget = {
+      guildId: normalizedMessage.guildId,
+      channelId: normalizedMessage.parentChannelId ?? normalizedMessage.channelId,
+      threadId: normalizedMessage.threadId,
+      userId: message.author.id,
+      userIsBot: message.author.bot,
+    };
+
+    if (!this.dependencies.accessPolicy.canReceive(accessTarget)) {
+      if (this.dependencies.accessPolicy.resolveAccess(accessTarget) === "deny") {
+        await this.requestAccessWhenMentioned(message, normalizedMessage);
+      }
       return false;
     }
 
