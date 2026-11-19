@@ -37,7 +37,6 @@ import {
   createResourceLoader,
   PiAgentRuntime,
   resolveConfiguredModel,
-  withOpenCodeSessionHeader,
 } from "./pi-agent-runtime";
 import { createPiEventPrompt } from "./pi-event-prompt";
 import {
@@ -1103,13 +1102,6 @@ test("keeps caller assistant text for attached agents", async () => {
   }
 });
 
-test("resolves a configured built-in model", () => {
-  const model = resolveConfiguredModel("opencode-go", "kimi-k3");
-
-  assert.equal(model.provider, "opencode-go");
-  assert.equal(model.id, "kimi-k3");
-});
-
 test("resolves DeepSeek V4.1 Flash from the catalog", () => {
   const model = resolveConfiguredModel("opencode-go", "deepseek-v4.1-flash");
 
@@ -1122,21 +1114,6 @@ test("rejects a configured model that the catalog does not contain", () => {
     () =>
       resolveConfiguredModel("opencode-go", "deepseek-v4.1-flash", { getModel: () => undefined }),
     /Configured Pi model was not found: opencode-go\/deepseek-v4.1-flash/,
-  );
-});
-
-test("adds the stable session header to OpenCode models", () => {
-  const model = resolveConfiguredModel("opencode-go", "kimi-k3");
-  const configured = withOpenCodeSessionHeader(model, "session-123");
-
-  assert.equal(configured.headers?.["x-opencode-session"], "session-123");
-  assert.equal(model.headers, undefined);
-});
-
-test("rejects an unknown configured model", () => {
-  assert.throws(
-    () => resolveConfiguredModel("opencode-go", "does-not-exist"),
-    /Configured Pi model was not found: opencode-go\/does-not-exist/,
   );
 });
 

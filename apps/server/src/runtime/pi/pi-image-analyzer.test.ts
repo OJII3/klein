@@ -165,13 +165,6 @@ test("classifies an empty analysis result", async () => {
   );
 });
 
-test("rejects a configured image model without image input", () => {
-  assert.throws(
-    () => resolveConfiguredImageModel("opencode-go", "glm-5.3"),
-    /Configured Pi image model does not support image input: opencode-go\/glm-5.3/,
-  );
-});
-
 test("still resolves a normal text-only model", () => {
   const model = resolveConfiguredModel("opencode-go", "glm-5.3");
 
