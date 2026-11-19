@@ -280,7 +280,7 @@ test("injects user memory only when a user first speaks in a session", async () 
   }
 });
 
-test("passes proactive preferences and waiting follow-ups to the turn", async () => {
+test("passes proactive preferences, waiting follow-ups, and pending signals to the turn", async () => {
   const calls: { channelId: string; accessScope: string }[] = [];
   const harness = createHarness(undefined, undefined, {
     proactive: {
@@ -289,8 +289,13 @@ test("passes proactive preferences and waiting follow-ups to the turn", async ()
         return {
           preferences: "# Proactive preferences\n\n## Notes\n- 短く",
           waitingOn: "天気を確認する（5分ごと / 追跡中）",
+          pendingSignals: "在庫が3個（在庫監視 / 今日中）",
         };
       },
+      async ingestWatchSignal() {
+        throw new Error("Unexpected watch signal ingest");
+      },
+      async markSignalsSurfaced() {},
     },
   });
 
@@ -306,6 +311,7 @@ test("passes proactive preferences and waiting follow-ups to the turn", async ()
         content: "# Proactive preferences\n\n## Notes\n- 短く",
       },
       { name: "waiting-on", content: "天気を確認する（5分ごと / 追跡中）" },
+      { name: "pending-signals", content: "在庫が3個（在庫監視 / 今日中）" },
     ]);
   } finally {
     await harness.agentCoordinator.dispose();

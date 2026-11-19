@@ -56,6 +56,7 @@ import { ProactiveCoordinator } from "@modules/proactivity/application/proactive
 import { resolveProactivityConfig } from "@modules/proactivity/application/proactive-config";
 import { FileFollowUpStore } from "@modules/proactivity/infrastructure/file-follow-up-store";
 import { FileProactivePreferenceStore } from "@modules/proactivity/infrastructure/file-proactive-preference-store";
+import { FileProactiveSignalStore } from "@modules/proactivity/infrastructure/file-proactive-signal-store";
 import { MarkdownUserMemoryStore } from "@modules/user-memory/infrastructure/markdown-user-memory-store";
 import { UserMemoryCoordinator } from "@modules/user-memory/application/user-memory-coordinator";
 import { resolveUserMemoryConfig } from "@modules/user-memory/application/user-memory-config";
@@ -276,8 +277,10 @@ export async function bootstrapApplication(): Promise<void> {
     ? new ProactiveCoordinator({
         preferenceStore: new FileProactivePreferenceStore(proactivityConfig.preferencesFile),
         followUpStore: new FileFollowUpStore(proactivityConfig.followUpDirectory),
+        signalStore: new FileProactiveSignalStore(proactivityConfig.signalDirectory),
         scheduledTaskStore,
         attachedTasks: attachedAgentCoordinator,
+        defaults: proactivityConfig.defaults,
         logger,
       })
     : undefined;

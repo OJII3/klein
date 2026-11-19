@@ -48,6 +48,7 @@ function decide(
   urgency: ProactiveUrgency,
   overrides: {
     preferences?: ProactivePreferences;
+    defaults?: ProactivePolicyDefaults;
     now?: number;
     publicChannel?: boolean;
     deliveredToday?: number;
@@ -56,7 +57,7 @@ function decide(
   return decideDelivery({
     signal: withUrgency(urgency),
     preferences: overrides.preferences ?? DEFAULT_PROACTIVE_PREFERENCES,
-    defaults,
+    defaults: overrides.defaults ?? defaults,
     now: overrides.now ?? japanTime(2026, 11, 20, 12, 0),
     publicChannel: overrides.publicChannel ?? false,
     deliveredToday: overrides.deliveredToday ?? 0,
@@ -65,9 +66,59 @@ function decide(
 
 test("maps urgencies to delivery modes when nothing restricts them", () => {
   assert.deepEqual(decide("now"), { mode: "interrupt", reason: "urgency-now" });
-  assert.deepEqual(decide("today"), { mode: "attach", reason: "urgency-today" });
+  assert.deepEqual(decide("today"), { mode: "attach", reason: "default-mode" });
   assert.deepEqual(decide("digest"), { mode: "digest", reason: "urgency-digest" });
   assert.deepEqual(decide("silent"), { mode: "silent", reason: "urgency-silent" });
+});
+
+test("uses the default delivery mode for today's signals", () => {
+  const preference = (defaultMode: "interrupt" | "attach" | "digest" | "silent") =>
+    decide("today", {
+      preferences: { ...DEFAULT_PROACTIVE_PREFERENCES, delivery: { defaultMode } },
+    });
+
+  assert.deepEqual(preference("attach"), { mode: "attach", reason: "default-mode" });
+  assert.deepEqual(preference("digest"), { mode: "digest", reason: "default-mode" });
+  assert.deepEqual(preference("silent"), { mode: "silent", reason: "default-mode" });
+  assert.deepEqual(preference("interrupt"), { mode: "attach", reason: "default-mode" });
+  assert.deepEqual(decide("today", { defaults: { ...defaults, defaultMode: "interrupt" } }), {
+    mode: "attach",
+    reason: "default-mode",
+  });
+});
+
+test("falls back to attach when a digest time is not configured", () => {
+  const { digestAt: _digestAt, ...withoutDigestAt } = defaults;
+  const digestPreference: ProactivePreferences = {
+    ...DEFAULT_PROACTIVE_PREFERENCES,
+    delivery: { defaultMode: "digest" },
+  };
+
+  assert.deepEqual(decide("digest", { defaults: withoutDigestAt }), {
+    mode: "attach",
+    reason: "digest-unconfigured",
+  });
+  assert.deepEqual(decide("today", { defaults: withoutDigestAt, preferences: digestPreference }), {
+    mode: "attach",
+    reason: "digest-unconfigured",
+  });
+  assert.deepEqual(
+    decide("today", {
+      defaults: withoutDigestAt,
+      preferences: { ...DEFAULT_PROACTIVE_PREFERENCES, delivery: { digestAt: "09:00" } },
+    }),
+    { mode: "attach", reason: "default-mode" },
+  );
+  assert.deepEqual(
+    decide("digest", {
+      defaults: withoutDigestAt,
+      preferences: {
+        ...DEFAULT_PROACTIVE_PREFERENCES,
+        delivery: { digestAt: "09:00" },
+      },
+    }),
+    { mode: "digest", reason: "urgency-digest" },
+  );
 });
 
 test("stays silent in public channels unless they are enabled", () => {

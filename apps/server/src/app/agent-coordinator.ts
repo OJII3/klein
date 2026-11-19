@@ -51,7 +51,10 @@ export interface AgentCoordinatorDependencies {
   readonly channelRuleStore?: DiscordChannelRuleStore;
   readonly logger: Logger;
   readonly sharedMemoryCoordinator?: Pick<SharedMemoryCoordinator, "getContext" | "enqueue">;
-  readonly proactive?: Pick<ProactiveCoordinator, "getContext">;
+  readonly proactive?: Pick<
+    ProactiveCoordinator,
+    "getContext" | "ingestWatchSignal" | "markSignalsSurfaced"
+  >;
   readonly operatingState: DiscordOperatingState;
   readonly scheduledTaskStore?: ScheduledTaskStore;
   readonly userMemoryCoordinator?: Pick<UserMemoryCoordinator, "observe">;
@@ -90,6 +93,7 @@ export class AgentCoordinator {
       logger: this.logger,
       operatingState: dependencies.operatingState,
       ownerUserId: dependencies.ownerUserId,
+      ...(dependencies.proactive ? { proactive: dependencies.proactive } : {}),
       scheduledTaskStore: dependencies.scheduledTaskStore,
       watchCheckRunner: dependencies.watchCheckRunner,
       sessionManager: this.sessionManager,
@@ -235,6 +239,7 @@ export class AgentCoordinator {
             channelRule,
             ...(proactive?.preferences ? { proactivePreferences: proactive.preferences } : {}),
             ...(proactive?.waitingOn ? { waitingOn: proactive.waitingOn } : {}),
+            ...(proactive?.pendingSignals ? { pendingSignals: proactive.pendingSignals } : {}),
           });
           logger.debug(
             {

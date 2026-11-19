@@ -19,12 +19,12 @@ export interface DeliveryDecision {
   readonly reason: string;
 }
 
-const MODE_BY_URGENCY: Readonly<Record<ProactiveUrgency, ProactiveDeliveryMode>> = {
-  now: "interrupt",
-  today: "attach",
-  digest: "digest",
-  silent: "silent",
-};
+const MODE_BY_URGENCY: Readonly<Record<Exclude<ProactiveUrgency, "today">, ProactiveDeliveryMode>> =
+  {
+    now: "interrupt",
+    digest: "digest",
+    silent: "silent",
+  };
 
 export function decideDelivery(input: {
   signal: ProactiveSignal;
@@ -58,7 +58,19 @@ export function decideDelivery(input: {
     return { mode: "attach", reason: "daily-limit" };
   }
 
-  return { mode: MODE_BY_URGENCY[signal.urgency], reason: `urgency-${signal.urgency}` };
+  const digestAt = preferences.delivery.digestAt ?? defaults.digestAt;
+  const withDigestAvailability = (mode: ProactiveDeliveryMode, reason: string): DeliveryDecision =>
+    mode === "digest" && digestAt === undefined
+      ? { mode: "attach", reason: "digest-unconfigured" }
+      : { mode, reason };
+
+  if (signal.urgency === "today") {
+    const preferredMode = preferences.delivery.defaultMode ?? defaults.defaultMode;
+    const mode = preferredMode === "interrupt" ? "attach" : preferredMode;
+    return withDigestAvailability(mode, "default-mode");
+  }
+
+  return withDigestAvailability(MODE_BY_URGENCY[signal.urgency], `urgency-${signal.urgency}`);
 }
 
 function findTopicPreference(

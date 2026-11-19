@@ -21,11 +21,19 @@ import type { WatchCheckRunner } from "@modules/scheduling/ports/watch-check-run
 
 const weekdaySchema = Type.Union(SCHEDULE_WEEKDAYS.map((weekday) => Type.Literal(weekday)));
 
+const watchPrioritySchema = Type.Union([Type.Literal("normal"), Type.Literal("urgent")]);
+
 interface WatchUpdateDetails {
   readonly id: string;
   readonly updated: boolean;
   readonly enabled: boolean;
   readonly nextRunAt?: string;
+}
+
+interface WatchGetDetails {
+  readonly id: string;
+  readonly found: boolean;
+  readonly priority?: "normal" | "urgent";
 }
 
 const recurringScheduleSchema = Type.Union([
@@ -66,6 +74,7 @@ export function createWatchTools(
         "`store(key, value)` and `load(key)` keep JSON values between checks of the same watch; storing `undefined` deletes a key. " +
         "Text printed with `text()` or `console.*` becomes the wake output. " +
         "The wake goes to the session that registered the watch: the conversation agent, or the worker that called this tool. " +
+        'Set `priority` to "urgent" only for watches whose wake should reach the user immediately; it defaults to "normal". ' +
         "The script runs once before the watch is registered; if that run fails, the watch is not registered. " +
         "Times use Japan Standard Time (JST). Weekly schedules require one or more weekdays: sun, mon, tue, wed, thu, fri, sat.",
       parameters: Type.Object({
@@ -74,6 +83,7 @@ export function createWatchTools(
         script: Type.String({ minLength: 1, maxLength: 20_000 }),
         args: Type.Optional(Type.Array(Type.String({ maxLength: 1_000 }), { maxItems: 100 })),
         message: Type.String({ minLength: 1, maxLength: 2_000 }),
+        priority: Type.Optional(watchPrioritySchema),
       }),
       exposure: "deferred",
       async execute(_toolCallId, params) {
@@ -89,6 +99,7 @@ export function createWatchTools(
           script: params.script.trim(),
           args: params.args ?? [],
           message: params.message.trim(),
+          ...(params.priority !== undefined ? { priority: params.priority } : {}),
           ...(ownerTaskId ? { ownerTaskId } : {}),
           enabled: true,
           consecutiveFailures: 0,
@@ -120,6 +131,7 @@ export function createWatchTools(
       label: "Update Watch",
       description:
         "Update one watch in the current conversation by its ID. Use it to edit the name, schedule, script, args, or notification message, and to disable or re-enable the watch with `enabled`. " +
+        'Set `priority` to "urgent" only for watches whose wake should reach the user immediately. Leaving it out keeps the current priority. ' +
         "Changing the schedule or enabling a disabled watch schedules the next check from now. " +
         "Enabling a disabled watch runs the script once first; if that run fails, the watch stays disabled. " +
         "Use watch_list to find the ID.",
@@ -131,6 +143,7 @@ export function createWatchTools(
         args: Type.Optional(Type.Array(Type.String({ maxLength: 1_000 }), { maxItems: 100 })),
         message: Type.Optional(Type.String({ minLength: 1, maxLength: 2_000 })),
         enabled: Type.Optional(Type.Boolean()),
+        priority: Type.Optional(watchPrioritySchema),
       }),
       exposure: "deferred",
       async execute(_toolCallId, params) {
@@ -166,6 +179,7 @@ export function createWatchTools(
           script: params.script?.trim() ?? current.script,
           args: params.args ?? current.args,
           message: params.message?.trim() ?? current.message,
+          ...(params.priority !== undefined ? { priority: params.priority } : {}),
           enabled,
           nextRunAt,
         };
@@ -237,6 +251,7 @@ export function createWatchTools(
           (candidate) => candidate.id === params.id && canManage(candidate),
         );
         if (!watch) {
+          const details: WatchGetDetails = { id: params.id, found: false };
           return {
             content: [
               {
@@ -244,12 +259,17 @@ export function createWatchTools(
                 text: `この会話にID ${params.id} の監視はありません。`,
               },
             ],
-            details: { id: params.id, found: false },
+            details,
           };
         }
+        const details: WatchGetDetails = {
+          id: watch.id,
+          found: true,
+          priority: watch.priority ?? "normal",
+        };
         return {
           content: [{ type: "text", text: formatWatchDetails(watch) }],
-          details: { id: watch.id, found: true },
+          details,
         };
       },
     }),
@@ -292,6 +312,7 @@ interface WatchListItem {
   readonly script: string;
   readonly args: readonly string[];
   readonly message: string;
+  readonly priority: "normal" | "urgent";
   readonly enabled: boolean;
   readonly consecutiveFailures: number;
   ownerTaskId?: string;
@@ -310,6 +331,7 @@ function serializeWatchListItem(watch: WatchTask): WatchListItem {
     script: watch.script,
     args: watch.args,
     message: watch.message,
+    priority: watch.priority ?? "normal",
     enabled: watch.enabled,
     consecutiveFailures: watch.consecutiveFailures,
   };

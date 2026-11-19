@@ -4,6 +4,7 @@ import type { Logger } from "pino";
 
 import type { AttachedTaskControl } from "@agents/core/attached-agent";
 import { formatSchedule } from "@modules/scheduling/domain/schedule";
+import type { WatchTask } from "@modules/scheduling/domain/scheduled-task";
 import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
 import type { AccessScope } from "@shared/access";
 
@@ -12,25 +13,47 @@ import {
   isFollowUpExpired,
   markFollowUpDone,
   markFollowUpExpired,
+  markFollowUpNotified,
   markFollowUpOrphaned,
   type FollowUp,
   type FollowUpWatcher,
 } from "../domain/follow-up";
+import { japanDateKey } from "../domain/japan-time";
+import {
+  decideDelivery,
+  type DeliveryDecision,
+  type ProactivePolicyDefaults,
+} from "../domain/proactive-delivery-policy";
 import {
   renderProactivePreferences,
+  type ProactiveDeliveryMode,
   type ProactivePreferenceChange,
   type ProactivePreferences,
 } from "../domain/proactive-preference";
+import {
+  createSignalDedupeKey,
+  formatSignal,
+  isSignalExpired,
+  markSignalExpired,
+  markSignalSurfaced,
+  type ProactiveSignal,
+} from "../domain/proactive-signal";
 import type { FollowUpStore } from "../ports/follow-up-store";
 import type { ProactivePreferenceStore } from "../ports/proactive-preference-store";
+import type { ProactiveSignalStore } from "../ports/proactive-signal-store";
 
 const MAX_WAITING_ON_LINES = 8;
+const MAX_PENDING_SIGNALS = 5;
+const SIGNAL_EVIDENCE_LIMIT = 2_000;
+const SIGNAL_LIFETIME_MS = 7 * 24 * 60 * 60 * 1_000;
 
 export interface ProactiveCoordinatorOptions {
   readonly preferenceStore: ProactivePreferenceStore;
   readonly followUpStore: FollowUpStore;
+  readonly signalStore: ProactiveSignalStore;
   readonly scheduledTaskStore: ScheduledTaskStore;
   readonly attachedTasks: Pick<AttachedTaskControl, "list">;
+  readonly defaults: ProactivePolicyDefaults;
   readonly logger?: Logger;
   readonly now?: () => number;
 }
@@ -38,6 +61,18 @@ export interface ProactiveCoordinatorOptions {
 export interface ProactiveContext {
   readonly preferences?: string;
   readonly waitingOn?: string;
+  readonly pendingSignals?: string;
+}
+
+export interface WatchSignalInput {
+  readonly watch: WatchTask;
+  readonly output: string;
+  readonly now: number;
+}
+
+export interface WatchSignalResult {
+  readonly decision: DeliveryDecision;
+  readonly signal: ProactiveSignal;
 }
 
 interface ResolvedWatcher {
@@ -57,11 +92,87 @@ export class ProactiveCoordinator {
     const waitingOn = formatWaitingOn(
       await this.synchronizeFollowUps(input.channelId, input.accessScope),
     );
+    const pendingSignals = await this.consumePendingSignals(input.channelId, input.accessScope);
 
     return {
       ...(preferences !== undefined ? { preferences } : {}),
       ...(waitingOn !== undefined ? { waitingOn } : {}),
+      ...(pendingSignals !== undefined ? { pendingSignals } : {}),
     };
+  }
+
+  async ingestWatchSignal(input: WatchSignalInput): Promise<WatchSignalResult> {
+    const { watch, now } = input;
+    const evidenceText = input.output.slice(0, SIGNAL_EVIDENCE_LIMIT);
+    const signal: ProactiveSignal = {
+      version: 1,
+      id: randomUUID(),
+      channelId: watch.channelId,
+      accessScope: watch.accessScope,
+      audience: watch.accessScope === "public" ? "public" : "owner",
+      source: { kind: "watch", ref: watch.id },
+      topic: watch.name,
+      summary: watch.message,
+      ...(evidenceText.length > 0 ? { evidence: { text: evidenceText } } : {}),
+      urgency: watch.priority === "urgent" ? "now" : "today",
+      dedupeKey: createSignalDedupeKey({
+        sourceKind: "watch",
+        sourceRef: watch.id,
+        topic: watch.name,
+        evidence: { text: evidenceText },
+      }),
+      observedAt: new Date(now).toISOString(),
+      expiresAt: new Date(now + SIGNAL_LIFETIME_MS).toISOString(),
+      status: "queued",
+    };
+
+    const duplicate = await this.options.signalStore.findActiveByDedupeKey(signal.dedupeKey);
+    if (duplicate) {
+      return { decision: { mode: "silent", reason: "duplicate" }, signal: duplicate };
+    }
+
+    const preferences = await this.options.preferenceStore.read();
+    const deliveredToday = await this.options.signalStore.countSurfacedSince(
+      watch.channelId,
+      watch.accessScope,
+      japanDayStartIso(now),
+    );
+    const decision = decideDelivery({
+      signal,
+      preferences,
+      defaults: this.options.defaults,
+      now,
+      publicChannel: watch.accessScope === "public",
+      deliveredToday,
+    });
+    const queued: ProactiveSignal = { ...signal, delivery: { mode: decision.mode } };
+
+    if (decision.mode === "silent") {
+      const surfaced = markSignalSurfaced(queued, "silent", now);
+      await this.options.signalStore.create(surfaced);
+      return { decision, signal: surfaced };
+    }
+
+    await this.options.signalStore.create(queued);
+    return { decision, signal: queued };
+  }
+
+  async markSignalsSurfaced(
+    signals: readonly ProactiveSignal[],
+    mode: ProactiveDeliveryMode,
+    now: number,
+  ): Promise<void> {
+    for (const signal of signals) {
+      await this.options.signalStore.update(markSignalSurfaced(signal, mode, now));
+      if (mode === "silent") continue;
+      if (signal.source.kind !== "watch" || signal.source.ref === undefined) continue;
+
+      const followUps = await this.options.followUpStore.listByWatcher("watch", signal.source.ref);
+      for (const followUp of followUps) {
+        if (followUp.status !== "active" && followUp.status !== "notified") continue;
+        await this.options.followUpStore.update(markFollowUpNotified(followUp, now));
+      }
+    }
   }
 
   updatePreference(change: ProactivePreferenceChange): Promise<ProactivePreferences> {
@@ -141,6 +252,27 @@ export class ProactiveCoordinator {
         : { ...followUp, status: "dismissed", updatedAt: new Date(now).toISOString() };
     await this.options.followUpStore.update(updated);
     return true;
+  }
+
+  private async consumePendingSignals(
+    channelId: string,
+    accessScope: AccessScope,
+  ): Promise<string | undefined> {
+    const now = this.now();
+    const queued = await this.options.signalStore.listQueued(channelId, accessScope, "attach");
+    const selected: ProactiveSignal[] = [];
+
+    for (const signal of queued) {
+      if (isSignalExpired(signal, now)) {
+        await this.options.signalStore.update(markSignalExpired(signal, now));
+        continue;
+      }
+      if (selected.length < MAX_PENDING_SIGNALS) selected.push(signal);
+    }
+
+    if (selected.length === 0) return undefined;
+    await this.markSignalsSurfaced(selected, "attach", now);
+    return selected.map((signal) => formatSignal(signal)).join("\n");
   }
 
   private async readPreferencesContext(): Promise<string | undefined> {
@@ -265,4 +397,8 @@ function isEmptyPreferences(preferences: ProactivePreferences): boolean {
     preferences.topics.length === 0 &&
     preferences.notes.length === 0
   );
+}
+
+function japanDayStartIso(now: number): string {
+  return new Date(`${japanDateKey(now)}T00:00:00+09:00`).toISOString();
 }

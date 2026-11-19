@@ -154,7 +154,7 @@ test("lists queued signals by scope and planned delivery mode", async () => {
   });
 });
 
-test("counts surfacing events since a timestamp, including later dismissals", async () => {
+test("counts surfacing events since a timestamp while excluding silent deliveries", async () => {
   await withTempDir(async (directory) => {
     const store = new FileProactiveSignalStore(directory);
     const first = markSignalSurfaced(
@@ -166,6 +166,11 @@ test("counts surfacing events since a timestamp, including later dismissals", as
       markSignalSurfaced(makeSignal("second"), "digest", Date.parse("2026-11-20T02:00:00.000Z")),
       Date.parse("2026-11-20T03:00:00.000Z"),
     );
+    const silent = markSignalSurfaced(
+      makeSignal("silent"),
+      "silent",
+      Date.parse("2026-11-20T02:30:00.000Z"),
+    );
     const otherChannel = markSignalSurfaced(
       makeSignal("other-channel", { channelId: "channel-b" }),
       "attach",
@@ -173,7 +178,9 @@ test("counts surfacing events since a timestamp, including later dismissals", as
     );
     const queued = makeSignal("queued");
 
-    await Promise.all([first, second, otherChannel, queued].map((signal) => store.create(signal)));
+    await Promise.all(
+      [first, second, silent, otherChannel, queued].map((signal) => store.create(signal)),
+    );
 
     assert.equal(
       await store.countSurfacedSince("channel-a", "owner:123", "2026-11-20T01:00:00.000Z"),
@@ -182,6 +189,10 @@ test("counts surfacing events since a timestamp, including later dismissals", as
     assert.equal(
       await store.countSurfacedSince("channel-a", "owner:123", "2026-11-20T01:30:00.000Z"),
       1,
+    );
+    assert.equal(
+      await store.countSurfacedSince("channel-a", "owner:123", "2026-11-20T02:30:00.000Z"),
+      0,
     );
     assert.equal(
       await store.countSurfacedSince("channel-a", "owner:123", "2026-11-20T05:00:00.000Z"),

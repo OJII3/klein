@@ -53,7 +53,10 @@ function unpackWatchTools(tools: ReturnType<typeof createWatchTools>) {
   return { addTool, updateTool, listTool, getTool, deleteTool };
 }
 
-async function addWatch(tools: ReturnType<typeof createWatchTools>) {
+async function addWatch(
+  tools: ReturnType<typeof createWatchTools>,
+  priority?: "normal" | "urgent",
+) {
   const { addTool } = unpackWatchTools(tools);
   return addTool.execute(
     "tool-call",
@@ -63,6 +66,7 @@ async function addWatch(tools: ReturnType<typeof createWatchTools>) {
       script: "text(args[0]); silent();",
       args: ["--json"],
       message: "在庫の変化を確認してください。",
+      ...(priority !== undefined ? { priority } : {}),
     },
     undefined,
     undefined,
@@ -133,6 +137,77 @@ test("provides watch add, update, get, list, and delete tools in the given scope
 
   await deleteTool.execute("tool-call", { id: created.id }, undefined, undefined, ctx);
   assert.deepEqual(deletedIds, [created.id]);
+});
+
+test("stores watch priority and reports it in details", async () => {
+  const { store, getStored } = createSingleWatchStore();
+  const { runner } = createRunner();
+  const tools = createWatchTools(store, "channel-a", "public", runner);
+  const { listTool, getTool } = unpackWatchTools(tools);
+  const ctx = await createStubExtensionToolContext();
+
+  await addWatch(tools, "urgent");
+  const created = getStored();
+  if (!created) {
+    assert.fail("expected watch to be created");
+  }
+  assert.equal(created.priority, "urgent");
+
+  const listResult = await listTool.execute("tool-call", {}, undefined, undefined, ctx);
+  assert.equal(listResult.details.watches[0]?.priority, "urgent");
+
+  const getResult = await getTool.execute(
+    "tool-call",
+    { id: created.id },
+    undefined,
+    undefined,
+    ctx,
+  );
+  assert.equal(getResult.details.priority, "urgent");
+});
+
+test("defaults watch priority to normal and changes it only when specified", async () => {
+  const { store, getStored } = createSingleWatchStore();
+  const { runner } = createRunner();
+  const tools = createWatchTools(store, "channel-a", "public", runner);
+  const { updateTool, listTool, getTool } = unpackWatchTools(tools);
+  const ctx = await createStubExtensionToolContext();
+
+  await addWatch(tools);
+  const created = getStored();
+  if (!created) {
+    assert.fail("expected watch to be created");
+  }
+  assert.equal(created.priority, undefined);
+
+  const listResult = await listTool.execute("tool-call", {}, undefined, undefined, ctx);
+  assert.equal(listResult.details.watches[0]?.priority, "normal");
+  const getResult = await getTool.execute(
+    "tool-call",
+    { id: created.id },
+    undefined,
+    undefined,
+    ctx,
+  );
+  assert.equal(getResult.details.priority, "normal");
+
+  await updateTool.execute(
+    "tool-call",
+    { id: created.id, priority: "urgent" },
+    undefined,
+    undefined,
+    ctx,
+  );
+  assert.equal(getStored()?.priority, "urgent");
+
+  await updateTool.execute(
+    "tool-call",
+    { id: created.id, message: "在庫を確認しました。" },
+    undefined,
+    undefined,
+    ctx,
+  );
+  assert.equal(getStored()?.priority, "urgent");
 });
 
 test("updates a watch and can disable and re-enable it", async () => {

@@ -78,6 +78,7 @@ export class FileProactiveSignalStore implements ProactiveSignalStore {
       (signal) =>
         signal.channelId === channelId &&
         signal.accessScope === accessScope &&
+        signal.delivery?.mode !== "silent" &&
         signal.delivery?.surfacedAt !== undefined &&
         Date.parse(signal.delivery.surfacedAt) >= sinceTime,
     ).length;
