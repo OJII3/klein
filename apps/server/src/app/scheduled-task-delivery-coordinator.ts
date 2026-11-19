@@ -5,7 +5,6 @@ import type { AttachedTaskControl } from "@agents/core/attached-agent";
 import type { DiscordAccessPolicy } from "@modules/discord/domain/discord-access-policy";
 import type { DiscordOperatingState } from "@modules/discord/domain/discord-operating-state";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
-import type { OwnerMemoryStore } from "@modules/memory/application/owner-memory-store";
 import {
   getNextRunAt,
   isRecurringSchedule,
@@ -30,7 +29,6 @@ export interface ScheduledTaskDeliveryCoordinatorDependencies {
   readonly channelApi: DiscordChannelApi;
   readonly logger: Logger;
   readonly operatingState: DiscordOperatingState;
-  readonly ownerMemoryStore?: Pick<OwnerMemoryStore, "getContext">;
   readonly ownerUserId?: string;
   readonly scheduledTaskStore?: ScheduledTaskStore;
   readonly watchCheckRunner: WatchCheckRunner;
@@ -377,11 +375,8 @@ export class ScheduledTaskDeliveryCoordinator {
         conversationKey,
         task.accessScope,
         async (agent) => {
-          const ownerMemory = isOwnerAccessScope(task.accessScope, this.dependencies.ownerUserId)
-            ? await this.dependencies.ownerMemoryStore?.getContext(buildEventText(event))
-            : undefined;
           try {
-            await agent.promptEvent(event, { ownerMemory });
+            await agent.promptEvent(event);
             await this.completeWatch(task);
             this.dependencies.logger.info(
               {

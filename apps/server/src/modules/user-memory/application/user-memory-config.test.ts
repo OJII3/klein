@@ -10,7 +10,7 @@ function createConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     llm: { provider: "opencode-go", model: "main-model" },
     runtime: { agentDir: "/tmp/klein-agent" },
     discord: { access: { default: "deny", directMessages: "deny" } },
-    features: { memory: { enabled: false }, minecraft: { enabled: false } },
+    features: { sharedMemory: { enabled: false }, minecraft: { enabled: false } },
     ...overrides,
   };
 }
@@ -22,7 +22,7 @@ test("returns undefined when user memory is not configured", () => {
 test("keeps the configured directory and model", () => {
   const config = createConfig({
     features: {
-      memory: { enabled: false },
+      sharedMemory: { enabled: false },
       minecraft: { enabled: false },
       userMemory: {
         enabled: true,
@@ -43,7 +43,7 @@ test("falls back to the main model when user memory has no model of its own", ()
   const config = createConfig({
     llm: { provider: "google", model: "main-model", thinkingLevel: "high" },
     features: {
-      memory: { enabled: false },
+      sharedMemory: { enabled: false },
       minecraft: { enabled: false },
       userMemory: { enabled: true },
     },

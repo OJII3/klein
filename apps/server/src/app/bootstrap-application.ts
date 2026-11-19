@@ -32,7 +32,7 @@ import { createPiMinimalAgentFactory } from "@runtime/pi/pi-minimal-agent-factor
 import { migratePiDurableStorage } from "@runtime/pi/pi-durable-migration";
 import { createPiUsageReporterFromEnv } from "@runtime/pi/pi-usage-reporter";
 import { createWatchFetchTool } from "@runtime/pi/watch-fetch-tool";
-import { PiMemoryProcessor } from "@runtime/pi/pi-memory-processor";
+import { PiSharedMemoryAgent } from "@runtime/pi/pi-shared-memory-agent";
 import { PiUserMemoryAgent } from "@runtime/pi/pi-user-memory-agent";
 import { PiVoiceReactionSelector } from "@runtime/pi/pi-voice-reaction-selector";
 import { PiVoiceTranscriptQueueSelector } from "@runtime/pi/pi-voice-transcript-queue-selector";
@@ -47,16 +47,11 @@ import { FileDiscordAccessRuleStore } from "@modules/discord/infrastructure/file
 import { FileDiscordAccessRequestStore } from "@modules/discord/infrastructure/file-discord-access-request-store";
 import { FileDiscordChannelRuleStore } from "@modules/discord/infrastructure/file-discord-channel-rule-store";
 import { FileDiscordUserStore } from "@modules/discord/infrastructure/file-discord-user-store";
-import { MemoryCoordinator } from "@modules/memory/application/memory-coordinator";
-import { resolveMemoryConfig } from "@modules/memory/application/memory-config";
-import {
-  JsonGuildMemoryStore,
-  JsonMemoryStore,
-} from "@modules/memory/infrastructure/json-memory-store";
-import {
-  createWebUiMemoryAccessor,
-  OwnerMemoryStore,
-} from "@modules/memory/application/owner-memory-store";
+import { SharedMemoryCoordinator } from "@modules/shared-memory/application/shared-memory-coordinator";
+import { resolveSharedMemoryConfig } from "@modules/shared-memory/application/shared-memory-config";
+import { MarkdownSharedMemoryStore } from "@modules/shared-memory/infrastructure/markdown-shared-memory-store";
+import { migrateLegacySharedMemory } from "@modules/shared-memory/infrastructure/json-shared-memory-migration";
+import { createWebUiSharedMemoryAccessor } from "@modules/shared-memory/application/shared-memory-web-accessor";
 import { MarkdownUserMemoryStore } from "@modules/user-memory/infrastructure/markdown-user-memory-store";
 import { UserMemoryCoordinator } from "@modules/user-memory/application/user-memory-coordinator";
 import { resolveUserMemoryConfig } from "@modules/user-memory/application/user-memory-config";
@@ -97,7 +92,7 @@ export async function bootstrapApplication(): Promise<void> {
 
   const systemPrompt = await loadPromptFile(profile.systemPromptFile);
   const voiceChatConfig = resolveVoiceChatConfig(config);
-  const memoryConfig = resolveMemoryConfig(config);
+  const sharedMemoryConfig = resolveSharedMemoryConfig(config);
   const modelsInUse = collectModelsInUse(config);
   const credentials = resolveCredentials({ modelsInUse, environment: process.env });
   const discordOperatingState = new DiscordOperatingState();
@@ -134,13 +129,6 @@ export async function bootstrapApplication(): Promise<void> {
     ownerUserId,
     discordAccessRuleStore,
   );
-  const ownerMemoryStore = ownerUserId
-    ? new OwnerMemoryStore(
-        new JsonMemoryStore(
-          resolve(config.owner?.memoryFilePath ?? resolve(agentDir, "owner-memory/MEMORY.json")),
-        ),
-      )
-    : undefined;
   const userMemoryConfig = resolveUserMemoryConfig(config);
   const userMemoryDirectory =
     userMemoryConfig?.enabled === true
@@ -294,7 +282,6 @@ export async function bootstrapApplication(): Promise<void> {
           channelId,
           discordUserDirectory,
           ownerFeaturesAllowed,
-          ownerMemoryStore,
           ownerUserId,
           requesterUserId: toolContext.requesterId,
           scheduledTaskStore,
@@ -376,18 +363,33 @@ export async function bootstrapApplication(): Promise<void> {
     { enableReactions: true },
   );
   const memorySessionId = `memory-${randomUUID()}`;
-  const memoryCoordinator = memoryConfig.enabled
-    ? new MemoryCoordinator({
-        store: new JsonGuildMemoryStore(memoryConfig.filePath),
-        idleSeconds: memoryConfig.idleSeconds,
+  if (sharedMemoryConfig.enabled) {
+    await migrateLegacySharedMemory(sharedMemoryConfig.directory, logger);
+  }
+  const sharedMemoryCoordinator = sharedMemoryConfig.enabled
+    ? new SharedMemoryCoordinator({
+        store: new MarkdownSharedMemoryStore(sharedMemoryConfig.directory),
+        idleSeconds: sharedMemoryConfig.idleSeconds,
         logger,
-        maxBatchAgeSeconds: memoryConfig.maxBatchAgeSeconds,
-        maxBatchMessages: memoryConfig.maxBatchMessages,
-        processor: new PiMemoryProcessor(
-          resolveConfiguredModel(memoryConfig.llm.provider, memoryConfig.llm.model, modelRuntime),
-          memoryConfig.llm.thinkingLevel,
-          sessionRunner.createCompleter(memorySessionId),
-        ),
+        maxBatchAgeSeconds: sharedMemoryConfig.maxBatchAgeSeconds,
+        maxBatchMessages: sharedMemoryConfig.maxBatchMessages,
+        processor: new PiSharedMemoryAgent({
+          directory: sharedMemoryConfig.directory,
+          sessionId: memorySessionId,
+          createFactory: (directory) =>
+            createPiMinimalAgentFactory({
+              runner: sessionRunner,
+              model: resolveConfiguredModel(
+                sharedMemoryConfig.llm.provider,
+                sharedMemoryConfig.llm.model,
+                modelRuntime,
+              ),
+              cwd: directory,
+              ...(sharedMemoryConfig.llm.thinkingLevel
+                ? { thinkingLevel: sharedMemoryConfig.llm.thinkingLevel }
+                : {}),
+            }),
+        }),
         taskCoordinator,
       })
     : undefined;
@@ -401,8 +403,7 @@ export async function bootstrapApplication(): Promise<void> {
     channelApi: discordService,
     logger,
     discordUserDirectory,
-    memoryCoordinator,
-    ownerMemoryStore,
+    sharedMemoryCoordinator,
     operatingState: discordOperatingState,
     scheduledTaskStore,
     userMemoryCoordinator,
@@ -432,7 +433,7 @@ export async function bootstrapApplication(): Promise<void> {
     }
   };
   const webUiConfig = resolveWebUiConfig(config);
-  const webUiMemory = createWebUiMemoryAccessor(ownerMemoryStore, memoryCoordinator);
+  const webUiMemory = createWebUiSharedMemoryAccessor(sharedMemoryCoordinator);
   const webUi = webUiConfig.enabled
     ? await startWebUi({
         displayName: profile.displayName,
@@ -483,8 +484,8 @@ export async function bootstrapApplication(): Promise<void> {
     await webUi?.stop();
     discordService.stopAccepting();
     await attachedAgentCoordinator.dispose();
-    await Promise.all([memoryCoordinator?.flush(), userMemoryCoordinator?.flush()]);
-    memoryCoordinator?.dispose();
+    await Promise.all([sharedMemoryCoordinator?.flush(), userMemoryCoordinator?.flush()]);
+    sharedMemoryCoordinator?.dispose();
     userMemoryCoordinator?.dispose();
     await taskCoordinator.waitForCompletion();
     await discordService.stop();

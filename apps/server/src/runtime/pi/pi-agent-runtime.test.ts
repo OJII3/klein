@@ -393,9 +393,8 @@ test("records turn context as a custom entry before the prompt", async () => {
   await runtime.prompt({
     event,
     context: {
-      ownerMemory: "owner context",
       blocks: [
-        { name: "guild-memory", content: "guild context" },
+        { name: "shared-memory", content: "guild context" },
         { name: "channel-rule", content: "channel rule" },
       ],
     },
@@ -406,8 +405,7 @@ test("records turn context as a custom entry before the prompt", async () => {
       customType: "klein-turn-context",
       data: {
         content: [
-          "<owner-memory>\nowner context\n</owner-memory>",
-          "<guild-memory>\nguild context\n</guild-memory>",
+          "<shared-memory>\nguild context\n</shared-memory>",
           "<channel-rule>\nchannel rule\n</channel-rule>",
         ].join("\n\n"),
       },
@@ -451,7 +449,7 @@ test("does not record turn context when steering a streaming session", async () 
   };
   await runtime.steer({
     event,
-    context: { blocks: [{ name: "guild-memory", content: "guild context" }] },
+    context: { blocks: [{ name: "shared-memory", content: "guild context" }] },
   });
 
   assert.deepEqual(sessionManager.entries, []);

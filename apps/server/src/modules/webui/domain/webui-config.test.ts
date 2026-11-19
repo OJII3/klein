@@ -13,7 +13,7 @@ function createConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     llm: { provider: "opencode-go", model: "main-model" },
     runtime: { agentDir: "/tmp/klein-agent" },
     discord: { access: { default: "deny", directMessages: "deny" } },
-    features: { memory: { enabled: false }, minecraft: { enabled: false } },
+    features: { sharedMemory: { enabled: false }, minecraft: { enabled: false } },
     ...overrides,
   };
 }
@@ -24,7 +24,7 @@ test("starts cloudflared only when the Web UI configuration enables it", () => {
     resolveWebUiConfig(
       createConfig({
         features: {
-          memory: { enabled: false },
+          sharedMemory: { enabled: false },
           minecraft: { enabled: false },
           webui: { enabled: true, cloudflared: { enabled: true } },
         },

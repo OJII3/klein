@@ -41,8 +41,6 @@ import { DiscordUserDirectory } from "@modules/discord/application/discord-user-
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import { FileDiscordUserStore } from "@modules/discord/infrastructure/file-discord-user-store";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
-import { OwnerMemoryStore } from "@modules/memory/application/owner-memory-store";
-import { JsonMemoryStore } from "@modules/memory/infrastructure/json-memory-store";
 import { FileScheduledTaskStore } from "@modules/scheduling/infrastructure/file-scheduled-task-store";
 import { QuickJsWatchCheckRunner } from "@modules/scheduling/infrastructure/quickjs-watch-check-runner";
 import { MarkdownUserMemoryStore } from "@modules/user-memory/infrastructure/markdown-user-memory-store";
@@ -1366,9 +1364,6 @@ async function executeSessionSlice(
     const watchToolCatalog = { tools: [createWatchFetchTool({ agentDir })] };
     const watchCheckRunner = new QuickJsWatchCheckRunner({ tools: watchToolCatalog.tools });
     const scheduledTaskStore = new FileScheduledTaskStore(join(sliceRoot, "schedules"));
-    const ownerMemoryStore = new OwnerMemoryStore(
-      new JsonMemoryStore(join(sliceRoot, "owner-memory", "MEMORY.json")),
-    );
     const userMemoryStore = new MarkdownUserMemoryStore(join(sliceRoot, "user-memory"));
     const discordUserDirectory = new DiscordUserDirectory(
       new FileDiscordUserStore(join(sliceRoot, "discord-users.json")),
@@ -1412,7 +1407,6 @@ async function executeSessionSlice(
           requesterUserId: toolContext.requesterId,
           scheduledTaskStore,
           watchCheckRunner,
-          ownerMemoryStore,
           userMemoryStore,
           discordUserDirectory,
         }),
@@ -2058,9 +2052,8 @@ function classifyMessageKind(message: Message, customType?: string): string {
     if (text.includes("<previous-conversation-context>")) return "context-handoff";
     if (text.includes("<image-analysis")) return "image-analysis";
     if (
-      text.includes("<owner-memory>") ||
       text.includes("<user-memory>") ||
-      text.includes("<guild-memory>") ||
+      text.includes("<shared-memory>") ||
       text.includes("<channel-rule>")
     ) {
       return "turn-context";

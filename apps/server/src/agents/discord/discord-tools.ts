@@ -4,13 +4,11 @@ import type { AgentImageAnalyzer } from "@agents/core/agent-factory";
 import type { AttachedTaskControl } from "@agents/core/attached-agent";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
 import type { DiscordUserResolver } from "@modules/discord/ports/discord-user-resolver";
-import type { OwnerMemoryStore } from "@modules/memory/application/owner-memory-store";
 import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
 import type { WatchCheckRunner } from "@modules/scheduling/ports/watch-check-runner";
 import type { TextToSpeech } from "@modules/tts/ports/text-to-speech";
 import type { UserMemoryStore } from "@modules/user-memory/ports/user-memory-store";
 import { ownerAccessScope, PUBLIC_ACCESS_SCOPE } from "@shared/access";
-import { createOwnerMemoryTools } from "../tools/owner-memory";
 import { createReminderTools } from "../tools/reminder";
 import { createUserMemoryTools } from "../tools/user-memory";
 import { createWatchTools } from "../tools/watch";
@@ -35,7 +33,6 @@ export interface DiscordAgentToolsOptions {
   readonly tts?: TextToSpeech;
   readonly scheduledTaskStore?: ScheduledTaskStore;
   readonly watchCheckRunner: WatchCheckRunner;
-  readonly ownerMemoryStore?: OwnerMemoryStore;
   readonly userMemoryStore?: UserMemoryStore;
   readonly discordUserDirectory?: DiscordUserResolver;
   readonly attachedTasks?: AttachedTaskControl;
@@ -87,9 +84,6 @@ export function createDiscordAgentTools(
           accessScope,
           ownerFeaturesAllowed,
         )
-      : []),
-    ...(ownerFeaturesAllowed && options.ownerMemoryStore
-      ? createOwnerMemoryTools(options.ownerMemoryStore, `communication:${options.channelId}`)
       : []),
     ...(options.userMemoryStore && options.discordUserDirectory
       ? createUserMemoryTools(options.userMemoryStore, options.discordUserDirectory)

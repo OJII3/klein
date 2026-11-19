@@ -73,10 +73,10 @@ const MemoryModelConfigurationSchema = Type.Object(
   { additionalProperties: false },
 );
 
-const MemoryConfigurationSchema = Type.Object(
+const SharedMemoryConfigurationSchema = Type.Object(
   {
     enabled: Type.Boolean(),
-    filePath: Type.Optional(Type.String({ minLength: 1 })),
+    directory: Type.Optional(Type.String({ minLength: 1 })),
     llm: Type.Optional(MemoryModelConfigurationSchema),
     idleSeconds: Type.Optional(Type.Integer({ minimum: 1, maximum: 3600 })),
     maxBatchAgeSeconds: Type.Optional(Type.Integer({ minimum: 1, maximum: 86400 })),
@@ -159,7 +159,6 @@ export const ConfigSchema = Type.Object(
             },
             { additionalProperties: false },
           ),
-          memoryFilePath: Type.Optional(Type.String({ minLength: 1 })),
         },
         { additionalProperties: false },
       ),
@@ -195,7 +194,9 @@ export const ConfigSchema = Type.Object(
     ),
     features: Type.Object(
       {
-        memory: Type.Object(MemoryConfigurationSchema.properties, { additionalProperties: false }),
+        sharedMemory: Type.Object(SharedMemoryConfigurationSchema.properties, {
+          additionalProperties: false,
+        }),
         userMemory: Type.Optional(UserMemoryConfigurationSchema),
         minecraft: Type.Object(
           {

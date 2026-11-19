@@ -102,34 +102,29 @@ export default function App() {
         <MemoryView
           channelNames={channelNames}
           detailError={memory.detailError}
-          deleteError={memory.deleteError}
-          deletingEntryId={memory.deletingEntryId}
+          deletingFileKey={memory.deletingFileKey}
           deletingUserMemory={memory.deletingUserMemory}
-          addingRule={memory.addingRule}
-          addRuleError={memory.addRuleError}
           enabled={memory.enabled}
-          entries={memory.entries}
           error={memory.scopesError}
-          scopes={memory.scopes}
-          users={memory.users}
-          userMemory={memory.userMemory}
-          userMemoryEnabled={memory.userMemoryEnabled}
+          fileError={memory.fileError}
+          sharedMemory={memory.sharedMemory}
           loading={memory.scopesLoading}
           loadingDetail={memory.detailLoading}
-          onDelete={(entryId) => {
-            void memory.deleteEntry(entryId);
-          }}
+          onDeleteFile={memory.deleteFile}
           onDeleteUserMemory={(userId) => {
             void memory.deleteUser(userId);
           }}
-          onAddRule={(title, content) => {
-            void memory.createRule(title, content);
-          }}
-          onDismissDeleteError={memory.dismissDeleteError}
+          onDismissFileError={memory.dismissFileError}
           onRetry={memory.reload}
           onRetryDetail={memory.retryDetail}
+          onSaveFile={memory.saveFile}
           onSelect={selectScope}
+          savingFileKey={memory.savingFileKey}
+          scopes={memory.scopes}
           selectedScope={memory.selectedScope}
+          userMemory={memory.userMemory}
+          userMemoryEnabled={memory.userMemoryEnabled}
+          users={memory.users}
         />
       )}
     </AppShell>

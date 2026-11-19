@@ -377,7 +377,7 @@ test("adds bot-specific conversation guidance only for bot messages", async () =
   agent.dispose();
 });
 
-test("passes guild memory as turn context without merging it into the event", async () => {
+test("passes shared memory as turn context without merging it into the event", async () => {
   let receivedTurn: AgentTurn | undefined;
   const runtime: AgentRuntime = {
     async prompt(turn) {
@@ -393,12 +393,12 @@ test("passes guild memory as turn context without merging it into the event", as
   };
   const agent = await DiscordAgent.create(agentFactory, "channel-123", "system prompt");
 
-  await agent.promptMessage(message, { guildMemory: "### 定例会の曜日\n\n毎週土曜日" });
+  await agent.promptMessage(message, { sharedMemory: "### 定例会の曜日\n\n毎週土曜日" });
 
   assert.deepEqual(receivedTurn?.context.blocks, [
-    { name: "guild-memory", content: "### 定例会の曜日\n\n毎週土曜日" },
+    { name: "shared-memory", content: "### 定例会の曜日\n\n毎週土曜日" },
   ]);
-  assert.doesNotMatch(eventText(receivedTurn?.event), /<guild-memory>/u);
+  assert.doesNotMatch(eventText(receivedTurn?.event), /<shared-memory>/u);
   assert.match(eventText(receivedTurn?.event), /読み取った本文/u);
   agent.dispose();
 });

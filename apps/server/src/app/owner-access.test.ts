@@ -13,7 +13,6 @@ import {
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import { DiscordOperatingState } from "@modules/discord/domain/discord-operating-state";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
-import type { OwnerMemoryStore } from "@modules/memory/application/owner-memory-store";
 import { AgentCoordinator } from "./agent-coordinator";
 import { ChannelSessionStateStore, getChannelRotationBucket } from "./channel-session-state-store";
 import { TaskCoordinator } from "./task-coordinator";
@@ -30,13 +29,7 @@ const message: DiscordMessage = {
   author: { id: ownerId, bot: false, username: "owner", displayName: "owner" },
 };
 
-function createHarness(
-  store: ChannelSessionStateStore,
-  channelRule: { access: DiscordAccess },
-  options: {
-    readonly ownerMemoryStore?: Pick<OwnerMemoryStore, "getContext">;
-  } = {},
-) {
+function createHarness(store: ChannelSessionStateStore, channelRule: { access: DiscordAccess }) {
   const creations: AgentCreationOptions[] = [];
   const prompts: AgentTurn[] = [];
   const remembered: DiscordMessage[] = [];
@@ -109,7 +102,7 @@ function createHarness(
         tools: () => [],
       }),
     channelApi: service,
-    memoryCoordinator: {
+    sharedMemoryCoordinator: {
       async getContext() {
         return "shared memory";
       },
@@ -117,7 +110,6 @@ function createHarness(
         remembered.push(input);
       },
     },
-    ownerMemoryStore: options.ownerMemoryStore,
     logger: pino({ level: "silent" }),
     operatingState: new DiscordOperatingState(),
     taskCoordinator: new TaskCoordinator(),
@@ -225,32 +217,5 @@ test("owner access changes replace cached agents and preserve private session sc
     assert.equal(resumed.creations.at(-1)?.ownerFeaturesAllowed, false);
   } finally {
     await resumed.coordinator.dispose();
-  }
-});
-
-test("fetches and injects ownerMemory only for owner-allowed turns", async () => {
-  await using temp = await createTempDir("klein-owner-");
-  const store = new ChannelSessionStateStore(temp.path);
-  let ownerMemoryQueries = 0;
-  const ownerMemoryStore: Pick<OwnerMemoryStore, "getContext"> = {
-    async getContext() {
-      ownerMemoryQueries += 1;
-      return "private owner memory";
-    },
-  };
-  const rule: { access: DiscordAccess } = { access: "allow" };
-  const harness = createHarness(store, rule, { ownerMemoryStore });
-
-  try {
-    await harness.coordinator.handleDiscordMessage(message);
-    assert.equal(ownerMemoryQueries, 0);
-    assert.equal(harness.prompts[0]?.context.ownerMemory, undefined);
-
-    rule.access = "owner";
-    await harness.coordinator.handleDiscordMessage(message);
-    assert.equal(ownerMemoryQueries, 1);
-    assert.equal(harness.prompts[1]?.context.ownerMemory, "private owner memory");
-  } finally {
-    await harness.coordinator.dispose();
   }
 });

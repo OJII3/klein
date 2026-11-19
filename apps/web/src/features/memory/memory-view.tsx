@@ -1,12 +1,11 @@
 import type { ComponentChildren } from "preact";
-import { useMemo, useState } from "preact/hooks";
+import { useEffect, useMemo, useState } from "preact/hooks";
 
 import {
+  sharedMemoryScopeKey,
   memoryScopeKey,
-  type MemoryEntry,
-  type MemoryEntryScope,
-  type MemoryKind,
-  type MemoryScope,
+  type SharedMemoryFile,
+  type SharedMemoryScope,
   type MemoryScopeSummary,
   type MemorySelection,
   type UserMemory,
@@ -16,7 +15,7 @@ import {
 import { EmptyState, ErrorNotice, LoadingState } from "../../components/feedback";
 import { Stat, StatStrip } from "../../components/stats";
 import { ViewHeader } from "../../components/view-header";
-import { formatCompactTimestamp, formatDate } from "../../lib/format";
+import { formatCompactTimestamp } from "../../lib/format";
 
 interface MemoryViewProps {
   channelNames: ReadonlyMap<string, string>;
@@ -25,43 +24,24 @@ interface MemoryViewProps {
   scopes: readonly MemoryScopeSummary[];
   users: readonly UserMemorySummary[];
   selectedScope: MemorySelection | null;
-  entries: readonly MemoryEntry[];
+  sharedMemory: readonly SharedMemoryFile[] | null;
   userMemory: UserMemory | null;
   loading: boolean;
   loadingDetail: boolean;
   error: string | null;
   detailError: string | null;
-  deleteError: string | null;
-  deletingEntryId: string | null;
   deletingUserMemory: boolean;
-  addingRule: boolean;
-  addRuleError: string | null;
+  deletingFileKey: string | null;
+  savingFileKey: string | null;
+  fileError: string | null;
   onSelect: (scope: MemorySelection) => void;
-  onDelete: (entryId: string) => void;
   onDeleteUserMemory: (userId: string) => void;
-  onAddRule: (title: string, content: string) => void;
-  onDismissDeleteError: () => void;
+  onSaveFile: (scope: SharedMemoryScope, content: string) => Promise<boolean>;
+  onDeleteFile: (scope: SharedMemoryScope) => Promise<boolean>;
+  onDismissFileError: () => void;
   onRetry: () => void;
   onRetryDetail: () => void;
 }
-
-const MEMORY_KINDS: readonly MemoryKind[] = ["fact", "rule", "decision", "procedure", "temporary"];
-
-const KIND_LABELS: Record<MemoryKind, string> = {
-  fact: "事実",
-  rule: "ルール",
-  decision: "決定",
-  procedure: "手順",
-  temporary: "一時",
-};
-
-const KIND_TONES: Record<MemoryKind, string> = {
-  fact: "badge-ghost",
-  rule: "badge-success badge-soft",
-  decision: "badge-info badge-soft",
-  procedure: "badge-success badge-soft",
-  temporary: "badge-warning badge-soft",
-};
 
 const USER_SECTIONS: readonly { key: UserMemorySectionKey; label: string }[] = [
   { key: "facts", label: "事実" },
@@ -78,29 +58,27 @@ export function MemoryView(props: MemoryViewProps) {
     scopes,
     users,
     selectedScope,
-    entries,
+    sharedMemory,
     userMemory,
     loading,
     loadingDetail,
     error,
     detailError,
-    deleteError,
-    deletingEntryId,
     deletingUserMemory,
-    addingRule,
-    addRuleError,
+    deletingFileKey,
+    savingFileKey,
+    fileError,
     onSelect,
-    onDelete,
     onDeleteUserMemory,
-    onAddRule,
-    onDismissDeleteError,
+    onSaveFile,
+    onDeleteFile,
+    onDismissFileError,
     onRetry,
     onRetryDetail,
   } = props;
   const [query, setQuery] = useState("");
   const normalizedQuery = query.trim().toLowerCase();
 
-  const ownerSummary = scopes.find((summary) => summary.scope.type === "owner");
   const guilds = useMemo(
     () =>
       scopes
@@ -125,7 +103,6 @@ export function MemoryView(props: MemoryViewProps) {
     [normalizedQuery, users],
   );
 
-  const guildCount = scopes.filter((summary) => summary.scope.type === "guild").length;
   const entryCount = scopes.reduce((sum, summary) => sum + summary.entryCount, 0);
   const hasMemories = scopes.length > 0 || users.length > 0;
 
@@ -133,7 +110,7 @@ export function MemoryView(props: MemoryViewProps) {
     <section className="flex flex-col gap-4" aria-labelledby="memory-heading">
       <ViewHeader headingId="memory-heading" title="メモリ">
         <StatStrip>
-          <Stat label="ギルド" value={guildCount.toLocaleString("ja-JP")} />
+          <Stat label="ギルド" value={scopes.length.toLocaleString("ja-JP")} />
           <Stat label="ユーザー" value={users.length.toLocaleString("ja-JP")} />
           <Stat label="エントリ" value={entryCount.toLocaleString("ja-JP")} />
         </StatStrip>
@@ -169,22 +146,7 @@ export function MemoryView(props: MemoryViewProps) {
             </div>
 
             <div className="max-h-72 overflow-y-auto lg:max-h-[calc(100vh-12rem)]">
-              {ownerSummary && (
-                <ScopeGroup title="オーナー">
-                  <ScopeItem
-                    badge={`${ownerSummary.entryCount} 件`}
-                    meta={`更新 ${formatCompactTimestamp(ownerSummary.updatedAt ?? undefined)}`}
-                    onClick={() => onSelect(ownerSummary.scope)}
-                    selected={
-                      selectedScope !== null &&
-                      memoryScopeKey(selectedScope) === memoryScopeKey(ownerSummary.scope)
-                    }
-                    title="オーナーのメモリ"
-                  />
-                </ScopeGroup>
-              )}
-
-              {guildCount > 0 && (
+              {scopes.length > 0 && (
                 <ScopeGroup count={guilds.length} title="ギルド">
                   {guilds.length === 0 ? (
                     <p className="px-3 py-2 text-[0.68rem] text-ink-faint">該当なし</p>
@@ -202,7 +164,7 @@ export function MemoryView(props: MemoryViewProps) {
                         subtitle={
                           summary.scope.type === "guild" ? summary.scope.guildId : undefined
                         }
-                        title="ギルドのメモリ"
+                        title="共有メモリ"
                       />
                     ))
                   )}
@@ -239,12 +201,8 @@ export function MemoryView(props: MemoryViewProps) {
           </div>
 
           <div className="flex min-w-0 flex-col gap-3">
-            {deleteError && (
-              <ErrorNotice
-                message={deleteError}
-                onRetry={onDismissDeleteError}
-                retryLabel="閉じる"
-              />
+            {fileError && (
+              <ErrorNotice message={fileError} onRetry={onDismissFileError} retryLabel="閉じる" />
             )}
             {detailError && <ErrorNotice message={detailError} onRetry={onRetryDetail} />}
             <div className="card overflow-hidden border border-base-300 bg-base-100">
@@ -261,17 +219,15 @@ export function MemoryView(props: MemoryViewProps) {
                 ) : (
                   <EmptyState>ユーザーメモリを読み込めませんでした</EmptyState>
                 )
-              ) : selectedScope ? (
-                <MemoryEntries
-                  addingRule={addingRule}
-                  addRuleError={addRuleError}
+              ) : selectedScope?.type === "guild" ? (
+                <SharedMemoryDetail
                   channelNames={channelNames}
-                  deletingEntryId={deletingEntryId}
-                  entries={entries}
-                  key={memoryScopeKey(selectedScope)}
-                  onAddRule={onAddRule}
-                  onDelete={onDelete}
-                  scope={selectedScope}
+                  deletingFileKey={deletingFileKey}
+                  files={sharedMemory ?? []}
+                  guildId={selectedScope.guildId}
+                  onDelete={onDeleteFile}
+                  onSave={onSaveFile}
+                  savingFileKey={savingFileKey}
                 />
               ) : (
                 <EmptyState>スコープを選択してください</EmptyState>
@@ -350,183 +306,51 @@ function ScopeItem({
   );
 }
 
-function MemoryEntries({
+function SharedMemoryDetail({
+  files,
+  guildId,
   channelNames,
-  deletingEntryId,
-  entries,
-  scope,
+  savingFileKey,
+  deletingFileKey,
+  onSave,
   onDelete,
-  addingRule,
-  addRuleError,
-  onAddRule,
 }: {
+  files: readonly SharedMemoryFile[];
+  guildId: string;
   channelNames: ReadonlyMap<string, string>;
-  deletingEntryId: string | null;
-  entries: readonly MemoryEntry[];
-  scope: MemoryScope;
-  onDelete: (entryId: string) => void;
-  addingRule: boolean;
-  addRuleError: string | null;
-  onAddRule: (title: string, content: string) => void;
+  savingFileKey: string | null;
+  deletingFileKey: string | null;
+  onSave: (scope: SharedMemoryScope, content: string) => Promise<boolean>;
+  onDelete: (scope: SharedMemoryScope) => Promise<boolean>;
 }) {
-  const [ruleTitle, setRuleTitle] = useState("");
-  const [ruleContent, setRuleContent] = useState("");
-  const [kindFilter, setKindFilter] = useState<MemoryKind | "all">("all");
-
-  const sortedEntries = useMemo(
-    () => entries.toSorted((left, right) => right.updatedAt.localeCompare(left.updatedAt)),
-    [entries],
-  );
-  const kindCounts = useMemo(() => {
-    const counts = new Map<MemoryKind, number>();
-    for (const entry of entries) counts.set(entry.kind, (counts.get(entry.kind) ?? 0) + 1);
-    return counts;
-  }, [entries]);
-  const visibleEntries =
-    kindFilter === "all"
-      ? sortedEntries
-      : sortedEntries.filter((entry) => entry.kind === kindFilter);
+  const visibleFiles = files.filter((file) => file.content.trim().length > 0);
 
   return (
     <div className="flex min-w-0 flex-col">
       <header className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-4 py-4">
         <div className="min-w-0">
-          <h2 className="text-[1.05rem] font-semibold text-ink">
-            {scope.type === "owner" ? "オーナーのメモリ" : "ギルドのメモリ"}
-          </h2>
-          <p className="mt-1 truncate font-mono text-[0.64rem] text-ink-faint">
-            {scope.type === "owner" ? "owner" : `guild ${scope.guildId}`}
-          </p>
+          <h2 className="text-[1.05rem] font-semibold text-ink">共有メモリ</h2>
+          <p className="mt-1 truncate font-mono text-[0.64rem] text-ink-faint">guild {guildId}</p>
         </div>
         <p className="shrink-0 font-mono text-[0.68rem] text-ink-faint">
-          {entries.length.toLocaleString("ja-JP")} 件
+          {visibleFiles.length.toLocaleString("ja-JP")} ファイル
         </p>
       </header>
 
-      <div className="flex flex-wrap items-center gap-1.5 border-b border-line px-4 py-2">
-        <FilterChip
-          active={kindFilter === "all"}
-          count={entries.length}
-          label="すべて"
-          onClick={() => setKindFilter("all")}
-        />
-        {MEMORY_KINDS.map((kind) => {
-          const count = kindCounts.get(kind) ?? 0;
-          if (count === 0) return null;
-          return (
-            <FilterChip
-              active={kindFilter === kind}
-              count={count}
-              key={kind}
-              label={KIND_LABELS[kind]}
-              onClick={() => setKindFilter(kind)}
-            />
-          );
-        })}
-      </div>
-
-      <details className="collapse collapse-arrow border-b border-base-300">
-        <summary className="collapse-title text-sm text-ink-soft">ルールを追加</summary>
-        <form
-          className="collapse-content flex max-w-2xl flex-col gap-3 px-4"
-          onSubmit={(event) => {
-            event.preventDefault();
-            const title = ruleTitle.trim();
-            const content = ruleContent.trim();
-            if (!title || !content) return;
-            onAddRule(title, content);
-            setRuleTitle("");
-            setRuleContent("");
-          }}
-        >
-          <label className="flex flex-col gap-1">
-            <span className="text-[0.7rem] font-medium text-ink-soft">タイトル</span>
-            <input
-              aria-label="タイトル"
-              className="input input-sm w-full"
-              maxLength={200}
-              onChange={(event) => {
-                if (event.target instanceof HTMLInputElement) setRuleTitle(event.target.value);
-              }}
-              required
-              value={ruleTitle}
-            />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-[0.7rem] font-medium text-ink-soft">内容</span>
-            <textarea
-              aria-label="内容"
-              className="textarea textarea-sm min-h-[5.5rem] w-full resize-y"
-              maxLength={10000}
-              onChange={(event) => {
-                if (event.target instanceof HTMLTextAreaElement) setRuleContent(event.target.value);
-              }}
-              required
-              rows={3}
-              value={ruleContent}
-            />
-          </label>
-          {addRuleError && (
-            <ErrorNotice
-              message={addRuleError}
-              onRetry={() => onAddRule(ruleTitle.trim(), ruleContent.trim())}
-            />
-          )}
-          <button
-            className="btn btn-primary btn-sm w-fit"
-            disabled={addingRule || !ruleTitle.trim() || !ruleContent.trim()}
-            type="submit"
-          >
-            {addingRule ? "追加中…" : "ルールを追加"}
-          </button>
-        </form>
-      </details>
-
-      {visibleEntries.length === 0 ? (
-        <EmptyState>
-          {entries.length === 0 ? "このスコープのメモリは空です" : "この種類のメモリはありません"}
-        </EmptyState>
+      {visibleFiles.length === 0 ? (
+        <EmptyState>このギルドの共有メモリは空です</EmptyState>
       ) : (
         <div className="divide-y divide-line">
-          {visibleEntries.map((entry) => (
-            <article className="px-4 py-4" key={entry.id}>
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div className="flex min-w-0 flex-wrap items-center gap-2">
-                  <span className={`badge badge-sm font-medium ${KIND_TONES[entry.kind]}`}>
-                    {KIND_LABELS[entry.kind]}
-                  </span>
-                  <h3 className="text-[0.9rem] font-semibold text-ink">{entry.title}</h3>
-                </div>
-                <button
-                  className="btn btn-error btn-soft btn-xs"
-                  disabled={deletingEntryId !== null}
-                  onClick={() => {
-                    if (
-                      window.confirm(
-                        `「${entry.title}」を削除しますか？\nこの操作は元に戻せません。`,
-                      )
-                    )
-                      onDelete(entry.id);
-                  }}
-                  type="button"
-                >
-                  {deletingEntryId === entry.id ? "削除中…" : "削除"}
-                </button>
-              </div>
-              <p className="mt-2 max-w-[60rem] text-[0.82rem] leading-6 break-words whitespace-pre-wrap text-ink-soft">
-                {entry.content}
-              </p>
-              <footer className="mt-2 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[0.62rem] text-ink-faint">
-                <span>更新 {formatDate(entry.updatedAt)}</span>
-                <span>作成 {formatDate(entry.createdAt)}</span>
-                <span>参照 {entry.sourceMessageIds.length.toLocaleString("ja-JP")} 件</span>
-                {(entry.scope.type === "channel" || entry.scope.type === "thread") && (
-                  <span title={entryScopeDetail(entry.scope, channelNames)}>
-                    {entryScopeDetail(entry.scope, channelNames)}
-                  </span>
-                )}
-              </footer>
-            </article>
+          {visibleFiles.map((file) => (
+            <SharedMemoryFileCard
+              channelNames={channelNames}
+              deleting={deletingFileKey === sharedMemoryScopeKey(file.scope)}
+              file={file}
+              key={sharedMemoryScopeKey(file.scope)}
+              onDelete={() => onDelete(file.scope)}
+              onSave={(content) => onSave(file.scope, content)}
+              saving={savingFileKey === sharedMemoryScopeKey(file.scope)}
+            />
           ))}
         </div>
       )}
@@ -534,28 +358,144 @@ function MemoryEntries({
   );
 }
 
-function FilterChip({
-  label,
-  count,
-  active,
-  onClick,
+function SharedMemoryFileCard({
+  file,
+  channelNames,
+  saving,
+  deleting,
+  onSave,
+  onDelete,
 }: {
-  label: string;
-  count: number;
-  active: boolean;
-  onClick: () => void;
+  file: SharedMemoryFile;
+  channelNames: ReadonlyMap<string, string>;
+  saving: boolean;
+  deleting: boolean;
+  onSave: (content: string) => Promise<boolean>;
+  onDelete: () => Promise<boolean>;
 }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(file.content);
+
+  useEffect(() => {
+    if (!editing) setDraft(file.content);
+  }, [editing, file.content]);
+
+  const label = sharedMemoryScopeLabel(file.scope, channelNames);
+
   return (
-    <button
-      aria-pressed={active}
-      className={`btn btn-xs gap-1 ${active ? "btn-primary" : "btn-ghost border border-base-300"}`}
-      onClick={onClick}
-      type="button"
-    >
-      {label}
-      <span className="font-mono text-[0.6rem] opacity-70">{count}</span>
-    </button>
+    <section className="px-4 py-4">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
+          <h3 className="text-[0.9rem] font-semibold text-ink">{label}</h3>
+          <p className="mt-0.5 font-mono text-[0.62rem] text-ink-faint">
+            {sharedMemoryRelativePath(file.scope)} · 更新 {formatCompactTimestamp(file.updatedAt)}
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5">
+          {editing ? (
+            <>
+              <button
+                className="btn btn-ghost btn-xs"
+                onClick={() => {
+                  setDraft(file.content);
+                  setEditing(false);
+                }}
+                type="button"
+              >
+                キャンセル
+              </button>
+              <button
+                className="btn btn-primary btn-xs"
+                disabled={saving}
+                onClick={() => {
+                  void (async () => {
+                    if (await onSave(draft)) setEditing(false);
+                  })();
+                }}
+                type="button"
+              >
+                {saving ? "保存中…" : "保存"}
+              </button>
+            </>
+          ) : (
+            <button
+              className="btn btn-ghost btn-xs"
+              onClick={() => {
+                setDraft(file.content);
+                setEditing(true);
+              }}
+              type="button"
+            >
+              編集
+            </button>
+          )}
+          <button
+            className="btn btn-error btn-soft btn-xs"
+            disabled={deleting || saving}
+            onClick={() => {
+              if (
+                window.confirm(
+                  `「${label}」のメモリファイルを削除しますか？\nこの操作は元に戻せません。`,
+                )
+              )
+                void onDelete();
+            }}
+            type="button"
+          >
+            {deleting ? "削除中…" : "削除"}
+          </button>
+        </div>
+      </div>
+
+      {editing ? (
+        <textarea
+          aria-label={`${label} の内容`}
+          className="textarea mt-3 min-h-[20rem] w-full resize-y font-mono text-[0.78rem] leading-6"
+          onChange={(event) => {
+            if (event.target instanceof HTMLTextAreaElement) setDraft(event.target.value);
+          }}
+          value={draft}
+        />
+      ) : (
+        <>
+          <MemoryItems label="Facts" items={file.facts} />
+          <MemoryItems label="Preferences" items={file.preferences} />
+        </>
+      )}
+    </section>
   );
+}
+
+function MemoryItems({ label, items }: { label: string; items: readonly string[] }) {
+  if (items.length === 0) return null;
+  return (
+    <div className="mt-3">
+      <h4 className="text-[0.66rem] font-medium tracking-wide text-ink-faint">{label}</h4>
+      <ul className="mt-1 list-disc space-y-1 pl-5 text-[0.82rem] leading-6 text-ink-soft">
+        {items.map((item) => (
+          <li className="break-words" key={item}>
+            {item}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function sharedMemoryRelativePath(scope: SharedMemoryScope): string {
+  if (scope.type === "guild") return "MEMORY.md";
+  if (scope.type === "channel") return `${scope.channelId}/MEMORY.md`;
+  return `${scope.channelId}/${scope.threadId}/MEMORY.md`;
+}
+
+function sharedMemoryScopeLabel(
+  scope: SharedMemoryScope,
+  channelNames: ReadonlyMap<string, string>,
+): string {
+  const label = (channelId: string): string => channelNames.get(channelId) ?? channelId;
+  if (scope.type === "guild") return "ギルド全体";
+  if (scope.type === "channel") return `#${label(scope.channelId)}`;
+  return `${label(scope.threadId)} (#${label(scope.channelId)})`;
 }
 
 function UserMemoryDetail({
@@ -679,15 +619,4 @@ function impressionLabel(value: number): string {
   if (value <= -50) return "とても否定的";
   if (value < 0) return "否定的";
   return "中立";
-}
-
-function entryScopeDetail(
-  scope: MemoryEntryScope,
-  channelNames: ReadonlyMap<string, string>,
-): string {
-  const label = (channelId: string): string => channelNames.get(channelId) ?? channelId;
-  if (scope.type === "channel") return `チャンネル: ${label(scope.channelId)}`;
-  if (scope.type === "thread")
-    return `スレッド: ${label(scope.threadId)} (チャンネル: ${label(scope.channelId)})`;
-  return scope.type === "owner" ? "オーナー" : "ギルド全体";
 }

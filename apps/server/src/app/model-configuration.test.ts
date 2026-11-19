@@ -10,7 +10,7 @@ function createConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     llm: { provider: "opencode-go", model: "main-model" },
     runtime: { agentDir: "/tmp/klein-agent" },
     discord: { access: { default: "deny", directMessages: "deny" } },
-    features: { memory: { enabled: false }, minecraft: { enabled: false } },
+    features: { sharedMemory: { enabled: false }, minecraft: { enabled: false } },
     ...overrides,
   };
 }
@@ -27,7 +27,7 @@ test("collects the models used by the main agent, image, voice chat, memory, and
       image: { provider: "google", model: "image-model" },
     },
     features: {
-      memory: { enabled: true, llm: { provider: "mistral", model: "memory-model" } },
+      sharedMemory: { enabled: true, llm: { provider: "mistral", model: "memory-model" } },
       minecraft: { enabled: false },
       userMemory: { enabled: true, llm: { provider: "mistral", model: "user-memory-model" } },
       voiceChat: {
@@ -50,7 +50,7 @@ test("collects the models used by the main agent, image, voice chat, memory, and
 test("leaves out models that disabled features would not use", () => {
   const config = createConfig({
     features: {
-      memory: { enabled: false, llm: { provider: "mistral", model: "memory-model" } },
+      sharedMemory: { enabled: false, llm: { provider: "mistral", model: "memory-model" } },
       minecraft: { enabled: false },
       userMemory: { enabled: false, llm: { provider: "mistral", model: "user-memory-model" } },
       voiceChat: {

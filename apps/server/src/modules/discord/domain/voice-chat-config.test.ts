@@ -10,7 +10,7 @@ function createConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     llm: { provider: "opencode-go", model: "main-model" },
     runtime: { agentDir: "/tmp/klein-agent" },
     discord: { access: { default: "deny", directMessages: "deny" } },
-    features: { memory: { enabled: false }, minecraft: { enabled: false } },
+    features: { sharedMemory: { enabled: false }, minecraft: { enabled: false } },
     ...overrides,
   };
 }
@@ -22,7 +22,7 @@ test("returns undefined when voice chat is not configured", () => {
 test("returns undefined when voice chat is disabled", () => {
   const config = createConfig({
     features: {
-      memory: { enabled: false },
+      sharedMemory: { enabled: false },
       minecraft: { enabled: false },
       voiceChat: { enabled: false, asrServerUrl: "ws://asr.local" },
     },
@@ -34,7 +34,7 @@ test("returns undefined when voice chat is disabled", () => {
 test("defaults the language to Japanese", () => {
   const config = createConfig({
     features: {
-      memory: { enabled: false },
+      sharedMemory: { enabled: false },
       minecraft: { enabled: false },
       voiceChat: { enabled: true, asrServerUrl: "ws://asr.local" },
     },
@@ -49,7 +49,7 @@ test("defaults the language to Japanese", () => {
 test("keeps the configured language, model, and reactions", () => {
   const config = createConfig({
     features: {
-      memory: { enabled: false },
+      sharedMemory: { enabled: false },
       minecraft: { enabled: false },
       voiceChat: {
         enabled: true,

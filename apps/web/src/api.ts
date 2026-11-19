@@ -1,10 +1,10 @@
 import { treaty } from "@elysia/eden";
 
 import type {
+  SharedMemoryFile,
+  SharedMemoryGuild,
+  SharedMemoryScope,
   McpServerUsageStat,
-  MemoryEntry,
-  MemoryEntryScope,
-  MemoryKind,
   MemoryScope,
   MemoryScopeSummary,
   PiViewerEvent,
@@ -23,10 +23,10 @@ import type {
 } from "@klein/webui-api";
 
 export type {
+  SharedMemoryFile,
+  SharedMemoryGuild,
+  SharedMemoryScope,
   McpServerUsageStat,
-  MemoryEntry,
-  MemoryEntryScope,
-  MemoryKind,
   MemoryScope,
   MemoryScopeSummary,
   ToolUsageReport,
@@ -73,9 +73,9 @@ export interface UserMemoryResponse {
   memory: UserMemory;
 }
 
-export interface MemoryDetailResponse {
-  scope: MemoryScope;
-  entries: readonly MemoryEntry[];
+export interface SharedMemoryResponse {
+  guildId: string;
+  files: readonly SharedMemoryFile[];
 }
 
 const apiOrigin = typeof window === "undefined" ? "http://127.0.0.1:4310" : window.location.origin;
@@ -176,11 +176,25 @@ export function getToolUsage(): Promise<ToolUsageReport> {
   return unwrap<ToolUsageReport>(client.api.tools.get());
 }
 
-export function getMemory(scope: MemoryScope): Promise<MemoryDetailResponse> {
-  if (scope.type === "owner") {
-    return unwrap<MemoryDetailResponse>(client.api.memory.owner.get());
-  }
-  return unwrap<MemoryDetailResponse>(client.api.memory.guild({ guildId: scope.guildId }).get());
+export function getSharedMemory(guildId: string): Promise<SharedMemoryResponse> {
+  return unwrap<SharedMemoryResponse>(client.api.memory.guild({ guildId }).get());
+}
+
+export function saveSharedMemoryFile(
+  guildId: string,
+  scope: SharedMemoryScope,
+  content: string,
+): Promise<{ saved: boolean }> {
+  return unwrap<{ saved: boolean }>(
+    client.api.memory.guild({ guildId }).file.put({ content, scope }),
+  );
+}
+
+export function deleteSharedMemoryFile(
+  guildId: string,
+  scope: SharedMemoryScope,
+): Promise<{ deleted: boolean }> {
+  return unwrap<{ deleted: boolean }>(client.api.memory.guild({ guildId }).file.delete({ scope }));
 }
 
 export function getUserMemory(userId: string): Promise<UserMemoryResponse> {
@@ -191,35 +205,18 @@ export function deleteUserMemory(userId: string): Promise<{ deleted: boolean }> 
   return unwrap<{ deleted: boolean }>(client.api.memory.user({ userId }).delete());
 }
 
-export function deleteMemory(scope: MemoryScope, entryId: string): Promise<{ deleted: boolean }> {
-  if (scope.type === "owner") {
-    return unwrap<{ deleted: boolean }>(client.api.memory.owner({ entryId }).delete());
-  }
-  return unwrap<{ deleted: boolean }>(
-    client.api.memory.guild({ guildId: scope.guildId })({ entryId }).delete(),
-  );
-}
-
-export function addMemoryRule(
-  scope: MemoryScope,
-  input: { title: string; content: string },
-): Promise<{ created: boolean }> {
-  if (scope.type === "owner") {
-    return unwrap<{ created: boolean }>(client.api.memory.owner.rules.post(input));
-  }
-  return unwrap<{ created: boolean }>(
-    client.api.memory.guild({ guildId: scope.guildId }).rules.post(input),
-  );
-}
-
 export function memoryScopeKey(scope: MemorySelection): string {
-  if (scope.type === "owner") return "owner";
   if (scope.type === "user") return `user:${scope.userId}`;
   return `guild:${scope.guildId}`;
 }
 
+export function sharedMemoryScopeKey(scope: SharedMemoryScope): string {
+  if (scope.type === "guild") return "guild";
+  if (scope.type === "channel") return `channel:${scope.channelId}`;
+  return `thread:${scope.channelId}:${scope.threadId}`;
+}
+
 export function parseMemoryScopeKey(key: string | null): MemorySelection | null {
-  if (key === "owner") return { type: "owner" };
   if (key?.startsWith("guild:") && key.length > "guild:".length) {
     return { guildId: key.slice("guild:".length), type: "guild" };
   }

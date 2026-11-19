@@ -8,8 +8,7 @@ import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import type { DiscordOperatingState } from "@modules/discord/domain/discord-operating-state";
 import type { DiscordUserDirectory } from "@modules/discord/application/discord-user-directory";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
-import type { MemoryCoordinator } from "@modules/memory/application/memory-coordinator";
-import type { OwnerMemoryStore } from "@modules/memory/application/owner-memory-store";
+import type { SharedMemoryCoordinator } from "@modules/shared-memory/application/shared-memory-coordinator";
 import type { UserMemoryCoordinator } from "@modules/user-memory/application/user-memory-coordinator";
 import { renderFirstSpeakerUserMemory } from "@modules/user-memory/domain/user-memory-context-renderer";
 import type { UserMemoryStore } from "@modules/user-memory/ports/user-memory-store";
@@ -47,8 +46,7 @@ export interface AgentCoordinatorDependencies {
   readonly channelSessionStateStore?: ChannelSessionStateStore;
   readonly channelRuleStore?: DiscordChannelRuleStore;
   readonly logger: Logger;
-  readonly memoryCoordinator?: Pick<MemoryCoordinator, "getContext" | "enqueue">;
-  readonly ownerMemoryStore?: Pick<OwnerMemoryStore, "getContext">;
+  readonly sharedMemoryCoordinator?: Pick<SharedMemoryCoordinator, "getContext" | "enqueue">;
   readonly operatingState: DiscordOperatingState;
   readonly scheduledTaskStore?: ScheduledTaskStore;
   readonly userMemoryCoordinator?: Pick<UserMemoryCoordinator, "observe">;
@@ -86,7 +84,6 @@ export class AgentCoordinator {
       channelApi: dependencies.channelApi,
       logger: this.logger,
       operatingState: dependencies.operatingState,
-      ownerMemoryStore: dependencies.ownerMemoryStore,
       ownerUserId: dependencies.ownerUserId,
       scheduledTaskStore: dependencies.scheduledTaskStore,
       watchCheckRunner: dependencies.watchCheckRunner,
@@ -211,28 +208,20 @@ export class AgentCoordinator {
         conversationKey,
         accessScope,
         async (agent, state) => {
-          const query = buildMemoryQuery(message);
           const userMemory = await this.resolveFirstSpeakerMemory(message, state.sessionKey);
-          const guildMemory = message.guildId
-            ? await this.dependencies.memoryCoordinator?.getContext(
-                {
-                  channelId: message.parentChannelId ?? message.channelId,
-                  guildId: message.guildId,
-                  ...(message.threadId ? { threadId: message.threadId } : {}),
-                },
-                query,
-              )
+          const sharedMemory = message.guildId
+            ? await this.dependencies.sharedMemoryCoordinator?.getContext({
+                channelId: message.parentChannelId ?? message.channelId,
+                guildId: message.guildId,
+                ...(message.threadId ? { threadId: message.threadId } : {}),
+              })
             : undefined;
           const channelRule = message.guildId
             ? await this.dependencies.channelRuleStore?.get(message.guildId, message.channelId)
             : undefined;
-          const ownerMemory = ownerFeaturesAllowed
-            ? await this.dependencies.ownerMemoryStore?.getContext(query)
-            : undefined;
           await agent.promptMessage(message, {
-            ownerMemory,
             userMemory,
-            guildMemory,
+            sharedMemory,
             channelRule,
           });
           logger.debug(
@@ -259,7 +248,7 @@ export class AgentCoordinator {
         "ごめん、今はうまく返答できないみたい。",
       );
     } finally {
-      if (!ownerFeaturesAllowed) this.dependencies.memoryCoordinator?.enqueue(message);
+      if (!ownerFeaturesAllowed) this.dependencies.sharedMemoryCoordinator?.enqueue(message);
     }
   }
 
@@ -296,10 +285,6 @@ export class AgentCoordinator {
       return undefined;
     }
   }
-}
-
-function buildMemoryQuery(message: DiscordMessage): string {
-  return [message.content, message.replyTo?.content].filter(Boolean).join("\n");
 }
 
 function createAttachedTaskResultEvent(result: AttachedTaskResult): AgentEvent {

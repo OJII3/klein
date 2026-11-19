@@ -28,9 +28,9 @@
 
 ## メモリ
 
-`features.memory.enabled` を有効にすると、Klein は最近の会話からギルドに永続する事実とメモを定期的に抽出し、任意のバックグラウンドモデルを使って `.runtime/memory/{guildId}/MEMORY.json` へ書き込む。
+共有メモリは、ギルド・チャンネル・スレッドの各スコープに置く長期記憶である。`features.sharedMemory.enabled` を有効にすると、Klein は最近の会話からギルドに永続する事実と好みを定期的に抽出し、バックグラウンドエージェントが read、write、edit ツールを使って `.runtime/memory` (`features.sharedMemory.directory` でも指定できる) の下のファイルを直接読み書きする。ギルド全体は `{guildId}/MEMORY.md`、チャンネルは `{guildId}/{channelId}/MEMORY.md`、スレッドは `{guildId}/{channelId}/{threadId}/MEMORY.md` に保存する。
 
-メモリの項目はギルドごとにまとめて保存され、`guild`、`channel`、`thread` のいずれかのスコープを持つ。抽出は既定で会話のチャンネルを対象とし、事実がサーバー全体に当てはまる場合に限り項目をギルドへ昇格させる。取得では常にギルドの項目を含め、チャンネルとスレッドの項目は一致する場所でのみ加える。
+各ファイルは `# MEMORY.md` と短い説明から始まり、`## Facts` と `## Preferences` の 2 節だけを持つ。各項目はメタデータを持たない 1 行の箇条書きで、日付が必要なら本文に含める。抽出は既定で会話のチャンネルを対象とし、事実がサーバー全体に当てはまる場合に限りギルドへ昇格させる。取得ではその場所に応じてギルド、チャンネル、スレッドのメモリをすべて加える。メモリ機能が有効なとき、旧 `{guildId}/MEMORY.json` は起動時に各スコープの Markdown へ移行し、`MEMORY.json.migrated` に改名する。
 
 `features.userMemory.enabled` を有効にすると、Klein は Discord ユーザーごとに 1 つの Markdown ファイルを `<runtime.agentDir>/user-memory/{userId}.md` (`features.userMemory.directory` でも指定できる) に保つ。`{userId}` は Discord の数値ユーザー ID である。YAML フロントマターは `discord_id` (ユーザーが設定したユーザー名で、`@` より後の部分)、`display_name`、`nickname`、`first_name`、`last_name`、`summary`、`impression`、`updated_at` を保持する。`impression` は -100 から 100 までの整数で、0 が中立である。本文は Facts、History、In common、Strengthening の節からなる。Facts には確認済みの事実だけを書き、不明な値には `不明` を置く。誕生日や記念日のような日付は `- <key>: YYYY-MM-DD` の形で書く (例: `- birthday: 2000-01-02`)。Klein はユーザーからのメッセージを処理した時点でファイルを作り、会話がアイドルになった後に `features.userMemory.llm` (既定値は `llm`) のバックグラウンドエージェントが read、write、edit ツールでファイルを読み書きする。バックグラウンドエージェントは `display_name` と `impression` を変更しない。`user_memory_get` ツールはメッセージに表示される `@username` を受け取り、`<runtime.agentDir>/discord-users.json` を通して数値ユーザー ID に解決する。このファイルは Klein がメッセージで見たユーザーから作る共有の対応表であり、発言したか返信の著者として現れたユーザーだけを解決できる。会話の Pi セッションでユーザーが初めて発言したとき、Klein はそのユーザーのメモリをそのターンのコンテキストに加える。メモリにまだ内容がなければ、コンテキストは初対面であることを伝える。メモリの更新はバックグラウンドでのみ行い、ユーザーメモリを表示名で検索することはできない。
 
@@ -69,7 +69,7 @@ bun dist/klein mcp login docs
 
 ## 所有者アクセス
 
-場所とツールは `allow` と `deny` に加えて `owner` で制限できる。所有者向けの場所はボットの所有者だけを受け付け、分離されたセッション履歴を使い、共有のギルドメモリへ書き込まない。`owner` とされたツールと MCP サーバーは所有者の会話でのみ動く。
+場所とツールは `allow` と `deny` に加えて `owner` で制限できる。所有者向けの場所はボットの所有者だけを受け付け、分離されたセッション履歴を使い、共有メモリへ書き込まない。`owner` とされたツールと MCP サーバーは所有者の会話でのみ動く。
 
 ## Web UI
 
@@ -96,7 +96,7 @@ Pi のセッションは Discord のチャンネル名でラベル付けされ�
 
 **ツール** の画面は Pi のセッション履歴に保存されたすべてのツール実行を、ツールごとと MCP サーバーごとに数える。回数には codemode のスクリプトからの呼び出しを含み、Klein の再起動ではリセットされない。
 
-**メモリ** の画面は所有者、ギルド、ユーザーごとの Discord メモリを一覧する。所有者とギルドのメモリは新しい規則の追加と項目の削除を受け付ける。ユーザーメモリは Klein がバックグラウンドで更新する Markdown ファイルから読み、削除できる。ユーザーの一覧は表示名、ユーザー名、数値ユーザー ID、概要で絞り込める。
+**メモリ** の画面は共有メモリとユーザーメモリを一覧する。共有メモリはスコープごとの `MEMORY.md` を表示し、ファイル単位で編集・削除できる。ユーザーメモリは Klein がバックグラウンドで更新する Markdown ファイルから読み、削除できる。ユーザーの一覧は表示名、ユーザー名、数値ユーザー ID、概要で絞り込める。
 
 フロントエンドの開発では、ボットを通常どおり動かしたまま Vite を別に起動する。
 
