@@ -45,5 +45,6 @@ Select one with `"profile"` in `config/config.jsonc` (default: `klein`). The bun
 bun fmt
 bun lint:fix
 bun test
+bun run build        # or build:web and build:server individually
 bun run dev:web      # Vite on 127.0.0.1:5173, proxies /api to 4310
 ```

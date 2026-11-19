@@ -24,7 +24,6 @@ export interface AttachedTaskResult {
 
 export interface AttachedTaskScope {
   readonly conversationKey: ConversationKey;
-  /** The access scope of the conversation that owns the task. */
   readonly accessScope: string;
 }
 
