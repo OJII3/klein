@@ -2,10 +2,11 @@ import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
 import type { AttachedTaskControl, AttachedTaskScope } from "@agents/core/attached-agent";
+import type { AccessScope } from "@shared/access";
 export function createAttachedControlTools(
   target: AttachedTaskControl,
   channelId: string,
-  accessScope: string,
+  accessScope: AccessScope,
   ownerFeaturesAllowed: boolean,
 ) {
   const scope: AttachedTaskScope = {

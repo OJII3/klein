@@ -76,6 +76,11 @@ test("ignores legacy and malformed task files", async () => {
     ),
     "utf8",
   );
+  await writeFile(
+    resolve(temp.path, "invalid-access-scope.json"),
+    JSON.stringify({ ...createTask({ id: "invalid-access-scope" }), accessScope: "owner:" }),
+    "utf8",
+  );
 
   const store = new FileAttachedTaskStore(temp.path);
   assert.deepEqual(await store.list(), []);

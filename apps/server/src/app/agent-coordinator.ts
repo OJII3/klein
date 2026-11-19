@@ -16,7 +16,12 @@ import type { UserMemoryStore } from "@modules/user-memory/ports/user-memory-sto
 import type { DiscordChannelRuleStore } from "@modules/discord/ports/discord-channel-rule-store";
 import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
 import type { WatchCheckRunner } from "@modules/scheduling/ports/watch-check-runner";
-import { isOwnerAccessScope, ownerAccessScope, PUBLIC_ACCESS_SCOPE } from "@shared/access";
+import {
+  isOwnerAccessScope,
+  ownerAccessScope,
+  PUBLIC_ACCESS_SCOPE,
+  type AccessScope,
+} from "@shared/access";
 import type { TaskCoordinator } from "./task-coordinator";
 import {
   serializeConversationKey,
@@ -119,7 +124,7 @@ export class AgentCoordinator {
    */
   async deliverAttachedTaskResult(
     conversationKey: ConversationKey,
-    accessScope: string,
+    accessScope: AccessScope,
     result: AttachedTaskResult,
   ): Promise<void> {
     if (!(await this.isAttachedTaskDeliveryAllowed(conversationKey, accessScope))) return;
@@ -133,7 +138,7 @@ export class AgentCoordinator {
 
   private async isAttachedTaskDeliveryAllowed(
     conversationKey: ConversationKey,
-    accessScope: string,
+    accessScope: AccessScope,
   ): Promise<boolean> {
     const accessPolicy = this.dependencies.accessPolicy;
     if (!accessPolicy) return true;

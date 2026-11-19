@@ -4,7 +4,7 @@ import type { AgentImageAnalyzer } from "@agents/core/agent-factory";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
 import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
 import type { WatchCheckRunner } from "@modules/scheduling/ports/watch-check-runner";
-import { parseAccessScope } from "@shared/access";
+import type { AccessScope } from "@shared/access";
 import { createWatchTools } from "@agents/tools/watch";
 import { createDiscordImageAnalysis, createDiscordReadTool } from "./discord-read";
 
@@ -17,17 +17,13 @@ import { createDiscordImageAnalysis, createDiscordReadTool } from "./discord-rea
 export function createAttachedWorkerTools(
   channelApi: Pick<DiscordChannelApi, "readMessage">,
   channelId: string,
-  accessScope: string,
+  accessScope: AccessScope,
   ownerTaskId: string,
   scheduledTaskStore: ScheduledTaskStore,
   watchCheckRunner: WatchCheckRunner,
   requester?: Parameters<DiscordChannelApi["readMessage"]>[1],
   analyzeImage?: AgentImageAnalyzer,
 ): readonly ToolDefinition[] {
-  const parsedAccessScope = parseAccessScope(accessScope);
-  if (!parsedAccessScope) {
-    throw new Error(`Invalid access scope: ${accessScope}`);
-  }
   return [
     createDiscordReadTool(
       channelApi,
@@ -35,12 +31,6 @@ export function createAttachedWorkerTools(
       createDiscordImageAnalysis(analyzeImage),
       requester,
     ),
-    ...createWatchTools(
-      scheduledTaskStore,
-      channelId,
-      parsedAccessScope,
-      watchCheckRunner,
-      ownerTaskId,
-    ),
+    ...createWatchTools(scheduledTaskStore, channelId, accessScope, watchCheckRunner, ownerTaskId),
   ];
 }
