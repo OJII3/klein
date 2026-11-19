@@ -8,7 +8,7 @@
 
 ## Discord
 
-- **アクセス制御** — `discord.access` が `config/config.jsonc` の `default` と `directMessages` を決め、`<runtime.agentDir>/discord-access.json` がギルド、チャンネル、スレッドの規則を保持する。規則はスレッド → チャンネル → ギルド → 既定の順に評価する。ボットの所有者は常にダイレクトメッセージを送れる。所有者のダイレクトメッセージは `directMessages` の設定にかかわらず所有者向けの機能を使う。許可されていないチャンネルやスレッドでメンションされると、Klein はその場所に保留中の通知を投稿し、所有者へ許可と拒否のボタン付きのダイレクトメッセージを送る。選択は `discord-access.json` に書き戻され、即座に反映される。保留中の要求は `<runtime.agentDir>/discord-access-requests.json` に保存されるため、再起動後もボタンは機能する。手作業の編集は起動時に読み込まれるので、ファイルを直接編集した後は Klein を再起動する。Discord の **Message Content Intent** が必要である。
+- **アクセス制御** — `discord.access` が `config/config.jsonc` の `default` と `directMessages` を決め、`<runtime.agentDir>/discord-access.json` がギルド、チャンネル、スレッドの規則を保持する。規則はスレッド → チャンネル → ギルド → 既定の順に評価する。ボットの所有者は常にダイレクトメッセージを送れる。所有者のダイレクトメッセージは `directMessages` の設定にかかわらず所有者向けの機能を使う。`deny` のチャンネルやスレッドでメンションされると、Klein はその場所に保留中の通知を投稿し、所有者へ許可と拒否のボタン付きのダイレクトメッセージを送る。`owner` の場所は所有者専用なので、所有者以外がメンションしても要求は送らない。選択は `discord-access.json` に書き戻され、即座に反映される。保留中の要求は `<runtime.agentDir>/discord-access-requests.json` に保存されるため、再起動後もボタンは機能する。手作業の編集は起動時に読み込まれるので、ファイルを直接編集した後は Klein を再起動する。Discord の **Message Content Intent** が必要である。
 - **コマンド** — `/status idle` はメッセージ処理を一時停止し、`/status online` は再開する (Manage Server 権限が必要)。`/channels` は現在のギルドでアクセス規則が明示的に許可しているチャンネルとスレッドを、解決後のレベル (`allow` または `owner`) とともに一覧する。
 - **アクティビティ状態** — OpenCode Go、Google、Mistral の残りの予算使用量を表示し、1 時間ごとに更新する。
 
