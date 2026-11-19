@@ -1,5 +1,5 @@
 import type {
-  MemoryScopeEditor,
+  GuildMemoryEditor,
   MemoryScopeReader,
   UserMemoryEditor,
   UserMemoryReader,
@@ -19,10 +19,9 @@ export interface WebUiDependencies {
   readonly displayName: string;
   readonly channelNames?: ChannelNameReader;
   readonly memory?: MemoryScopeReader;
-  readonly memoryEditor?: MemoryScopeEditor;
+  readonly memoryEditor?: GuildMemoryEditor;
   readonly userMemory?: UserMemoryReader;
   readonly userMemoryEditor?: UserMemoryEditor;
-  readonly isMemoryEntryNotFoundError?: (error: unknown) => boolean;
   readonly pinoLogs: ViewerLogReader;
   readonly piSessions: ViewerSessionReader;
   readonly toolUsage: ToolUsageReader;

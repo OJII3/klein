@@ -5,6 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { isFileNotFound } from "@shared/type-guards";
 
 import {
+  guildMemoryRelativePath,
   guildMemoryScopeKey,
   isValidGuildMemoryId,
   type GuildMemory,
@@ -40,22 +41,36 @@ export class MarkdownGuildMemoryStore implements GuildMemoryStore {
   }
 
   async write(guildId: string, scope: GuildMemoryScope, memory: GuildMemory): Promise<void> {
-    const filePath = this.filePath(guildId, scope);
     if (memory.facts.length === 0 && memory.preferences.length === 0) {
-      await unlink(filePath).catch((error: unknown) => {
-        if (!isFileNotFound(error)) throw error;
-      });
+      await this.delete(guildId, scope);
       return;
     }
 
+    await this.writeContent(guildId, scope, renderGuildMemory(memory));
+  }
+
+  async writeContent(guildId: string, scope: GuildMemoryScope, content: string): Promise<void> {
+    if (content.trim().length === 0) {
+      await this.delete(guildId, scope);
+      return;
+    }
+
+    const filePath = this.filePath(guildId, scope);
     await mkdir(dirname(filePath), { recursive: true });
     const temporaryPath = `${filePath}.${randomUUID()}.tmp`;
     try {
-      await writeFile(temporaryPath, renderGuildMemory(memory), "utf8");
+      await writeFile(temporaryPath, content, "utf8");
       await rename(temporaryPath, filePath);
     } finally {
       await unlink(temporaryPath).catch(() => undefined);
     }
+  }
+
+  async delete(guildId: string, scope: GuildMemoryScope): Promise<void> {
+    const filePath = this.filePath(guildId, scope);
+    await unlink(filePath).catch((error: unknown) => {
+      if (!isFileNotFound(error)) throw error;
+    });
   }
 
   async listFiles(guildId: string): Promise<readonly GuildMemoryFile[]> {
@@ -130,14 +145,14 @@ export class MarkdownGuildMemoryStore implements GuildMemoryStore {
     assertGuildMemoryId(guildId, "guild");
     switch (scope.type) {
       case "guild":
-        return join(this.directory, guildId, MEMORY_FILE_NAME);
+        return join(this.directory, guildId, guildMemoryRelativePath(scope));
       case "channel":
         assertGuildMemoryId(scope.channelId, "channel");
-        return join(this.directory, guildId, scope.channelId, MEMORY_FILE_NAME);
+        return join(this.directory, guildId, guildMemoryRelativePath(scope));
       case "thread":
         assertGuildMemoryId(scope.channelId, "channel");
         assertGuildMemoryId(scope.threadId, "thread");
-        return join(this.directory, guildId, scope.channelId, scope.threadId, MEMORY_FILE_NAME);
+        return join(this.directory, guildId, guildMemoryRelativePath(scope));
       default: {
         const exhaustive: never = scope;
         throw new Error(`Unsupported guild memory scope: ${String(exhaustive)}`);
@@ -204,7 +219,7 @@ async function readGuildMemoryFile(
 
   const memory = parseGuildMemory(content);
   if (memory.facts.length === 0 && memory.preferences.length === 0) return undefined;
-  return { ...memory, scope, updatedAt: mtime.toISOString() };
+  return { ...memory, content, scope, updatedAt: mtime.toISOString() };
 }
 
 function scopeRank(scope: GuildMemoryScope): number {

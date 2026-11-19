@@ -28,7 +28,7 @@
 
 ## メモリ
 
-`features.memory.enabled` を有効にすると、Klein は最近の会話からギルドに永続する事実と好みを定期的に抽出し、任意のバックグラウンドモデルを使って `.runtime/memory` (`features.memory.directory` でも指定できる) の下へ書き込む。ギルド全体は `{guildId}/MEMORY.md`、チャンネルは `{guildId}/{channelId}/MEMORY.md`、スレッドは `{guildId}/{channelId}/{threadId}/MEMORY.md` に保存する。
+`features.memory.enabled` を有効にすると、Klein は最近の会話からギルドに永続する事実と好みを定期的に抽出し、バックグラウンドエージェントが read、write、edit ツールを使って `.runtime/memory` (`features.memory.directory` でも指定できる) の下のファイルを直接読み書きする。ギルド全体は `{guildId}/MEMORY.md`、チャンネルは `{guildId}/{channelId}/MEMORY.md`、スレッドは `{guildId}/{channelId}/{threadId}/MEMORY.md` に保存する。
 
 各ファイルは `# MEMORY.md` と短い説明から始まり、`## Facts` と `## Preferences` の 2 節だけを持つ。各項目はメタデータを持たない 1 行の箇条書きで、日付が必要なら本文に含める。抽出は既定で会話のチャンネルを対象とし、事実がサーバー全体に当てはまる場合に限りギルドへ昇格させる。取得ではその場所に応じてギルド、チャンネル、スレッドのメモリをすべて加える。メモリ機能が有効なとき、旧 `{guildId}/MEMORY.json` は起動時に各スコープの Markdown へ移行し、`MEMORY.json.migrated` に改名する。
 
@@ -96,7 +96,7 @@ Pi のセッションは Discord のチャンネル名でラベル付けされ�
 
 **ツール** の画面は Pi のセッション履歴に保存されたすべてのツール実行を、ツールごとと MCP サーバーごとに数える。回数には codemode のスクリプトからの呼び出しを含み、Klein の再起動ではリセットされない。
 
-**メモリ** の画面は所有者、ギルド、ユーザーごとの Discord メモリを一覧する。所有者のメモリは新しい規則の追加と項目の削除を受け付ける。ギルドのメモリはスコープごとの `MEMORY.md` を読み取り専用で表示する。ユーザーメモリは Klein がバックグラウンドで更新する Markdown ファイルから読み、削除できる。ユーザーの一覧は表示名、ユーザー名、数値ユーザー ID、概要で絞り込める。
+**メモリ** の画面はギルドとユーザーごとの Discord メモリを一覧する。ギルドのメモリはスコープごとの `MEMORY.md` を表示し、ファイル単位で編集・削除できる。ユーザーメモリは Klein がバックグラウンドで更新する Markdown ファイルから読み、削除できる。ユーザーの一覧は表示名、ユーザー名、数値ユーザー ID、概要で絞り込める。
 
 フロントエンドの開発では、ボットを通常どおり動かしたまま Vite を別に起動する。
 

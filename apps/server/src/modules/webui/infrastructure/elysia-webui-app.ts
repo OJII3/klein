@@ -6,7 +6,6 @@ import type { Logger } from "pino";
 
 import { createWebUiApp, type WebUiApp, type WebUiDependencies } from "@klein/webui-api";
 
-import { MemoryEntryNotFoundError } from "@modules/memory/domain/memory";
 import { startCloudflareTunnel, type CloudflareTunnel } from "./cloudflare-tunnel";
 
 export { createWebUiApp };
@@ -51,11 +50,7 @@ export async function createWebUiServerApp(options: WebUiServerOptions) {
         "content-type": "text/html; charset=utf-8",
       },
     });
-  return createWebUiApp({
-    ...options,
-    isMemoryEntryNotFoundError:
-      options.isMemoryEntryNotFoundError ?? ((error) => error instanceof MemoryEntryNotFoundError),
-  })
+  return createWebUiApp(options)
     .onAfterHandle(({ request, set }) => {
       const { pathname } = new URL(request.url);
       // Vite fingerprints everything under /assets, so those are immutable.

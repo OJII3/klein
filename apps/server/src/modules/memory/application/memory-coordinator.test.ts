@@ -6,11 +6,7 @@ import pino from "pino";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import { TaskCoordinator } from "@app/task-coordinator";
 
-import type {
-  GuildMemoryMessage,
-  GuildMemoryScopeState,
-  GuildMemoryUpdate,
-} from "../domain/guild-memory";
+import type { GuildMemoryMessage, GuildMemoryScopeState } from "../domain/guild-memory";
 import { MarkdownGuildMemoryStore } from "../infrastructure/markdown-guild-memory-store";
 import type { MemoryProcessor } from "../ports/memory-processor";
 import { MemoryCoordinator } from "./memory-coordinator";
@@ -20,26 +16,28 @@ test("batches recent guild messages and keeps guild memory files separate", asyn
   await using temp = await createTempDir("klein-memory-");
   const directory = temp.path;
   const processed: string[][] = [];
+  const store = new MarkdownGuildMemoryStore(directory);
   const processor: MemoryProcessor = {
     async process(
+      guildId: string,
       _scopes: readonly GuildMemoryScopeState[],
       messages: readonly GuildMemoryMessage[],
-    ): Promise<readonly GuildMemoryUpdate[]> {
+    ): Promise<void> {
       processed.push(messages.map((message) => message.id));
-      return [
+      const channelId = messages[0]?.channelId ?? "unknown";
+      await store.write(
+        guildId,
+        { channelId, type: "channel" },
         {
-          memory: {
-            facts: [`処理済み: ${messages.map((message) => message.id).join(", ")}`],
-            preferences: [],
-          },
-          scope: { channelId: messages[0]?.channelId ?? "unknown", type: "channel" },
+          facts: [`処理済み: ${messages.map((message) => message.id).join(", ")}`],
+          preferences: [],
         },
-      ];
+      );
     },
   };
   const taskCoordinator = new TaskCoordinator();
   const coordinator = new MemoryCoordinator({
-    store: new MarkdownGuildMemoryStore(directory),
+    store,
     idleSeconds: 0.01,
     logger: pino({ level: "silent" }),
     maxBatchAgeSeconds: 1,
@@ -100,11 +98,11 @@ test("flushes pending guild memory when asked", async () => {
   const processed: string[][] = [];
   const processor: MemoryProcessor = {
     async process(
+      _guildId: string,
       _scopes: readonly GuildMemoryScopeState[],
       messages: readonly GuildMemoryMessage[],
-    ): Promise<readonly GuildMemoryUpdate[]> {
+    ): Promise<void> {
       processed.push(messages.map((message) => message.id));
-      return [];
     },
   };
   const taskCoordinator = new TaskCoordinator();
@@ -150,9 +148,8 @@ test("passes guild, channel, and thread memory to the processor", async () => {
 
   let received: readonly GuildMemoryScopeState[] = [];
   const processor: MemoryProcessor = {
-    async process(scopes): Promise<readonly GuildMemoryUpdate[]> {
+    async process(_guildId, scopes): Promise<void> {
       received = scopes;
-      return [];
     },
   };
   const taskCoordinator = new TaskCoordinator();

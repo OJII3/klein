@@ -11,7 +11,6 @@ export interface AgentContextBlock {
  * record of what happened. The runtime decides how to present it to the model.
  */
 export interface AgentTurnContext {
-  readonly ownerMemory?: string;
   readonly userMemory?: string;
   readonly blocks?: readonly AgentContextBlock[];
   /** The user who started this turn, when a user started it. */

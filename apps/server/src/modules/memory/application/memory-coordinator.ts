@@ -120,7 +120,20 @@ export class MemoryCoordinator implements GuildMemoryReader {
   }
 
   async readGuild(guildId: string) {
+    if (this.disposed) return { files: [], guildId };
     return { files: await this.options.store.listFiles(guildId), guildId };
+  }
+
+  writeFile(guildId: string, scope: GuildMemoryScope, content: string): Promise<void> {
+    if (this.disposed) return Promise.reject(new Error("Memory coordinator is disposed"));
+    return this.runGuildOperation(guildId, () =>
+      this.options.store.writeContent(guildId, scope, content),
+    );
+  }
+
+  deleteFile(guildId: string, scope: GuildMemoryScope): Promise<void> {
+    if (this.disposed) return Promise.reject(new Error("Memory coordinator is disposed"));
+    return this.runGuildOperation(guildId, () => this.options.store.delete(guildId, scope));
   }
 
   dispose(): void {
@@ -137,19 +150,11 @@ export class MemoryCoordinator implements GuildMemoryReader {
     const startedAt = Date.now();
     return this.runGuildOperation(guildId, async () => {
       const states = await this.readScopeStates(guildId, messages);
-      const updates = await this.options.processor.process(
+      await this.options.processor.process(
+        guildId,
         states,
         messages.map((message) => toGuildMemoryMessage(message)),
       );
-      const knownScopes = new Set(states.map(({ scope }) => guildMemoryScopeKey(scope)));
-
-      for (const update of updates) {
-        const key = guildMemoryScopeKey(update.scope);
-        if (!knownScopes.has(key)) {
-          throw new Error(`Memory processing returned an unknown scope: ${key}`);
-        }
-        await this.options.store.write(guildId, update.scope, update.memory);
-      }
 
       this.logger.info(
         {
@@ -157,7 +162,7 @@ export class MemoryCoordinator implements GuildMemoryReader {
           event: "guild_memory_processed",
           guildId,
           messageCount: messages.length,
-          updateCount: updates.length,
+          scopeCount: states.length,
         },
         "Processed guild memory",
       );

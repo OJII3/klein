@@ -35,10 +35,6 @@
             }
           },
           "additionalProperties": false
-        },
-        "memoryFilePath": {
-          "type": "string",
-          "minLength": 1
         }
       },
       "additionalProperties": false

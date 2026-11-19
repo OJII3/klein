@@ -7,7 +7,6 @@ export const TURN_CONTEXT_CUSTOM_TYPE = "klein-turn-context";
 
 export function renderTurnContext(context: AgentTurnContext): string | undefined {
   const formatted = [
-    context.ownerMemory ? `<owner-memory>\n${context.ownerMemory}\n</owner-memory>` : undefined,
     context.userMemory ? `<user-memory>\n${context.userMemory}\n</user-memory>` : undefined,
     ...(context.blocks ?? []).map((block) => `<${block.name}>\n${block.content}\n</${block.name}>`),
   ]

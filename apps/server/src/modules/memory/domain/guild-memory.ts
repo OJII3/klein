@@ -10,6 +10,7 @@ export interface GuildMemory {
 
 export interface GuildMemoryFile extends GuildMemory {
   readonly scope: GuildMemoryScope;
+  readonly content: string;
   readonly updatedAt: string;
 }
 
@@ -20,11 +21,6 @@ export interface GuildMemorySummary {
 }
 
 export interface GuildMemoryScopeState {
-  readonly scope: GuildMemoryScope;
-  readonly memory: GuildMemory;
-}
-
-export interface GuildMemoryUpdate {
   readonly scope: GuildMemoryScope;
   readonly memory: GuildMemory;
 }
@@ -57,6 +53,21 @@ export function guildMemoryScopeKey(scope: GuildMemoryScope): string {
       return `channel:${scope.channelId}`;
     case "thread":
       return `thread:${scope.channelId}:${scope.threadId}`;
+    default: {
+      const exhaustive: never = scope;
+      throw new Error(`Unsupported guild memory scope: ${String(exhaustive)}`);
+    }
+  }
+}
+
+export function guildMemoryRelativePath(scope: GuildMemoryScope): string {
+  switch (scope.type) {
+    case "guild":
+      return "MEMORY.md";
+    case "channel":
+      return `${scope.channelId}/MEMORY.md`;
+    case "thread":
+      return `${scope.channelId}/${scope.threadId}/MEMORY.md`;
     default: {
       const exhaustive: never = scope;
       throw new Error(`Unsupported guild memory scope: ${String(exhaustive)}`);

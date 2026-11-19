@@ -3,7 +3,7 @@ import { join, resolve } from "node:path";
 
 import type { Logger } from "pino";
 
-import { isFileNotFound } from "@shared/type-guards";
+import { isFileNotFound, isRecord, parseJson } from "@shared/type-guards";
 
 import {
   guildMemoryScopeKey,
@@ -11,7 +11,6 @@ import {
   type GuildMemory,
   type GuildMemoryScope,
 } from "../domain/guild-memory";
-import { parseMemoryDocument } from "./json-memory-store";
 import { MarkdownGuildMemoryStore } from "./markdown-guild-memory-store";
 
 const LEGACY_FILE_NAME = "MEMORY.json";
@@ -45,7 +44,7 @@ export async function migrateLegacyGuildMemory(
 
     let legacyEntries;
     try {
-      legacyEntries = parseMemoryDocument(content).entries;
+      legacyEntries = parseLegacyEntries(content);
     } catch (error) {
       logger?.warn(
         { err: error, event: "guild_memory_migration_failed", path: legacyPath },
@@ -73,16 +72,53 @@ export async function migrateLegacyGuildMemory(
   }
 }
 
-function groupLegacyEntries(
-  entries: readonly {
-    readonly scope: {
-      readonly type: string;
-      readonly channelId?: string;
-      readonly threadId?: string;
+interface LegacyMemoryEntry {
+  readonly scope: {
+    readonly type: string;
+    readonly channelId?: string;
+    readonly threadId?: string;
+  };
+  readonly title: string;
+  readonly content: string;
+}
+
+function parseLegacyEntries(content: string): LegacyMemoryEntry[] {
+  let value: unknown;
+  try {
+    value = parseJson(content);
+  } catch (error) {
+    throw new Error("Legacy guild memory file contains invalid JSON", { cause: error });
+  }
+
+  if (!isRecord(value) || !Array.isArray(value.entries)) {
+    throw new Error("Legacy guild memory file contains an invalid document");
+  }
+
+  return value.entries.map((entry) => {
+    if (
+      !isRecord(entry) ||
+      typeof entry.title !== "string" ||
+      typeof entry.content !== "string" ||
+      !isRecord(entry.scope) ||
+      typeof entry.scope.type !== "string"
+    ) {
+      throw new Error("Legacy guild memory file contains a malformed entry");
+    }
+
+    return {
+      content: entry.content,
+      scope: {
+        type: entry.scope.type,
+        ...(typeof entry.scope.channelId === "string" ? { channelId: entry.scope.channelId } : {}),
+        ...(typeof entry.scope.threadId === "string" ? { threadId: entry.scope.threadId } : {}),
+      },
+      title: entry.title,
     };
-    readonly title: string;
-    readonly content: string;
-  }[],
+  });
+}
+
+function groupLegacyEntries(
+  entries: readonly LegacyMemoryEntry[],
 ): { readonly memory: GuildMemory; readonly scope: GuildMemoryScope }[] {
   const groups = new Map<
     string,

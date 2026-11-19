@@ -32,7 +32,7 @@ import { createPiMinimalAgentFactory } from "@runtime/pi/pi-minimal-agent-factor
 import { migratePiDurableStorage } from "@runtime/pi/pi-durable-migration";
 import { createPiUsageReporterFromEnv } from "@runtime/pi/pi-usage-reporter";
 import { createWatchFetchTool } from "@runtime/pi/watch-fetch-tool";
-import { PiMemoryProcessor } from "@runtime/pi/pi-memory-processor";
+import { PiGuildMemoryAgent } from "@runtime/pi/pi-guild-memory-agent";
 import { PiUserMemoryAgent } from "@runtime/pi/pi-user-memory-agent";
 import { PiVoiceReactionSelector } from "@runtime/pi/pi-voice-reaction-selector";
 import { PiVoiceTranscriptQueueSelector } from "@runtime/pi/pi-voice-transcript-queue-selector";
@@ -49,13 +49,9 @@ import { FileDiscordChannelRuleStore } from "@modules/discord/infrastructure/fil
 import { FileDiscordUserStore } from "@modules/discord/infrastructure/file-discord-user-store";
 import { MemoryCoordinator } from "@modules/memory/application/memory-coordinator";
 import { resolveMemoryConfig } from "@modules/memory/application/memory-config";
-import { JsonMemoryStore } from "@modules/memory/infrastructure/json-memory-store";
 import { MarkdownGuildMemoryStore } from "@modules/memory/infrastructure/markdown-guild-memory-store";
 import { migrateLegacyGuildMemory } from "@modules/memory/infrastructure/json-guild-memory-migration";
-import {
-  createWebUiMemoryAccessor,
-  OwnerMemoryStore,
-} from "@modules/memory/application/owner-memory-store";
+import { createWebUiMemoryAccessor } from "@modules/memory/application/guild-memory-web-accessor";
 import { MarkdownUserMemoryStore } from "@modules/user-memory/infrastructure/markdown-user-memory-store";
 import { UserMemoryCoordinator } from "@modules/user-memory/application/user-memory-coordinator";
 import { resolveUserMemoryConfig } from "@modules/user-memory/application/user-memory-config";
@@ -133,13 +129,6 @@ export async function bootstrapApplication(): Promise<void> {
     ownerUserId,
     discordAccessRuleStore,
   );
-  const ownerMemoryStore = ownerUserId
-    ? new OwnerMemoryStore(
-        new JsonMemoryStore(
-          resolve(config.owner?.memoryFilePath ?? resolve(agentDir, "owner-memory/MEMORY.json")),
-        ),
-      )
-    : undefined;
   const userMemoryConfig = resolveUserMemoryConfig(config);
   const userMemoryDirectory =
     userMemoryConfig?.enabled === true
@@ -293,7 +282,6 @@ export async function bootstrapApplication(): Promise<void> {
           channelId,
           discordUserDirectory,
           ownerFeaturesAllowed,
-          ownerMemoryStore,
           ownerUserId,
           requesterUserId: toolContext.requesterId,
           scheduledTaskStore,
@@ -385,11 +373,23 @@ export async function bootstrapApplication(): Promise<void> {
         logger,
         maxBatchAgeSeconds: memoryConfig.maxBatchAgeSeconds,
         maxBatchMessages: memoryConfig.maxBatchMessages,
-        processor: new PiMemoryProcessor(
-          resolveConfiguredModel(memoryConfig.llm.provider, memoryConfig.llm.model, modelRuntime),
-          memoryConfig.llm.thinkingLevel,
-          sessionRunner.createCompleter(memorySessionId),
-        ),
+        processor: new PiGuildMemoryAgent({
+          directory: memoryConfig.directory,
+          sessionId: memorySessionId,
+          createFactory: (directory) =>
+            createPiMinimalAgentFactory({
+              runner: sessionRunner,
+              model: resolveConfiguredModel(
+                memoryConfig.llm.provider,
+                memoryConfig.llm.model,
+                modelRuntime,
+              ),
+              cwd: directory,
+              ...(memoryConfig.llm.thinkingLevel
+                ? { thinkingLevel: memoryConfig.llm.thinkingLevel }
+                : {}),
+            }),
+        }),
         taskCoordinator,
       })
     : undefined;
@@ -404,7 +404,6 @@ export async function bootstrapApplication(): Promise<void> {
     logger,
     discordUserDirectory,
     memoryCoordinator,
-    ownerMemoryStore,
     operatingState: discordOperatingState,
     scheduledTaskStore,
     userMemoryCoordinator,
@@ -434,7 +433,7 @@ export async function bootstrapApplication(): Promise<void> {
     }
   };
   const webUiConfig = resolveWebUiConfig(config);
-  const webUiMemory = createWebUiMemoryAccessor(ownerMemoryStore, memoryCoordinator);
+  const webUiMemory = createWebUiMemoryAccessor(memoryCoordinator);
   const webUi = webUiConfig.enabled
     ? await startWebUi({
         displayName: profile.displayName,

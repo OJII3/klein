@@ -2,9 +2,9 @@ import { Elysia } from "elysia";
 
 import {
   LogsQuerySchema,
+  MemoryGuildDeleteBodySchema,
+  MemoryGuildFileBodySchema,
   MemoryGuildParamsSchema,
-  MemoryOwnerEntryParamsSchema,
-  MemoryRuleBodySchema,
   MemoryUserParamsSchema,
   SessionParamsSchema,
   SessionQuerySchema,
@@ -145,19 +145,6 @@ export function createWebUiApp(dependencies: WebUiDependencies) {
       },
       { params: MemoryUserParamsSchema },
     )
-    .get("/api/memory/owner", async ({ set }) => {
-      if (!dependencies.memory) {
-        set.status = 404;
-        return { error: "Memory is disabled" };
-      }
-
-      try {
-        const document = await dependencies.memory.read();
-        return { entries: document.entries, scope: { type: "owner" } as const };
-      } catch (error) {
-        return handleRouteError(set, dependencies.logger, error, "Failed to read owner memory");
-      }
-    })
     .get(
       "/api/memory/guild/:guildId",
       async ({ params, set }) => {
@@ -174,51 +161,39 @@ export function createWebUiApp(dependencies: WebUiDependencies) {
       },
       { params: MemoryGuildParamsSchema },
     )
-    .delete(
-      "/api/memory/owner/:entryId",
-      async ({ params, set }) => {
-        if (!dependencies.memory) {
-          set.status = 404;
-          return { error: "Memory is disabled" };
-        }
+    .put(
+      "/api/memory/guild/:guildId/file",
+      async ({ body, params, set }) => {
         if (!dependencies.memoryEditor) {
           set.status = 405;
           return { error: "Memory editing is disabled" };
         }
 
         try {
-          await dependencies.memoryEditor.deleteEntry(params.entryId);
-          return { deleted: true };
+          await dependencies.memoryEditor.writeFile(params.guildId, body.scope, body.content);
+          return { saved: true };
         } catch (error) {
-          if (isMemoryNotFound(dependencies, error)) {
-            set.status = 404;
-            return { error: "Memory entry not found" };
-          }
-          return handleRouteError(set, dependencies.logger, error, "Failed to delete owner memory");
+          return handleRouteError(set, dependencies.logger, error, "Failed to save guild memory");
         }
       },
-      { params: MemoryOwnerEntryParamsSchema },
+      { body: MemoryGuildFileBodySchema, params: MemoryGuildParamsSchema },
     )
-    .post(
-      "/api/memory/owner/rules",
-      async ({ body, set }) => {
-        if (!dependencies.memory || !dependencies.memoryEditor) {
-          set.status = 404;
+    .delete(
+      "/api/memory/guild/:guildId/file",
+      async ({ body, params, set }) => {
+        if (!dependencies.memoryEditor) {
+          set.status = 405;
           return { error: "Memory editing is disabled" };
         }
+
         try {
-          await dependencies.memoryEditor.addRule(body.title.trim(), body.content.trim());
-          return { created: true };
+          await dependencies.memoryEditor.deleteFile(params.guildId, body.scope);
+          return { deleted: true };
         } catch (error) {
-          return handleRouteError(
-            set,
-            dependencies.logger,
-            error,
-            "Failed to add owner memory rule",
-          );
+          return handleRouteError(set, dependencies.logger, error, "Failed to delete guild memory");
         }
       },
-      { body: MemoryRuleBodySchema },
+      { body: MemoryGuildDeleteBodySchema, params: MemoryGuildParamsSchema },
     );
 }
 
@@ -235,11 +210,6 @@ function parseLimit(value: number | string | undefined): number | undefined {
     throw new WebUiRequestError("Log limit must be an integer between 1 and 200");
   }
   return limit;
-}
-
-function isMemoryNotFound(dependencies: WebUiDependencies, error: unknown): boolean {
-  if (dependencies.isMemoryEntryNotFoundError?.(error)) return true;
-  return error instanceof Error && error.name === "MemoryEntryNotFoundError";
 }
 
 function handleRouteError(

@@ -26,14 +26,6 @@ export const MemoryGuildParamsSchema = t.Object({
   }),
 });
 
-export const MemoryOwnerEntryParamsSchema = t.Object({
-  entryId: t.String({
-    minLength: 1,
-    maxLength: 100,
-    pattern: "^[A-Za-z0-9_-]+$",
-  }),
-});
-
 export const MemoryUserParamsSchema = t.Object({
   userId: t.String({
     minLength: 1,
@@ -42,7 +34,24 @@ export const MemoryUserParamsSchema = t.Object({
   }),
 });
 
-export const MemoryRuleBodySchema = t.Object({
-  title: t.String({ minLength: 1, maxLength: 200 }),
-  content: t.String({ minLength: 1, maxLength: 10000 }),
+const MemoryScopeSchema = t.Union([
+  t.Object({ type: t.Literal("guild") }),
+  t.Object({
+    type: t.Literal("channel"),
+    channelId: t.String({ minLength: 1, maxLength: 100, pattern: "^[A-Za-z0-9_-]+$" }),
+  }),
+  t.Object({
+    type: t.Literal("thread"),
+    channelId: t.String({ minLength: 1, maxLength: 100, pattern: "^[A-Za-z0-9_-]+$" }),
+    threadId: t.String({ minLength: 1, maxLength: 100, pattern: "^[A-Za-z0-9_-]+$" }),
+  }),
+]);
+
+export const MemoryGuildFileBodySchema = t.Object({
+  scope: MemoryScopeSchema,
+  content: t.String({ maxLength: 200_000 }),
+});
+
+export const MemoryGuildDeleteBodySchema = t.Object({
+  scope: MemoryScopeSchema,
 });

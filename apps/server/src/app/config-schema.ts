@@ -159,7 +159,6 @@ export const ConfigSchema = Type.Object(
             },
             { additionalProperties: false },
           ),
-          memoryFilePath: Type.Optional(Type.String({ minLength: 1 })),
         },
         { additionalProperties: false },
       ),

@@ -1,12 +1,9 @@
-import type {
-  GuildMemoryMessage,
-  GuildMemoryScopeState,
-  GuildMemoryUpdate,
-} from "../domain/guild-memory";
+import type { GuildMemoryMessage, GuildMemoryScopeState } from "../domain/guild-memory";
 
 export interface MemoryProcessor {
   process(
+    guildId: string,
     scopes: readonly GuildMemoryScopeState[],
     messages: readonly GuildMemoryMessage[],
-  ): Promise<readonly GuildMemoryUpdate[]>;
+  ): Promise<void>;
 }

@@ -93,14 +93,17 @@ test("lists guild memory files with their scopes", async () => {
     },
   );
 
+  const files = await store.listFiles("guild-a");
   assert.deepEqual(
-    (await store.listFiles("guild-a")).map(({ scope }) => scope),
+    files.map(({ scope }) => scope),
     [
       { type: "guild" },
       { channelId: "channel-1", type: "channel" },
       { channelId: "channel-1", threadId: "thread-1", type: "thread" },
     ],
   );
+  assert.match(files[0]?.content ?? "", /^# MEMORY\.md/u);
+  assert.equal(files[1]?.facts[0], "チャンネル");
   assert.deepEqual(await store.listGuildIds(), ["guild-a"]);
 });
 
@@ -113,6 +116,21 @@ test("treats missing files as empty memory and deletes emptied files", async () 
   await store.write("guild-a", scope, { facts: ["事実"], preferences: [] });
   await store.write("guild-a", scope, { facts: [], preferences: [] });
   assert.deepEqual(await store.read("guild-a", scope), { facts: [], preferences: [] });
+  assert.deepEqual(await store.listFiles("guild-a"), []);
+});
+
+test("writes and deletes raw markdown content", async () => {
+  await using temp = await createTempDir("klein-guild-memory-");
+  const store = new MarkdownGuildMemoryStore(temp.path);
+  const scope = { channelId: "channel-1", type: "channel" } as const;
+  const content = "# MEMORY.md\n\n## Facts\n\n- 直接編集した事実\n";
+
+  await store.writeContent("guild-a", scope, content);
+  const [file] = await store.listFiles("guild-a");
+  assert.equal(file?.content, content);
+  assert.deepEqual(file?.facts, ["直接編集した事実"]);
+
+  await store.delete("guild-a", scope);
   assert.deepEqual(await store.listFiles("guild-a"), []);
 });
 

@@ -17,7 +17,6 @@ import {
 test("renders turn context in a stable order", () => {
   assert.equal(
     renderTurnContext({
-      ownerMemory: "owner context",
       userMemory: "user context",
       blocks: [
         { name: "guild-memory", content: "guild context" },
@@ -25,7 +24,6 @@ test("renders turn context in a stable order", () => {
       ],
     }),
     [
-      "<owner-memory>\nowner context\n</owner-memory>",
       "<user-memory>\nuser context\n</user-memory>",
       "<guild-memory>\nguild context\n</guild-memory>",
       "<channel-rule>\nchannel rule\n</channel-rule>",

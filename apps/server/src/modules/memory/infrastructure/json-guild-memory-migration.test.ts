@@ -5,9 +5,7 @@ import test from "node:test";
 
 import { isFileNotFound } from "@shared/type-guards";
 
-import type { MemoryEntry } from "../domain/memory";
 import { migrateLegacyGuildMemory } from "./json-guild-memory-migration";
-import { renderMemoryDocument } from "./json-memory-store";
 import { MarkdownGuildMemoryStore } from "./markdown-guild-memory-store";
 import { createTempDir } from "../../../testing/temp-dir";
 
@@ -17,7 +15,7 @@ test("migrates legacy JSON entries into per-scope markdown files", async () => {
   await mkdir(guildDirectory, { recursive: true });
   await writeFile(
     join(guildDirectory, "MEMORY.json"),
-    renderMemoryDocument({
+    JSON.stringify({
       entries: [
         createEntry("ギルドの事実", "ギルド全体", { type: "guild" }),
         createEntry("チャンネルの事実", "チャンネル", { channelId: "channel-1", type: "channel" }),
@@ -69,15 +67,10 @@ test("leaves a malformed legacy file untouched", async () => {
   await access(join(guildDirectory, "MEMORY.json"));
 });
 
-function createEntry(title: string, content: string, scope: MemoryEntry["scope"]): MemoryEntry {
-  return {
-    content,
-    createdAt: "2026-10-01T00:00:00.000Z",
-    id: `mem-${title}`,
-    kind: "fact",
-    scope,
-    sourceMessageIds: [],
-    title,
-    updatedAt: "2026-10-01T00:00:00.000Z",
-  };
+function createEntry(
+  title: string,
+  content: string,
+  scope: { type: string; channelId?: string; threadId?: string },
+) {
+  return { content, scope, title };
 }

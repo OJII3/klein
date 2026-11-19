@@ -1,19 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 
 import {
-  addOwnerMemoryRule,
-  deleteOwnerMemoryEntry,
+  deleteGuildMemoryFile,
   deleteUserMemory as requestDeleteUserMemory,
   getGuildMemory,
-  getOwnerMemory,
   getUserMemory,
+  guildMemoryScopeKey,
   listMemoryScopes,
   type GuildMemoryFile,
-  type MemoryEntry,
+  type GuildMemoryScope,
   type MemorySelection,
   memoryScopeKey,
   parseMemoryScopeKey,
   type MemoryScopeSummary,
+  saveGuildMemoryFile,
   type UserMemory,
   type UserMemorySummary,
 } from "../api";
@@ -50,17 +50,15 @@ export function useMemory({ active, onUpdated, selectedScopeKey }: UseMemoryOpti
     const firstUser = users[0];
     return firstUser ? { type: "user", userId: firstUser.userId } : null;
   }, [scopes, selectedScope, users]);
-  const [entries, setEntries] = useState<readonly MemoryEntry[]>([]);
   const [guildMemory, setGuildMemory] = useState<readonly GuildMemoryFile[] | null>(null);
   const [userMemory, setUserMemory] = useState<UserMemory | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [detailReloadKey, setDetailReloadKey] = useState(0);
-  const [deletingEntryId, setDeletingEntryId] = useState<string | null>(null);
+  const [savingFileKey, setSavingFileKey] = useState<string | null>(null);
+  const [deletingFileKey, setDeletingFileKey] = useState<string | null>(null);
   const [deletingUserMemory, setDeletingUserMemory] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [addRuleError, setAddRuleError] = useState<string | null>(null);
-  const [addingRule, setAddingRule] = useState(false);
+  const [fileError, setFileError] = useState<string | null>(null);
   const scopesLoadedRef = useRef(false);
   const detailScopeKeyRef = useRef<string | null>(null);
 
@@ -75,7 +73,6 @@ export function useMemory({ active, onUpdated, selectedScopeKey }: UseMemoryOpti
       setScopes(response.items);
       setUsers(response.users);
       if (response.items.length === 0 && response.users.length === 0) {
-        setEntries([]);
         setGuildMemory(null);
         setUserMemory(null);
       }
@@ -115,19 +112,11 @@ export function useMemory({ active, onUpdated, selectedScopeKey }: UseMemoryOpti
         if (effectiveScope.type === "user") {
           const response = await getUserMemory(effectiveScope.userId);
           if (!current) return;
-          setEntries([]);
           setGuildMemory(null);
           setUserMemory(response.memory);
-        } else if (effectiveScope.type === "owner") {
-          const response = await getOwnerMemory();
-          if (!current) return;
-          setEntries(response.entries);
-          setGuildMemory(null);
-          setUserMemory(null);
         } else {
           const response = await getGuildMemory(effectiveScope.guildId);
           if (!current) return;
-          setEntries([]);
           setGuildMemory(response.files);
           setUserMemory(null);
         }
@@ -149,56 +138,63 @@ export function useMemory({ active, onUpdated, selectedScopeKey }: UseMemoryOpti
 
   const effectiveScopeKey = effectiveScope ? memoryScopeKey(effectiveScope) : null;
   useEffect(() => {
-    setDeleteError(null);
+    setFileError(null);
   }, [effectiveScopeKey]);
 
   const retryDetail = useCallback(() => {
     setDetailReloadKey((key) => key + 1);
   }, []);
 
-  const dismissDeleteError = useCallback(() => {
-    setDeleteError(null);
+  const dismissFileError = useCallback(() => {
+    setFileError(null);
   }, []);
 
-  const createRule = useCallback(
-    async (title: string, content: string) => {
-      if (effectiveScope?.type !== "owner" || addingRule) return;
-      setAddingRule(true);
-      setAddRuleError(null);
+  const saveFile = useCallback(
+    async (scope: GuildMemoryScope, content: string): Promise<boolean> => {
+      if (effectiveScope?.type !== "guild" || savingFileKey !== null) return false;
+      const key = guildMemoryScopeKey(scope);
+      setSavingFileKey(key);
+      setFileError(null);
       try {
-        await addOwnerMemoryRule({ title, content });
-        setDetailReloadKey((key) => key + 1);
+        await saveGuildMemoryFile(effectiveScope.guildId, scope, content);
+        setDetailReloadKey((value) => value + 1);
         void load();
+        return true;
       } catch (requestError) {
-        setAddRuleError(
-          requestError instanceof Error ? requestError.message : "ルールの追加に失敗しました",
+        setFileError(
+          requestError instanceof Error ? requestError.message : "メモリの保存に失敗しました",
         );
+        return false;
       } finally {
-        setAddingRule(false);
+        setSavingFileKey(null);
       }
     },
-    [addingRule, effectiveScope, load],
+    [effectiveScope, load, savingFileKey],
   );
 
-  const deleteEntry = useCallback(
-    async (entryId: string) => {
-      if (effectiveScope?.type !== "owner" || deletingEntryId) return;
-
-      setDeletingEntryId(entryId);
-      setDeleteError(null);
+  const deleteFile = useCallback(
+    async (scope: GuildMemoryScope): Promise<boolean> => {
+      if (effectiveScope?.type !== "guild" || deletingFileKey !== null) return false;
+      const key = guildMemoryScopeKey(scope);
+      setDeletingFileKey(key);
+      setFileError(null);
       try {
-        await deleteOwnerMemoryEntry(entryId);
-        setEntries((current) => current.filter((entry) => entry.id !== entryId));
+        await deleteGuildMemoryFile(effectiveScope.guildId, scope);
+        setGuildMemory((current) =>
+          current ? current.filter((file) => guildMemoryScopeKey(file.scope) !== key) : current,
+        );
         void load();
+        return true;
       } catch (requestError) {
-        setDeleteError(
+        setFileError(
           requestError instanceof Error ? requestError.message : "メモリの削除に失敗しました",
         );
+        return false;
       } finally {
-        setDeletingEntryId(null);
+        setDeletingFileKey(null);
       }
     },
-    [deletingEntryId, effectiveScope, load],
+    [deletingFileKey, effectiveScope, load],
   );
 
   const deleteUser = useCallback(
@@ -206,16 +202,15 @@ export function useMemory({ active, onUpdated, selectedScopeKey }: UseMemoryOpti
       if (deletingUserMemory) return;
 
       setDeletingUserMemory(true);
-      setDeleteError(null);
+      setFileError(null);
       try {
         await requestDeleteUserMemory(userId);
         setUsers((current) => current.filter((user) => user.userId !== userId));
         setUserMemory(null);
-        setEntries([]);
         setGuildMemory(null);
         void load();
       } catch (requestError) {
-        setDeleteError(
+        setFileError(
           requestError instanceof Error
             ? requestError.message
             : "ユーザーメモリの削除に失敗しました",
@@ -240,20 +235,18 @@ export function useMemory({ active, onUpdated, selectedScopeKey }: UseMemoryOpti
     scopesLoading,
     scopesError,
     selectedScope: effectiveScope,
-    entries,
     guildMemory,
     userMemory,
     detailLoading,
     detailError,
-    deleteEntry,
+    deleteFile,
     deleteUser,
+    deletingFileKey,
     deletingUserMemory,
-    createRule,
-    addingRule,
-    addRuleError,
-    deleteError,
-    deletingEntryId,
-    dismissDeleteError,
+    saveFile,
+    savingFileKey,
+    fileError,
+    dismissFileError,
     reload,
     retryDetail,
   };

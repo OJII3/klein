@@ -2,7 +2,6 @@ import { formatDiscordMessage, type DiscordMessage } from "@modules/discord/doma
 import type { AgentTurn } from "../core/agent-turn";
 
 export interface DiscordTurnContext {
-  readonly ownerMemory?: string;
   readonly userMemory?: string;
   readonly guildMemory?: string;
   readonly channelRule?: string;
@@ -45,7 +44,6 @@ export function createDiscordMessageAgentTurn(
       ],
     },
     context: {
-      ...(context.ownerMemory ? { ownerMemory: context.ownerMemory } : {}),
       ...(context.userMemory ? { userMemory: context.userMemory } : {}),
       ...(context.guildMemory || context.channelRule
         ? {
