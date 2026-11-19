@@ -121,14 +121,30 @@ test("falls back to attach when a digest time is not configured", () => {
   );
 });
 
-test("stays silent in public channels unless they are enabled", () => {
+test("keeps watch signals in public channels but silences other sources", () => {
   assert.deepEqual(decide("now", { publicChannel: true }), {
-    mode: "silent",
-    reason: "public-channel-disabled",
+    mode: "interrupt",
+    reason: "urgency-now",
   });
+
+  const memorySignal: ProactiveSignal = {
+    ...withUrgency("now"),
+    source: { kind: "memory" },
+  };
   assert.deepEqual(
     decideDelivery({
-      signal: withUrgency("now"),
+      signal: memorySignal,
+      preferences: DEFAULT_PROACTIVE_PREFERENCES,
+      defaults,
+      now: japanTime(2026, 11, 20, 12, 0),
+      publicChannel: true,
+      deliveredToday: 0,
+    }),
+    { mode: "silent", reason: "public-channel-disabled" },
+  );
+  assert.deepEqual(
+    decideDelivery({
+      signal: memorySignal,
       preferences: DEFAULT_PROACTIVE_PREFERENCES,
       defaults: { ...defaults, publicChannels: true },
       now: japanTime(2026, 11, 20, 12, 0),

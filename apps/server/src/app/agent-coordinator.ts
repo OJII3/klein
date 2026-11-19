@@ -12,6 +12,7 @@ import type { SharedMemoryCoordinator } from "@modules/shared-memory/application
 import type {
   ProactiveContext,
   ProactiveCoordinator,
+  ProactiveDigestBatch,
 } from "@modules/proactivity/application/proactive-coordinator";
 import type { UserMemoryCoordinator } from "@modules/user-memory/application/user-memory-coordinator";
 import { renderFirstSpeakerUserMemory } from "@modules/user-memory/domain/user-memory-context-renderer";
@@ -53,7 +54,11 @@ export interface AgentCoordinatorDependencies {
   readonly sharedMemoryCoordinator?: Pick<SharedMemoryCoordinator, "getContext" | "enqueue">;
   readonly proactive?: Pick<
     ProactiveCoordinator,
-    "getContext" | "ingestWatchSignal" | "markSignalsSurfaced"
+    | "getContext"
+    | "ingestWatchSignal"
+    | "markSignalsSurfaced"
+    | "collectDueDigests"
+    | "markWatcherCompleted"
   >;
   readonly operatingState: DiscordOperatingState;
   readonly scheduledTaskStore?: ScheduledTaskStore;
@@ -123,6 +128,37 @@ export class AgentCoordinator {
     await this.scheduledTaskDeliveryCoordinator.deliverDueTasks(now);
   }
 
+  async deliverDueDigests(now = Date.now()): Promise<void> {
+    const proactive = this.dependencies.proactive;
+    if (!proactive || !this.dependencies.operatingState.isActive()) return;
+
+    let batches: readonly ProactiveDigestBatch[];
+    try {
+      batches = await proactive.collectDueDigests(now);
+    } catch (error) {
+      this.logger.warn(
+        { err: error, event: "proactive_digest_collection_failed" },
+        "Failed to collect due proactive digests",
+      );
+      return;
+    }
+
+    for (const batch of batches) {
+      try {
+        await this.dependencies.taskCoordinator.run(() => this.deliverDigest(batch));
+      } catch (error) {
+        this.logger.warn(
+          {
+            err: error,
+            event: "proactive_digest_delivery_failed",
+            channelId: batch.channelId,
+          },
+          "Failed to deliver a proactive digest",
+        );
+      }
+    }
+  }
+
   /**
    * Delivers an attached task's result to the conversation agent that started
    * it. The attached agent never writes to the surface, so the conversation
@@ -134,10 +170,37 @@ export class AgentCoordinator {
     result: AttachedTaskResult,
   ): Promise<void> {
     if (!(await this.isAttachedTaskDeliveryAllowed(conversationKey, accessScope))) return;
+    let delivered = false;
     await this.sessionManager.runForConversation(conversationKey, async () => {
       if (!this.dependencies.operatingState.isActive()) return;
       await this.sessionManager.runTurn(conversationKey, accessScope, async (agent) => {
         await agent.promptEvent(createAttachedTaskResultEvent(result));
+        delivered = true;
+      });
+    });
+    if (!delivered) return;
+
+    try {
+      await this.dependencies.proactive?.markWatcherCompleted("task", result.taskId);
+    } catch (error) {
+      this.logger.warn(
+        {
+          err: error,
+          event: "proactive_watcher_completion_failed",
+          watcherKind: "task",
+          watcherId: result.taskId,
+        },
+        "Failed to mark follow-ups for an attached task as done",
+      );
+    }
+  }
+
+  private async deliverDigest(batch: ProactiveDigestBatch): Promise<void> {
+    const conversationKey = { kind: "discord", channelId: batch.channelId } as const;
+    await this.sessionManager.runForConversation(conversationKey, async () => {
+      if (!this.dependencies.operatingState.isActive()) return;
+      await this.sessionManager.runTurn(conversationKey, batch.accessScope, async (agent) => {
+        await agent.promptEvent(createProactiveDigestEvent(batch));
       });
     });
   }
@@ -321,6 +384,17 @@ export class AgentCoordinator {
       return undefined;
     }
   }
+}
+
+function createProactiveDigestEvent(batch: ProactiveDigestBatch): AgentEvent {
+  const signalIds = batch.signals.map((signal) => signal.id).join(",");
+  return {
+    id: `proactive:digest:${batch.channelId}:${signalIds}`,
+    occurredAt: new Date().toISOString(),
+    type: "proactive.digest",
+    source: "proactivity",
+    content: [{ type: "text", text: batch.text }],
+  };
 }
 
 function createAttachedTaskResultEvent(result: AttachedTaskResult): AgentEvent {

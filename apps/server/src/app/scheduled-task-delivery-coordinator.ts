@@ -31,7 +31,10 @@ export interface ScheduledTaskDeliveryCoordinatorDependencies {
   readonly logger: Logger;
   readonly operatingState: DiscordOperatingState;
   readonly ownerUserId?: string;
-  readonly proactive?: Pick<ProactiveCoordinator, "ingestWatchSignal" | "markSignalsSurfaced">;
+  readonly proactive?: Pick<
+    ProactiveCoordinator,
+    "ingestWatchSignal" | "markSignalsSurfaced" | "markWatcherCompleted"
+  >;
   readonly scheduledTaskStore?: ScheduledTaskStore;
   readonly watchCheckRunner: WatchCheckRunner;
   readonly sessionManager: ChannelSessionManager;
@@ -463,6 +466,19 @@ export class ScheduledTaskDeliveryCoordinator {
     if (!store) return;
     const nextRunAt = getNextRunAt(task.schedule, Date.now());
     if (!nextRunAt) {
+      try {
+        await this.dependencies.proactive?.markWatcherCompleted("reminder", task.id);
+      } catch (error) {
+        this.dependencies.logger.warn(
+          {
+            err: error,
+            event: "proactive_watcher_completion_failed",
+            watcherKind: "reminder",
+            watcherId: task.id,
+          },
+          "Failed to mark follow-ups for a one-time reminder as done",
+        );
+      }
       await store.delete("reminder", task.channelId, task.accessScope, task.id);
       return;
     }

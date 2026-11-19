@@ -6,6 +6,7 @@ import {
   isAtOrAfterJapanTime,
   isWithinQuietHours,
   japanDateKey,
+  japanTimestampForToday,
   parseJapanTime,
 } from "./japan-time";
 
@@ -55,6 +56,25 @@ test("derives the Japan date key around the UTC day boundary", () => {
   assert.equal(japanDateKey(Date.parse("2026-11-19T15:00:00.000Z")), "2026-11-20");
   assert.equal(japanDateKey(Date.parse("2026-11-20T14:59:59.999Z")), "2026-11-20");
   assert.equal(japanDateKey(japanTime(2026, 1, 1, 0, 0)), "2026-01-01");
+});
+
+test("returns today's Japan time as an epoch timestamp", () => {
+  assert.equal(
+    japanTimestampForToday("09:00", japanTime(2026, 11, 20, 8, 59)),
+    japanTime(2026, 11, 20, 9, 0),
+  );
+  assert.equal(
+    japanTimestampForToday("09:00", japanTime(2026, 11, 20, 23, 30)),
+    japanTime(2026, 11, 20, 9, 0),
+  );
+  assert.equal(
+    japanTimestampForToday("00:00", Date.parse("2026-11-19T14:59:59.999Z")),
+    japanTime(2026, 11, 19, 0, 0),
+  );
+  assert.equal(
+    japanTimestampForToday("00:00", Date.parse("2026-11-19T15:00:00.000Z")),
+    japanTime(2026, 11, 20, 0, 0),
+  );
 });
 
 test("checks whether the Japan day has reached a time", () => {

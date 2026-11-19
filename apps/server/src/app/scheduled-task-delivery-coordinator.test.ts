@@ -104,6 +104,7 @@ function createHarness(options: HarnessOptions = {}) {
     readonly mode: ProactiveDeliveryMode;
     readonly now: number;
   }[] = [];
+  const completedWatchers: { kind: string; id: string }[] = [];
   const proactive = {
     async ingestWatchSignal(input: WatchSignalInput): Promise<WatchSignalResult> {
       ingestCalls.push(input);
@@ -120,7 +121,13 @@ function createHarness(options: HarnessOptions = {}) {
     ): Promise<void> {
       surfacedCalls.push({ signals, mode, now });
     },
-  } satisfies Pick<ProactiveCoordinator, "ingestWatchSignal" | "markSignalsSurfaced">;
+    async markWatcherCompleted(kind: "watch" | "reminder" | "task", id: string): Promise<void> {
+      completedWatchers.push({ kind, id });
+    },
+  } satisfies Pick<
+    ProactiveCoordinator,
+    "ingestWatchSignal" | "markSignalsSurfaced" | "markWatcherCompleted"
+  >;
   const attachedSends: {
     readonly taskId: string;
     readonly message: string;
@@ -160,6 +167,7 @@ function createHarness(options: HarnessOptions = {}) {
     events,
     ingestCalls,
     surfacedCalls,
+    completedWatchers,
     attachedSends,
     attachedStarts,
     storedWatch: () => {
@@ -270,6 +278,22 @@ test("leaves reminder delivery unchanged", async () => {
   assert.deepEqual(harness.ingestCalls, []);
   assert.equal(harness.attachedStarts.length, 1);
   assert.equal(harness.store.tasks.has("reminder-1"), false);
+  assert.deepEqual(harness.completedWatchers, [{ kind: "reminder", id: "reminder-1" }]);
+});
+
+test("does not complete reminder follow-ups for a repeating reminder", async () => {
+  const repeating: ReminderTask = {
+    ...reminder,
+    id: "reminder-repeating",
+    schedule: { type: "every", minutes: 30 },
+  };
+  const harness = createHarness({ tasks: [repeating] });
+
+  await harness.coordinator.deliverDueTasks(Date.parse(repeating.nextRunAt));
+
+  assert.equal(harness.attachedStarts.length, 1);
+  assert.equal(harness.store.tasks.has("reminder-repeating"), true);
+  assert.deepEqual(harness.completedWatchers, []);
 });
 
 function eventText(event: AgentEvent | undefined): string {

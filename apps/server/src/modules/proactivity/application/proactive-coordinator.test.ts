@@ -396,7 +396,7 @@ test("keeps urgent wakes interruptible and holds normal wakes as attach", async 
   });
 });
 
-test("stores a silent signal as surfaced without notifying its follow-ups", async () => {
+test("delivers a public watch signal even when public channels are disabled", async () => {
   await withCoordinator(async ({ coordinator, signalStore, followUpStore }) => {
     await followUpStore.create(followUp({ id: "public-follow-up" }));
 
@@ -406,11 +406,11 @@ test("stores a silent signal as surfaced without notifying its follow-ups", asyn
       now: NOW,
     });
 
-    assert.deepEqual(result.decision, { mode: "silent", reason: "public-channel-disabled" });
+    assert.deepEqual(result.decision, { mode: "attach", reason: "default-mode" });
     assert.equal(result.signal.audience, "public");
     const stored = await signalStore.get(result.signal.id);
-    assert.equal(stored?.status, "surfaced");
-    assert.equal(stored?.delivery?.mode, "silent");
+    assert.equal(stored?.status, "queued");
+    assert.deepEqual(stored?.delivery, { mode: "attach" });
     assert.equal((await followUpStore.get("public-follow-up"))?.status, "active");
   });
 });
@@ -476,6 +476,181 @@ test("attaches up to five queued signals and expires overdue ones", async () => 
     });
     assert.equal((await signalStore.get("attach-5"))?.status, "queued");
     assert.equal((await signalStore.get("expired"))?.status, "expired");
+  });
+});
+
+const DIGEST_DEFAULTS: ProactivePolicyDefaults = {
+  ...DEFAULT_POLICY_DEFAULTS,
+  digestAt: "09:00",
+};
+const AFTER_DIGEST = Date.parse("2026-11-20T01:00:00.000Z");
+const BEFORE_DIGEST = Date.parse("2026-11-19T23:00:00.000Z");
+
+function digestSignal(
+  id: string,
+  observedAt: string,
+  overrides: Partial<ProactiveSignal> = {},
+): ProactiveSignal {
+  return makeSignal(id, {
+    observedAt,
+    delivery: { mode: "digest" },
+    ...overrides,
+  });
+}
+
+test("waits for the digest time before collecting digest signals", async () => {
+  await withCoordinator(
+    async ({ coordinator, signalStore }) => {
+      await signalStore.create(digestSignal("early", "2026-11-19T20:00:00.000Z"));
+
+      assert.deepEqual(await coordinator.collectDueDigests(BEFORE_DIGEST), []);
+      assert.equal((await signalStore.get("early"))?.status, "queued");
+    },
+    { defaults: DIGEST_DEFAULTS },
+  );
+});
+
+test("collects only signals observed before today's digest time", async () => {
+  await withCoordinator(
+    async ({ coordinator, signalStore }) => {
+      await signalStore.create(digestSignal("early", "2026-11-19T23:30:00.000Z"));
+      await signalStore.create(digestSignal("late", "2026-11-20T00:30:00.000Z"));
+
+      const batches = await coordinator.collectDueDigests(AFTER_DIGEST);
+
+      assert.equal(batches.length, 1);
+      assert.equal(batches[0]?.channelId, "channel-a");
+      assert.equal(batches[0]?.accessScope, "owner:123");
+      assert.deepEqual(
+        batches[0]?.signals.map((signal) => signal.id),
+        ["early"],
+      );
+      assert.match(batches[0]?.text ?? "", /まとめて伝える候補があります/u);
+      assert.match(batches[0]?.text ?? "", /候補 early/u);
+      assert.doesNotMatch(batches[0]?.text ?? "", /候補 late/u);
+
+      const surfaced = await signalStore.get("early");
+      assert.equal(surfaced?.status, "surfaced");
+      assert.deepEqual(surfaced?.delivery, {
+        mode: "digest",
+        surfacedAt: new Date(AFTER_DIGEST).toISOString(),
+      });
+      assert.equal((await signalStore.get("late"))?.status, "queued");
+    },
+    { defaults: DIGEST_DEFAULTS },
+  );
+});
+
+test("expires overdue digest signals and keeps the rest", async () => {
+  await withCoordinator(
+    async ({ coordinator, signalStore }) => {
+      await signalStore.create(
+        digestSignal("expired", "2026-11-19T20:00:00.000Z", {
+          expiresAt: new Date(AFTER_DIGEST - 1).toISOString(),
+        }),
+      );
+      await signalStore.create(digestSignal("valid", "2026-11-19T21:00:00.000Z"));
+
+      const batches = await coordinator.collectDueDigests(AFTER_DIGEST);
+
+      assert.deepEqual(
+        batches[0]?.signals.map((signal) => signal.id),
+        ["valid"],
+      );
+      assert.equal((await signalStore.get("expired"))?.status, "expired");
+    },
+    { defaults: DIGEST_DEFAULTS },
+  );
+});
+
+test("collects one digest batch per channel and access scope", async () => {
+  await withCoordinator(
+    async ({ coordinator, signalStore }) => {
+      await signalStore.create(digestSignal("a-1", "2026-11-19T20:00:00.000Z"));
+      await signalStore.create(digestSignal("a-2", "2026-11-19T21:00:00.000Z"));
+      await signalStore.create(
+        digestSignal("a-public", "2026-11-19T22:00:00.000Z", {
+          accessScope: "public",
+          audience: "public",
+        }),
+      );
+      await signalStore.create(
+        digestSignal("b-1", "2026-11-19T23:00:00.000Z", {
+          channelId: "channel-b",
+          dedupeKey: "dedupe-b-1",
+        }),
+      );
+
+      const batches = await coordinator.collectDueDigests(AFTER_DIGEST);
+      const byKey = new Map(
+        batches.map((batch) => [`${batch.channelId}:${batch.accessScope}`, batch]),
+      );
+
+      assert.equal(batches.length, 3);
+      assert.deepEqual(
+        byKey.get("channel-a:owner:123")?.signals.map((signal) => signal.id),
+        ["a-1", "a-2"],
+      );
+      assert.equal(byKey.get("channel-a:owner:123")?.text.split("\n").length, 3);
+      assert.deepEqual(
+        byKey.get("channel-a:public")?.signals.map((signal) => signal.id),
+        ["a-public"],
+      );
+      assert.deepEqual(
+        byKey.get("channel-b:owner:123")?.signals.map((signal) => signal.id),
+        ["b-1"],
+      );
+    },
+    { defaults: DIGEST_DEFAULTS },
+  );
+});
+
+test("uses the digest time from the preferences", async () => {
+  await withCoordinator(
+    async ({ coordinator, preferenceStore, signalStore }) => {
+      await preferenceStore.update({ kind: "set_delivery", key: "digest_at", value: "08:00" });
+      await signalStore.create(digestSignal("early", "2026-11-19T22:00:00.000Z"));
+
+      const batches = await coordinator.collectDueDigests(BEFORE_DIGEST);
+
+      assert.deepEqual(
+        batches[0]?.signals.map((signal) => signal.id),
+        ["early"],
+      );
+    },
+    { defaults: DIGEST_DEFAULTS },
+  );
+});
+
+test("completes active and notified follow-ups for a finished watcher", async () => {
+  await withCoordinator(async ({ coordinator, followUpStore }) => {
+    await followUpStore.create(
+      followUp({ id: "active-reminder", watcher: { kind: "reminder", id: "reminder-1" } }),
+    );
+    await followUpStore.create(
+      followUp({
+        id: "notified-reminder",
+        watcher: { kind: "reminder", id: "reminder-1" },
+        status: "notified",
+      }),
+    );
+    await followUpStore.create(
+      followUp({
+        id: "done-reminder",
+        watcher: { kind: "reminder", id: "reminder-1" },
+        status: "done",
+      }),
+    );
+    await followUpStore.create(
+      followUp({ id: "other-reminder", watcher: { kind: "reminder", id: "reminder-2" } }),
+    );
+
+    await coordinator.markWatcherCompleted("reminder", "reminder-1");
+
+    assert.equal((await followUpStore.get("active-reminder"))?.status, "done");
+    assert.equal((await followUpStore.get("notified-reminder"))?.status, "done");
+    assert.equal((await followUpStore.get("done-reminder"))?.status, "done");
+    assert.equal((await followUpStore.get("other-reminder"))?.status, "active");
   });
 });
 

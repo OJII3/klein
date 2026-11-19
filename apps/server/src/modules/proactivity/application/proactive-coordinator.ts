@@ -18,7 +18,7 @@ import {
   type FollowUp,
   type FollowUpWatcher,
 } from "../domain/follow-up";
-import { japanDateKey } from "../domain/japan-time";
+import { japanDateKey, japanTimestampForToday } from "../domain/japan-time";
 import {
   decideDelivery,
   type DeliveryDecision,
@@ -46,6 +46,8 @@ const MAX_WAITING_ON_LINES = 8;
 const MAX_PENDING_SIGNALS = 5;
 const SIGNAL_EVIDENCE_LIMIT = 2_000;
 const SIGNAL_LIFETIME_MS = 7 * 24 * 60 * 60 * 1_000;
+const DIGEST_INSTRUCTION =
+  "まとめて伝える候補があります。必要なものだけを選び、クラインの言葉で短く伝えてください。全部を並べる必要はありません。話す価値がなければ黙ってください。";
 
 export interface ProactiveCoordinatorOptions {
   readonly preferenceStore: ProactivePreferenceStore;
@@ -73,6 +75,13 @@ export interface WatchSignalInput {
 export interface WatchSignalResult {
   readonly decision: DeliveryDecision;
   readonly signal: ProactiveSignal;
+}
+
+export interface ProactiveDigestBatch {
+  readonly channelId: string;
+  readonly accessScope: AccessScope;
+  readonly signals: readonly ProactiveSignal[];
+  readonly text: string;
 }
 
 interface ResolvedWatcher {
@@ -157,6 +166,64 @@ export class ProactiveCoordinator {
     return { decision, signal: queued };
   }
 
+  async collectDueDigests(now: number): Promise<readonly ProactiveDigestBatch[]> {
+    const queued = (await this.options.signalStore.listAllQueued()).filter(
+      (signal) => signal.delivery?.mode === "digest",
+    );
+    const groups = new Map<
+      string,
+      {
+        readonly channelId: string;
+        readonly accessScope: AccessScope;
+        readonly signals: ProactiveSignal[];
+      }
+    >();
+    for (const signal of queued) {
+      const key = `${signal.channelId}\u0000${signal.accessScope}`;
+      const group = groups.get(key);
+      if (group) {
+        group.signals.push(signal);
+      } else {
+        groups.set(key, {
+          channelId: signal.channelId,
+          accessScope: signal.accessScope,
+          signals: [signal],
+        });
+      }
+    }
+
+    const batches: ProactiveDigestBatch[] = [];
+    for (const group of groups.values()) {
+      const preferences = await this.options.preferenceStore.read();
+      const digestAt = preferences.delivery.digestAt ?? this.options.defaults.digestAt;
+      if (digestAt === undefined) continue;
+
+      const digestTime = japanTimestampForToday(digestAt, now);
+      if (now < digestTime) continue;
+
+      const selected: ProactiveSignal[] = [];
+      for (const signal of group.signals) {
+        if (isSignalExpired(signal, now)) {
+          await this.options.signalStore.update(markSignalExpired(signal, now));
+          continue;
+        }
+        if (Date.parse(signal.observedAt) >= digestTime) continue;
+        selected.push(signal);
+      }
+      if (selected.length === 0) continue;
+
+      await this.markSignalsSurfaced(selected, "digest", now);
+      batches.push({
+        channelId: group.channelId,
+        accessScope: group.accessScope,
+        signals: selected,
+        text: [DIGEST_INSTRUCTION, ...selected.map((signal) => formatSignal(signal))].join("\n"),
+      });
+    }
+
+    return batches;
+  }
+
   async markSignalsSurfaced(
     signals: readonly ProactiveSignal[],
     mode: ProactiveDeliveryMode,
@@ -172,6 +239,15 @@ export class ProactiveCoordinator {
         if (followUp.status !== "active" && followUp.status !== "notified") continue;
         await this.options.followUpStore.update(markFollowUpNotified(followUp, now));
       }
+    }
+  }
+
+  async markWatcherCompleted(kind: FollowUpWatcher["kind"], id: string): Promise<void> {
+    const now = this.now();
+    const followUps = await this.options.followUpStore.listByWatcher(kind, id);
+    for (const followUp of followUps) {
+      if (followUp.status !== "active" && followUp.status !== "notified") continue;
+      await this.options.followUpStore.update(markFollowUpDone(followUp, now));
     }
   }
 

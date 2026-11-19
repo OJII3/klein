@@ -309,6 +309,7 @@ export async function bootstrapApplication(): Promise<void> {
           userMemoryStore,
           watchCheckRunner,
           attachedTasks: attachedAgentCoordinator,
+          promiseGuard: { mode: proactivityConfig.promiseGuard, logger },
           ...(proactiveCoordinator ? { proactive: proactiveCoordinator } : {}),
         }),
     });
@@ -612,8 +613,10 @@ export async function bootstrapApplication(): Promise<void> {
     ATTACHED_TASK_IDLE_CHECK_INTERVAL_MS,
   );
   void agentCoordinator.deliverDueTasks();
+  void agentCoordinator.deliverDueDigests();
   scheduledTaskCheckInterval = setInterval(() => {
     void agentCoordinator.deliverDueTasks();
+    void agentCoordinator.deliverDueDigests();
   }, SCHEDULED_TASK_CHECK_INTERVAL_MS);
   await updateDiscordUsageStatus();
   usageStatusInterval = setInterval(() => {

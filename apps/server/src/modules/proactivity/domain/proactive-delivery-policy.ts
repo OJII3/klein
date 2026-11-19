@@ -36,7 +36,7 @@ export function decideDelivery(input: {
 }): DeliveryDecision {
   const { signal, preferences, defaults, now, publicChannel, deliveredToday } = input;
 
-  if (publicChannel && !defaults.publicChannels) {
+  if (publicChannel && !defaults.publicChannels && signal.source.kind !== "watch") {
     return { mode: "silent", reason: "public-channel-disabled" };
   }
 

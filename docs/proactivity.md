@@ -17,7 +17,7 @@ Klein はチャンネルのメッセージに反応するだけではなく、�
 
 ## 対象範囲
 
-最初の実装では、自発的な発言を有効にするのは所有者のスコープに限る。所有者のダイレクトメッセージと、所有者専用のチャンネルが対象である。公開チャンネルでは既定で無効にし、チャンネル単位の好みと配信上限が揃ってから有効化する。
+最初の実装では、好みの変更と自発的な発言の既定の対象を所有者のスコープに限る。所有者のダイレクトメッセージと、所有者専用のチャンネルが既定の対象である。公開チャンネルでは、ユーザーが明示的に登録した監視 (watch) に由来する候補だけを配信し、それ以外は保存だけにする。チャンネル単位の好みと配信上限が揃ったら、`publicChannels` で他の候補も有効化できる。
 
 好みの変更は所有者だけができる。公開チャンネルで所有者以外が「この話題はいらない」と言っても、そのチャンネルの設定は変えない。
 
@@ -130,13 +130,17 @@ interface ProactiveSignal {
 
 `decideDelivery` は純粋な関数とし、現在時刻、好み、チャンネルの種別、当日の配信数を入力にする。判断は決定的にする。
 
-1. 公開チャンネルで機能が無効なら `silent`。
+1. 公開チャンネルで機能が無効なら、watch 由来以外は `silent`。watch 由来は続ける。
 2. 話題が `mute` なら `silent`。`urgent-only` で `now` 以外なら `silent`。
 3. 静かな時間で `now` 以外なら `attach`。`now` でも設定が許さなければ `attach`。
 4. 当日の配信数が上限に達していて `now` 以外なら `attach`。
 5. `now` は `interrupt`、`today` は `attach`、`digest` は `digest`、`silent` は `silent`。
 
+watch の `priority` が `urgent` のとき候補の urgency は `now`、`normal` のとき `today` になる。`urgent` はユーザーがすぐ知りたいと明示した監視だけに使い、通常の監視は `normal` にする。
+
 `interrupt` は既存の watch wake と同じ経路で会話エージェントを起こす。`attach` は候補をキューに残し、次のユーザー発言のターンコンテキストに `<pending-signals>` として載せる。`digest` は指定時刻にまとめて1回の発言にする。`silent` は保存だけして発言しない。
+
+ダイジェストは、その日の `digestAt` より前に観測した候補だけを対象にする。`digestAt` 以降に観測した候補は翌日のダイジェストまで待つため、同じ日のうちに何度もまとめが届くことはない。期限切れの候補は配信せず `expired` にする。
 
 `attach` と `digest` で一度コンテキストに載せた候補は `surfaced` にする。エージェントがその候補を話題にしなくても再通知しない。これは注意を奪わないための意図的な挙動である。
 
@@ -165,9 +169,9 @@ watch の wake と付随タスクの結果を届けるときも同じブロッ�
 
 `discord_send` の送信前に、本文が追跡を約束しているように見えるかを調べる。約束の言い回しがあり、このチャンネルに有効な約束がない場合は、設定に応じて記録するか送信を止める。
 
-設定は `off`、`log`、`block` の3つとする。既定は `log` にする。`block` は誤検知がクラインの言い回しを壊す可能性があるため、実際のログを見てから既定にする。
+設定は `off`、`log`、`block` の3つとする。既定は `log` である。`log` はチャンネルと本文の先頭120文字だけを記録し、全文は残さない。`block` は誤検知がクラインの言い回しを壊す可能性があるため、実際のログを見て誤検知が少ないと確認できたら選ぶ。
 
-検出は日本語の限られた言い回しに対して行う。監視、確認、教える、知らせる、連絡する、報告するを含む文を対象にする。意味の判定ではなく、約束の登録漏れを見つけるための補助である。
+検出は日本語の限られた言い回しに対して行う。条件と報告の組 (見つけたら教える、変わったら知らせる、届いたら連絡する)、継続的な確認 (監視しておく、チェックしておく、確認しておく)、後日の報告 (後で教える、あとで報告する) を対象にする。有効な約束が1件でもあれば送信を許可する。意味の判定ではなく、約束の登録漏れを見つけるための補助である。
 
 ## 設定
 
@@ -192,43 +196,19 @@ watch の wake と付随タスクの結果を届けるときも同じブロッ�
 }
 ```
 
-`preferencesFile`、`followUpDirectory`、`signalDirectory` を省略した場合は `<runtime.agentDir>` の下の既定値を使う。`quietHours` と `digestAt` は設定の既定値であり、好みのファイルに値があればそちらを優先する。
+`preferencesFile`、`followUpDirectory`、`signalDirectory` を省略した場合は `<runtime.agentDir>` の下の既定値を使う。`quietHours` と `digestAt` は設定の既定値であり、好みのファイルに値があればそちらを優先する。`promiseGuard` を省略した場合は `log` になる。
 
-## 実装の順序
+## 実装済みの範囲
 
-### 第1段階: ドメインと保存
+- 好み、約束、候補のドメインとファイル保存
+- 設定、`ProactiveCoordinator`、`proactive_preference_update`、ターンコンテキストへの好み、`<waiting-on>`、`<pending-signals>` の描画
+- `follow_up_create`、`follow_up_list`、`follow_up_close` と、監視の削除、一回だけのリマインダーの配信、付随タスクの結果配送を `done` に反映する処理
+- watch の wake の候補化、配信ゲート、`attach` と `digest` のキュー、当日の配信数、重複排除
+- `AgentCoordinator.deliverDueDigests` によるダイジェスト配信と、スケジュール確認と同じ間隔での起動
+- `discord_send` の約束監査 (`off`、`log`、`block`)
+- `config/PROACTIVITY.md` と `docs/features.md` の更新
 
-`apps/server/src/modules/proactivity` にドメイン、ポート、ファイル保存を追加する。アプリへの配線はしない。
-
-- 好みのパース、描画、更新
-- 約束の生成、状態遷移、期限切れ
-- 候補の生成、重複判定、期限切れ
-- 配信ゲートの純粋関数
-- 3つのファイルストア
-
-確認は `bun test apps/server/src/modules/proactivity` と `bun run typecheck` で行う。
-
-### 第2段階: 設定、プロンプト、好みのツール
-
-設定スキーマ、`ProactiveCoordinator`、`proactive_preference_update`、ターンコンテキストへの好みの描画を追加する。`config/PROACTIVITY.md` を読み、会話エージェントのシステムプロンプトに追加する。
-
-確認は設定スキーマの生成、プロンプトの読み込み、好みの更新が次のターンに反映されること。
-
-### 第3段階: 約束の台帳とツール
-
-`follow_up_create`、`follow_up_list`、`follow_up_close` を追加する。監視の削除と一回だけのリマインダーの配信を状態に反映する。`<waiting-on>` をターンコンテキストに追加する。
-
-確認は watcher なしの作成が失敗すること、監視を削除すると `orphaned` になること、一回だけのリマインダーが `done` になること。
-
-### 第4段階: 配信ゲートと候補
-
-watch の wake を候補に変換し、配信ゲートを通す。`attach` と `digest` のキュー、当日の配信数、重複排除、公開チャンネルの既定無効を実装する。`AgentCoordinator` にダイジェスト配信を追加する。
-
-確認は固定時刻で静かな時間に発火した監視が翌朝まで待つこと、同じ候補が二重に届かないこと、公開チャンネルでは発言しないこと。
-
-### 第5段階: 監査、文書、統合テスト
-
-`discord_send` の約束監査、`docs/features.md` の更新、設定例、統合テストを追加する。`bun fmt`、`bun lint:fix`、`bun test`、`bun run typecheck` を通す。
+確認は `bun fmt`、`bun lint:fix`、`bun test`、`bun run typecheck`、`bun run build` で行う。
 
 ## 対象外
 

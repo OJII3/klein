@@ -36,6 +36,11 @@ export function isAtOrAfterJapanTime(time: string, now: number): boolean {
   return getJapanMinuteOfDay(now) >= toMinuteOfDay(parseJapanTime(time));
 }
 
+export function japanTimestampForToday(time: string, now: number): number {
+  parseJapanTime(time);
+  return Date.parse(`${japanDateKey(now)}T${time}:00+09:00`);
+}
+
 function getJapanMinuteOfDay(now: number): number {
   const local = new Date(now + JAPAN_TIME_ZONE_OFFSET_MS);
   return local.getUTCHours() * 60 + local.getUTCMinutes();

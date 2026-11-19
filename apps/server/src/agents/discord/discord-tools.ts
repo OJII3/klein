@@ -1,4 +1,5 @@
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { Logger } from "pino";
 
 import type { AgentImageAnalyzer } from "@agents/core/agent-factory";
 import type { AttachedTaskControl } from "@agents/core/attached-agent";
@@ -11,6 +12,7 @@ import type { UserMemoryStore } from "@modules/user-memory/ports/user-memory-sto
 import { ownerAccessScope, PUBLIC_ACCESS_SCOPE } from "@shared/access";
 import { createReminderTools } from "../tools/reminder";
 import { createProactiveTools, type ProactiveToolCoordinator } from "../tools/proactive";
+import { createPromiseGuard, type PromiseGuardMode } from "../tools/promise-guard";
 import { createUserMemoryTools } from "../tools/user-memory";
 import { createWatchTools } from "../tools/watch";
 import { createDiscordAskTool } from "./tools/discord-ask";
@@ -38,6 +40,7 @@ export interface DiscordAgentToolsOptions {
   readonly discordUserDirectory?: DiscordUserResolver;
   readonly attachedTasks?: AttachedTaskControl;
   readonly proactive?: ProactiveToolCoordinator;
+  readonly promiseGuard?: { readonly mode: PromiseGuardMode; readonly logger: Logger };
 }
 
 /**
@@ -52,6 +55,19 @@ export function createDiscordAgentTools(
   const ownerFeaturesAllowed = ownerUserId !== undefined;
   const accessScope =
     ownerUserId !== undefined ? ownerAccessScope(ownerUserId) : PUBLIC_ACCESS_SCOPE;
+  const proactive = options.proactive;
+  const promiseGuard =
+    proactive && options.promiseGuard
+      ? createPromiseGuard({
+          mode: options.promiseGuard.mode,
+          channelId: options.channelId,
+          listActiveFollowUps: async () =>
+            (await proactive.listFollowUps(options.channelId, accessScope)).filter(
+              (followUp) => followUp.status === "active" || followUp.status === "notified",
+            ),
+          logger: options.promiseGuard.logger,
+        })
+      : undefined;
   return [
     createDiscordReadTool(
       options.channelApi,
@@ -64,7 +80,7 @@ export function createDiscordAgentTools(
       : []),
     ...(options.speak
       ? [createDiscordSpeakTool(options.speak)]
-      : [createDiscordSendTool(options.channelApi, options.channelId)]),
+      : [createDiscordSendTool(options.channelApi, options.channelId, promiseGuard)]),
     ...(!options.speak && options.tts
       ? [createDiscordVoiceTool(options.channelApi, options.channelId, options.tts)]
       : []),
