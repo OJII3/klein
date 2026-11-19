@@ -43,6 +43,7 @@ import { toImageAnalysisFailure } from "@agents/core/image-analysis";
 import type { SessionMode } from "@app/cli-options";
 import { renderWatchToolSection } from "@modules/scheduling/application/watch-tool";
 import type { WatchToolCatalog } from "@modules/scheduling/ports/watch-tool";
+import { createAgentBrowserMcpExtension, enablesAgentBrowser } from "./agent-browser-mcp";
 import { createBackgroundCompactionExtension } from "./background-compaction";
 import { createFxtwitterFetchExtension } from "./fxtwitter-fetch";
 import { readLastAssistantText } from "./pi-assistant-text";
@@ -786,7 +787,12 @@ export function createPiAgentFactory({
           normalizeAssistantText: policy.assistantText === "none",
           surfaceTools,
           backgroundCompactionLeadTokens: llm.compaction?.backgroundTokens,
-          extraExtensions,
+          extraExtensions: [
+            ...(extraExtensions ?? []),
+            ...(enablesAgentBrowser(options.role, options.ownerFeaturesAllowed)
+              ? [createAgentBrowserMcpExtension(options.sessionKey)]
+              : []),
+          ],
         },
       );
       await resourceLoader.reload();
