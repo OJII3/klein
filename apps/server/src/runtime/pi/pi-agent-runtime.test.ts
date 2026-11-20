@@ -1383,6 +1383,113 @@ test("compactForHandoff formats Goal and summary prompt with characterName", asy
   runtime.dispose();
 });
 
+test("appends worker delegation guidance to text conversation prompts based on owner permissions", async () => {
+  await using temp = await createTempDir("klein-worker-prompt-");
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  const provider = fauxProvider({ tokensPerSecond: 100_000 });
+  const model = provider.getModel();
+  const modelRuntime = await ModelRuntime.create({
+    credentials: new InMemoryCredentialStore(),
+    modelsPath: null,
+    refreshOnCreate: false,
+  });
+  modelRuntime.registerNativeProvider(provider.provider);
+
+  const capturedPrompts: string[] = [];
+  const createFactory = (permissions?: {
+    readonly tools?: { readonly overrides?: Readonly<Record<string, "allow" | "owner" | "deny">> };
+    readonly mcp?: { readonly servers?: Readonly<Record<string, "allow" | "owner" | "deny">> };
+  }) =>
+    createPiAgentFactory({
+      agentDir: temp.path,
+      characterName: "クライン",
+      llm: { provider: model.provider, model: model.id },
+      logger: pino({ level: "silent" }),
+      modelRuntime,
+      permissions,
+      sessionMode: "new",
+      onSessionCreated(session) {
+        capturedPrompts.push(session.systemPrompt);
+      },
+    });
+
+  try {
+    const ownerRuntime = await createFactory().create(
+      { systemPrompt: "Base prompt." },
+      () => [makeSurfaceTool("discord_send"), makeWorkerStart()],
+      { role: { kind: "conversation" }, sessionKey: "owner-conv", ownerFeaturesAllowed: true },
+    );
+    ownerRuntime.dispose();
+
+    const publicRuntime = await createFactory().create(
+      { systemPrompt: "Base prompt." },
+      () => [makeSurfaceTool("discord_send"), makeWorkerStart()],
+      { role: { kind: "conversation" }, sessionKey: "public-conv", ownerFeaturesAllowed: false },
+    );
+    publicRuntime.dispose();
+
+    const voiceRuntime = await createFactory().create(
+      { systemPrompt: "Base prompt." },
+      () => [makeSurfaceTool("discord_speak"), makeWorkerStart()],
+      { role: { kind: "conversation" }, sessionKey: "voice-conv", ownerFeaturesAllowed: false },
+    );
+    voiceRuntime.dispose();
+
+    const restrictedOwnerRuntime = await createFactory({
+      tools: { overrides: { t3_thread_start: "deny" } },
+      mcp: { servers: { agent_browser: "deny" } },
+    }).create(
+      { systemPrompt: "Base prompt." },
+      () => [makeSurfaceTool("discord_send"), makeWorkerStart()],
+      {
+        role: { kind: "conversation" },
+        sessionKey: "restricted-owner-conv",
+        ownerFeaturesAllowed: true,
+      },
+    );
+    restrictedOwnerRuntime.dispose();
+
+    const [ownerPrompt, publicPrompt, voicePrompt, restrictedOwnerPrompt] = capturedPrompts;
+    assert.ok(ownerPrompt && publicPrompt && voicePrompt && restrictedOwnerPrompt);
+    assert.match(ownerPrompt, /## Workers \(`worker_start` \/ 付随タスク\)/);
+    assert.match(ownerPrompt, /agent-browser/);
+    assert.match(ownerPrompt, /t3_thread_\*/);
+    assert.match(publicPrompt, /## Workers \(`worker_start` \/ 付随タスク\)/);
+    assert.match(publicPrompt, /NOT available in this conversation/);
+    assert.doesNotMatch(voicePrompt, /## Workers \(`worker_start` \/ 付随タスク\)/);
+    assert.match(restrictedOwnerPrompt, /NOT available in this conversation/);
+  } finally {
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+  }
+});
+
+function makeWorkerStart() {
+  return defineTool({
+    name: "worker_start",
+    label: "Start Worker",
+    description: "Start a worker",
+    parameters: Type.Object({ prompt: Type.String() }),
+    async execute() {
+      return { content: [{ type: "text", text: "ok" }], details: {} };
+    },
+  });
+}
+
+function makeSurfaceTool(name: "discord_send" | "discord_speak") {
+  return {
+    name,
+    label: name,
+    description: name,
+    parameters: Type.Object({ content: Type.String() }),
+    surface: true,
+    primarySurface: true,
+    async execute() {
+      return { content: [{ type: "text" as const, text: "ok" }], details: {} };
+    },
+  };
+}
+
 function createSessionManagerStub() {
   const entries: Array<{ customType: string; data: unknown }> = [];
   return {

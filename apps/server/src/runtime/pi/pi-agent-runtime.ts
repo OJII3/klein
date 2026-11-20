@@ -40,10 +40,15 @@ import type { AgentTool } from "@agents/core/agent-tool";
 import type { AgentTurn, AgentTurnContext } from "@agents/core/agent-turn";
 import type { AgentPrompt, AgentRuntime } from "@agents/core/agent-runtime";
 import { toImageAnalysisFailure } from "@agents/core/image-analysis";
+import { renderWorkerDelegationSection } from "@agents/core/attached-agent";
 import type { SessionMode } from "@app/cli-options";
 import { renderWatchToolSection } from "@modules/scheduling/application/watch-tool";
 import type { WatchToolCatalog } from "@modules/scheduling/ports/watch-tool";
-import { createAgentBrowserMcpExtension, enablesAgentBrowser } from "./agent-browser-mcp";
+import {
+  AGENT_BROWSER_MCP_SERVER_NAME,
+  createAgentBrowserMcpExtension,
+  enablesAgentBrowser,
+} from "./agent-browser-mcp";
 import { createBackgroundCompactionExtension } from "./background-compaction";
 import { createFxtwitterFetchExtension } from "./fxtwitter-fetch";
 import { readLastAssistantText } from "./pi-assistant-text";
@@ -767,8 +772,25 @@ export function createPiAgentFactory({
       const policy = resolveAgentPolicy(options.role);
       const surfaceTools = customTools.filter((tool) => tool.surface === true);
       const hasWatchAdd = customTools.some((tool) => tool.name === "watch_add");
+      const hasWorkerStart = customTools.some((tool) => tool.name === "worker_start");
+      const hasVoiceSpeak = surfaceTools.some((tool) => tool.name === "discord_speak");
+      const workerDelegationSection =
+        hasWorkerStart && !hasVoiceSpeak
+          ? renderWorkerDelegationSection({
+              ownerBrowserAvailable:
+                enablesAgentBrowser(
+                  { kind: "attached", taskId: "" },
+                  options.ownerFeaturesAllowed,
+                ) && authorization.allowsServer(AGENT_BROWSER_MCP_SERVER_NAME),
+              ownerT3Available:
+                options.ownerFeaturesAllowed === true &&
+                authorization.allowsTool("t3_thread_start"),
+              watchAvailable: hasWatchAdd,
+            })
+          : undefined;
       const systemPrompt = [
         definition.systemPrompt,
+        ...(workerDelegationSection ? [workerDelegationSection] : []),
         ...(hasWatchAdd && watchToolCatalog ? [renderWatchToolSection(watchToolCatalog)] : []),
       ]
         .filter(Boolean)

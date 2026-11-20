@@ -186,3 +186,18 @@ test("rejects worker_send, worker_close, and worker_list outside the bound scope
     assert.deepEqual(listResult.details, { tasks: [] });
   }
 });
+
+test("describes owner-only worker capabilities only when owner features are allowed", () => {
+  const { target } = createTarget();
+  const publicTools = unpackControlTools(
+    createAttachedControlTools(target, "channel-1", "public", false),
+  );
+  const ownerTools = unpackControlTools(
+    createAttachedControlTools(target, "channel-1", "owner:123", true),
+  );
+
+  assert.match(publicTools.workerStart.description, /Prefer worker_start/);
+  assert.doesNotMatch(publicTools.workerStart.description, /t3_thread_\*/);
+  assert.match(ownerTools.workerStart.description, /agent-browser/);
+  assert.match(ownerTools.workerStart.description, /t3_thread_\*/);
+});
