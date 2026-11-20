@@ -4,7 +4,6 @@ import type {
   ExtensionToolContext,
   ToolLoadout,
 } from "@earendil-works/pi-coding-agent";
-import { isAccessAllowed, type AccessLevel } from "@shared/access";
 import { isRecord } from "@shared/type-guards";
 
 const MCP_RESOURCE_TOOLS = new Set([
@@ -13,7 +12,12 @@ const MCP_RESOURCE_TOOLS = new Set([
   "read_mcp_resource",
 ]);
 
-export type ToolAccess = AccessLevel;
+/** Public conversations, linked-user conversations, and owner conversations. */
+export type ToolSessionAccess = "public" | "user" | "owner";
+
+/** Permission level for a tool or MCP server. `user` includes the owner. */
+export type ToolAccess = "allow" | "deny" | "user" | "owner";
+
 export interface ToolPermissions {
   readonly tools?: {
     readonly default?: ToolAccess;
@@ -28,22 +32,15 @@ export interface ToolPermissions {
 /** Session permissions are trusted application metadata, never model arguments. */
 export class ToolAuthorization {
   private readonly servers = new Set<string>();
-  private readonly builtinServers = new Set<string>();
   constructor(
-    readonly ownerSession: boolean,
+    readonly sessionAccess: ToolSessionAccess,
     private readonly permissions: ToolPermissions = {},
     private readonly alwaysAllowedTools: ReadonlySet<string> = new Set(),
+    /** Application-registered servers and the level they require by default. */
+    private readonly builtinServerAccess: Readonly<Record<string, ToolAccess>> = {},
   ) {}
   rememberServers(names: readonly string[]): void {
     for (const name of names) this.servers.add(name);
-  }
-  /**
-   * Application-registered servers such as the per-user browser. They bypass
-   * the owner-only MCP default because their registration already encodes the
-   * session's capability, but an explicit per-server permission still wins.
-   */
-  allowBuiltinServers(names: readonly string[]): void {
-    for (const name of names) this.builtinServers.add(name);
   }
   allowsResource(input: unknown): boolean {
     if (isRecord(input) && typeof input.server === "string") {
@@ -53,10 +50,12 @@ export class ToolAuthorization {
     return true;
   }
   allowsServer(name: string): boolean {
-    const configured = this.permissions.mcp?.servers?.[name];
-    if (configured) return this.allows(configured);
-    if (this.builtinServers.has(name)) return true;
-    return this.allows(this.permissions.mcp?.default ?? "owner");
+    return this.allows(
+      this.permissions.mcp?.servers?.[name] ??
+        this.builtinServerAccess[name] ??
+        this.permissions.mcp?.default ??
+        "owner",
+    );
   }
   allowsTool(name: string): boolean {
     if (this.alwaysAllowedTools.has(name)) return true;
@@ -77,7 +76,10 @@ export class ToolAuthorization {
     );
   }
   private allows(access: ToolAccess): boolean {
-    return isAccessAllowed(access, this.ownerSession);
+    if (access === "allow") return true;
+    if (access === "deny") return false;
+    if (access === "user") return this.sessionAccess !== "public";
+    return this.sessionAccess === "owner";
   }
   extension: ExtensionFactory = (pi) => {
     pi.on("before_agent_start", () => {

@@ -17,18 +17,25 @@ const DiscordAccessSchema = Type.Union([
   Type.Literal("owner"),
 ]);
 
+const PermissionAccessSchema = Type.Union([
+  Type.Literal("allow"),
+  Type.Literal("deny"),
+  Type.Literal("user"),
+  Type.Literal("owner"),
+]);
+
 const ToolPermissionsSchema = Type.Object(
   {
-    default: Type.Optional(DiscordAccessSchema),
-    overrides: Type.Optional(Type.Record(Type.String({ minLength: 1 }), DiscordAccessSchema)),
+    default: Type.Optional(PermissionAccessSchema),
+    overrides: Type.Optional(Type.Record(Type.String({ minLength: 1 }), PermissionAccessSchema)),
   },
   { additionalProperties: false },
 );
 
 const McpPermissionsSchema = Type.Object(
   {
-    default: Type.Optional(DiscordAccessSchema),
-    servers: Type.Optional(Type.Record(Type.String({ minLength: 1 }), DiscordAccessSchema)),
+    default: Type.Optional(PermissionAccessSchema),
+    servers: Type.Optional(Type.Record(Type.String({ minLength: 1 }), PermissionAccessSchema)),
   },
   { additionalProperties: false },
 );

@@ -773,11 +773,11 @@ export function createPiAgentFactory({
       };
 
       const authorization = new ToolAuthorization(
-        options.ownerFeaturesAllowed === true,
+        options.ownerFeaturesAllowed === true ? "owner" : browserUserId ? "user" : "public",
         permissions,
         skillReadTool ? new Set([skillReadTool.name]) : undefined,
+        browserUserId ? { [AGENT_BROWSER_MCP_SERVER_NAME]: "user" } : undefined,
       );
-      if (browserUserId) authorization.allowBuiltinServers([AGENT_BROWSER_MCP_SERVER_NAME]);
       const customTools: PiTool[] = [
         ...createTools(toolContext),
         ...(skillReadTool ? [skillReadTool] : []),
