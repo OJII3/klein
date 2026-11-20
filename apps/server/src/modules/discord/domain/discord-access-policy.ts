@@ -4,17 +4,20 @@ import type { DiscordChannelLinkTarget } from "./discord-channel-link";
 
 export type DiscordAccess = AccessLevel;
 
+/** Access levels that can be written to a guild, channel, or thread rule. */
+export type DiscordAccessRuleLevel = "allow" | "deny";
+
 export interface DiscordThreadAccessRule {
-  readonly access?: DiscordAccess;
+  readonly access?: DiscordAccessRuleLevel;
 }
 
 export interface DiscordChannelAccessRule {
-  readonly access?: DiscordAccess;
+  readonly access?: DiscordAccessRuleLevel;
   readonly threads?: Readonly<Record<string, DiscordThreadAccessRule>>;
 }
 
 export interface DiscordGuildAccessRule {
-  readonly access?: DiscordAccess;
+  readonly access?: DiscordAccessRuleLevel;
   readonly channels?: Readonly<Record<string, DiscordChannelAccessRule>>;
 }
 

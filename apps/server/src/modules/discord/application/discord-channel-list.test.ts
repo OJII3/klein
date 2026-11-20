@@ -16,7 +16,7 @@ const rules: DiscordGuildAccessRule = {
   channels: {
     "channel-1": {
       threads: {
-        "thread-1": { access: "owner" },
+        "thread-1": { access: "allow" },
         "thread-2": { access: "deny" },
       },
     },
@@ -63,14 +63,14 @@ function createDependencies(
 test("lists channels and threads with their resolved access", async () => {
   const lines = await buildAllowedDiscordChannelLines(
     { guildId: "guild-123", userId: "user-123" },
-    createDependencies(rules),
+    createDependencies(rules, { "thread-1": "owner-123" }),
   );
 
   assert.deepEqual(lines, [
     "### 許可されたチャンネルとスレッド",
     "ギルド全体: 許可",
     "・#general（許可）",
-    "　└ #owners（オーナーのみ）",
+    "　└ #owners（オーナーのみ、<@owner-123> のチャンネル）",
     "・#private / #visible（許可）",
   ]);
 });
@@ -93,14 +93,18 @@ test("shows the registered user next to a linked channel", async () => {
   ];
   const lines = await buildAllowedDiscordChannelLines(
     { guildId: "guild-123", userId: "user-123" },
-    createDependencies(rules, { "channel-1": "user-1", "thread-3": "user-3" }, links),
+    createDependencies(
+      rules,
+      { "channel-1": "user-1", "thread-1": "owner-123", "thread-3": "user-3" },
+      links,
+    ),
   );
 
   assert.deepEqual(lines, [
     "### 許可されたチャンネルとスレッド",
     "ギルド全体: 許可",
     "・#general（許可、<@user-1> のチャンネル）",
-    "　└ #owners（オーナーのみ）",
+    "　└ #owners（オーナーのみ、<@owner-123> のチャンネル）",
     "・#private / #visible（許可、<@user-3> のチャンネル）",
   ]);
 });

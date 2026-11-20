@@ -542,7 +542,7 @@ test("lists explicitly allowed channels and threads with their access levels", a
                   "thread-deny": { access: "deny" as const },
                 },
               },
-              "channel-owner": { access: "owner" as const },
+              "channel-owner": { access: "allow" as const },
               "channel-deny": { access: "deny" as const },
             },
           }
@@ -553,8 +553,12 @@ test("lists explicitly allowed channels and threads with their access levels", a
     "token",
     createDiscordAccessPolicy(
       { default: "deny", directMessages: "allow" },
-      undefined,
+      "owner-user",
       accessRuleStore,
+      (target) =>
+        target.guildId === "guild-123" && target.channelId === "channel-owner"
+          ? "owner-user"
+          : undefined,
     ),
     undefined,
     undefined,
@@ -879,11 +883,12 @@ test("message reads enforce inherited access and trusted requester identity", as
           guildId === "guild-123"
             ? {
                 channels: {
-                  private: { access: "owner", threads: { public: { access: "allow" } } },
+                  private: { access: "allow", threads: { public: { access: "allow" } } },
                 },
               }
             : undefined,
       },
+      (target) => (target.threadId === "private-thread" ? "user-123" : undefined),
     ),
     undefined,
     undefined,

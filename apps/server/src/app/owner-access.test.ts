@@ -6,10 +6,7 @@ import type { AgentCreationOptions, AgentFactory } from "@agents/core/agent-fact
 import type { AgentTurn } from "@agents/core/agent-turn";
 import { DiscordAgent } from "@agents/discord/discord-agent";
 
-import {
-  createDiscordAccessPolicy,
-  type DiscordAccess,
-} from "@modules/discord/domain/discord-access-policy";
+import { createDiscordAccessPolicy } from "@modules/discord/domain/discord-access-policy";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import { DiscordOperatingState } from "@modules/discord/domain/discord-operating-state";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
@@ -29,7 +26,11 @@ const message: DiscordMessage = {
   author: { id: ownerId, bot: false, username: "owner", displayName: "owner" },
 };
 
-function createHarness(store: ChannelSessionStateStore, channelRule: { access: DiscordAccess }) {
+function createHarness(
+  store: ChannelSessionStateStore,
+  ownerLinked: boolean | (() => boolean) = false,
+) {
+  const isOwnerLinked = typeof ownerLinked === "function" ? ownerLinked : () => ownerLinked;
   const creations: AgentCreationOptions[] = [];
   const prompts: AgentTurn[] = [];
   const remembered: DiscordMessage[] = [];
@@ -74,8 +75,12 @@ function createHarness(store: ChannelSessionStateStore, channelRule: { access: D
       ownerId,
       {
         getGuildRule: (guildId) =>
-          guildId === "guild" ? { channels: { channel: channelRule } } : undefined,
+          guildId === "guild" ? { channels: { channel: { access: "allow" as const } } } : undefined,
       },
+      (target) =>
+        isOwnerLinked() && target.guildId === "guild" && target.channelId === "channel"
+          ? ownerId
+          : undefined,
     ),
     workers: {
       async start() {
@@ -132,7 +137,7 @@ test("only owner messages create private sessions and never enter shared memory"
   await using temp = await createTempDir("klein-owner-");
   const directory = temp.path;
   const store = new ChannelSessionStateStore(directory);
-  const harness = createHarness(store, { access: "owner" });
+  const harness = createHarness(store, true);
   try {
     await harness.coordinator.handleDiscordMessage({
       ...message,
@@ -157,8 +162,8 @@ test("changing owner access to allow drops private history and handoff on restar
   await using temp = await createTempDir("klein-owner-");
   const directory = temp.path;
   const store = new ChannelSessionStateStore(directory);
-  const privateHarness = createHarness(store, { access: "owner" });
-  const publicHarness = createHarness(store, { access: "allow" });
+  const privateHarness = createHarness(store, true);
+  const publicHarness = createHarness(store, false);
   try {
     await privateHarness.coordinator.handleDiscordMessage(message);
     await privateHarness.coordinator.dispose();
@@ -185,8 +190,8 @@ test("owner access changes replace cached agents and preserve private session sc
   await using temp = await createTempDir("klein-owner-");
   const directory = temp.path;
   const store = new ChannelSessionStateStore(directory);
-  const rule: { access: DiscordAccess } = { access: "owner" };
-  const harness = createHarness(store, rule);
+  const rule = { ownerLinked: true };
+  const harness = createHarness(store, () => rule.ownerLinked);
   await harness.coordinator.handleDiscordMessage(message);
   const oldState = await store.getOrCreate(
     { kind: "discord", channelId: "channel" },
@@ -198,7 +203,7 @@ test("owner access changes replace cached agents and preserve private session sc
     lastRotationDate: "2000-01-01",
   });
   await harness.coordinator.dispose();
-  const resumed = createHarness(store, rule);
+  const resumed = createHarness(store, () => rule.ownerLinked);
   try {
     await resumed.coordinator.rotateIdleChannels();
     const rotated = await store.getOrCreate(
@@ -209,7 +214,7 @@ test("owner access changes replace cached agents and preserve private session sc
     assert.equal(resumed.creations[0].ownerFeaturesAllowed, true);
     await resumed.coordinator.handleDiscordMessage(message);
     const disposedBeforeSwitch = resumed.disposed();
-    rule.access = "allow";
+    rule.ownerLinked = false;
     await resumed.coordinator.handleDiscordMessage(message);
     assert.equal(resumed.disposed(), disposedBeforeSwitch + 1);
     assert.equal(resumed.creations.at(-1)?.sessionKey, "discord-channel:channel:public");
