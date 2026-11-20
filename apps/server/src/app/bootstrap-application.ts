@@ -31,6 +31,7 @@ import { PiStandaloneSessionRunner } from "@runtime/pi/pi-standalone-session-run
 import { createPiMinimalAgentFactory } from "@runtime/pi/pi-minimal-agent-factory";
 import { migratePiDurableStorage } from "@runtime/pi/pi-durable-migration";
 import { createPiUsageReporterFromEnv } from "@runtime/pi/pi-usage-reporter";
+import { createT3CliThreadRunner } from "@runtime/t3/t3-cli-thread-runner";
 import { createWatchFetchTool } from "@runtime/pi/watch-fetch-tool";
 import { PiSharedMemoryAgent } from "@runtime/pi/pi-shared-memory-agent";
 import { PiUserMemoryAgent } from "@runtime/pi/pi-user-memory-agent";
@@ -223,6 +224,7 @@ export async function bootstrapApplication(): Promise<void> {
     : piAgentFactory;
   let discordService!: DiscordJsService;
   let agentCoordinator!: AgentCoordinator;
+  const t3ThreadRunner = createT3CliThreadRunner();
   const attachedAgentCoordinator = new AttachedAgentCoordinator({
     factory: piAgentFactory,
     systemPrompt: ATTACHED_AGENT_SYSTEM_PROMPT,
@@ -239,19 +241,23 @@ export async function bootstrapApplication(): Promise<void> {
       );
       return watches.some((watch) => watch.ownerTaskId === id);
     },
-    createTools: (conversationKey, accessScope, taskId, toolContext) =>
-      createAttachedWorkerTools(
+    createTools: (conversationKey, accessScope, taskId, toolContext) => {
+      const ownerRequester =
+        ownerUserId && isOwnerAccessScope(accessScope, ownerUserId)
+          ? { userId: ownerUserId }
+          : undefined;
+      return createAttachedWorkerTools(
         discordService,
         conversationKey.channelId,
         accessScope,
         taskId,
         scheduledTaskStore,
         watchCheckRunner,
-        isOwnerAccessScope(accessScope, ownerUserId) && ownerUserId
-          ? { userId: ownerUserId }
-          : undefined,
+        ownerRequester,
         toolContext.analyzeImage,
-      ),
+        ownerRequester ? t3ThreadRunner : undefined,
+      );
+    },
     onResult: (delivery) =>
       agentCoordinator.deliverAttachedTaskResult(
         delivery.conversationKey,
