@@ -5,6 +5,7 @@ import { MessageFlags } from "discord.js";
 
 import {
   DISCORD_TEXT_DISPLAY_LIMIT,
+  createEphemeralTextContainerMessage,
   createTextContainerMessage,
   truncateTextLines,
 } from "./discord-component-message";
@@ -33,6 +34,12 @@ test("uses the neutral tone color when asked", () => {
   const message = createTextContainerMessage("一覧です", "neutral");
 
   assert.equal(message.components[0]?.toJSON().accent_color, 0x747f8d);
+});
+
+test("marks the message ephemeral when asked", () => {
+  const message = createEphemeralTextContainerMessage("確認しています", "warning");
+
+  assert.equal(message.flags, MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral);
 });
 
 test("truncates long lists and reports the remaining line count", () => {

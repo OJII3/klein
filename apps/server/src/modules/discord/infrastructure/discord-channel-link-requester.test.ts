@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { MessageFlags } from "discord.js";
+
 import { isRecord } from "@shared/type-guards";
 
 import type { DiscordAccess } from "../domain/discord-access-policy";
@@ -12,6 +14,7 @@ import {
   DiscordChannelLinkRequester,
   type DiscordChannelLinkCommandInteraction,
 } from "./discord-channel-link-requester";
+import type { DiscordEphemeralContainerMessage } from "./discord-component-message";
 
 interface ContainerJson {
   readonly components: ReadonlyArray<{
@@ -146,9 +149,9 @@ function createLinkInteraction(
   options: { readonly userId?: string; readonly channelId?: string } = {},
 ): {
   interaction: DiscordChannelLinkCommandInteraction;
-  replies: Array<{ components: ReadonlyArray<{ toJSON: () => unknown }> }>;
+  replies: DiscordEphemeralContainerMessage[];
 } {
-  const replies: Array<{ components: ReadonlyArray<{ toJSON: () => unknown }> }> = [];
+  const replies: DiscordEphemeralContainerMessage[] = [];
   return {
     replies,
     interaction: {
@@ -178,6 +181,7 @@ test("requests a channel link with an ephemeral confirmation and an owner prompt
 
   const [reply] = replies;
   assert.ok(reply);
+  assert.equal(reply.flags, MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral);
   assert.match(toJson(reply)[0]?.components[0]?.content ?? "", /オーナーに確認しています/u);
 
   const [ownerMessage] = harness.ownerMessages;

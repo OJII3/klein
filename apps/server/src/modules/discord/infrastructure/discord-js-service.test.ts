@@ -705,11 +705,13 @@ test("registers a channel through /link even when the channel is denied", async 
   );
 
   let replyContent: string | undefined;
+  let replyFlags: number | undefined;
   const interaction = createChatInputInteraction({
     commandName: "link",
     channelId: "channel-denied",
     reply: async (response) => {
       replyContent = extractFirstTextContent(response);
+      replyFlags = readReplyFlags(response);
     },
   });
 
@@ -719,6 +721,7 @@ test("registers a channel through /link even when the channel is denied", async 
     await service.flush();
 
     assert.match(replyContent ?? "", /オーナーに確認しています/u);
+    assert.equal(replyFlags, MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral);
     assert.equal(ownerMessages.length, 1);
     assert.match(extractFirstTextContent(ownerMessages[0]) ?? "", /チャンネルの登録リクエスト/u);
     assert.equal(channelMessages.length, 1);
