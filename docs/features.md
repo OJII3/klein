@@ -38,7 +38,7 @@
 
 リマインダーとウォッチは `<runtime.agentDir>/schedules` を共有する。各項目は Discord のチャンネルまたはスレッドに属し、セッションのローテーションをまたいで残る。配信は現在のアクセス規則と所有者 ID を再確認し、許可されなくなった項目は保存したまま配信しない。繰り返しの項目は再スケジュールし、1 回だけの項目はプロセスの残りの間スキップするため、拒否された項目を確認の間隔ごとに再確認することはない。
 
-- **リマインダー** はチャンネルに付随タスクを 1 回または繰り返し (`every` 分、毎日、毎週) で開始し、`public` または `owner:<userId>` に限定する。タスクはリマインダーの文面を会話エージェントへ返し、会話エージェントがそれをどう発話するかを決める。
+- **リマインダー** はチャンネルにワーカーを 1 回または繰り返し (`every` 分、毎日、毎週) 起動し、`public` または `owner:<userId>` に限定する。ワーカーはリマインダーの文面を会話エージェントへ返し、会話エージェントがそれをどう発話するかを決める。
 - **ウォッチ** は QuickJS スクリプトを繰り返し実行する。各確認は `wake()` でエージェントに通知するか `silent()` で何もしないかのどちらかで終わり、`store()` と `load()` が確認の間で JSON の値を保つ。確認は 30 秒でタイムアウトし、サンドボックスのメモリは最大 64 MiB、出力は 64 KiB に制限する。失敗は `watch_list` に記録され、エージェントを起こさない。`watch_add` は登録の前にスクリプトを 1 回実行し、`watch_update` で無効なウォッチを有効にすると有効化の前に 1 回実行する。この実行が失敗した場合、ウォッチは登録されず、または無効のままとなり、その実行での `store()` の書き込みは破棄される。`watch_update` はウォッチを編集し、`enabled: false` で無効にできる。無効なウォッチは設定を保つが確認されず、再有効化すると更新時刻から次の確認をスケジュールする。`watch_get` はスクリプトと引数を含む 1 つのウォッチを返す。ワーカーセッションから登録したウォッチはそのワーカーに属する。その wake はワーカーセッションを再開し、ワーカーの結果は `worker.result` イベントとして会話へ戻る。ワーカーが利用できない場合は、wake は代わりに会話へ送られる。
 
 ウォッチのスクリプトは `args` 配列を読み、`watch` プロンプトの節に並ぶツールを `tools.<name>({ ...args })` で呼び、`text()` または `console.*` で出力する。この節はウォッチのツールカタログから描画され、`watch_add` が提供されている間だけ現れる。現在は `tools.fetch_content({ url, urls?, mode? })` を公開する。これはセッションの fetch ツールのうち読み取り専用で GET のみの部分集合である (`mode` は `raw` または `readable`。`auth`、`proxy`、`answer`、`extract`、動画は使えない)。
@@ -49,32 +49,32 @@
 
 ## 自発的な発言
 
-`features.proactivity.enabled` を有効にすると、Klein は監視の wake や付随タスクの結果を会話の外から受け取り、自分から話すかを決める。設定、保存形式、設計は [proactivity.md](proactivity.md) にある。
+`features.proactivity.enabled` を有効にすると、Klein は監視の wake やワーカーの結果を会話の外から受け取り、自分から話すかを決める。設定、保存形式、設計は [proactivity.md](proactivity.md) にある。
 
 - **設定** — `features.proactivity` の `defaultMode`、`quietHours`、`digestAt`、`maxPerDay`、`publicChannels`、`promiseGuard` が既定値と監査を決める。好みのファイルに値があればそちらを優先する。
 - **保存場所** — 好みは `<runtime.agentDir>/proactive/preferences.md`、約束は `proactive/follow-ups/<id>.json`、候補は `proactive/signals/<id>.json` に保存する。
 - **届け方** — 好みと設定から `interrupt`、`attach`、`digest`、`silent` を決める。`interrupt` は会話エージェントをすぐ起こし、`attach` は次のユーザー発言のコンテキストに載せ、`digest` は `digestAt` にまとめ、`silent` は保存だけにする。まとめは、その日の `digestAt` より前に観測した候補だけを対象にし、それ以降の候補は翌日に回す。
 - **監視の優先度** — `watch_add` の `priority` が `urgent` の wake は `now`、`normal` は `today` として扱う。`urgent` はユーザーがすぐ知りたいと明示した監視だけに使う。
-- **約束と監査** — `follow_up_create` は監視、リマインダー、付随タスクの実体がなければ失敗する。`discord_send` は送信前に本文が追跡を約束していないか調べ、`features.proactivity.promiseGuard` の `off`、`log`、`block` に従う。既定は `log` で、有効な約束がないまま約束している文面を記録する。`block` は送信を止める。
+- **約束と監査** — `follow_up_create` は監視、リマインダー、ワーカーの実体がなければ失敗する。`discord_send` は送信前に本文が追跡を約束していないか調べ、`features.proactivity.promiseGuard` の `off`、`log`、`block` に従う。既定は `log` で、有効な約束がないまま約束している文面を記録する。`block` は送信を止める。
 - **候補の確認** — `proactive_signal_list` はこの会話に保留中の候補を一覧し、`proactive_signal_dismiss` は候補を取り下げて同じ内容の再通知を止める。
 - **公開チャンネル** — `publicChannels` が `false` でも、ユーザーが明示的に登録した監視に由来する候補は公開チャンネルへ配信する。それ以外の自発的な候補は公開チャンネルでは保存だけにする。
 - **制限** — 好みを変更できるのは所有者だけで、公開チャンネルで所有者以外が言ったことは設定にしない。Web UI の候補一覧、外部コネクタ、複数ユーザーの個人設定、目標管理は対象外である。
 
-## 付随タスク
+## ワーカー
 
-会話エージェントは `worker_start` で付随タスクを開始でき、リマインダーも発火時に付随タスクを開始する。タスクは独自の Pi セッションで走り、拡張、スキル、MCP サーバー、権限、画像解析、バックグラウンド圧縮は会話エージェントと同じだが、Discord の surface ツールは持たない。Discord へ書き込むことはなく、assistant text を `worker.result` イベントとして返す。発話するかどうかは会話エージェントが決める。`worker_send` はタスクへ追加の指示を渡し、`worker_close` はタスクを破棄し、`worker_list` は会話内のタスクを一覧する。ワーカーはウォッチを登録でき、ワーカーは自分のウォッチだけを見る一方、会話はチャンネル内のすべてのウォッチを一覧して管理できる。リマインダーのタスクは結果を届けた後に自身を閉じる。タスクのメタデータは `attached-tasks/` に保存されるため、再起動するとタスク一覧が復元され、次の `worker_send` が保存された Pi セッションを再開する。停止時に実行中だったプロンプトは `interrupted` と記され、自動では再実行されない。
+会話エージェントは `worker_start` でワーカーを開始でき、リマインダーも発火時にワーカーを開始する。ワーカーは独自の Pi セッションで走り、拡張、スキル、MCP サーバー、権限、画像解析、バックグラウンド圧縮は会話エージェントと同じだが、Discord の surface ツールは持たない。Discord へ書き込むことはなく、assistant text を `worker.result` イベントとして返す。発話するかどうかは会話エージェントが決める。`worker_send` はワーカーへ追加の指示を渡し、`worker_close` はワーカーを破棄し、`worker_list` は会話内のワーカーを一覧する。ワーカーはウォッチを登録でき、ワーカーは自分のウォッチだけを見る一方、会話はチャンネル内のすべてのウォッチを一覧して管理できる。リマインダーのワーカーは結果を届けた後に自身を閉じる。ワーカーのメタデータは `workers/` に保存されるため、再起動するとワーカー一覧が復元され、次の `worker_send` が保存された Pi セッションを再開する。停止時に実行中だったプロンプトは `interrupted` と記され、自動では再実行されない。
 
 ## ブラウザ操作
 
-所有者の会話から始まった付随タスクには、Vercel の agent-browser を MCP サーバーとして登録する。ワーカーは実ブラウザでページを開き、accessibility tree の ref を使ってクリックや入力を行い、表示を待って本文を読む。ツールは `--tools core` に限定するため、cookie、保存済み認証、network、ファイル入出力は使えない。ページ出力は 20,000 文字で切り詰め、内容境界のマーカーを付ける。ブラウザセッションはワーカーのタスク ID ごとに分かれ、10 分間操作がなければデーモンが終了する。
+所有者の会話から始まったワーカーには、Vercel の agent-browser を MCP サーバーとして登録する。ワーカーは実ブラウザでページを開き、accessibility tree の ref を使ってクリックや入力を行い、表示を待って本文を読む。ツールは `--tools core` に限定するため、cookie、保存済み認証、network、ファイル入出力は使えない。ページ出力は 20,000 文字で切り詰め、内容境界のマーカーを付ける。ブラウザセッションはワーカー ID ごとに分かれ、10 分間操作がなければデーモンが終了する。
 
-`agent-browser` が PATH にあり、Chrome を起動できる必要がある。Nix の devShell には agent-browser が含まれる。Chrome は `agent-browser install` で用意するか、既存の実行ファイルを `AGENT_BROWSER_EXECUTABLE_PATH` に指定する。ツールは deferred で登録されるため、ワーカーは `tool_search` で読み込んでから使う。手順はプロファイルの `browser-automation` スキルに置く。ブラウザはローカルサービスにも到達できるため、所有者以外の会話の付随タスクには登録しない。
+`agent-browser` が PATH にあり、Chrome を起動できる必要がある。Nix の devShell には agent-browser が含まれる。Chrome は `agent-browser install` で用意するか、既存の実行ファイルを `AGENT_BROWSER_EXECUTABLE_PATH` に指定する。ツールは deferred で登録されるため、ワーカーは `tool_search` で読み込んでから使う。手順はプロファイルの `browser-automation` スキルに置く。ブラウザはローカルサービスにも到達できるため、所有者以外の会話のワーカーには登録しない。
 
 ## T3 Code スレッド
 
-所有者の会話から始まった付随タスクには、`t3_thread_*` ツールを渡す。ワーカーは T3 Code のスレッドを開始し、`wait` が有効なら実行が終わるまで待って返信を受け取る。`t3_thread_send` で同じスレッドに続きを頼み、`t3_thread_show` で状態と最新メッセージを読み、`t3_thread_list` でプロジェクトのスレッドを一覧する。`t3_thread_start` は `project`、`title`、`worktree`、`branch` を受け取る。
+所有者の会話から始まったワーカーには、`t3_thread_*` ツールを渡す。ワーカーは T3 Code のスレッドを開始し、`wait` が有効なら実行が終わるまで待って返信を受け取る。`t3_thread_send` で同じスレッドに続きを頼み、`t3_thread_show` で状態と最新メッセージを読み、`t3_thread_list` でプロジェクトのスレッドを一覧する。`t3_thread_start` は `project`、`title`、`worktree`、`branch` を受け取る。
 
-`t3` CLI が PATH にあり、T3 Code のサーバーが動いている必要がある。スレッドはプロジェクトの既定の provider・model・権限で動くため、所有者の付随タスクだけに渡す。手順はプロファイルの `t3-thread` スキルに置く。
+`t3` CLI が PATH にあり、T3 Code のサーバーが動いている必要がある。スレッドはプロジェクトの既定の provider・model・権限で動くため、所有者のワーカーだけに渡す。手順はプロファイルの `t3-thread` スキルに置く。
 
 ## リモート MCP ツール
 

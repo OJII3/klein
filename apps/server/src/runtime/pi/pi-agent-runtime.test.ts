@@ -1018,8 +1018,8 @@ test("returns assistant text from prompt only when the role sends it to the call
   const turn = {
     event: {
       id: "event-1",
-      type: "attached.prompt",
-      source: "attached",
+      type: "worker.prompt",
+      source: "worker",
       occurredAt: "2026-10-14T09:30:42.123Z",
       content: [{ type: "text" as const, text: "hello" }],
     },
@@ -1033,8 +1033,8 @@ test("returns assistant text from prompt only when the role sends it to the call
   assert.equal(await conversation.prompt(turn), undefined);
 });
 
-test("keeps caller assistant text for attached agents", async () => {
-  await using temp = await createTempDir("klein-attached-runtime-");
+test("keeps caller assistant text for workers", async () => {
+  await using temp = await createTempDir("klein-worker-runtime-");
   const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
   const provider = fauxProvider({ tokensPerSecond: 100_000 });
   const model = provider.getModel();
@@ -1052,8 +1052,8 @@ test("keeps caller assistant text for attached agents", async () => {
     modelRuntime,
     sessionMode: "new",
   });
-  const runtime = await factory.create({ systemPrompt: "You are an attached worker." }, () => [], {
-    role: { kind: "attached", taskId: "task-1" },
+  const runtime = await factory.create({ systemPrompt: "You are a worker." }, () => [], {
+    role: { kind: "worker", workerId: "task-1" },
     sessionKey: "task-1",
   });
 
@@ -1069,9 +1069,9 @@ test("keeps caller assistant text for attached agents", async () => {
 
     const firstOutput = await runtime.prompt({
       event: {
-        id: "attached-event-1",
-        type: "attached.prompt",
-        source: "attached",
+        id: "worker-event-1",
+        type: "worker.prompt",
+        source: "worker",
         occurredAt: "2026-10-14T09:30:42.123Z",
         content: [{ type: "text", text: "first task" }],
       },
@@ -1081,9 +1081,9 @@ test("keeps caller assistant text for attached agents", async () => {
 
     await runtime.prompt({
       event: {
-        id: "attached-event-2",
-        type: "attached.prompt",
-        source: "attached",
+        id: "worker-event-2",
+        type: "worker.prompt",
+        source: "worker",
         occurredAt: "2026-10-14T09:30:43.123Z",
         content: [{ type: "text", text: "second task" }],
       },
@@ -1215,19 +1215,16 @@ test("starts a separate session in new mode", async () => {
   assert.equal(fresh.buildSessionContext().messages.length, 0);
 });
 
-test("stores attached sessions under sessions/attached", async () => {
+test("stores worker sessions under sessions/worker", async () => {
   await using temp = await createTempDir("klein-pi-session-");
   const agentDir = temp.path;
 
-  const attached = createPiSessionManager(agentDir, "attached-1", "new", process.cwd(), {
-    kind: "attached",
-    taskId: "attached-1",
+  const worker = createPiSessionManager(agentDir, "worker-1", "new", process.cwd(), {
+    kind: "worker",
+    workerId: "worker-1",
   });
 
-  assert.equal(
-    attached.getSessionDir(),
-    resolvePath(agentDir, "sessions", "attached", "attached-1"),
-  );
+  assert.equal(worker.getSessionDir(), resolvePath(agentDir, "sessions", "worker", "worker-1"));
 });
 
 test("starts background compaction before the built-in threshold", async () => {
@@ -1449,43 +1446,43 @@ test("appends worker delegation guidance to text conversation prompts based on o
     );
     restrictedOwnerRuntime.dispose();
 
-    const ownerAttachedRuntime = await createFactory().create(
+    const ownerWorkerRuntime = await createFactory().create(
       { systemPrompt: "Worker prompt." },
       () => [makeT3ThreadStart()],
       {
-        role: { kind: "attached", taskId: "task-owner" },
+        role: { kind: "worker", workerId: "task-owner" },
         sessionKey: "owner-worker",
         ownerFeaturesAllowed: true,
       },
     );
-    ownerAttachedRuntime.dispose();
+    ownerWorkerRuntime.dispose();
 
-    const publicAttachedRuntime = await createFactory().create(
+    const publicWorkerRuntime = await createFactory().create(
       { systemPrompt: "Worker prompt." },
       () => [],
       {
-        role: { kind: "attached", taskId: "task-public" },
+        role: { kind: "worker", workerId: "task-public" },
         sessionKey: "public-worker",
         ownerFeaturesAllowed: false,
       },
     );
-    publicAttachedRuntime.dispose();
+    publicWorkerRuntime.dispose();
 
     const [
       ownerPrompt,
       publicPrompt,
       voicePrompt,
       restrictedOwnerPrompt,
-      ownerAttachedPrompt,
-      publicAttachedPrompt,
+      ownerWorkerPrompt,
+      publicWorkerPrompt,
     ] = capturedPrompts;
     assert.ok(
       ownerPrompt &&
         publicPrompt &&
         voicePrompt &&
         restrictedOwnerPrompt &&
-        ownerAttachedPrompt &&
-        publicAttachedPrompt,
+        ownerWorkerPrompt &&
+        publicWorkerPrompt,
     );
     assert.match(ownerPrompt, /## Workers \(`worker_start`\)/);
     assert.match(ownerPrompt, /agent-browser/);
@@ -1497,9 +1494,9 @@ test("appends worker delegation guidance to text conversation prompts based on o
     assert.doesNotMatch(voicePrompt, /## Workers \(`worker_start`\)/);
     assert.doesNotMatch(voicePrompt, /browser-automation|t3-thread/);
     assert.match(restrictedOwnerPrompt, /NOT available in this conversation/);
-    assert.match(ownerAttachedPrompt, /<name>browser-automation<\/name>/);
-    assert.match(ownerAttachedPrompt, /<name>t3-thread<\/name>/);
-    assert.doesNotMatch(publicAttachedPrompt, /browser-automation|t3-thread/);
+    assert.match(ownerWorkerPrompt, /<name>browser-automation<\/name>/);
+    assert.match(ownerWorkerPrompt, /<name>t3-thread<\/name>/);
+    assert.doesNotMatch(publicWorkerPrompt, /browser-automation|t3-thread/);
   } finally {
     if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
     else process.env.PI_CODING_AGENT_DIR = previousAgentDir;

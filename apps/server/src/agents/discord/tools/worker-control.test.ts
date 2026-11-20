@@ -1,36 +1,32 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type {
-  AttachedTaskControl,
-  AttachedTaskScope,
-  AttachedTaskStartInput,
-} from "@agents/core/attached-agent";
+import type { WorkerControl, WorkerScope, WorkerStartInput } from "@agents/core/worker-agent";
 import { createStubExtensionToolContext } from "@agents/testing/test-stubs";
-import { createAttachedControlTools } from "./attached-control";
+import { createWorkerControlTools } from "./worker-control";
 
 function createTarget() {
-  const started: AttachedTaskStartInput[] = [];
-  const sent: { scope: AttachedTaskScope; taskId: string; message: string }[] = [];
-  const closed: { scope: AttachedTaskScope; taskId: string }[] = [];
-  const listed: AttachedTaskScope[] = [];
-  const target: AttachedTaskControl = {
+  const started: WorkerStartInput[] = [];
+  const sent: { scope: WorkerScope; workerId: string; message: string }[] = [];
+  const closed: { scope: WorkerScope; workerId: string }[] = [];
+  const listed: WorkerScope[] = [];
+  const target: WorkerControl = {
     async start(input) {
       started.push(input);
-      return "task-1";
+      return "worker-1";
     },
-    async send(scope, taskId, message) {
-      sent.push({ scope, taskId, message });
+    async send(scope, workerId, message) {
+      sent.push({ scope, workerId, message });
       return (
-        taskId === "task-1" &&
+        workerId === "worker-1" &&
         scope.conversationKey.channelId === "channel-1" &&
         scope.accessScope === "public"
       );
     },
-    async close(scope, taskId) {
-      closed.push({ scope, taskId });
+    async close(scope, workerId) {
+      closed.push({ scope, workerId });
       return (
-        taskId === "task-1" &&
+        workerId === "worker-1" &&
         scope.conversationKey.channelId === "channel-1" &&
         scope.accessScope === "public"
       );
@@ -40,7 +36,7 @@ function createTarget() {
       return scope.conversationKey.channelId === "channel-1" && scope.accessScope === "public"
         ? [
             {
-              id: "task-1",
+              id: "worker-1",
               prompt: "investigate",
               status: "idle",
               createdAt: "2026-11-15T00:00:00.000Z",
@@ -53,15 +49,15 @@ function createTarget() {
   return { target, started, sent, closed, listed };
 }
 
-function unpackControlTools(tools: ReturnType<typeof createAttachedControlTools>) {
+function unpackControlTools(tools: ReturnType<typeof createWorkerControlTools>) {
   const [workerStart, workerSend, workerClose, workerList] = tools;
   return { workerStart, workerSend, workerClose, workerList };
 }
 
-test("starts a task in the current conversation", async () => {
+test("starts a worker in the current conversation", async () => {
   const { target, started } = createTarget();
   const { workerStart } = unpackControlTools(
-    createAttachedControlTools(target, "channel-1", "public", false),
+    createWorkerControlTools(target, "channel-1", "public", false),
   );
 
   const result = await workerStart.execute(
@@ -80,18 +76,18 @@ test("starts a task in the current conversation", async () => {
       prompt: "investigate",
     },
   ]);
-  assert.deepEqual(result.details, { taskId: "task-1" });
+  assert.deepEqual(result.details, { workerId: "worker-1" });
 });
 
-test("sends a follow-up to a task with bound scope", async () => {
+test("sends a follow-up to a worker with bound scope", async () => {
   const { target, sent } = createTarget();
   const { workerSend } = unpackControlTools(
-    createAttachedControlTools(target, "channel-1", "public", false),
+    createWorkerControlTools(target, "channel-1", "public", false),
   );
 
   const result = await workerSend.execute(
     "tool-call",
-    { taskId: "task-1", message: "check again" },
+    { workerId: "worker-1", message: "check again" },
     undefined,
     undefined,
     await createStubExtensionToolContext(),
@@ -103,22 +99,22 @@ test("sends a follow-up to a task with bound scope", async () => {
         conversationKey: { kind: "discord", channelId: "channel-1" },
         accessScope: "public",
       },
-      taskId: "task-1",
+      workerId: "worker-1",
       message: "check again",
     },
   ]);
-  assert.deepEqual(result.details, { taskId: "task-1", sent: true });
+  assert.deepEqual(result.details, { workerId: "worker-1", sent: true });
 });
 
-test("closes a task with bound scope", async () => {
+test("closes a worker with bound scope", async () => {
   const { target, closed } = createTarget();
   const { workerClose } = unpackControlTools(
-    createAttachedControlTools(target, "channel-1", "public", false),
+    createWorkerControlTools(target, "channel-1", "public", false),
   );
 
   const result = await workerClose.execute(
     "tool-call",
-    { taskId: "task-1" },
+    { workerId: "worker-1" },
     undefined,
     undefined,
     await createStubExtensionToolContext(),
@@ -130,16 +126,16 @@ test("closes a task with bound scope", async () => {
         conversationKey: { kind: "discord", channelId: "channel-1" },
         accessScope: "public",
       },
-      taskId: "task-1",
+      workerId: "worker-1",
     },
   ]);
-  assert.deepEqual(result.details, { taskId: "task-1", closed: true });
+  assert.deepEqual(result.details, { workerId: "worker-1", closed: true });
 });
 
-test("lists the tasks of the current conversation and accessScope", async () => {
+test("lists the workers of the current conversation and accessScope", async () => {
   const { target, listed } = createTarget();
   const { workerList } = unpackControlTools(
-    createAttachedControlTools(target, "channel-1", "public", false),
+    createWorkerControlTools(target, "channel-1", "public", false),
   );
 
   const result = await workerList.execute(
@@ -153,47 +149,47 @@ test("lists the tasks of the current conversation and accessScope", async () => 
   assert.deepEqual(listed, [
     { conversationKey: { kind: "discord", channelId: "channel-1" }, accessScope: "public" },
   ]);
-  assert.match(JSON.stringify(result.content), /task-1/);
+  assert.match(JSON.stringify(result.content), /worker-1/);
 });
 
 test("rejects worker_send, worker_close, and worker_list outside the bound scope", async () => {
   const { target } = createTarget();
-  const otherChannelTools = createAttachedControlTools(target, "channel-2", "public", false);
-  const otherScopeTools = createAttachedControlTools(target, "channel-1", "owner:123", true);
+  const otherChannelTools = createWorkerControlTools(target, "channel-2", "public", false);
+  const otherScopeTools = createWorkerControlTools(target, "channel-1", "owner:123", true);
   const ctx = await createStubExtensionToolContext();
 
   for (const rawTools of [otherChannelTools, otherScopeTools]) {
     const { workerSend, workerClose, workerList } = unpackControlTools(rawTools);
     const sendResult = await workerSend.execute(
       "tool-call",
-      { taskId: "task-1", message: "hijack" },
+      { workerId: "worker-1", message: "hijack" },
       undefined,
       undefined,
       ctx,
     );
-    assert.deepEqual(sendResult.details, { taskId: "task-1", sent: false });
+    assert.deepEqual(sendResult.details, { workerId: "worker-1", sent: false });
 
     const closeResult = await workerClose.execute(
       "tool-call",
-      { taskId: "task-1" },
+      { workerId: "worker-1" },
       undefined,
       undefined,
       ctx,
     );
-    assert.deepEqual(closeResult.details, { taskId: "task-1", closed: false });
+    assert.deepEqual(closeResult.details, { workerId: "worker-1", closed: false });
 
     const listResult = await workerList.execute("tool-call", {}, undefined, undefined, ctx);
-    assert.deepEqual(listResult.details, { tasks: [] });
+    assert.deepEqual(listResult.details, { workers: [] });
   }
 });
 
 test("describes owner-only worker capabilities only when owner features are allowed", () => {
   const { target } = createTarget();
   const publicTools = unpackControlTools(
-    createAttachedControlTools(target, "channel-1", "public", false),
+    createWorkerControlTools(target, "channel-1", "public", false),
   );
   const ownerTools = unpackControlTools(
-    createAttachedControlTools(target, "channel-1", "owner:123", true),
+    createWorkerControlTools(target, "channel-1", "owner:123", true),
   );
 
   assert.match(publicTools.workerStart.description, /Prefer worker_start/);

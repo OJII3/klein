@@ -10,17 +10,17 @@ import { createWatchTools } from "@agents/tools/watch";
 import { createDiscordImageAnalysis, createDiscordReadTool } from "./discord-read";
 
 /**
- * Tools for an attached agent. The attached agent reads the conversation it
+ * Tools for a worker. The worker reads the conversation it
  * belongs to but never writes to the surface. A watch it registers belongs to
  * the worker, so its wake resumes this worker session instead of the
  * conversation session. An owner-scoped worker also receives the T3 Code
  * thread tools, which let it hand coding work to a T3 Code agent.
  */
-export function createAttachedWorkerTools(
+export function createWorkerTools(
   channelApi: Pick<DiscordChannelApi, "readMessage">,
   channelId: string,
   accessScope: AccessScope,
-  ownerTaskId: string,
+  ownerWorkerId: string,
   scheduledTaskStore: ScheduledTaskStore,
   watchCheckRunner: WatchCheckRunner,
   requester?: Parameters<DiscordChannelApi["readMessage"]>[1],
@@ -34,7 +34,13 @@ export function createAttachedWorkerTools(
       createDiscordImageAnalysis(analyzeImage),
       requester,
     ),
-    ...createWatchTools(scheduledTaskStore, channelId, accessScope, watchCheckRunner, ownerTaskId),
+    ...createWatchTools(
+      scheduledTaskStore,
+      channelId,
+      accessScope,
+      watchCheckRunner,
+      ownerWorkerId,
+    ),
     ...(t3ThreadRunner ? createT3ThreadTools(t3ThreadRunner) : []),
   ];
 }

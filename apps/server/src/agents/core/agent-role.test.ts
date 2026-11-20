@@ -11,8 +11,8 @@ test("conversation agents own the surface and live with the conversation", () =>
   });
 });
 
-test("attached agents return results to the conversation agent", () => {
-  assert.deepEqual(resolveAgentPolicy({ kind: "attached", taskId: "task-1" }), {
+test("workers return results to the conversation agent", () => {
+  assert.deepEqual(resolveAgentPolicy({ kind: "worker", workerId: "worker-1" }), {
     surface: "none",
     lifetime: "task",
     assistantText: "caller",
@@ -36,17 +36,17 @@ test("only conversation agents may hold a surface tool", () => {
   );
   assert.throws(
     () =>
-      assertSurfaceToolsAllowed({ kind: "attached", taskId: "task-1" }, [
+      assertSurfaceToolsAllowed({ kind: "worker", workerId: "worker-1" }, [
         { name: "discord_send", surface: true },
       ]),
-    /attached agent role may not use the surface tool discord_send/,
+    /worker agent role may not use the surface tool discord_send/,
   );
   assert.throws(
     () =>
-      assertSurfaceToolsAllowed({ kind: "attached", taskId: "task-1" }, [
+      assertSurfaceToolsAllowed({ kind: "worker", workerId: "worker-1" }, [
         { name: "discord_ask", surface: true },
       ]),
-    /attached agent role may not use the surface tool discord_ask/,
+    /worker agent role may not use the surface tool discord_ask/,
   );
   assert.throws(
     () =>

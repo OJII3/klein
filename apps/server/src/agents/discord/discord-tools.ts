@@ -2,7 +2,7 @@ import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { Logger } from "pino";
 
 import type { AgentImageAnalyzer } from "@agents/core/agent-factory";
-import type { AttachedTaskControl } from "@agents/core/attached-agent";
+import type { WorkerControl } from "@agents/core/worker-agent";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
 import type { DiscordUserResolver } from "@modules/discord/ports/discord-user-resolver";
 import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
@@ -20,7 +20,7 @@ import { createDiscordImageAnalysis, createDiscordReadTool } from "./tools/disco
 import { createDiscordSendTool } from "./tools/discord-send";
 import { createDiscordSpeakTool } from "./tools/discord-speak";
 import { createDiscordVoiceTool } from "./tools/discord-voice";
-import { createAttachedControlTools } from "./tools/attached-control";
+import { createWorkerControlTools } from "./tools/worker-control";
 
 export interface DiscordAgentToolsOptions {
   readonly analyzeImage?: AgentImageAnalyzer;
@@ -38,7 +38,7 @@ export interface DiscordAgentToolsOptions {
   readonly watchCheckRunner: WatchCheckRunner;
   readonly userMemoryStore?: UserMemoryStore;
   readonly discordUserDirectory?: DiscordUserResolver;
-  readonly attachedTasks?: AttachedTaskControl;
+  readonly workers?: WorkerControl;
   readonly proactive?: ProactiveToolCoordinator;
   readonly promiseGuard?: { readonly mode: PromiseGuardMode; readonly logger: Logger };
 }
@@ -95,9 +95,9 @@ export function createDiscordAgentTools(
           options.watchCheckRunner,
         )
       : []),
-    ...(options.attachedTasks
-      ? createAttachedControlTools(
-          options.attachedTasks,
+    ...(options.workers
+      ? createWorkerControlTools(
+          options.workers,
           options.channelId,
           accessScope,
           ownerFeaturesAllowed,

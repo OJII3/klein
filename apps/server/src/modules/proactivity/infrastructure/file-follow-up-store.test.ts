@@ -36,8 +36,8 @@ const second: FollowUp = {
   channelId: "channel-b",
   accessScope: "public",
   subject: "リリースを確認する",
-  watcher: { kind: "task", id: "task-1" },
-  cadenceLabel: "タスクの完了時",
+  watcher: { kind: "worker", id: "worker-1" },
+  cadenceLabel: "ワーカーの完了時",
   createdAt: "2026-11-20T01:00:00.000Z",
   updatedAt: "2026-11-20T01:00:00.000Z",
   originMessageId: "message-1",
@@ -56,8 +56,8 @@ test("stores, finds, lists, updates, and deletes follow-ups", async () => {
     assert.deepEqual(await store.listForScope("channel-a", "public"), []);
     assert.deepEqual(await store.listForScope("channel-b", "public"), [second]);
     assert.deepEqual(await store.listByWatcher("watch", "watch-1"), [first]);
-    assert.deepEqual(await store.listByWatcher("task", "task-1"), [second]);
-    assert.deepEqual(await store.listByWatcher("watch", "task-1"), []);
+    assert.deepEqual(await store.listByWatcher("worker", "worker-1"), [second]);
+    assert.deepEqual(await store.listByWatcher("watch", "worker-1"), []);
 
     const updated = { ...first, status: "done" as const, updatedAt: "2026-11-20T02:00:00.000Z" };
     await store.update(updated);

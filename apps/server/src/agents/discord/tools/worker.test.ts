@@ -7,7 +7,7 @@ import {
   createStubExtensionToolContext,
 } from "@agents/testing/test-stubs";
 import type { WatchCheckRunner } from "@modules/scheduling/ports/watch-check-runner";
-import { createAttachedWorkerTools } from "./attached-worker";
+import { createWorkerTools } from "./worker";
 
 const runner: WatchCheckRunner = {
   async run() {
@@ -17,11 +17,11 @@ const runner: WatchCheckRunner = {
 
 test("gives a worker the read tool and its own watch tools", () => {
   const store = new InMemoryScheduledTaskStore();
-  const tools = createAttachedWorkerTools(
+  const tools = createWorkerTools(
     createStubDiscordChannelApi(),
     "channel-a",
     "public",
-    "attached-1",
+    "worker-1",
     store,
     runner,
   );
@@ -32,13 +32,13 @@ test("gives a worker the read tool and its own watch tools", () => {
   );
 });
 
-test("registers a worker watch with the worker's task id", async () => {
+test("registers a worker watch with the worker id", async () => {
   const store = new InMemoryScheduledTaskStore();
-  const tools = createAttachedWorkerTools(
+  const tools = createWorkerTools(
     createStubDiscordChannelApi(),
     "channel-a",
     "public",
-    "attached-1",
+    "worker-1",
     store,
     runner,
   );
@@ -59,7 +59,7 @@ test("registers a worker watch with the worker's task id", async () => {
   );
 
   const watch = store.created[0];
-  assert.equal(watch?.kind === "watch" ? watch.ownerTaskId : undefined, "attached-1");
+  assert.equal(watch?.kind === "watch" ? watch.ownerWorkerId : undefined, "worker-1");
 });
 
 test("adds the T3 thread tools only when a runner is supplied", () => {
@@ -82,19 +82,19 @@ test("adds the T3 thread tools only when a runner is supplied", () => {
     },
   };
 
-  const withoutT3 = createAttachedWorkerTools(
+  const withoutT3 = createWorkerTools(
     createStubDiscordChannelApi(),
     "channel-a",
     "public",
-    "attached-1",
+    "worker-1",
     store,
     runner,
   );
-  const withT3 = createAttachedWorkerTools(
+  const withT3 = createWorkerTools(
     createStubDiscordChannelApi(),
     "channel-a",
     "owner:1",
-    "attached-1",
+    "worker-1",
     store,
     runner,
     undefined,
@@ -115,7 +115,7 @@ test("adds the T3 thread tools only when a runner is supplied", () => {
 test("wires image analysis into the worker's discord_read tool", async () => {
   const store = new InMemoryScheduledTaskStore();
   let analyzedPrompt: unknown;
-  const tools = createAttachedWorkerTools(
+  const tools = createWorkerTools(
     {
       async readMessage() {
         return {
@@ -142,7 +142,7 @@ test("wires image analysis into the worker's discord_read tool", async () => {
     },
     "channel-a",
     "public",
-    "attached-1",
+    "worker-1",
     store,
     runner,
     undefined,

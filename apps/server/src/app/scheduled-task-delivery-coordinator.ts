@@ -1,7 +1,7 @@
 import type { Logger } from "pino";
 
 import type { AgentEvent } from "@agents/core/agent-event";
-import type { AttachedTaskControl } from "@agents/core/attached-agent";
+import type { WorkerControl } from "@agents/core/worker-agent";
 import type { DiscordAccessPolicy } from "@modules/discord/domain/discord-access-policy";
 import type { DiscordOperatingState } from "@modules/discord/domain/discord-operating-state";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
@@ -26,7 +26,7 @@ import type { ConversationKey } from "./channel-session-state-store";
 
 export interface ScheduledTaskDeliveryCoordinatorDependencies {
   readonly accessPolicy?: DiscordAccessPolicy;
-  readonly attachedTasks: AttachedTaskControl;
+  readonly workers: WorkerControl;
   readonly channelApi: DiscordChannelApi;
   readonly logger: Logger;
   readonly operatingState: DiscordOperatingState;
@@ -175,14 +175,14 @@ export class ScheduledTaskDeliveryCoordinator {
     await store.update(update(current));
   }
 
-  private async releaseWatchOwner(watch: WatchTask, ownerTaskId: string): Promise<void> {
+  private async releaseWatchOwner(watch: WatchTask, ownerWorkerId: string): Promise<void> {
     const store = this.dependencies.scheduledTaskStore;
     if (!store) return;
     const current = (await store.listForScope("watch", watch.channelId, watch.accessScope)).find(
       (candidate) => candidate.id === watch.id,
     );
-    if (!current || current.ownerTaskId !== ownerTaskId) return;
-    const { ownerTaskId: _ownerTaskId, ...rest } = current;
+    if (!current || current.ownerWorkerId !== ownerWorkerId) return;
+    const { ownerWorkerId: _ownerWorkerId, ...rest } = current;
     await store.update(rest);
   }
 
@@ -211,7 +211,7 @@ export class ScheduledTaskDeliveryCoordinator {
   private async deliverReminder(task: ReminderTask): Promise<void> {
     const store = this.dependencies.scheduledTaskStore;
     if (!store) return;
-    await this.dependencies.attachedTasks.start({
+    await this.dependencies.workers.start({
       conversationKey: { kind: "discord", channelId: task.channelId },
       accessScope: task.accessScope,
       ownerFeaturesAllowed: isOwnerAccessScope(task.accessScope, this.dependencies.ownerUserId),
@@ -297,7 +297,7 @@ export class ScheduledTaskDeliveryCoordinator {
 
   private async processTriggeredWatch(triggered: TriggeredWatch, now: number): Promise<void> {
     const proactive = this.dependencies.proactive;
-    if (triggered.watch.ownerTaskId || !proactive) {
+    if (triggered.watch.ownerWorkerId || !proactive) {
       await this.deliverWatch(triggered);
       return;
     }
@@ -339,9 +339,9 @@ export class ScheduledTaskDeliveryCoordinator {
   }
 
   private async deliverWatch(triggered: TriggeredWatch): Promise<boolean> {
-    const ownerTaskId = triggered.watch.ownerTaskId;
-    if (ownerTaskId) {
-      return this.deliverWatchToWorker(triggered, ownerTaskId);
+    const ownerWorkerId = triggered.watch.ownerWorkerId;
+    if (ownerWorkerId) {
+      return this.deliverWatchToWorker(triggered, ownerWorkerId);
     }
     const conversationKey = { kind: "discord", channelId: triggered.watch.channelId } as const;
     return this.deliverEvent(conversationKey, triggered.watch, triggered.event);
@@ -349,22 +349,22 @@ export class ScheduledTaskDeliveryCoordinator {
 
   /**
    * Resumes the worker that registered the watch. The worker's result returns
-   * to the conversation through the attached task result event, so the
+   * to the conversation through the worker result event, so the
    * conversation still decides whether to speak.
    */
   private async deliverWatchToWorker(
     triggered: TriggeredWatch,
-    ownerTaskId: string,
+    ownerWorkerId: string,
   ): Promise<boolean> {
     const { watch, event } = triggered;
     let sent: boolean;
     try {
-      sent = await this.dependencies.attachedTasks.send(
+      sent = await this.dependencies.workers.send(
         {
           conversationKey: { kind: "discord", channelId: watch.channelId },
           accessScope: watch.accessScope,
         },
-        ownerTaskId,
+        ownerWorkerId,
         buildEventText(event),
       );
     } catch (error) {
@@ -374,7 +374,7 @@ export class ScheduledTaskDeliveryCoordinator {
           err: error,
           event: "watch_worker_delivery_failed",
           taskId: watch.id,
-          workerTaskId: ownerTaskId,
+          workerId: ownerWorkerId,
         },
         "Failed to deliver a watch wake to its worker",
       );
@@ -388,12 +388,12 @@ export class ScheduledTaskDeliveryCoordinator {
         {
           event: "watch_worker_unavailable",
           taskId: watch.id,
-          workerTaskId: ownerTaskId,
+          workerId: ownerWorkerId,
         },
         "Watch worker is unavailable; delivering the wake to the conversation",
       );
-      await this.releaseWatchOwner(watch, ownerTaskId);
-      const { ownerTaskId: _ownerTaskId, ...unownedWatch } = watch;
+      await this.releaseWatchOwner(watch, ownerWorkerId);
+      const { ownerWorkerId: _ownerWorkerId, ...unownedWatch } = watch;
       return this.deliverEvent(
         { kind: "discord", channelId: watch.channelId },
         unownedWatch,
@@ -408,7 +408,7 @@ export class ScheduledTaskDeliveryCoordinator {
         taskId: watch.id,
         taskKind: watch.kind,
         eventId: event.id,
-        workerTaskId: ownerTaskId,
+        workerId: ownerWorkerId,
       },
       "Delivered scheduled task to its worker",
     );

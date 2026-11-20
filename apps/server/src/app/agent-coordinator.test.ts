@@ -8,11 +8,7 @@ import type { AgentRuntime } from "@agents/core/agent-runtime";
 import type { AgentEvent } from "@agents/core/agent-event";
 import type { AgentTurn } from "@agents/core/agent-turn";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
-import type {
-  AttachedTaskControl,
-  AttachedTaskScope,
-  AttachedTaskStartInput,
-} from "@agents/core/attached-agent";
+import type { WorkerControl, WorkerScope, WorkerStartInput } from "@agents/core/worker-agent";
 
 import {
   createDiscordAccessPolicy,
@@ -39,10 +35,10 @@ import { createTempDir } from "../testing/temp-dir";
 
 interface TestHarness {
   readonly agentCoordinator: AgentCoordinator;
-  readonly attachedStarts: AttachedTaskStartInput[];
-  readonly attachedSends: {
-    readonly scope: AttachedTaskScope;
-    readonly taskId: string;
+  readonly workerStarts: WorkerStartInput[];
+  readonly workerSends: {
+    readonly scope: WorkerScope;
+    readonly workerId: string;
     readonly message: string;
   }[];
   readonly channelLocationCalls: string[];
@@ -64,7 +60,7 @@ function createHarness(
     | "proactive"
   > = {},
   watchCheckRunner?: WatchCheckRunner,
-  attachedSendResult = false,
+  workerSendResult = false,
 ): TestHarness {
   const resolvedWatchCheckRunner: WatchCheckRunner = watchCheckRunner ?? {
     async run() {
@@ -75,16 +71,16 @@ function createHarness(
   const createdSessionKeys: string[] = [];
   const prompts = new Map<string, AgentTurn[]>();
   const ownerFeaturesAllowed: boolean[] = [];
-  const attachedStarts: AttachedTaskStartInput[] = [];
-  const attachedSends: { scope: AttachedTaskScope; taskId: string; message: string }[] = [];
-  const attachedTasks: AttachedTaskControl = {
+  const workerStarts: WorkerStartInput[] = [];
+  const workerSends: { scope: WorkerScope; workerId: string; message: string }[] = [];
+  const workers: WorkerControl = {
     async start(input) {
-      attachedStarts.push(input);
-      return `attached-${attachedStarts.length}`;
+      workerStarts.push(input);
+      return `worker-${workerStarts.length}`;
     },
-    async send(scope, taskId, message) {
-      attachedSends.push({ scope, taskId, message });
-      return attachedSendResult;
+    async send(scope, workerId, message) {
+      workerSends.push({ scope, workerId, message });
+      return workerSendResult;
     },
     async close() {
       return false;
@@ -134,7 +130,7 @@ function createHarness(
   return {
     agentCoordinator: new AgentCoordinator({
       ...options,
-      attachedTasks,
+      workers,
       createDiscordAgent: (channelId, sessionKey, handoffContext, allowOwnerFeatures) =>
         DiscordAgent.create(agentFactory, channelId, "system prompt", {
           sessionKey,
@@ -150,8 +146,8 @@ function createHarness(
       watchCheckRunner: resolvedWatchCheckRunner,
       taskCoordinator: new TaskCoordinator(),
     }),
-    attachedStarts,
-    attachedSends,
+    workerStarts,
+    workerSends,
     channelLocationCalls,
     createdSessionKeys,
     prompts,
@@ -400,7 +396,7 @@ test("keeps running when digest collection fails", async () => {
   }
 });
 
-test("marks task follow-ups done after delivering an attached task result", async () => {
+test("marks worker follow-ups done after delivering a worker result", async () => {
   const completed: { kind: string; id: string }[] = [];
   const harness = createHarness(undefined, undefined, {
     proactive: createProactiveStub({
@@ -411,13 +407,13 @@ test("marks task follow-ups done after delivering an attached task result", asyn
   });
 
   try {
-    await harness.agentCoordinator.deliverAttachedTaskResult(
+    await harness.agentCoordinator.deliverWorkerResult(
       { kind: "discord", channelId: "test-channel" },
       "public",
-      { taskId: "task-1", status: "completed", text: "found it" },
+      { workerId: "worker-1", status: "completed", text: "found it" },
     );
 
-    assert.deepEqual(completed, [{ kind: "task", id: "task-1" }]);
+    assert.deepEqual(completed, [{ kind: "worker", id: "worker-1" }]);
   } finally {
     await harness.agentCoordinator.dispose();
   }
@@ -435,10 +431,10 @@ test("does not complete task follow-ups when delivery access is denied", async (
   });
 
   try {
-    await harness.agentCoordinator.deliverAttachedTaskResult(
+    await harness.agentCoordinator.deliverWorkerResult(
       { kind: "discord", channelId: "test-channel" },
       "public",
-      { taskId: "task-1", status: "completed", text: "found it" },
+      { workerId: "worker-1", status: "completed", text: "found it" },
     );
 
     assert.deepEqual(completed, []);
@@ -765,14 +761,14 @@ test("starts a reminder worker and keeps the conversation session for conversati
     await harness.agentCoordinator.deliverDueTasks(Date.parse("2026-10-14T00:02:00.000Z"));
     assert.deepEqual(harness.createdSessionKeys, []);
     assert.equal(reminders.getStored(), undefined);
-    assert.equal(harness.attachedStarts.length, 1);
-    assert.deepEqual(harness.attachedStarts[0]?.conversationKey, {
+    assert.equal(harness.workerStarts.length, 1);
+    assert.deepEqual(harness.workerStarts[0]?.conversationKey, {
       kind: "discord",
       channelId: "test-channel",
     });
-    assert.equal(harness.attachedStarts[0]?.accessScope, "public");
-    assert.equal(harness.attachedStarts[0]?.closeAfterResult, true);
-    assert.match(harness.attachedStarts[0]?.prompt ?? "", /定例会が始まります/u);
+    assert.equal(harness.workerStarts[0]?.accessScope, "public");
+    assert.equal(harness.workerStarts[0]?.closeAfterResult, true);
+    assert.match(harness.workerStarts[0]?.prompt ?? "", /定例会が始まります/u);
 
     await harness.agentCoordinator.handleDiscordMessage(
       createMessage("test-channel", "reply", "ありがとう"),
@@ -792,7 +788,7 @@ test("tells a one-time reminder worker that the reminder ends with this notifica
   const harness = createHarness(undefined, reminders.store);
   try {
     await harness.agentCoordinator.deliverDueTasks(Date.parse("2026-10-14T00:02:00.000Z"));
-    const prompt = harness.attachedStarts[0]?.prompt ?? "";
+    const prompt = harness.workerStarts[0]?.prompt ?? "";
     assert.match(prompt, /The following reminder is one-time and will be deleted\./u);
   } finally {
     await harness.agentCoordinator.dispose();
@@ -804,7 +800,7 @@ test("does not describe a repeating reminder as one-time to its worker", async (
   const harness = createHarness(undefined, reminders.store);
   try {
     await harness.agentCoordinator.deliverDueTasks(Date.parse("2026-10-14T00:02:00.000Z"));
-    assert.doesNotMatch(harness.attachedStarts[0]?.prompt ?? "", /one-time/u);
+    assert.doesNotMatch(harness.workerStarts[0]?.prompt ?? "", /one-time/u);
   } finally {
     await harness.agentCoordinator.dispose();
   }
@@ -831,7 +827,7 @@ test("starts a reminder worker without rotating the conversation session", async
   try {
     await harness.agentCoordinator.deliverDueTasks(Date.parse("2026-10-14T00:02:00.000Z"));
     assert.deepEqual(harness.createdSessionKeys, []);
-    assert.equal(harness.attachedStarts.length, 1);
+    assert.equal(harness.workerStarts.length, 1);
     assert.equal(reminders.getStored(), undefined);
     const state = await channelSessionStateStore.getOrCreate(
       { kind: "discord", channelId: dueReminder.channelId },
@@ -857,7 +853,7 @@ test("starts a reminder worker without prompting an active channel agent", async
       harness.prompts.get("test-channel")?.map((turn) => turn.event.type),
       ["discord.message"],
     );
-    assert.equal(harness.attachedStarts.length, 1);
+    assert.equal(harness.workerStarts.length, 1);
     assert.equal(reminders.getStored(), undefined);
   } finally {
     await harness.agentCoordinator.dispose();
@@ -889,15 +885,15 @@ for (const { scope, access, owner, delivered } of [
     try {
       await harness.agentCoordinator.deliverDueTasks(Date.parse("2026-10-14T00:02:00.000Z"));
       assert.equal(harness.createdSessionKeys.length, 0);
-      assert.equal(harness.attachedStarts.length, delivered ? 1 : 0);
+      assert.equal(harness.workerStarts.length, delivered ? 1 : 0);
       assert.equal(reminders.getStored() === undefined, delivered);
       if (delivered) {
-        assert.deepEqual(harness.attachedStarts[0]?.conversationKey, {
+        assert.deepEqual(harness.workerStarts[0]?.conversationKey, {
           kind: "discord",
           channelId: "test-channel",
         });
-        assert.equal(harness.attachedStarts[0]?.accessScope, scope);
-        assert.equal(harness.attachedStarts[0]?.ownerFeaturesAllowed, scope.startsWith("owner:"));
+        assert.equal(harness.workerStarts[0]?.accessScope, scope);
+        assert.equal(harness.workerStarts[0]?.ownerFeaturesAllowed, scope.startsWith("owner:"));
       }
     } finally {
       await harness.agentCoordinator.dispose();
@@ -921,7 +917,7 @@ test("advances a recurring reminder without changing its stable ownership", asyn
     assert.equal(stored.accessScope, reminder.accessScope);
     assert.ok(Date.parse(stored.nextRunAt) > before);
     assert.equal("sessionKey" in stored, false);
-    assert.equal(harness.attachedStarts.length, 1);
+    assert.equal(harness.workerStarts.length, 1);
   } finally {
     await harness.agentCoordinator.dispose();
   }
@@ -973,7 +969,7 @@ test("resumes the worker that registered a watch instead of the conversation", a
       return { output: "changed", decision: "wake", exitCode: 0, durationMs: 1, state: {} };
     },
   };
-  const watches = createScheduledTaskStore({ ...dueWatch, ownerTaskId: "attached-1" });
+  const watches = createScheduledTaskStore({ ...dueWatch, ownerWorkerId: "worker-1" });
   const harness = createHarness(
     undefined,
     watches.store,
@@ -987,18 +983,18 @@ test("resumes the worker that registered a watch instead of the conversation", a
   try {
     await harness.agentCoordinator.deliverDueTasks(Date.parse("2026-10-14T00:05:00.000Z"));
     assert.deepEqual(
-      harness.attachedSends.map((send) => ({ scope: send.scope, taskId: send.taskId })),
+      harness.workerSends.map((send) => ({ scope: send.scope, workerId: send.workerId })),
       [
         {
           scope: {
             conversationKey: { kind: "discord", channelId: "test-channel" },
             accessScope: "owner:123",
           },
-          taskId: "attached-1",
+          workerId: "worker-1",
         },
       ],
     );
-    assert.match(harness.attachedSends[0]?.message ?? "", /changed/u);
+    assert.match(harness.workerSends[0]?.message ?? "", /changed/u);
     assert.equal(harness.prompts.size, 0);
     const stored = watches.getStored();
     assert.ok(stored?.kind === "watch");
@@ -1014,7 +1010,7 @@ test("delivers a worker watch to the conversation when the worker is gone", asyn
       return { output: "changed", decision: "wake", exitCode: 0, durationMs: 1, state: {} };
     },
   };
-  const watches = createScheduledTaskStore({ ...dueWatch, ownerTaskId: "attached-1" });
+  const watches = createScheduledTaskStore({ ...dueWatch, ownerWorkerId: "worker-1" });
   const harness = createHarness(
     undefined,
     watches.store,
@@ -1027,15 +1023,15 @@ test("delivers a worker watch to the conversation when the worker is gone", asyn
   try {
     await harness.agentCoordinator.deliverDueTasks(Date.parse("2026-10-14T00:05:00.000Z"));
     assert.deepEqual(
-      harness.attachedSends.map((send) => send.taskId),
-      ["attached-1"],
+      harness.workerSends.map((send) => send.workerId),
+      ["worker-1"],
     );
     const events = harness.prompts.get("test-channel:owner:123");
     assert.equal(events?.[0]?.event.type, "watch.triggered");
     assert.match(eventText(events?.[0]?.event), /changed/u);
     const stored = watches.getStored();
     assert.ok(stored?.kind === "watch");
-    assert.equal(stored.ownerTaskId, undefined);
+    assert.equal(stored.ownerWorkerId, undefined);
   } finally {
     await harness.agentCoordinator.dispose();
   }
@@ -1209,16 +1205,16 @@ test("records watch check failures without notifying the agent", async () => {
   }
 });
 
-test("delivers an attached task result to the conversation agent", async () => {
+test("delivers a worker result to the conversation agent", async () => {
   const harness = createHarness();
   try {
     await harness.agentCoordinator.handleDiscordMessage(
       createMessage("test-channel", "m-1", "hello"),
     );
-    await harness.agentCoordinator.deliverAttachedTaskResult(
+    await harness.agentCoordinator.deliverWorkerResult(
       { kind: "discord", channelId: "test-channel" },
       "public",
-      { taskId: "task-1", status: "completed", text: "found it" },
+      { workerId: "worker-1", status: "completed", text: "found it" },
     );
 
     const turns = harness.prompts.get("test-channel") ?? [];

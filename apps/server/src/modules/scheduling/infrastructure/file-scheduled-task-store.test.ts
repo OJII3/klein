@@ -117,9 +117,20 @@ test("round-trips the worker that owns a watch", async () => {
   await using temp = await createTempDir("klein-schedules-");
   const directory = temp.path;
   const store = new FileScheduledTaskStore(directory);
-  const workerWatch: WatchTask = { ...watch, ownerTaskId: "attached-1" };
+  const workerWatch: WatchTask = { ...watch, ownerWorkerId: "worker-1" };
   await store.create(workerWatch);
   assert.deepEqual(await store.listForScope("watch", "channel-a", "owner:123"), [workerWatch]);
+});
+
+test("reads a watch saved with the legacy ownerTaskId", async () => {
+  await using temp = await createTempDir("klein-schedules-");
+  const directory = temp.path;
+  const store = new FileScheduledTaskStore(directory);
+  const legacyWatch = { ...watch, ownerTaskId: "worker-1" };
+  await writeFile(join(directory, "legacy-owner.json"), JSON.stringify(legacyWatch));
+  assert.deepEqual(await store.listForScope("watch", "channel-a", "owner:123"), [
+    { ...watch, ownerWorkerId: "worker-1" },
+  ]);
 });
 
 test("round-trips an urgent watch priority", async () => {

@@ -3,12 +3,12 @@ import { writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import test from "node:test";
 
-import { FileAttachedTaskStore, type StoredAttachedTask } from "./attached-task-store";
+import { FileWorkerStore, type StoredWorker } from "./worker-store";
 import { createTempDir } from "../testing/temp-dir";
 
-function createTask(overrides: Partial<StoredAttachedTask> = {}): StoredAttachedTask {
+function createWorker(overrides: Partial<StoredWorker> = {}): StoredWorker {
   return {
-    id: "attached-1",
+    id: "worker-1",
     conversationKey: { kind: "discord", channelId: "channel-a" },
     accessScope: "public",
     ownerFeaturesAllowed: false,
@@ -21,34 +21,34 @@ function createTask(overrides: Partial<StoredAttachedTask> = {}): StoredAttached
   };
 }
 
-test("saves, lists, and deletes attached tasks", async () => {
-  await using temp = await createTempDir("klein-attached-tasks-");
-  const store = new FileAttachedTaskStore(temp.path);
+test("saves, lists, and deletes workers", async () => {
+  await using temp = await createTempDir("klein-workers-");
+  const store = new FileWorkerStore(temp.path);
 
   assert.deepEqual(await store.list(), []);
 
-  await store.save(createTask());
+  await store.save(createWorker());
   await store.save(
-    createTask({
-      id: "attached-2",
+    createWorker({
+      id: "worker-2",
       conversationKey: { kind: "discord", channelId: "channel-b" },
     }),
   );
 
-  const tasks = await store.list();
-  assert.deepEqual(tasks.map((task) => task.id).toSorted(), ["attached-1", "attached-2"]);
+  const workers = await store.list();
+  assert.deepEqual(workers.map((worker) => worker.id).toSorted(), ["worker-1", "worker-2"]);
 
-  await store.delete("attached-1");
+  await store.delete("worker-1");
   assert.deepEqual(
-    (await store.list()).map((task) => task.id),
-    ["attached-2"],
+    (await store.list()).map((worker) => worker.id),
+    ["worker-2"],
   );
 
-  await store.delete("attached-1");
+  await store.delete("worker-1");
 });
 
-test("ignores legacy and malformed task files", async () => {
-  await using temp = await createTempDir("klein-attached-tasks-");
+test("ignores legacy and malformed worker files", async () => {
+  await using temp = await createTempDir("klein-workers-");
   await writeFile(resolve(temp.path, "broken.json"), "{ not json", "utf8");
   await writeFile(resolve(temp.path, "invalid.json"), JSON.stringify({ id: "x" }), "utf8");
   await writeFile(
@@ -69,7 +69,7 @@ test("ignores legacy and malformed task files", async () => {
   await writeFile(
     resolve(temp.path, "empty-channel.json"),
     JSON.stringify(
-      createTask({
+      createWorker({
         id: "empty-channel",
         conversationKey: { kind: "discord", channelId: "" },
       }),
@@ -78,10 +78,10 @@ test("ignores legacy and malformed task files", async () => {
   );
   await writeFile(
     resolve(temp.path, "invalid-access-scope.json"),
-    JSON.stringify({ ...createTask({ id: "invalid-access-scope" }), accessScope: "owner:" }),
+    JSON.stringify({ ...createWorker({ id: "invalid-access-scope" }), accessScope: "owner:" }),
     "utf8",
   );
 
-  const store = new FileAttachedTaskStore(temp.path);
+  const store = new FileWorkerStore(temp.path);
   assert.deepEqual(await store.list(), []);
 });

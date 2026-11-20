@@ -4,7 +4,7 @@
 
 ## 目的
 
-Klein はチャンネルのメッセージに反応するだけではなく、監視や付随タスクの結果から得た出来事を、文脈に合うときに自分から発言する。ただし、通知の量とタイミングはユーザーの好みで制御でき、約束した追跡は必ず実体を持つ。
+Klein はチャンネルのメッセージに反応するだけではなく、監視やワーカーの結果から得た出来事を、文脈に合うときに自分から発言する。ただし、通知の量とタイミングはユーザーの好みで制御でき、約束した追跡は必ず実体を持つ。
 
 この機能は次の4つに分ける。
 
@@ -24,8 +24,8 @@ Klein はチャンネルのメッセージに反応するだけではなく、�
 ## 用語
 
 - 好み (preference) は、ユーザーが明示した配信の指示である。話題、時間帯、届け方、表現を含む。
-- 約束 (follow-up) は、Klein が「あとで知らせる」と発言した追跡である。監視、リマインダー、付随タスクのいずれかを実体として持つ。
-- 候補 (signal) は、発言する価値があるかもしれない出来事である。監視の wake、付随タスクの結果、メモリの抽出、外部コネクタが作る。
+- 約束 (follow-up) は、Klein が「あとで知らせる」と発言した追跡である。監視、リマインダー、ワーカーのいずれかを実体として持つ。
+- 候補 (signal) は、発言する価値があるかもしれない出来事である。監視の wake、ワーカーの結果、メモリの抽出、外部コネクタが作る。
 - 配信 (delivery) は、候補を実際の発言につなげる判断である。
 
 ## ファイル
@@ -65,13 +65,13 @@ Klein はチャンネルのメッセージに反応するだけではなく、�
 
 ### 約束の台帳
 
-`<runtime.agentDir>/proactive/follow-ups/<id>.json` に1件1ファイルで保存する。スケジュールや付随タスクの保存形式に合わせ、書き込みは一時ファイルと rename を使う。
+`<runtime.agentDir>/proactive/follow-ups/<id>.json` に1件1ファイルで保存する。スケジュールやワーカーの保存形式に合わせ、書き込みは一時ファイルと rename を使う。
 
 ```ts
 type FollowUpStatus = "active" | "notified" | "done" | "orphaned" | "expired" | "dismissed";
 
 type FollowUpWatcher =
-  { kind: "watch"; id: string } | { kind: "reminder"; id: string } | { kind: "task"; id: string };
+  { kind: "watch"; id: string } | { kind: "reminder"; id: string } | { kind: "worker"; id: string };
 
 interface FollowUp {
   version: 1;
@@ -90,9 +90,9 @@ interface FollowUp {
 }
 ```
 
-`follow_up_create` は watcher を必須にする。watcher が同じチャンネルとアクセススコープに存在しない場合は失敗する。成功時は `formatSchedule` の結果を `cadenceLabel` として返す。付随タスクの場合は「タスクの完了時」とする。
+`follow_up_create` は watcher を必須にする。watcher が同じチャンネルとアクセススコープに存在しない場合は失敗する。成功時は `formatSchedule` の結果を `cadenceLabel` として返す。ワーカーの場合は「ワーカーの完了時」とする。
 
-監視が削除された約束は `orphaned` にする。コンテキストを読むときに、監視、リマインダー、付随タスクの存在を確認して状態を更新する。一回だけのリマインダーが配信されたときは `done` にする。付随タスクの結果が届いたときも `done` にする。
+監視が削除された約束は `orphaned` にする。コンテキストを読むときに、監視、リマインダー、ワーカーの存在を確認して状態を更新する。一回だけのリマインダーが配信されたときは `done` にする。ワーカーの結果が届いたときも `done` にする。
 
 ### 候補のキュー
 
@@ -153,14 +153,14 @@ watch の `priority` が `urgent` のとき候補の urgency は `now`、`normal
 - `<waiting-on>` はこのチャンネルの有効な約束。最大8件。
 - `<pending-signals>` は `attach` 待ちの候補。最大5件。
 
-watch の wake と付随タスクの結果を届けるときも同じブロックを付ける。
+watch の wake とワーカーの結果を届けるときも同じブロックを付ける。
 
 ## ツール
 
 すべて `features.proactivity.enabled` が真のときだけ会話エージェントに渡す。
 
 - `proactive_preference_update` は好みを更新する。`set_delivery`、`set_topic`、`remove_topic`、`add_note` を受ける。`set_topic` で `until` を省略した `mute` は、恒久を意図する場合に限り `permanent: true` を必要とする。所有者以外の呼び出しは拒否する。
-- `follow_up_create` は監視、リマインダー、付随タスクを指定して約束を作る。watcher が見つからなければ失敗する。
+- `follow_up_create` は監視、リマインダー、ワーカーを指定して約束を作る。watcher が見つからなければ失敗する。
 - `follow_up_list` はこのチャンネルの有効な約束を返す。
 - `follow_up_close` は約束を `done` または `dismissed` にする。
 - `proactive_signal_list` はこの会話のキューにある期限切れでない候補を返す。
@@ -203,7 +203,7 @@ watch の wake と付随タスクの結果を届けるときも同じブロッ�
 
 - 好み、約束、候補のドメインとファイル保存
 - 設定、`ProactiveCoordinator`、`proactive_preference_update`、ターンコンテキストへの好み、`<waiting-on>`、`<pending-signals>` の描画
-- `follow_up_create`、`follow_up_list`、`follow_up_close` と、監視の削除、一回だけのリマインダーの配信、付随タスクの結果配送を `done` に反映する処理
+- `follow_up_create`、`follow_up_list`、`follow_up_close` と、監視の削除、一回だけのリマインダーの配信、ワーカーの結果配送を `done` に反映する処理
 - watch の wake の候補化、配信ゲート、`attach` と `digest` のキュー、当日の配信数、重複排除
 - `AgentCoordinator.deliverDueDigests` によるダイジェスト配信と、スケジュール確認と同じ間隔での起動
 - `discord_send` の約束監査 (`off`、`log`、`block`)

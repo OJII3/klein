@@ -2,11 +2,8 @@ import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 
 import { AgentCoordinator } from "./agent-coordinator";
-import {
-  AttachedAgentCoordinator,
-  ATTACHED_AGENT_SYSTEM_PROMPT,
-} from "./attached-agent-coordinator";
-import { FileAttachedTaskStore } from "./attached-task-store";
+import { WorkerAgentCoordinator, WORKER_SYSTEM_PROMPT } from "./worker-agent-coordinator";
+import { FileWorkerStore } from "./worker-store";
 import { ChannelSessionStateStore } from "./channel-session-state-store";
 import { parseCliOptions } from "./cli-options";
 import { loadConfig } from "./config";
@@ -20,7 +17,7 @@ import { TaskCoordinator } from "./task-coordinator";
 import { VoiceChatCoordinator } from "./voice-chat-coordinator";
 import { DiscordAgent } from "@agents/discord/discord-agent";
 import { createDiscordAgentTools } from "@agents/discord/discord-tools";
-import { createAttachedWorkerTools } from "@agents/discord/tools/attached-worker";
+import { createWorkerTools } from "@agents/discord/tools/worker";
 import {
   createPiAgentFactory,
   createPiModelRuntime,
@@ -83,7 +80,7 @@ import { isOwnerAccessScope, parseAccessScope } from "@shared/access";
 
 const DISCORD_USAGE_STATUS_REFRESH_INTERVAL_MS = 60 * 60 * 1_000;
 const CHANNEL_CONTEXT_ROTATION_CHECK_INTERVAL_MS = 60 * 1_000;
-const ATTACHED_TASK_IDLE_CHECK_INTERVAL_MS = 60 * 1_000;
+const WORKER_IDLE_CHECK_INTERVAL_MS = 60 * 1_000;
 const SCHEDULED_TASK_CHECK_INTERVAL_MS = 10 * 1_000;
 const SHUTDOWN_TIMEOUT_MS = 20 * 1_000;
 
@@ -225,11 +222,11 @@ export async function bootstrapApplication(): Promise<void> {
   let discordService!: DiscordJsService;
   let agentCoordinator!: AgentCoordinator;
   const t3ThreadRunner = createT3CliThreadRunner();
-  const attachedAgentCoordinator = new AttachedAgentCoordinator({
+  const workerAgentCoordinator = new WorkerAgentCoordinator({
     factory: piAgentFactory,
-    systemPrompt: ATTACHED_AGENT_SYSTEM_PROMPT,
+    systemPrompt: WORKER_SYSTEM_PROMPT,
     logger,
-    store: new FileAttachedTaskStore(resolve(agentDir, "attached-tasks")),
+    store: new FileWorkerStore(resolve(agentDir, "workers")),
     taskCoordinator,
     hasOwnedWatches: async ({ id, conversationKey, accessScope }) => {
       const scope = parseAccessScope(accessScope);
@@ -239,18 +236,18 @@ export async function bootstrapApplication(): Promise<void> {
         conversationKey.channelId,
         scope,
       );
-      return watches.some((watch) => watch.ownerTaskId === id);
+      return watches.some((watch) => watch.ownerWorkerId === id);
     },
-    createTools: (conversationKey, accessScope, taskId, toolContext) => {
+    createTools: (conversationKey, accessScope, workerId, toolContext) => {
       const ownerRequester =
         ownerUserId && isOwnerAccessScope(accessScope, ownerUserId)
           ? { userId: ownerUserId }
           : undefined;
-      return createAttachedWorkerTools(
+      return createWorkerTools(
         discordService,
         conversationKey.channelId,
         accessScope,
-        taskId,
+        workerId,
         scheduledTaskStore,
         watchCheckRunner,
         ownerRequester,
@@ -259,12 +256,12 @@ export async function bootstrapApplication(): Promise<void> {
       );
     },
     onResult: (delivery) =>
-      agentCoordinator.deliverAttachedTaskResult(
+      agentCoordinator.deliverWorkerResult(
         delivery.conversationKey,
         delivery.accessScope,
         delivery.result,
       ),
-    onTaskClosed: async ({ id, conversationKey, accessScope }) => {
+    onWorkerClosed: async ({ id, conversationKey, accessScope }) => {
       const scope = parseAccessScope(accessScope);
       if (!scope) return;
       const watches = await scheduledTaskStore.listForScope(
@@ -273,8 +270,8 @@ export async function bootstrapApplication(): Promise<void> {
         scope,
       );
       for (const watch of watches) {
-        if (watch.ownerTaskId !== id) continue;
-        const { ownerTaskId: _ownerTaskId, ...rest } = watch;
+        if (watch.ownerWorkerId !== id) continue;
+        const { ownerWorkerId: _ownerWorkerId, ...rest } = watch;
         await scheduledTaskStore.update(rest);
       }
     },
@@ -285,7 +282,7 @@ export async function bootstrapApplication(): Promise<void> {
         followUpStore: new FileFollowUpStore(proactivityConfig.followUpDirectory),
         signalStore: new FileProactiveSignalStore(proactivityConfig.signalDirectory),
         scheduledTaskStore,
-        attachedTasks: attachedAgentCoordinator,
+        workers: workerAgentCoordinator,
         defaults: proactivityConfig.defaults,
         logger,
       })
@@ -314,7 +311,7 @@ export async function bootstrapApplication(): Promise<void> {
           tts,
           userMemoryStore,
           watchCheckRunner,
-          attachedTasks: attachedAgentCoordinator,
+          workers: workerAgentCoordinator,
           promiseGuard: { mode: proactivityConfig.promiseGuard, logger },
           ...(proactiveCoordinator ? { proactive: proactiveCoordinator } : {}),
         }),
@@ -360,7 +357,7 @@ export async function bootstrapApplication(): Promise<void> {
                   speak,
                   userMemoryStore,
                   watchCheckRunner,
-                  attachedTasks: attachedAgentCoordinator,
+                  workers: workerAgentCoordinator,
                 }),
             }),
           logger,
@@ -423,7 +420,7 @@ export async function bootstrapApplication(): Promise<void> {
     : undefined;
   agentCoordinator = new AgentCoordinator({
     accessPolicy: discordAccessPolicy,
-    attachedTasks: attachedAgentCoordinator,
+    workers: workerAgentCoordinator,
     ownerUserId,
     createDiscordAgent,
     channelSessionStateStore,
@@ -489,7 +486,7 @@ export async function bootstrapApplication(): Promise<void> {
 
   let usageStatusInterval: ReturnType<typeof setInterval> | undefined;
   let contextRotationInterval: ReturnType<typeof setInterval> | undefined;
-  let attachedTaskCleanupInterval: ReturnType<typeof setInterval> | undefined;
+  let workerCleanupInterval: ReturnType<typeof setInterval> | undefined;
   let scheduledTaskCheckInterval: ReturnType<typeof setInterval> | undefined;
   const shutdown = async (signal: string): Promise<void> => {
     logger.info({ event: "shutdown_started", signal }, "Shutting down");
@@ -502,9 +499,9 @@ export async function bootstrapApplication(): Promise<void> {
       clearInterval(contextRotationInterval);
       contextRotationInterval = undefined;
     }
-    if (attachedTaskCleanupInterval) {
-      clearInterval(attachedTaskCleanupInterval);
-      attachedTaskCleanupInterval = undefined;
+    if (workerCleanupInterval) {
+      clearInterval(workerCleanupInterval);
+      workerCleanupInterval = undefined;
     }
     if (scheduledTaskCheckInterval) {
       clearInterval(scheduledTaskCheckInterval);
@@ -512,7 +509,7 @@ export async function bootstrapApplication(): Promise<void> {
     }
     await webUi?.stop();
     discordService.stopAccepting();
-    await attachedAgentCoordinator.dispose();
+    await workerAgentCoordinator.dispose();
     await Promise.all([sharedMemoryCoordinator?.flush(), userMemoryCoordinator?.flush()]);
     sharedMemoryCoordinator?.dispose();
     userMemoryCoordinator?.dispose();
@@ -552,7 +549,7 @@ export async function bootstrapApplication(): Promise<void> {
     const pendingMessages: DiscordMessage[] = [];
     const pendingReactions: DiscordReactionEvent[] = [];
     let restoring = true;
-    await attachedAgentCoordinator.load();
+    await workerAgentCoordinator.load();
     await discordService.start(
       (message) => {
         if (restoring) {
@@ -601,23 +598,20 @@ export async function bootstrapApplication(): Promise<void> {
     runChannelContextRotationCheck,
     CHANNEL_CONTEXT_ROTATION_CHECK_INTERVAL_MS,
   );
-  const runAttachedTaskIdleCleanup = (): void => {
+  const runWorkerIdleCleanup = (): void => {
     void taskCoordinator
       .run(async () => {
-        await attachedAgentCoordinator.closeIdleTasks();
+        await workerAgentCoordinator.closeIdleWorkers();
       })
       .catch((error: unknown) => {
         logger.error(
-          { err: error, event: "attached_task_idle_cleanup_failed" },
-          "Failed to close idle attached tasks",
+          { err: error, event: "worker_idle_cleanup_failed" },
+          "Failed to close idle workers",
         );
       });
   };
-  runAttachedTaskIdleCleanup();
-  attachedTaskCleanupInterval = setInterval(
-    runAttachedTaskIdleCleanup,
-    ATTACHED_TASK_IDLE_CHECK_INTERVAL_MS,
-  );
+  runWorkerIdleCleanup();
+  workerCleanupInterval = setInterval(runWorkerIdleCleanup, WORKER_IDLE_CHECK_INTERVAL_MS);
   void agentCoordinator.deliverDueTasks();
   void agentCoordinator.deliverDueDigests();
   scheduledTaskCheckInterval = setInterval(() => {

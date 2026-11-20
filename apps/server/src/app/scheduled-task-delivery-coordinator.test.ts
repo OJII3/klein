@@ -121,27 +121,27 @@ function createHarness(options: HarnessOptions = {}) {
     ): Promise<void> {
       surfacedCalls.push({ signals, mode, now });
     },
-    async markWatcherCompleted(kind: "watch" | "reminder" | "task", id: string): Promise<void> {
+    async markWatcherCompleted(kind: "watch" | "reminder" | "worker", id: string): Promise<void> {
       completedWatchers.push({ kind, id });
     },
   } satisfies Pick<
     ProactiveCoordinator,
     "ingestWatchSignal" | "markSignalsSurfaced" | "markWatcherCompleted"
   >;
-  const attachedSends: {
-    readonly taskId: string;
+  const workerSends: {
+    readonly workerId: string;
     readonly message: string;
   }[] = [];
-  const attachedStarts: string[] = [];
+  const workerStarts: string[] = [];
   const store = new InMemoryScheduledTaskStore(options.tasks ?? [watch]);
   const coordinator = new ScheduledTaskDeliveryCoordinator({
-    attachedTasks: {
+    workers: {
       async start(input) {
-        attachedStarts.push(input.prompt);
-        return "attached-1";
+        workerStarts.push(input.prompt);
+        return "worker-1";
       },
-      async send(_scope, taskId, message) {
-        attachedSends.push({ taskId, message });
+      async send(_scope, workerId, message) {
+        workerSends.push({ workerId, message });
         return options.workerSendResult ?? true;
       },
       async close() {
@@ -168,8 +168,8 @@ function createHarness(options: HarnessOptions = {}) {
     ingestCalls,
     surfacedCalls,
     completedWatchers,
-    attachedSends,
-    attachedStarts,
+    workerSends,
+    workerStarts,
     storedWatch: () => {
       const stored = store.tasks.get("watch-1");
       return stored?.kind === "watch" ? stored : undefined;
@@ -195,7 +195,7 @@ test("holds an attach decision without delivering the wake", async () => {
   assert.equal(harness.ingestCalls[0]?.output, "changed");
   assert.equal(harness.ingestCalls[0]?.now, DUE_AT);
   assert.deepEqual(harness.events, []);
-  assert.deepEqual(harness.attachedSends, []);
+  assert.deepEqual(harness.workerSends, []);
   assert.deepEqual(harness.surfacedCalls, []);
 
   const stored = harness.storedWatch();
@@ -258,15 +258,15 @@ test("delivers a silent decision without prompting the conversation", async () =
 });
 
 test("sends a worker watch to its worker without consulting the gate", async () => {
-  const workerWatch: WatchTask = { ...watch, ownerTaskId: "attached-1" };
+  const workerWatch: WatchTask = { ...watch, ownerWorkerId: "worker-1" };
   const harness = createHarness({ tasks: [workerWatch] });
 
   await harness.coordinator.deliverDueTasks(DUE_AT);
 
   assert.deepEqual(harness.ingestCalls, []);
-  assert.equal(harness.attachedSends.length, 1);
-  assert.equal(harness.attachedSends[0]?.taskId, "attached-1");
-  assert.match(harness.attachedSends[0]?.message ?? "", /changed/u);
+  assert.equal(harness.workerSends.length, 1);
+  assert.equal(harness.workerSends[0]?.workerId, "worker-1");
+  assert.match(harness.workerSends[0]?.message ?? "", /changed/u);
   assert.ok(harness.storedWatch()?.lastTriggeredAt);
 });
 
@@ -276,7 +276,7 @@ test("leaves reminder delivery unchanged", async () => {
   await harness.coordinator.deliverDueTasks(Date.parse(reminder.nextRunAt));
 
   assert.deepEqual(harness.ingestCalls, []);
-  assert.equal(harness.attachedStarts.length, 1);
+  assert.equal(harness.workerStarts.length, 1);
   assert.equal(harness.store.tasks.has("reminder-1"), false);
   assert.deepEqual(harness.completedWatchers, [{ kind: "reminder", id: "reminder-1" }]);
 });
@@ -291,7 +291,7 @@ test("does not complete reminder follow-ups for a repeating reminder", async () 
 
   await harness.coordinator.deliverDueTasks(Date.parse(repeating.nextRunAt));
 
-  assert.equal(harness.attachedStarts.length, 1);
+  assert.equal(harness.workerStarts.length, 1);
   assert.equal(harness.store.tasks.has("reminder-repeating"), true);
   assert.deepEqual(harness.completedWatchers, []);
 });

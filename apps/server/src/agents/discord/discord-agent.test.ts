@@ -265,7 +265,7 @@ test("passes the message author as the turn's requester and clears it for events
   assert.equal(requesterUserId?.(), undefined);
 
   const event: AgentEvent = {
-    id: "attached:task-1",
+    id: "worker:task-1",
     occurredAt: "2026-10-14T09:31:00.000Z",
     type: "worker.result",
     source: "worker",

@@ -10,7 +10,7 @@ import { createTempDir } from "../../../testing/temp-dir";
 
 test("ignores non-conversation session directories when listing channel sessions", async () => {
   await using temp = await createTempDir("klein-pi-reader-");
-  await mkdir(resolve(temp.path, "sessions", "attached", "task-1"), { recursive: true });
+  await mkdir(resolve(temp.path, "sessions", "worker", "task-1"), { recursive: true });
   await mkdir(resolve(temp.path, "sessions", "standalone", "user-memory-1"), { recursive: true });
 
   const page = await new PiSessionReader(temp.path).list();

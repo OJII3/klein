@@ -40,7 +40,7 @@ import type { AgentTool } from "@agents/core/agent-tool";
 import type { AgentTurn, AgentTurnContext } from "@agents/core/agent-turn";
 import type { AgentPrompt, AgentRuntime } from "@agents/core/agent-runtime";
 import { toImageAnalysisFailure } from "@agents/core/image-analysis";
-import { renderWorkerDelegationSection } from "@agents/core/attached-agent";
+import { renderWorkerDelegationSection } from "@agents/core/worker-agent";
 import type { SessionMode } from "@app/cli-options";
 import { renderWatchToolSection } from "@modules/scheduling/application/watch-tool";
 import type { WatchToolCatalog } from "@modules/scheduling/ports/watch-tool";
@@ -785,7 +785,7 @@ export function createPiAgentFactory({
       const hasWorkerStart = customTools.some((tool) => tool.name === "worker_start");
       const hasVoiceSpeak = surfaceTools.some((tool) => tool.name === "discord_speak");
       const workerBrowserAvailable =
-        enablesAgentBrowser({ kind: "attached", taskId: "" }, options.ownerFeaturesAllowed) &&
+        enablesAgentBrowser({ kind: "worker", workerId: "" }, options.ownerFeaturesAllowed) &&
         authorization.allowsServer(AGENT_BROWSER_MCP_SERVER_NAME);
       const workerT3Available =
         options.ownerFeaturesAllowed === true && authorization.allowsTool("t3_thread_start");
@@ -793,7 +793,7 @@ export function createPiAgentFactory({
         enablesAgentBrowser(options.role, options.ownerFeaturesAllowed) &&
         authorization.allowsServer(AGENT_BROWSER_MCP_SERVER_NAME);
       const sessionT3Available =
-        options.role.kind === "attached" &&
+        options.role.kind === "worker" &&
         customTools.some((tool) => tool.name === "t3_thread_start");
       const excludedSkillNames = new Set<string>([
         ...(sessionBrowserAvailable ? [] : ["browser-automation"]),

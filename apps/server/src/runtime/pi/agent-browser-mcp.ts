@@ -20,7 +20,7 @@ export function enablesAgentBrowser(
   role: AgentRole,
   ownerFeaturesAllowed: boolean | undefined,
 ): boolean {
-  return role.kind === "attached" && ownerFeaturesAllowed === true;
+  return role.kind === "worker" && ownerFeaturesAllowed === true;
 }
 
 /**

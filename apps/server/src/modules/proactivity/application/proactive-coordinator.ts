@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { Logger } from "pino";
 
-import type { AttachedTaskControl } from "@agents/core/attached-agent";
+import type { WorkerControl } from "@agents/core/worker-agent";
 import { formatSchedule } from "@modules/scheduling/domain/schedule";
 import type { WatchTask } from "@modules/scheduling/domain/scheduled-task";
 import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
@@ -55,7 +55,7 @@ export interface ProactiveCoordinatorOptions {
   readonly followUpStore: FollowUpStore;
   readonly signalStore: ProactiveSignalStore;
   readonly scheduledTaskStore: ScheduledTaskStore;
-  readonly attachedTasks: Pick<AttachedTaskControl, "list">;
+  readonly workers: Pick<WorkerControl, "list">;
   readonly defaults: ProactivePolicyDefaults;
   readonly logger?: Logger;
   readonly now?: () => number;
@@ -463,15 +463,15 @@ export class ProactiveCoordinator {
           ? { cadenceLabel: formatSchedule(reminder.schedule), active: true }
           : undefined;
       }
-      case "task": {
-        const task = this.options.attachedTasks
+      case "worker": {
+        const worker = this.options.workers
           .list({ conversationKey: { kind: "discord", channelId }, accessScope })
           .find(
             (candidate) =>
               candidate.id === watcher.id &&
               (candidate.status === "running" || candidate.status === "idle"),
           );
-        return task ? { cadenceLabel: "タスクの完了時", active: true } : undefined;
+        return worker ? { cadenceLabel: "ワーカーの完了時", active: true } : undefined;
       }
       default: {
         const exhaustive: never = watcher.kind;
