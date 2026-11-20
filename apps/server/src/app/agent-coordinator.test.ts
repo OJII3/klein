@@ -520,11 +520,13 @@ test("does not resume saved channel sessions after their access scope changes", 
             ? {
                 channels: {
                   "channel-a": { access: "allow" },
-                  "channel-b": { access: "owner" },
+                  "channel-b": { access: "allow" },
                 },
               }
             : undefined,
       },
+      (target) =>
+        target.guildId === "guild-123" && target.channelId === "channel-b" ? "user-123" : undefined,
     ),
     channelSessionStateStore,
     ownerUserId: "user-123",

@@ -1,188 +1,96 @@
-import { randomUUID } from "node:crypto";
-
 import type { Logger } from "pino";
 
-import type { DiscordAccess } from "../domain/discord-access-policy";
 import {
-  discordChannelAccessRequestLocationKey,
-  parseDiscordChannelAccessButtonId,
-  type DiscordChannelAccessNoticeOutcome,
-  type DiscordChannelAccessRejection,
+  DiscordApprovalService,
+  type DiscordApprovalButtonResult,
+  type DiscordApprovalPresentation,
+  type DiscordApprovalRequestOutcome,
+} from "./discord-approval-service";
+import {
+  DISCORD_CHANNEL_ACCESS_BUTTON_PREFIX,
   type DiscordChannelAccessRequest,
   type PendingDiscordAccessRequest,
 } from "../domain/discord-access-request";
-import type { DiscordAccessRequestStore } from "../ports/discord-access-request-store";
+import type { DiscordApprovalRequestStore } from "../ports/discord-approval-request-store";
 import type { DiscordAccessRuleStore } from "../ports/discord-access-rule-store";
 
-export interface DiscordChannelAccessPresentation {
-  postPendingNotice(request: PendingDiscordAccessRequest): Promise<{ messageId?: string }>;
-  sendOwnerRequest(request: PendingDiscordAccessRequest): Promise<void>;
-  updatePendingNotice(
-    request: PendingDiscordAccessRequest,
-    outcome: DiscordChannelAccessNoticeOutcome,
-  ): Promise<void>;
-}
-
 export type DiscordChannelAccessButtonResult =
-  | { readonly kind: "ignored" }
-  | { readonly kind: "rejected"; readonly reason: DiscordChannelAccessRejection }
-  | {
-      readonly kind: "decided";
-      readonly request: PendingDiscordAccessRequest;
-      readonly access: DiscordAccess;
-    };
+  DiscordApprovalButtonResult<PendingDiscordAccessRequest>;
+
+export type DiscordChannelAccessRequestOutcome = DiscordApprovalRequestOutcome;
 
 export interface DiscordChannelAccessServiceDependencies {
   readonly accessRuleStore: Pick<DiscordAccessRuleStore, "setAccess">;
-  readonly accessRequestStore: Pick<DiscordAccessRequestStore, "list" | "save" | "remove">;
+  readonly accessRequestStore: Pick<
+    DiscordApprovalRequestStore<PendingDiscordAccessRequest>,
+    "list" | "save" | "remove"
+  >;
   readonly ownerUserId?: string;
   readonly logger?: Logger;
 }
 
 /**
- * Tracks channel access requests and lets only the owner decide them. Posting
- * and updating the messages stays behind {@link DiscordChannelAccessPresentation}.
+ * Applies access rules after the owner approves a request from a channel that
+ * the bot was mentioned in.
  */
 export class DiscordChannelAccessService {
-  private readonly pendingByLocation = new Map<string, PendingDiscordAccessRequest>();
-  private readonly pendingByRequestId = new Map<string, PendingDiscordAccessRequest>();
+  private readonly approval: DiscordApprovalService<PendingDiscordAccessRequest>;
 
-  constructor(private readonly dependencies: DiscordChannelAccessServiceDependencies) {
-    for (const request of dependencies.accessRequestStore.list()) {
-      this.remember(request);
-    }
+  constructor(dependencies: DiscordChannelAccessServiceDependencies) {
+    this.approval = new DiscordApprovalService({
+      store: dependencies.accessRequestStore,
+      buttonPrefix: DISCORD_CHANNEL_ACCESS_BUTTON_PREFIX,
+      createRequest: (draft, requestId) => ({ ...draft, requestId }),
+      ownerUserId: dependencies.ownerUserId,
+      logger: dependencies.logger,
+      hooks: {
+        onAllow: async (request) => {
+          await dependencies.accessRuleStore.setAccess(
+            {
+              guildId: request.guildId,
+              channelId: request.channelId,
+              ...(request.threadId ? { threadId: request.threadId } : {}),
+            },
+            "allow",
+          );
+          return undefined;
+        },
+        onDeny: async (request) => {
+          await dependencies.accessRuleStore.setAccess(
+            {
+              guildId: request.guildId,
+              channelId: request.channelId,
+              ...(request.threadId ? { threadId: request.threadId } : {}),
+            },
+            "deny",
+          );
+          return undefined;
+        },
+      },
+    });
   }
 
-  async request(
+  request(
     request: DiscordChannelAccessRequest,
-    presentation: DiscordChannelAccessPresentation,
-  ): Promise<void> {
-    if (!this.dependencies.ownerUserId) return;
-
-    const key = discordChannelAccessRequestLocationKey(request);
-    if (this.pendingByLocation.has(key)) return;
-
-    let pending: PendingDiscordAccessRequest = {
-      ...request,
-      requestId: randomUUID(),
-    };
-    this.remember(pending);
-
-    try {
-      const { messageId } = await presentation.postPendingNotice(pending);
-      if (messageId) {
-        pending = { ...pending, pendingMessageId: messageId };
-        this.remember(pending);
-      }
-    } catch (error) {
-      this.dependencies.logger?.warn(
-        {
-          err: error,
-          event: "discord_channel_access_pending_message_failed",
-          guildId: request.guildId,
-          channelId: request.channelId,
-          threadId: request.threadId,
-        },
-        "Failed to post the pending Discord channel access notice",
-      );
-    }
-
-    try {
-      await presentation.sendOwnerRequest(pending);
-    } catch (error) {
-      await this.remove(pending);
-      this.dependencies.logger?.warn(
-        {
-          err: error,
-          event: "discord_channel_access_request_failed",
-          guildId: request.guildId,
-          channelId: request.channelId,
-          threadId: request.threadId,
-        },
-        "Failed to ask the owner about Discord channel access",
-      );
-      await presentation.updatePendingNotice(pending, "owner-unreachable");
-      return;
-    }
-
-    await this.save(pending);
+    presentation: DiscordApprovalPresentation<PendingDiscordAccessRequest>,
+  ): Promise<DiscordChannelAccessRequestOutcome> {
+    return this.approval.request(request, presentation);
   }
 
-  async handleButton(button: {
+  handleButton(button: {
     readonly customId: string;
     readonly userId: string;
   }): Promise<DiscordChannelAccessButtonResult> {
-    const parsed = parseDiscordChannelAccessButtonId(button.customId);
-    if (!parsed) return { kind: "ignored" };
-
-    if (!this.dependencies.ownerUserId || button.userId !== this.dependencies.ownerUserId) {
-      return { kind: "rejected", reason: "owner-only" };
-    }
-
-    const pending = this.pendingByRequestId.get(parsed.requestId);
-    if (!pending) return { kind: "rejected", reason: "expired" };
-
-    try {
-      await this.dependencies.accessRuleStore.setAccess(
-        {
-          guildId: pending.guildId,
-          channelId: pending.channelId,
-          ...(pending.threadId ? { threadId: pending.threadId } : {}),
-        },
-        parsed.action,
-      );
-    } catch (error) {
-      this.dependencies.logger?.error(
-        {
-          err: error,
-          event: "discord_channel_access_update_failed",
-          guildId: pending.guildId,
-          channelId: pending.channelId,
-          threadId: pending.threadId,
-        },
-        "Failed to update Discord channel access",
-      );
-      return { kind: "rejected", reason: "rule-update-failed" };
-    }
-
-    await this.remove(pending);
-    return { kind: "decided", request: pending, access: parsed.action };
+    return this.approval.handleButton(button);
   }
 
-  private remember(pending: PendingDiscordAccessRequest): void {
-    this.pendingByLocation.set(discordChannelAccessRequestLocationKey(pending), pending);
-    this.pendingByRequestId.set(pending.requestId, pending);
-  }
-
-  private async save(pending: PendingDiscordAccessRequest): Promise<void> {
-    try {
-      await this.dependencies.accessRequestStore.save(pending);
-    } catch (error) {
-      this.dependencies.logger?.warn(
-        {
-          err: error,
-          event: "discord_channel_access_request_persist_failed",
-          requestId: pending.requestId,
-        },
-        "Failed to persist a Discord channel access request",
-      );
-    }
-  }
-
-  private async remove(pending: PendingDiscordAccessRequest): Promise<void> {
-    this.pendingByLocation.delete(discordChannelAccessRequestLocationKey(pending));
-    this.pendingByRequestId.delete(pending.requestId);
-    try {
-      await this.dependencies.accessRequestStore.remove(pending.requestId);
-    } catch (error) {
-      this.dependencies.logger?.warn(
-        {
-          err: error,
-          event: "discord_channel_access_request_remove_failed",
-          requestId: pending.requestId,
-        },
-        "Failed to remove a persisted Discord channel access request",
-      );
-    }
+  cancelPending(
+    location: { readonly guildId: string; readonly channelId: string; readonly threadId?: string },
+    presentation: Pick<
+      DiscordApprovalPresentation<PendingDiscordAccessRequest>,
+      "updatePendingNotice"
+    >,
+  ): Promise<void> {
+    return this.approval.cancelPending(location, presentation);
   }
 }

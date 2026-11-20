@@ -9,10 +9,8 @@ import {
   type PendingDiscordAccessRequest,
 } from "../domain/discord-access-request";
 import type { DiscordAccessRuleTarget } from "../ports/discord-access-rule-store";
-import {
-  DiscordChannelAccessService,
-  type DiscordChannelAccessPresentation,
-} from "./discord-channel-access-service";
+import { DiscordChannelAccessService } from "./discord-channel-access-service";
+import type { DiscordApprovalPresentation } from "./discord-approval-service";
 
 function createHarness(options: { failOwnerRequest?: boolean; failRuleUpdate?: boolean } = {}) {
   const persisted = new Map<string, PendingDiscordAccessRequest>();
@@ -24,7 +22,7 @@ function createHarness(options: { failOwnerRequest?: boolean; failRuleUpdate?: b
   }> = [];
   const updates: Array<{ target: DiscordAccessRuleTarget; access: DiscordAccess }> = [];
 
-  const presentation: DiscordChannelAccessPresentation = {
+  const presentation: DiscordApprovalPresentation<PendingDiscordAccessRequest> = {
     postPendingNotice: async (request) => {
       posted.push(request);
       return { messageId: "pending-message-1" };
@@ -111,7 +109,7 @@ test("lets only the owner decide and applies the access rule", async () => {
   });
   assert.equal(decided.kind, "decided");
   if (decided.kind !== "decided") return;
-  assert.equal(decided.access, "allow");
+  assert.equal(decided.allowed, true);
   assert.deepEqual(harness.updates, [
     {
       target: { guildId: "guild-123", channelId: "parent-channel", threadId: "thread-123" },
@@ -132,7 +130,7 @@ test("keeps the request when the access rule cannot be updated", async () => {
     userId: "owner-123",
   });
 
-  assert.deepEqual(result, { kind: "rejected", reason: "rule-update-failed" });
+  assert.deepEqual(result, { kind: "rejected", reason: "update-failed" });
   assert.equal(harness.persisted.size, 1);
 });
 

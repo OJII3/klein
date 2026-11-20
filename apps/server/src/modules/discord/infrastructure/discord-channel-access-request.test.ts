@@ -75,7 +75,7 @@ function createHarness() {
     },
   };
   const client: DiscordChannelAccessClient = {
-    channels: { fetch: async (id: string) => (id === "pending-channel" ? channel : null) },
+    channels: { fetch: async () => channel },
     users: { fetch: async () => owner },
     guilds: { cache: new Map([["guild-123", { name: "テストサーバー" }]]) },
   };

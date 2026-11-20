@@ -1,11 +1,7 @@
 import type { PendingDiscordAccessRequest } from "../domain/discord-access-request";
+import type { DiscordApprovalRequestStore } from "./discord-approval-request-store";
 
 export type { PendingDiscordAccessRequest } from "../domain/discord-access-request";
 
-/** Persists owner approval requests so their buttons keep working after a restart. */
-export interface DiscordAccessRequestStore {
-  load(): Promise<void>;
-  list(): readonly PendingDiscordAccessRequest[];
-  save(request: PendingDiscordAccessRequest): Promise<void>;
-  remove(requestId: string): Promise<void>;
-}
+/** Persists owner approval requests for channel access. */
+export type DiscordAccessRequestStore = DiscordApprovalRequestStore<PendingDiscordAccessRequest>;

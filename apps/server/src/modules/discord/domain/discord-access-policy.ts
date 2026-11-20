@@ -1,18 +1,23 @@
 import { isAccessAllowed, type AccessLevel } from "@shared/access";
 
+import type { DiscordChannelLinkTarget } from "./discord-channel-link";
+
 export type DiscordAccess = AccessLevel;
 
+/** Access levels that can be written to a guild, channel, or thread rule. */
+export type DiscordAccessRuleLevel = "allow" | "deny";
+
 export interface DiscordThreadAccessRule {
-  readonly access?: DiscordAccess;
+  readonly access?: DiscordAccessRuleLevel;
 }
 
 export interface DiscordChannelAccessRule {
-  readonly access?: DiscordAccess;
+  readonly access?: DiscordAccessRuleLevel;
   readonly threads?: Readonly<Record<string, DiscordThreadAccessRule>>;
 }
 
 export interface DiscordGuildAccessRule {
-  readonly access?: DiscordAccess;
+  readonly access?: DiscordAccessRuleLevel;
   readonly channels?: Readonly<Record<string, DiscordChannelAccessRule>>;
 }
 
@@ -24,6 +29,9 @@ export interface DiscordAccessConfiguration {
 export interface DiscordAccessRules {
   getGuildRule(guildId: string): DiscordGuildAccessRule | undefined;
 }
+
+/** Resolves the user that owns a linked guild channel or thread. */
+export type DiscordChannelOwnerResolver = (target: DiscordChannelLinkTarget) => string | undefined;
 
 export interface DiscordAccessTarget {
   readonly guildId?: string;
@@ -48,10 +56,20 @@ function resolveAccess(
   configuration: DiscordAccessConfiguration,
   rules: DiscordAccessRules | undefined,
   ownerUserId: string | undefined,
+  resolveChannelOwner: DiscordChannelOwnerResolver | undefined,
   target: DiscordAccessTarget,
 ): DiscordAccess {
   if (!target.guildId) {
     return isOwner(ownerUserId, target) ? "owner" : configuration.directMessages;
+  }
+
+  const linkedOwner = resolveChannelOwner?.({
+    guildId: target.guildId,
+    channelId: target.channelId,
+    ...(target.threadId ? { threadId: target.threadId } : {}),
+  });
+  if (linkedOwner) {
+    return linkedOwner === ownerUserId ? "owner" : "allow";
   }
 
   const guildRule = rules?.getGuildRule(target.guildId);
@@ -65,19 +83,21 @@ export function createDiscordAccessPolicy(
   configuration: DiscordAccessConfiguration,
   ownerUserId?: string,
   rules?: DiscordAccessRules,
+  resolveChannelOwner?: DiscordChannelOwnerResolver,
 ): DiscordAccessPolicy {
   const canUseOwnerFeatures = (target: DiscordAccessTarget): boolean =>
-    resolveAccess(configuration, rules, ownerUserId, target) === "owner" &&
+    resolveAccess(configuration, rules, ownerUserId, resolveChannelOwner, target) === "owner" &&
     isOwner(ownerUserId, target);
 
   return {
     canReceive(target) {
       return isAccessAllowed(
-        resolveAccess(configuration, rules, ownerUserId, target),
+        resolveAccess(configuration, rules, ownerUserId, resolveChannelOwner, target),
         canUseOwnerFeatures(target),
       );
     },
-    resolveAccess: (target) => resolveAccess(configuration, rules, ownerUserId, target),
+    resolveAccess: (target) =>
+      resolveAccess(configuration, rules, ownerUserId, resolveChannelOwner, target),
     canUseOwnerFeatures,
   };
 }

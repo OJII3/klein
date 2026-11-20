@@ -19,7 +19,7 @@ test("loads guild, channel, and thread access rules", async () => {
             "200": {
               access: "allow",
               threads: {
-                "300": { access: "owner" },
+                "300": { access: "allow" },
               },
             },
           },
@@ -37,7 +37,7 @@ test("loads guild, channel, and thread access rules", async () => {
       "200": {
         access: "allow",
         threads: {
-          "300": { access: "owner" },
+          "300": { access: "allow" },
         },
       },
     },
@@ -68,6 +68,12 @@ test("rejects invalid access rule files", async () => {
   await writeFile(filePath, JSON.stringify({ guilds: { guild: { access: "allow" } } }));
   await assert.rejects(store.load(), /invalid/u);
 
+  await writeFile(
+    filePath,
+    JSON.stringify({ guilds: { "100": { channels: { "200": { access: "owner" } } } } }),
+  );
+  await assert.rejects(store.load(), /invalid/u);
+
   await writeFile(filePath, JSON.stringify({ guilds: { "100": { channels: { "200": {} } } } }));
   await store.load();
   assert.deepEqual(store.getGuildRule("100"), { channels: { "200": {} } });
@@ -83,7 +89,7 @@ test("writes channel and thread access without dropping other rules", async () =
         "100": {
           access: "deny",
           channels: {
-            "200": { access: "owner", threads: { "300": { access: "deny" } } },
+            "200": { access: "allow", threads: { "300": { access: "deny" } } },
           },
         },
       },

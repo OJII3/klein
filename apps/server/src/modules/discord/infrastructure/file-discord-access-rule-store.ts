@@ -5,7 +5,7 @@ import { Type } from "typebox";
 import { Check, Errors } from "typebox/value";
 
 import type {
-  DiscordAccess,
+  DiscordAccessRuleLevel,
   DiscordChannelAccessRule,
   DiscordGuildAccessRule,
 } from "../domain/discord-access-policy";
@@ -15,22 +15,18 @@ import type {
 } from "../ports/discord-access-rule-store";
 
 const DiscordIdSchema = Type.String({ minLength: 1, pattern: "^[0-9]+$" });
-const DiscordAccessSchema = Type.Union([
-  Type.Literal("allow"),
-  Type.Literal("deny"),
-  Type.Literal("owner"),
-]);
+const DiscordAccessRuleSchema = Type.Union([Type.Literal("allow"), Type.Literal("deny")]);
 
 const DiscordThreadAccessSchema = Type.Object(
   {
-    access: Type.Optional(DiscordAccessSchema),
+    access: Type.Optional(DiscordAccessRuleSchema),
   },
   { additionalProperties: false },
 );
 
 const DiscordChannelAccessSchema = Type.Object(
   {
-    access: Type.Optional(DiscordAccessSchema),
+    access: Type.Optional(DiscordAccessRuleSchema),
     threads: Type.Optional(
       Type.Record(DiscordIdSchema, DiscordThreadAccessSchema, { additionalProperties: false }),
     ),
@@ -40,7 +36,7 @@ const DiscordChannelAccessSchema = Type.Object(
 
 const DiscordGuildAccessSchema = Type.Object(
   {
-    access: Type.Optional(DiscordAccessSchema),
+    access: Type.Optional(DiscordAccessRuleSchema),
     channels: Type.Optional(
       Type.Record(DiscordIdSchema, DiscordChannelAccessSchema, { additionalProperties: false }),
     ),
@@ -101,7 +97,7 @@ export class FileDiscordAccessRuleStore implements DiscordAccessRuleStore {
     return this.guilds[guildId];
   }
 
-  async setAccess(target: DiscordAccessRuleTarget, access: DiscordAccess): Promise<void> {
+  async setAccess(target: DiscordAccessRuleTarget, access: DiscordAccessRuleLevel): Promise<void> {
     const guild = this.guilds[target.guildId] ?? {};
     const channel = guild.channels?.[target.channelId] ?? {};
     const nextChannel: DiscordChannelAccessRule = target.threadId
