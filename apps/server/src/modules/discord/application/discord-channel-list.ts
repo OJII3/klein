@@ -3,6 +3,7 @@ import type {
   DiscordAccessTarget,
   DiscordGuildAccessRule,
 } from "../domain/discord-access-policy";
+import type { DiscordChannelLink } from "../domain/discord-channel-link";
 
 const ACCESS_LABELS: Readonly<Record<DiscordAccess, string>> = {
   allow: "許可",
@@ -18,11 +19,16 @@ export interface DiscordAllowedChannelListDependencies {
     readonly channelId: string;
     readonly threadId?: string;
   }) => string | undefined;
+  readonly listChannelLinks?: (guildId: string) => readonly DiscordChannelLink[];
 }
 
 function formatAccessLabel(access: DiscordAccess, ownerId: string | undefined): string {
   const label = ACCESS_LABELS[access];
   return ownerId ? `${label}、<@${ownerId}> のチャンネル` : label;
+}
+
+function channelTargetKey(channelId: string, threadId?: string): string {
+  return `${channelId}:${threadId ?? ""}`;
 }
 
 export interface DiscordAllowedChannelListInput {
@@ -54,6 +60,8 @@ export async function buildAllowedDiscordChannelLines(
   }
 
   let listed = 0;
+  const listedTargets = new Set<string>();
+
   for (const [channelId, channelRule] of Object.entries(guildRule?.channels ?? {})) {
     const channelAccess = resolve({ channelId });
     const channelAllowed = channelAccess !== "deny";
@@ -62,6 +70,7 @@ export async function buildAllowedDiscordChannelLines(
     if (channelAllowed) {
       const ownerId = dependencies.resolveChannelOwner?.({ channelId });
       lines.push(`・${channelReference}（${formatAccessLabel(channelAccess, ownerId)}）`);
+      listedTargets.add(channelTargetKey(channelId));
       listed += 1;
     }
 
@@ -77,8 +86,23 @@ export async function buildAllowedDiscordChannelLines(
           ? `　└ ${threadReference}（${threadLabel}）`
           : `・${channelReference} / ${threadReference}（${threadLabel}）`,
       );
+      listedTargets.add(channelTargetKey(channelId, threadId));
       listed += 1;
     }
+  }
+
+  for (const link of dependencies.listChannelLinks?.(input.guildId) ?? []) {
+    const target = {
+      channelId: link.channelId,
+      ...(link.threadId ? { threadId: link.threadId } : {}),
+    };
+    if (listedTargets.has(channelTargetKey(link.channelId, link.threadId))) continue;
+    const access = resolve(target);
+    if (access === "deny") continue;
+    const name = await dependencies.resolveChannelName(link.threadId ?? link.channelId);
+    const reference = name ? `#${name}` : (link.threadId ?? link.channelId);
+    lines.push(`・${reference}（${formatAccessLabel(access, link.userId)}）`);
+    listed += 1;
   }
 
   if (listed === 0) {

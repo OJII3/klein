@@ -77,6 +77,10 @@ export class FileDiscordChannelLinkStore implements DiscordChannelLinkStore {
     return this.links.get(discordChannelLinkLocationKey(target));
   }
 
+  listLinks(guildId: string): readonly DiscordChannelLink[] {
+    return [...this.links.values()].filter((link) => link.guildId === guildId);
+  }
+
   async saveLink(link: DiscordChannelLink): Promise<void> {
     this.links.set(discordChannelLinkLocationKey(link), link);
     this.writeQueue = this.writeQueue.catch(() => undefined).then(() => this.persist());

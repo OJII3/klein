@@ -44,6 +44,7 @@ import { loadVoiceReactionPresets } from "@modules/discord/infrastructure/voice-
 import { FileDiscordAccessRuleStore } from "@modules/discord/infrastructure/file-discord-access-rule-store";
 import { FileDiscordAccessRequestStore } from "@modules/discord/infrastructure/file-discord-access-request-store";
 import { FileDiscordChannelLinkStore } from "@modules/discord/infrastructure/file-discord-channel-link-store";
+import { FileDiscordChannelLinkRequestStore } from "@modules/discord/infrastructure/file-discord-channel-link-request-store";
 import { FileDiscordChannelRuleStore } from "@modules/discord/infrastructure/file-discord-channel-rule-store";
 import { FileDiscordUserStore } from "@modules/discord/infrastructure/file-discord-user-store";
 import { SharedMemoryCoordinator } from "@modules/shared-memory/application/shared-memory-coordinator";
@@ -134,6 +135,10 @@ export async function bootstrapApplication(): Promise<void> {
     resolve(agentDir, "discord-channel-links.json"),
   );
   await discordChannelLinkStore.load();
+  const discordChannelLinkRequestStore = new FileDiscordChannelLinkRequestStore(
+    resolve(agentDir, "discord-channel-link-requests.json"),
+  );
+  await discordChannelLinkRequestStore.load();
   await migrateOwnerAccessToLinks({
     accessRuleStore: discordAccessRuleStore,
     channelLinkStore: discordChannelLinkStore,
@@ -395,7 +400,11 @@ export async function bootstrapApplication(): Promise<void> {
     discordAccessRuleStore,
     ownerUserId,
     discordAccessRequestStore,
-    { enableReactions: true, channelLinkStore: discordChannelLinkStore },
+    {
+      enableReactions: true,
+      channelLinkStore: discordChannelLinkStore,
+      channelLinkRequestStore: discordChannelLinkRequestStore,
+    },
   );
   const memorySessionId = `memory-${randomUUID()}`;
   const sharedMemoryCoordinator = sharedMemoryConfig.enabled

@@ -83,6 +83,35 @@ test("removes a link for a location", async () => {
   );
 });
 
+test("lists links for a guild", async () => {
+  await using temp = await createTempDir("klein-discord-channel-links-");
+  const store = new FileDiscordChannelLinkStore(join(temp.path, "links.json"));
+  await store.load();
+
+  await store.saveLink(channelLink);
+  await store.saveLink(threadLink);
+  await store.saveLink({
+    guildId: "999",
+    channelId: "888",
+    userId: "777",
+    linkedAt: "2026-01-03T00:00:00.000Z",
+  });
+
+  assert.deepEqual(
+    store.listLinks("100").map(({ guildId, channelId, threadId, userId }) => ({
+      guildId,
+      channelId,
+      threadId,
+      userId,
+    })),
+    [
+      { guildId: "100", channelId: "200", threadId: undefined, userId: "300" },
+      { guildId: "100", channelId: "200", threadId: "400", userId: "500" },
+    ],
+  );
+  assert.equal(store.listLinks("999").length, 1);
+});
+
 test("rejects invalid channel link files", async () => {
   await using temp = await createTempDir("klein-discord-channel-links-");
   const filePath = join(temp.path, "links.json");

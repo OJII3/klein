@@ -55,20 +55,6 @@ test("persists and removes pending requests", async () => {
   assert.deepEqual(afterRemoval.list(), [requestWithoutThread]);
 });
 
-test("persists a link request with its owner", async () => {
-  await using temp = await createTempDir("klein-discord-access-requests-");
-  const filePath = join(temp.path, "requests.json");
-  const store = new FileDiscordAccessRequestStore(filePath);
-  await store.load();
-
-  const linkRequest = { ...request, requestId: "request-3", linkUserId: "400" };
-  await store.save(linkRequest);
-
-  const reloaded = new FileDiscordAccessRequestStore(filePath);
-  await reloaded.load();
-  assert.deepEqual(reloaded.list(), [linkRequest]);
-});
-
 test("rejects invalid pending request files", async () => {
   await using temp = await createTempDir("klein-discord-access-requests-");
   const filePath = join(temp.path, "requests.json");

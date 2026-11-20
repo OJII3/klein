@@ -19,6 +19,7 @@ import type { DiscordMessage } from "../domain/discord-message";
 import type { DiscordReactionEvent } from "../domain/discord-reaction";
 import { DiscordOperatingState } from "../domain/discord-operating-state";
 import type { PendingDiscordAccessRequest } from "../ports/discord-access-request-store";
+import type { PendingDiscordChannelLinkRequest } from "../domain/discord-channel-link-request";
 import type {
   DiscordChatInputInteraction,
   DiscordModalSubmitInteraction,
@@ -65,6 +66,21 @@ class FakeDiscordClient extends EventEmitter implements DiscordServiceClient {
 
   login = async (): Promise<string> => "token";
   destroy = async (): Promise<void> => undefined;
+}
+
+function createLinkRequestStore() {
+  const requests = new Map<string, PendingDiscordChannelLinkRequest>();
+  return {
+    requests,
+    async load() {},
+    list: () => [...requests.values()],
+    async save(request: PendingDiscordChannelLinkRequest) {
+      requests.set(request.requestId, request);
+    },
+    async remove(requestId: string) {
+      requests.delete(requestId);
+    },
+  };
 }
 
 function createBotUser(
@@ -645,7 +661,28 @@ test("registers a channel through /link even when the channel is denied", async 
     async removeLink(target: { channelId: string; threadId?: string }) {
       links.delete(`${target.channelId}:${target.threadId ?? ""}`);
     },
+    listLinks: () => {
+      const result: Array<{
+        guildId: string;
+        channelId: string;
+        threadId?: string;
+        userId: string;
+        linkedAt: string;
+      }> = [];
+      for (const [key, value] of links) {
+        const [channelId = "", threadId = ""] = key.split(":");
+        result.push({
+          guildId: "guild-123",
+          channelId,
+          ...(threadId ? { threadId } : {}),
+          userId: value.userId,
+          linkedAt: "2026-01-01T00:00:00.000Z",
+        });
+      }
+      return result;
+    },
   };
+  const linkRequestStore = createLinkRequestStore();
   const service = new DiscordJsService(
     "token",
     createDiscordAccessPolicy({ default: "deny", directMessages: "allow" }),
@@ -656,7 +693,11 @@ test("registers a channel through /link even when the channel is denied", async 
     accessRuleStore,
     "owner-123",
     accessRequestStore,
-    { createClient: () => fakeClient, channelLinkStore },
+    {
+      createClient: () => fakeClient,
+      channelLinkStore,
+      channelLinkRequestStore: linkRequestStore,
+    },
   );
 
   let replyContent: string | undefined;
@@ -678,7 +719,7 @@ test("registers a channel through /link even when the channel is denied", async 
     assert.match(extractFirstTextContent(ownerMessages[0]) ?? "", /チャンネルの登録リクエスト/u);
     assert.equal(channelMessages.length, 1);
     assert.equal(accessUpdates.length, 0);
-    assert.equal(requests.size, 1);
+    assert.equal(linkRequestStore.requests.size, 1);
   } finally {
     await service.stop();
   }
@@ -724,6 +765,17 @@ test("removes a channel link through /unlink for the bot owner", async () => {
     async removeLink() {
       link = undefined;
     },
+    listLinks: () =>
+      link
+        ? [
+            {
+              guildId: "guild-123",
+              channelId: "channel-denied",
+              userId: link.userId,
+              linkedAt: link.linkedAt,
+            },
+          ]
+        : [],
   };
   const service = new DiscordJsService(
     "token",
@@ -735,7 +787,11 @@ test("removes a channel link through /unlink for the bot owner", async () => {
     accessRuleStore,
     "user-123",
     accessRequestStore,
-    { createClient: () => fakeClient, channelLinkStore },
+    {
+      createClient: () => fakeClient,
+      channelLinkStore,
+      channelLinkRequestStore: createLinkRequestStore(),
+    },
   );
 
   let replyContent: string | undefined;

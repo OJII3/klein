@@ -30,14 +30,17 @@ import type {
 } from "../ports/discord-gateway";
 import type { DiscordAccessRuleStore } from "../ports/discord-access-rule-store";
 import type { DiscordAccessRequestStore } from "../ports/discord-access-request-store";
+import type { DiscordApprovalRequestStore } from "../ports/discord-approval-request-store";
 import type { DiscordChannelLinkStore } from "../ports/discord-channel-link-store";
 import type { DiscordChannelRuleStore } from "../ports/discord-channel-rule-store";
+import type { PendingDiscordChannelLinkRequest } from "../domain/discord-channel-link-request";
 
 import {
   DiscordChannelAccessRequester,
   type DiscordChannelAccessButtonInteraction,
   type DiscordChannelAccessClient,
 } from "./discord-channel-access-request";
+import { DiscordChannelLinkRequester } from "./discord-channel-link-requester";
 import type { DiscordContainerMessage } from "./discord-component-message";
 import {
   DiscordChoiceRequester,
@@ -239,6 +242,7 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
   private readonly messageIngest: DiscordMessageIngest;
   private readonly reactionIngest: DiscordReactionIngest;
   private readonly channelAccessRequester?: DiscordChannelAccessRequester;
+  private readonly channelLinkRequester?: DiscordChannelLinkRequester;
   private readonly choiceRequester: DiscordChoiceRequester;
   private readonly pendingTasks = new Set<Promise<void>>();
   private onMessage?: DiscordMessageHandler;
@@ -263,6 +267,10 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
       readonly enableReactions?: boolean;
       readonly createClient?: (clientOptions: ClientOptions) => DiscordServiceClient;
       readonly channelLinkStore?: DiscordChannelLinkStore;
+      readonly channelLinkRequestStore?: Pick<
+        DiscordApprovalRequestStore<PendingDiscordChannelLinkRequest>,
+        "list" | "save" | "remove"
+      >;
     },
   ) {
     this.logger = logger?.child({ component: "discord-service" });
@@ -301,9 +309,19 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
             accessRuleStore,
             accessRequestStore,
             ownerUserId,
-            options?.channelLinkStore,
             this.logger,
           )
+        : undefined;
+    this.channelLinkRequester =
+      accessRuleStore && options?.channelLinkStore && options.channelLinkRequestStore
+        ? new DiscordChannelLinkRequester({
+            client: this.client,
+            accessRuleStore,
+            linkStore: options.channelLinkStore,
+            requestStore: options.channelLinkRequestStore,
+            ownerUserId,
+            logger: this.logger,
+          })
         : undefined;
     this.interactionHandler = new DiscordJsInteractionHandler(
       accessPolicy,
@@ -311,7 +329,7 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
       this.voiceChatController,
       channelRuleStore,
       accessRuleStore,
-      this.channelAccessRequester,
+      this.channelLinkRequester,
     );
     this.messageIngest = new DiscordMessageIngest({
       accessPolicy,
@@ -640,6 +658,13 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
       this.channelAccessRequester &&
       isButtonInteraction(interaction) &&
       (await this.channelAccessRequester.handleButton(interaction))
+    ) {
+      return;
+    }
+    if (
+      this.channelLinkRequester &&
+      isButtonInteraction(interaction) &&
+      (await this.channelLinkRequester.handleButton(interaction))
     ) {
       return;
     }

@@ -29,7 +29,7 @@ import {
   truncateTextLines,
 } from "./discord-component-message";
 import type { DiscordChannelLink, DiscordChannelLinkTarget } from "../domain/discord-channel-link";
-import type { DiscordChannelLinkCommandInteraction } from "./discord-channel-access-request";
+import type { DiscordChannelLinkCommandInteraction } from "./discord-channel-link-requester";
 import {
   DiscordVoiceChatController,
   VOICE_COMMAND,
@@ -145,6 +145,7 @@ export interface DiscordChannelLinkCommand {
   requestFromInteraction(interaction: DiscordChannelLinkCommandInteraction): Promise<void>;
   unlinkFromInteraction(interaction: DiscordChannelLinkCommandInteraction): Promise<void>;
   getLink(target: DiscordChannelLinkTarget): DiscordChannelLink | undefined;
+  listLinks(guildId: string): readonly DiscordChannelLink[];
 }
 
 export type DiscordHandlerInteraction =
@@ -331,6 +332,7 @@ export class DiscordJsInteractionHandler {
         resolveAccess: (target) => this.accessPolicy.resolveAccess(target),
         resolveChannelName: (id) => fetchChannelName(interaction.client, id),
         resolveChannelOwner: (target) => this.channelLink?.getLink({ guildId, ...target })?.userId,
+        listChannelLinks: (id) => this.channelLink?.listLinks(id) ?? [],
       },
     );
 

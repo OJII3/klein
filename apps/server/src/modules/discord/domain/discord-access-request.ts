@@ -1,4 +1,11 @@
-import { discordChannelLinkLocationKey } from "./discord-channel-link";
+import {
+  createDiscordApprovalButtonId,
+  discordApprovalLocationKey,
+  parseDiscordApprovalButtonId,
+  type DiscordApprovalAction,
+  type DiscordApprovalNoticeOutcome,
+  type DiscordApprovalRejection,
+} from "./discord-approval-request";
 
 export interface DiscordChannelAccessRequest {
   readonly guildId: string;
@@ -7,8 +14,6 @@ export interface DiscordChannelAccessRequest {
   readonly pendingChannelId: string;
   readonly channelName?: string;
   readonly requesterUserId: string;
-  /** When set, approval also registers this user as the location's owner. */
-  readonly linkUserId?: string;
 }
 
 export interface PendingDiscordAccessRequest extends DiscordChannelAccessRequest {
@@ -16,33 +21,31 @@ export interface PendingDiscordAccessRequest extends DiscordChannelAccessRequest
   readonly pendingMessageId?: string;
 }
 
-export type DiscordChannelAccessAction = "allow" | "deny";
+export type DiscordChannelAccessAction = DiscordApprovalAction;
 
-export type DiscordChannelAccessRejection =
-  "owner-only" | "expired" | "rule-update-failed" | "link-update-failed" | "link-conflict";
+export type DiscordChannelAccessRejection = DiscordApprovalRejection;
 
-export type DiscordChannelAccessNoticeOutcome = "allowed" | "denied" | "owner-unreachable";
+export type DiscordChannelAccessNoticeOutcome = DiscordApprovalNoticeOutcome;
 
 const REQUEST_BUTTON_PREFIX = "channel-access";
+
+export const DISCORD_CHANNEL_ACCESS_BUTTON_PREFIX = REQUEST_BUTTON_PREFIX;
 
 export function createDiscordChannelAccessButtonId(
   action: DiscordChannelAccessAction,
   requestId: string,
 ): string {
-  return `${REQUEST_BUTTON_PREFIX}:${action}:${requestId}`;
+  return createDiscordApprovalButtonId(REQUEST_BUTTON_PREFIX, action, requestId);
 }
 
 export function parseDiscordChannelAccessButtonId(
   customId: string,
 ): { action: DiscordChannelAccessAction; requestId: string } | undefined {
-  const [prefix, action, requestId] = customId.split(":");
-  if (prefix !== REQUEST_BUTTON_PREFIX || !requestId) return undefined;
-  if (action !== "allow" && action !== "deny") return undefined;
-  return { action, requestId };
+  return parseDiscordApprovalButtonId(REQUEST_BUTTON_PREFIX, customId);
 }
 
 export function discordChannelAccessRequestLocationKey(
   request: DiscordChannelAccessRequest,
 ): string {
-  return discordChannelLinkLocationKey(request);
+  return discordApprovalLocationKey(request);
 }
