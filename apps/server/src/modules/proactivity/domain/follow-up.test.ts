@@ -39,6 +39,12 @@ test("parses a stored follow-up with all optional fields", () => {
   assert.deepEqual(parseFollowUp(followUp), followUp);
 });
 
+test("reads the legacy task watcher as a worker", () => {
+  const legacy = { ...followUp, watcher: { kind: "task", id: "worker-1" } };
+
+  assert.deepEqual(parseFollowUp(legacy).watcher, { kind: "worker", id: "worker-1" });
+});
+
 test("rejects malformed follow-up records", () => {
   assert.throws(() => parseFollowUp(null), /保存形式/u);
   assert.throws(() => parseFollowUp({ ...followUp, version: 2 }), /保存形式/u);

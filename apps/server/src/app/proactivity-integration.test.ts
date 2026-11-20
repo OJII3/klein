@@ -6,7 +6,7 @@ import pino from "pino";
 import type { AgentFactory } from "@agents/core/agent-factory";
 import type { AgentRuntime } from "@agents/core/agent-runtime";
 import type { AgentTurn } from "@agents/core/agent-turn";
-import type { AttachedTaskControl } from "@agents/core/attached-agent";
+import type { WorkerControl } from "@agents/core/worker-agent";
 import { DiscordAgent } from "@agents/discord/discord-agent";
 import { InMemoryScheduledTaskStore } from "@agents/testing/test-stubs";
 import { DiscordOperatingState } from "@modules/discord/domain/discord-operating-state";
@@ -45,8 +45,8 @@ const followUp: FollowUp = {
   channelId: "channel-a",
   accessScope: "owner:123",
   subject: "作業の結果を知らせる",
-  watcher: { kind: "task", id: "task-1" },
-  cadenceLabel: "タスクの完了時",
+  watcher: { kind: "worker", id: "worker-1" },
+  cadenceLabel: "ワーカーの完了時",
   status: "active",
   createdAt: "2026-11-20T00:00:00.000Z",
   updatedAt: "2026-11-20T00:00:00.000Z",
@@ -68,7 +68,7 @@ async function withIntegration(
     followUpStore,
     signalStore,
     scheduledTaskStore: new InMemoryScheduledTaskStore(),
-    attachedTasks: {
+    workers: {
       list() {
         return [];
       },
@@ -106,9 +106,9 @@ async function withIntegration(
       return { channelId };
     },
   };
-  const attachedTasks: AttachedTaskControl = {
+  const workers: WorkerControl = {
     async start() {
-      return "attached-1";
+      return "worker-1";
     },
     async send() {
       return false;
@@ -121,7 +121,7 @@ async function withIntegration(
     },
   };
   const agentCoordinator = new AgentCoordinator({
-    attachedTasks,
+    workers,
     createDiscordAgent: (channelId, sessionKey, handoffContext, ownerFeaturesAllowed) =>
       DiscordAgent.create(agentFactory, channelId, "system prompt", {
         sessionKey,
@@ -163,14 +163,14 @@ test("delivers a collected digest through the conversation coordinator", async (
   });
 });
 
-test("completes a task follow-up when its result reaches the conversation", async () => {
+test("completes a worker follow-up when its result reaches the conversation", async () => {
   await withIntegration(async ({ agentCoordinator, turns, followUpStore }) => {
     await followUpStore.create(followUp);
 
-    await agentCoordinator.deliverAttachedTaskResult(
+    await agentCoordinator.deliverWorkerResult(
       { kind: "discord", channelId: "channel-a" },
       "owner:123",
-      { taskId: "task-1", status: "completed", text: "終わりました" },
+      { workerId: "worker-1", status: "completed", text: "終わりました" },
     );
 
     assert.equal(turns[0]?.event.type, "worker.result");

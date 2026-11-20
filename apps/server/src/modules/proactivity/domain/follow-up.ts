@@ -3,7 +3,7 @@ import { isRecord } from "@shared/type-guards";
 
 export type FollowUpStatus = "active" | "notified" | "done" | "orphaned" | "expired" | "dismissed";
 
-export type FollowUpWatcher = { kind: "watch" | "reminder" | "task"; id: string };
+export type FollowUpWatcher = { kind: "watch" | "reminder" | "worker"; id: string };
 
 export interface FollowUp {
   readonly version: 1;
@@ -30,7 +30,7 @@ const FOLLOW_UP_STATUSES: readonly FollowUpStatus[] = [
   "dismissed",
 ];
 
-const WATCHER_KINDS: readonly FollowUpWatcher["kind"][] = ["watch", "reminder", "task"];
+const WATCHER_KINDS: readonly FollowUpWatcher["kind"][] = ["watch", "reminder", "worker"];
 
 const STATUS_LABELS: Readonly<Record<FollowUpStatus, string>> = {
   active: "追跡中",
@@ -51,7 +51,8 @@ export function parseFollowUp(value: unknown): FollowUp {
   if (!isRecord(watcher)) {
     throw new Error("約束の保存内容が不正です。");
   }
-  const watcherKind = watcher.kind;
+  // Follow-ups written before the rename stored workers as "task".
+  const watcherKind = watcher.kind === "task" ? "worker" : watcher.kind;
   const watcherId = watcher.id;
   if (
     typeof id !== "string" ||

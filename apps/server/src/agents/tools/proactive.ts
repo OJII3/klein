@@ -114,13 +114,13 @@ export function createProactiveTools(
       name: "follow_up_create",
       label: "Create Follow-up",
       description:
-        "Promise to report back about something later. The watcher must already exist in this conversation: a watch, a reminder, or an attached task.",
+        "Promise to report back about something later. The watcher must already exist in this conversation: a watch, a reminder, or a worker.",
       parameters: Type.Object({
         subject: Type.String({ minLength: 1, maxLength: 200 }),
         watcher_kind: Type.Union([
           Type.Literal("watch"),
           Type.Literal("reminder"),
-          Type.Literal("task"),
+          Type.Literal("worker"),
         ]),
         watcher_id: Type.String({ minLength: 1, maxLength: 200 }),
       }),

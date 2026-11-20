@@ -7,14 +7,14 @@ import type { AgentTool } from "./agent-tool";
  * long its session lives, and where a completed turn's assistant text goes.
  *
  * - conversation: belongs to one conversation and owns its surface.
- * - attached: belongs to one conversation but returns results to the conversation agent.
+ * - worker: belongs to one conversation but returns results to the conversation agent.
  * - standalone: belongs to no conversation; the caller owns its result.
  */
 export type ConversationAgentRole = { readonly kind: "conversation" };
-export type AttachedAgentRole = { readonly kind: "attached"; readonly taskId: string };
+export type WorkerAgentRole = { readonly kind: "worker"; readonly workerId: string };
 export type StandaloneAgentRole = { readonly kind: "standalone" };
 
-export type AgentRole = ConversationAgentRole | AttachedAgentRole | StandaloneAgentRole;
+export type AgentRole = ConversationAgentRole | WorkerAgentRole | StandaloneAgentRole;
 
 export interface AgentPolicy {
   readonly surface: "owner" | "none";
@@ -26,7 +26,7 @@ export function resolveAgentPolicy(role: AgentRole): AgentPolicy {
   switch (role.kind) {
     case "conversation":
       return { surface: "owner", lifetime: "conversation", assistantText: "none" };
-    case "attached":
+    case "worker":
       return { surface: "none", lifetime: "task", assistantText: "caller" };
     case "standalone":
       return { surface: "none", lifetime: "call", assistantText: "caller" };

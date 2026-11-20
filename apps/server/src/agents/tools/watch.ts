@@ -57,12 +57,12 @@ export function createWatchTools(
   channelId: string,
   accessScope: ScheduledTaskAccessScope,
   watchCheckRunner: WatchCheckRunner,
-  ownerTaskId?: string,
+  ownerWorkerId?: string,
 ) {
   // The conversation manages every watch in its channel; a worker sees only the
   // watches it registered, so two workers do not edit each other's watches.
   const canManage = (watch: WatchTask) =>
-    ownerTaskId === undefined || watch.ownerTaskId === ownerTaskId;
+    ownerWorkerId === undefined || watch.ownerWorkerId === ownerWorkerId;
   return [
     defineTool({
       name: "watch_add",
@@ -100,7 +100,7 @@ export function createWatchTools(
           args: params.args ?? [],
           message: params.message.trim(),
           ...(params.priority !== undefined ? { priority: params.priority } : {}),
-          ...(ownerTaskId ? { ownerTaskId } : {}),
+          ...(ownerWorkerId ? { ownerWorkerId } : {}),
           enabled: true,
           consecutiveFailures: 0,
           schedule: resolved.schedule,
@@ -315,7 +315,7 @@ interface WatchListItem {
   readonly priority: "normal" | "urgent";
   readonly enabled: boolean;
   readonly consecutiveFailures: number;
-  ownerTaskId?: string;
+  ownerWorkerId?: string;
   lastCheckedAt?: string;
   lastTriggeredAt?: string;
   lastStatus?: WatchTask["lastStatus"];
@@ -335,7 +335,7 @@ function serializeWatchListItem(watch: WatchTask): WatchListItem {
     enabled: watch.enabled,
     consecutiveFailures: watch.consecutiveFailures,
   };
-  if (watch.ownerTaskId) item.ownerTaskId = watch.ownerTaskId;
+  if (watch.ownerWorkerId) item.ownerWorkerId = watch.ownerWorkerId;
   if (watch.lastCheckedAt) item.lastCheckedAt = watch.lastCheckedAt;
   if (watch.lastTriggeredAt) item.lastTriggeredAt = watch.lastTriggeredAt;
   if (watch.lastStatus) item.lastStatus = watch.lastStatus;
@@ -346,7 +346,7 @@ function serializeWatchListItem(watch: WatchTask): WatchListItem {
 function formatWatch(watch: WatchTask): string {
   const status = watch.lastStatus ? ` / 前回: ${watch.lastStatus}` : "";
   const error = watch.lastError ? ` / エラー: ${watch.lastError}` : "";
-  const owner = watch.ownerTaskId ? ` / ワーカー: ${watch.ownerTaskId}` : "";
+  const owner = watch.ownerWorkerId ? ` / ワーカー: ${watch.ownerWorkerId}` : "";
   const lastTriggeredAt = watch.lastTriggeredAt
     ? ` / 最終通知: ${formatJapanDateTime(watch.lastTriggeredAt)}`
     : "";
@@ -362,7 +362,7 @@ function formatWatchDetails(watch: WatchTask): string {
     `${watch.id}: ${watch.name}`,
     `スケジュール: ${formatSchedule(watch.schedule)}`,
     nextRun,
-    ...(watch.ownerTaskId ? [`登録元ワーカー: ${watch.ownerTaskId}`] : []),
+    ...(watch.ownerWorkerId ? [`登録元ワーカー: ${watch.ownerWorkerId}`] : []),
     `引数: ${args}`,
     `通知内容: ${watch.message}`,
     `保存値: ${state}`,

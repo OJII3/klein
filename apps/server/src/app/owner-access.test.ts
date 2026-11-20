@@ -77,9 +77,9 @@ function createHarness(store: ChannelSessionStateStore, channelRule: { access: D
           guildId === "guild" ? { channels: { channel: channelRule } } : undefined,
       },
     ),
-    attachedTasks: {
+    workers: {
       async start() {
-        return "attached-test";
+        return "worker-test";
       },
       async send() {
         return false;

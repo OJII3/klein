@@ -317,11 +317,11 @@ const baseWatch: WatchTask = {
 test("scopes worker watches to the worker that registered them", async () => {
   const store = new InMemoryScheduledTaskStore([
     baseWatch,
-    { ...baseWatch, id: "watch-worker-1", ownerTaskId: "attached-1" },
-    { ...baseWatch, id: "watch-worker-2", ownerTaskId: "attached-2" },
+    { ...baseWatch, id: "watch-worker-1", ownerWorkerId: "worker-1" },
+    { ...baseWatch, id: "watch-worker-2", ownerWorkerId: "worker-2" },
   ]);
   const { runner } = createRunner();
-  const workerTools = createWatchTools(store, "channel-a", "public", runner, "attached-1");
+  const workerTools = createWatchTools(store, "channel-a", "public", runner, "worker-1");
   const conversationTools = createWatchTools(store, "channel-a", "public", runner);
   const ctx = await createStubExtensionToolContext();
 
@@ -366,8 +366,8 @@ test("scopes worker watches to the worker that registered them", async () => {
   await addWatch(workerTools);
   assert.equal(
     [...store.tasks.values()].findLast((task): task is WatchTask => task.kind === "watch")
-      ?.ownerTaskId,
-    "attached-1",
+      ?.ownerWorkerId,
+    "worker-1",
   );
 
   const conversationGetResult = await conversation.getTool.execute(

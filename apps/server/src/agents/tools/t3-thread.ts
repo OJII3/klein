@@ -49,7 +49,7 @@ export interface T3ThreadSendInput {
 }
 
 /**
- * T3 Code の `t3 thread` サブコマンドを包む。付随タスクはこの境界だけを通して
+ * T3 Code の `t3 thread` サブコマンドを包む。ワーカーはこの境界だけを通して
  * T3 Code のスレッドを操作し、CLI の引数や出力形式をツール側へ漏らさない。
  */
 export interface T3ThreadRunner {

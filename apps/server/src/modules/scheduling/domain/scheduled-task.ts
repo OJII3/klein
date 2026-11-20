@@ -33,10 +33,10 @@ export interface WatchTask extends ScheduledTaskBase {
    */
   readonly priority?: WatchPriority;
   /**
-   * The attached task that registered the watch. Its wake goes to that worker
+   * The worker that registered the watch. Its wake goes to that worker
    * session instead of the conversation session.
    */
-  readonly ownerTaskId?: string;
+  readonly ownerWorkerId?: string;
   readonly enabled: boolean;
   /** Values the script kept with `store()`. */
   readonly state?: Readonly<Record<string, unknown>>;
@@ -102,7 +102,8 @@ export function parseScheduledTask(value: unknown): ScheduledTask {
       args,
       message,
       priority,
-      ownerTaskId,
+      ownerWorkerId: storedOwnerWorkerId,
+      ownerTaskId: legacyOwnerWorkerId,
       enabled,
       state,
       lastCheckedAt,
@@ -111,6 +112,7 @@ export function parseScheduledTask(value: unknown): ScheduledTask {
       lastError,
       consecutiveFailures,
     } = value;
+    const ownerWorkerId = storedOwnerWorkerId ?? legacyOwnerWorkerId;
     if (
       typeof name !== "string" ||
       name.length === 0 ||
@@ -120,8 +122,8 @@ export function parseScheduledTask(value: unknown): ScheduledTask {
       typeof message !== "string" ||
       message.length === 0 ||
       (priority !== undefined && priority !== "normal" && priority !== "urgent") ||
-      (ownerTaskId !== undefined &&
-        (typeof ownerTaskId !== "string" || ownerTaskId.length === 0)) ||
+      (ownerWorkerId !== undefined &&
+        (typeof ownerWorkerId !== "string" || ownerWorkerId.length === 0)) ||
       (enabled !== undefined && typeof enabled !== "boolean") ||
       (state !== undefined && !isRecord(state)) ||
       !isRecurringSchedule(schedule) ||
@@ -150,7 +152,7 @@ export function parseScheduledTask(value: unknown): ScheduledTask {
       args,
       message,
       priority: priority ?? "normal",
-      ...(ownerTaskId !== undefined ? { ownerTaskId } : {}),
+      ...(ownerWorkerId !== undefined ? { ownerWorkerId } : {}),
       enabled: enabled !== false,
       ...(state !== undefined ? { state } : {}),
       ...(lastCheckedAt !== undefined ? { lastCheckedAt } : {}),

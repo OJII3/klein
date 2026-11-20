@@ -1,15 +1,15 @@
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
-import type { AttachedTaskControl, AttachedTaskScope } from "@agents/core/attached-agent";
+import type { WorkerControl, WorkerScope } from "@agents/core/worker-agent";
 import type { AccessScope } from "@shared/access";
-export function createAttachedControlTools(
-  target: AttachedTaskControl,
+export function createWorkerControlTools(
+  target: WorkerControl,
   channelId: string,
   accessScope: AccessScope,
   ownerFeaturesAllowed: boolean,
 ) {
-  const scope: AttachedTaskScope = {
+  const scope: WorkerScope = {
     conversationKey: { kind: "discord", channelId },
     accessScope,
   };
@@ -28,7 +28,7 @@ export function createAttachedControlTools(
       }),
       exposure: "deferred",
       async execute(_toolCallId, params) {
-        const taskId = await target.start({
+        const workerId = await target.start({
           ...scope,
           ownerFeaturesAllowed,
           prompt: params.prompt,
@@ -37,10 +37,10 @@ export function createAttachedControlTools(
           content: [
             {
               type: "text",
-              text: `Started worker ${taskId}. Its result will arrive as an event.`,
+              text: `Started worker ${workerId}. Its result will arrive as an event.`,
             },
           ],
-          details: { taskId },
+          details: { workerId },
         };
       },
     }),
@@ -50,22 +50,22 @@ export function createAttachedControlTools(
       description:
         "Send a follow-up instruction to an existing worker. It resumes the worker's session and returns another result event; prefer reusing an existing worker for related follow-up work.",
       parameters: Type.Object({
-        taskId: Type.String({ minLength: 1 }),
+        workerId: Type.String({ minLength: 1 }),
         message: Type.String({ minLength: 1, maxLength: 4_000 }),
       }),
       exposure: "deferred",
       async execute(_toolCallId, params) {
-        const sent = await target.send(scope, params.taskId, params.message);
+        const sent = await target.send(scope, params.workerId, params.message);
         return {
           content: [
             {
               type: "text",
               text: sent
-                ? `Sent the follow-up to ${params.taskId}. Its next result will arrive as an event.`
-                : `No worker ${params.taskId} is available.`,
+                ? `Sent the follow-up to ${params.workerId}. Its next result will arrive as an event.`
+                : `No worker ${params.workerId} is available.`,
             },
           ],
-          details: { taskId: params.taskId, sent },
+          details: { workerId: params.workerId, sent },
         };
       },
     }),
@@ -73,20 +73,20 @@ export function createAttachedControlTools(
       name: "worker_close",
       label: "Close Worker",
       description: "Close a worker and discard its session.",
-      parameters: Type.Object({ taskId: Type.String({ minLength: 1 }) }),
+      parameters: Type.Object({ workerId: Type.String({ minLength: 1 }) }),
       exposure: "deferred",
       async execute(_toolCallId, params) {
-        const closed = await target.close(scope, params.taskId);
+        const closed = await target.close(scope, params.workerId);
         return {
           content: [
             {
               type: "text",
               text: closed
-                ? `Closed worker ${params.taskId}.`
-                : `No worker ${params.taskId} is available.`,
+                ? `Closed worker ${params.workerId}.`
+                : `No worker ${params.workerId} is available.`,
             },
           ],
-          details: { taskId: params.taskId, closed },
+          details: { workerId: params.workerId, closed },
         };
       },
     }),
@@ -97,18 +97,20 @@ export function createAttachedControlTools(
       parameters: Type.Object({}),
       exposure: "deferred",
       async execute() {
-        const tasks = target.list(scope);
+        const workers = target.list(scope);
         return {
           content: [
             {
               type: "text",
               text:
-                tasks.length === 0
+                workers.length === 0
                   ? "No workers in this conversation."
-                  : tasks.map((task) => `- ${task.id} [${task.status}] ${task.prompt}`).join("\n"),
+                  : workers
+                      .map((worker) => `- ${worker.id} [${worker.status}] ${worker.prompt}`)
+                      .join("\n"),
             },
           ],
-          details: { tasks },
+          details: { workers },
         };
       },
     }),

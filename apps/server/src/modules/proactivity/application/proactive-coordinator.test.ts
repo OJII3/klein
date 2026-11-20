@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 import { test } from "bun:test";
 
-import type { AttachedTaskControl, AttachedTaskInfo } from "@agents/core/attached-agent";
+import type { WorkerControl, WorkerInfo } from "@agents/core/worker-agent";
 import { InMemoryScheduledTaskStore } from "@agents/testing/test-stubs";
 import type {
   ReminderTask,
@@ -55,10 +55,7 @@ const reminderTask: ReminderTask = {
   message: "定例会",
 };
 
-function attachedTask(
-  id: string,
-  status: AttachedTaskInfo["status"] = "running",
-): AttachedTaskInfo {
+function workerInfo(id: string, status: WorkerInfo["status"] = "running"): WorkerInfo {
   return {
     id,
     prompt: "作業",
@@ -108,11 +105,11 @@ async function withCoordinator(
     readonly followUpStore: FileFollowUpStore;
     readonly signalStore: FileProactiveSignalStore;
     readonly scheduledTaskStore: InMemoryScheduledTaskStore;
-    readonly attachedTasks: Pick<AttachedTaskControl, "list">;
+    readonly workers: Pick<WorkerControl, "list">;
   }) => Promise<void>,
   options: {
     readonly tasks?: readonly ScheduledTask[];
-    readonly attached?: readonly AttachedTaskInfo[];
+    readonly workerInfos?: readonly WorkerInfo[];
     readonly now?: number;
     readonly defaults?: ProactivePolicyDefaults;
   } = {},
@@ -122,15 +119,15 @@ async function withCoordinator(
   const followUpStore = new FileFollowUpStore(join(temp.path, "follow-ups"));
   const signalStore = new FileProactiveSignalStore(join(temp.path, "signals"));
   const scheduledTaskStore = new InMemoryScheduledTaskStore(options.tasks ?? []);
-  const attachedTasks: Pick<AttachedTaskControl, "list"> = {
-    list: () => options.attached ?? [],
+  const workers: Pick<WorkerControl, "list"> = {
+    list: () => options.workerInfos ?? [],
   };
   const coordinator = new ProactiveCoordinator({
     preferenceStore,
     followUpStore,
     signalStore,
     scheduledTaskStore,
-    attachedTasks,
+    workers,
     defaults: options.defaults ?? DEFAULT_POLICY_DEFAULTS,
     now: () => options.now ?? NOW,
   });
@@ -141,7 +138,7 @@ async function withCoordinator(
     followUpStore,
     signalStore,
     scheduledTaskStore,
-    attachedTasks,
+    workers,
   });
 }
 
@@ -191,16 +188,16 @@ test("expires overdue follow-ups and drops terminal statuses", async () => {
   );
 });
 
-test("marks follow-ups orphaned when their watch or task disappears", async () => {
+test("marks follow-ups orphaned when their watch or worker disappears", async () => {
   await withCoordinator(
     async ({ coordinator, followUpStore }) => {
       await followUpStore.create(followUp({ id: "missing-watch", subject: "消えた監視" }));
       await followUpStore.create(
         followUp({
           id: "failed-task",
-          subject: "失敗したタスク",
-          watcher: { kind: "task", id: "task-1" },
-          cadenceLabel: "タスクの完了時",
+          subject: "失敗したワーカー",
+          watcher: { kind: "worker", id: "worker-1" },
+          cadenceLabel: "ワーカーの完了時",
         }),
       );
 
@@ -213,10 +210,10 @@ test("marks follow-ups orphaned when their watch or task disappears", async () =
       assert.equal((await followUpStore.get("failed-task"))?.status, "orphaned");
       assert.equal(context.waitingOn?.split("\n").length, 2);
       assert.match(context.waitingOn ?? "", /消えた監視/u);
-      assert.match(context.waitingOn ?? "", /失敗したタスク/u);
+      assert.match(context.waitingOn ?? "", /失敗したワーカー/u);
       assert.match(context.waitingOn ?? "", /監視なし/u);
     },
-    { attached: [attachedTask("task-1", "failed")] },
+    { workerInfos: [workerInfo("worker-1", "failed")] },
   );
 });
 
@@ -301,15 +298,15 @@ test("creates follow-ups with the schedule label and avoids duplicate registrati
       assert.equal(duplicate.id, created.id);
       assert.deepEqual(await followUpStore.listForScope("channel-a", "owner:123"), [created]);
 
-      const taskFollowUp = await coordinator.createFollowUp({
+      const workerFollowUp = await coordinator.createFollowUp({
         channelId: "channel-a",
         accessScope: "owner:123",
         subject: "作業の結果を知らせる",
-        watcher: { kind: "task", id: "task-1" },
+        watcher: { kind: "worker", id: "worker-1" },
       });
-      assert.equal(taskFollowUp.cadenceLabel, "タスクの完了時");
+      assert.equal(workerFollowUp.cadenceLabel, "ワーカーの完了時");
     },
-    { tasks: [reminderTask], attached: [attachedTask("task-1")] },
+    { tasks: [reminderTask], workerInfos: [workerInfo("worker-1")] },
   );
 });
 

@@ -2,46 +2,46 @@ import type { AccessScope } from "@shared/access";
 import type { ConversationKey } from "@shared/conversation-key";
 
 /**
- * `interrupted` marks a task whose prompt was still running when the process
- * stopped. The task is restored, but its prompt is not re-run automatically.
+ * `interrupted` marks a worker whose prompt was still running when the process
+ * stopped. The worker is restored, but its prompt is not re-run automatically.
  */
-export type AttachedTaskStatus = "running" | "idle" | "failed" | "interrupted";
+export type WorkerStatus = "running" | "idle" | "failed" | "interrupted";
 
-export interface AttachedTaskInfo {
+export interface WorkerInfo {
   readonly id: string;
   readonly prompt: string;
-  readonly status: AttachedTaskStatus;
+  readonly status: WorkerStatus;
   readonly createdAt: string;
   readonly updatedAt: string;
 }
 
-export interface AttachedTaskResult {
-  readonly taskId: string;
+export interface WorkerResult {
+  readonly workerId: string;
   readonly status: "completed" | "failed";
   /** The worker's assistant text, or a placeholder when it produced none. */
   readonly text: string;
   readonly error?: string;
 }
 
-export interface AttachedTaskScope {
+export interface WorkerScope {
   readonly conversationKey: ConversationKey;
   readonly accessScope: AccessScope;
 }
 
-export interface AttachedTaskStartInput extends AttachedTaskScope {
+export interface WorkerStartInput extends WorkerScope {
   readonly ownerFeaturesAllowed: boolean;
   readonly prompt: string;
   /**
-   * Closes the task after its result is delivered. Use this for a task that
+   * Closes the worker after its result is delivered. Use this for a worker that
    * exists only to produce one result, such as a reminder.
    */
   readonly closeAfterResult?: boolean;
 }
-export interface AttachedTaskControl {
-  start(input: AttachedTaskStartInput): Promise<string>;
-  send(scope: AttachedTaskScope, taskId: string, message: string): Promise<boolean>;
-  close(scope: AttachedTaskScope, taskId: string): Promise<boolean>;
-  list(scope: AttachedTaskScope): readonly AttachedTaskInfo[];
+export interface WorkerControl {
+  start(input: WorkerStartInput): Promise<string>;
+  send(scope: WorkerScope, workerId: string, message: string): Promise<boolean>;
+  close(scope: WorkerScope, workerId: string): Promise<boolean>;
+  list(scope: WorkerScope): readonly WorkerInfo[];
 }
 
 export interface WorkerDelegationPromptOptions {
@@ -52,7 +52,7 @@ export interface WorkerDelegationPromptOptions {
 
 /**
  * Renders system prompt guidance telling a conversation agent when to delegate
- * work to attached workers (`worker_start`) and which capabilities belong only
+ * work to workers (`worker_start`) and which capabilities belong only
  * to workers in the current session.
  */
 export function renderWorkerDelegationSection(options: WorkerDelegationPromptOptions): string {

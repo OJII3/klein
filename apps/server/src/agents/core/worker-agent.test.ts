@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { renderWorkerDelegationSection } from "./attached-agent";
+import { renderWorkerDelegationSection } from "./worker-agent";
 
 test("renders owner-only browser and T3 capabilities when enabled", () => {
   const section = renderWorkerDelegationSection({
