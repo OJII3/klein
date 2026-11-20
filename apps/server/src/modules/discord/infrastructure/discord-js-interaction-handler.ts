@@ -118,7 +118,9 @@ export interface DiscordChatInputInteraction extends VoiceChatCommandInteraction
   isChatInputCommand(): boolean;
   isModalSubmit(): boolean;
   reply(options: InteractionReplyOptions): Promise<unknown>;
+  editReply(options: string | InteractionReplyOptions): Promise<unknown>;
   showModal(modal: ModalBuilder): Promise<unknown>;
+  deleteReply(): Promise<void>;
 }
 
 export interface DiscordModalSubmitInteraction {

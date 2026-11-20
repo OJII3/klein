@@ -1,8 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { MessageFlags } from "discord.js";
-
 import { isRecord } from "@shared/type-guards";
 
 import type { DiscordAccess } from "../domain/discord-access-policy";
@@ -14,7 +12,10 @@ import {
   DiscordChannelLinkRequester,
   type DiscordChannelLinkCommandInteraction,
 } from "./discord-channel-link-requester";
-import type { DiscordEphemeralContainerMessage } from "./discord-component-message";
+import type {
+  DiscordContainerMessage,
+  DiscordEphemeralContainerMessage,
+} from "./discord-component-message";
 
 interface ContainerJson {
   readonly components: ReadonlyArray<{
@@ -150,10 +151,16 @@ function createLinkInteraction(
 ): {
   interaction: DiscordChannelLinkCommandInteraction;
   replies: DiscordEphemeralContainerMessage[];
+  editedReplies: DiscordContainerMessage[];
+  state: { deferred?: { ephemeral: boolean }; deleted: boolean };
 } {
   const replies: DiscordEphemeralContainerMessage[] = [];
+  const editedReplies: DiscordContainerMessage[] = [];
+  const state: { deferred?: { ephemeral: boolean }; deleted: boolean } = { deleted: false };
   return {
     replies,
+    editedReplies,
+    state,
     interaction: {
       guildId: "guild-123",
       channelId: options.channelId ?? "thread-123",
@@ -169,20 +176,29 @@ function createLinkInteraction(
       reply: async (payload) => {
         replies.push(payload);
       },
+      deferReply: async (deferOptions) => {
+        state.deferred = deferOptions;
+      },
+      editReply: async (payload) => {
+        editedReplies.push(payload);
+      },
+      deleteReply: async () => {
+        state.deleted = true;
+      },
     },
   };
 }
 
-test("requests a channel link with an ephemeral confirmation and an owner prompt", async () => {
+test("requests a channel link without repeating the pending notice", async () => {
   const harness = createHarness();
-  const { interaction, replies } = createLinkInteraction();
+  const { interaction, replies, editedReplies, state } = createLinkInteraction();
 
   await harness.requester.requestFromInteraction(interaction);
 
-  const [reply] = replies;
-  assert.ok(reply);
-  assert.equal(reply.flags, MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral);
-  assert.match(toJson(reply)[0]?.components[0]?.content ?? "", /オーナーに確認しています/u);
+  assert.deepEqual(state.deferred, { ephemeral: true });
+  assert.equal(state.deleted, true);
+  assert.equal(replies.length, 0);
+  assert.equal(editedReplies.length, 0);
 
   const [ownerMessage] = harness.ownerMessages;
   assert.ok(ownerMessage);
@@ -210,11 +226,11 @@ test("does not ask the owner when another user already owns the channel", async 
       linkedAt: "2026-01-01T00:00:00.000Z",
     },
   });
-  const { interaction, replies } = createLinkInteraction();
+  const { interaction, editedReplies } = createLinkInteraction();
 
   await harness.requester.requestFromInteraction(interaction);
 
-  const [reply] = replies;
+  const [reply] = editedReplies;
   assert.ok(reply);
   assert.match(
     toJson(reply)[0]?.components[0]?.content ?? "",

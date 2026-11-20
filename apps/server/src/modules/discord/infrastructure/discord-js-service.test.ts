@@ -181,6 +181,8 @@ function createChatInputInteraction(overrides: {
   ) => Promise<{ id: string; name?: string | null; isThread(): boolean } | null>;
   reply?: (response: InteractionReplyOptions) => Promise<unknown>;
   showModal?: (modal: ModalBuilder) => Promise<unknown>;
+  deferReply?: (options: { ephemeral: boolean }) => Promise<unknown>;
+  deleteReply?: () => Promise<void>;
 }): DiscordChatInputInteraction {
   return {
     id: overrides.id ?? "interaction-123",
@@ -202,8 +204,9 @@ function createChatInputInteraction(overrides: {
     options: { getSubcommand: overrides.getSubcommand ?? (() => "") },
     memberPermissions: { has: () => true },
     reply: overrides.reply ?? (async () => undefined),
-    deferReply: async () => undefined,
+    deferReply: overrides.deferReply ?? (async () => undefined),
     editReply: async () => undefined,
+    deleteReply: overrides.deleteReply ?? (async () => undefined),
     showModal: overrides.showModal ?? (async () => undefined),
   };
 }
@@ -704,14 +707,16 @@ test("registers a channel through /link even when the channel is denied", async 
     },
   );
 
-  let replyContent: string | undefined;
-  let replyFlags: number | undefined;
+  let deferred: { ephemeral: boolean } | undefined;
+  let deleted = false;
   const interaction = createChatInputInteraction({
     commandName: "link",
     channelId: "channel-denied",
-    reply: async (response) => {
-      replyContent = extractFirstTextContent(response);
-      replyFlags = readReplyFlags(response);
+    deferReply: async (options) => {
+      deferred = options;
+    },
+    deleteReply: async () => {
+      deleted = true;
     },
   });
 
@@ -720,8 +725,8 @@ test("registers a channel through /link even when the channel is denied", async 
     fakeClient.emit(Events.InteractionCreate, interaction);
     await service.flush();
 
-    assert.match(replyContent ?? "", /オーナーに確認しています/u);
-    assert.equal(replyFlags, MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral);
+    assert.deepEqual(deferred, { ephemeral: true });
+    assert.equal(deleted, true);
     assert.equal(ownerMessages.length, 1);
     assert.match(extractFirstTextContent(ownerMessages[0]) ?? "", /チャンネルの登録リクエスト/u);
     assert.equal(channelMessages.length, 1);

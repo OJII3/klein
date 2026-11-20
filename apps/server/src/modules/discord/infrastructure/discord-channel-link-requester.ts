@@ -20,6 +20,7 @@ import {
 import {
   createEphemeralTextContainerMessage,
   createTextContainerMessage,
+  type DiscordContainerMessage,
   type DiscordEphemeralContainerMessage,
 } from "./discord-component-message";
 
@@ -38,6 +39,9 @@ export interface DiscordChannelLinkCommandInteraction {
   readonly client: { readonly channels: { fetch(id: string): Promise<unknown> } };
   inGuild(): boolean;
   reply(options: DiscordEphemeralContainerMessage): Promise<unknown>;
+  deferReply(options: { ephemeral: boolean }): Promise<unknown>;
+  editReply(options: DiscordContainerMessage): Promise<unknown>;
+  deleteReply(): Promise<void>;
 }
 
 function isLinkChannel(value: unknown): value is DiscordChannelLinkChannel {
@@ -172,6 +176,8 @@ export class DiscordChannelLinkRequester {
       return;
     }
 
+    await interaction.deferReply({ ephemeral: true });
+
     const location = await resolveCommandLocation(interaction, guildId);
     const existing = this.dependencies.linkStore.getLink(location.target);
     if (existing) {
@@ -179,7 +185,7 @@ export class DiscordChannelLinkRequester {
         existing.userId === interaction.user.id
           ? "この場所は既にあなたのチャンネルとして登録されています。"
           : `この場所は既に <@${existing.userId}> のチャンネルとして登録されています。解除はオーナーが /unlink で行えます。`;
-      await interaction.reply(createEphemeralTextContainerMessage(text, "warning"));
+      await interaction.editReply(createTextContainerMessage(text, "warning"));
       return;
     }
 
@@ -195,24 +201,17 @@ export class DiscordChannelLinkRequester {
 
     switch (outcome) {
       case "requested":
-        await interaction.reply(
-          createEphemeralTextContainerMessage(
-            "オーナーに確認しています。承認されると、この場所はあなたのチャンネルとして登録されます。",
-            "warning",
-          ),
-        );
+        // The pending notice in the channel already tells the requester what happens next.
+        await interaction.deleteReply();
         return;
       case "pending":
-        await interaction.reply(
-          createEphemeralTextContainerMessage(
-            "この場所の承認は既にオーナーに確認しています。",
-            "warning",
-          ),
+        await interaction.editReply(
+          createTextContainerMessage("この場所の承認は既にオーナーに確認しています。", "warning"),
         );
         return;
       case "unavailable":
-        await interaction.reply(
-          createEphemeralTextContainerMessage("オーナーに確認できませんでした。", "danger"),
+        await interaction.editReply(
+          createTextContainerMessage("オーナーに確認できませんでした。", "danger"),
         );
         return;
     }
