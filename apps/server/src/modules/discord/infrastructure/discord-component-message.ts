@@ -1,4 +1,9 @@
-import { ContainerBuilder, MessageFlags, TextDisplayBuilder } from "discord.js";
+import {
+  ContainerBuilder,
+  MessageFlags,
+  TextDisplayBuilder,
+  type InteractionReplyOptions,
+} from "discord.js";
 
 export type DiscordMessageTone = "neutral" | "success" | "warning" | "danger";
 
@@ -17,6 +22,12 @@ export interface DiscordContainerMessage {
   readonly flags: MessageFlags.IsComponentsV2;
 }
 
+/** A components v2 interaction reply that only the invoking user can see. */
+export interface DiscordEphemeralContainerMessage {
+  readonly components: ContainerBuilder[];
+  readonly flags: NonNullable<InteractionReplyOptions["flags"]>;
+}
+
 /**
  * Builds a container whose body is a single text display. Without a tone the
  * container keeps the default accent color.
@@ -33,6 +44,16 @@ export function createTextContainerMessage(
   tone?: DiscordMessageTone,
 ): DiscordContainerMessage {
   return { components: [createTextContainer(text, tone)], flags: MessageFlags.IsComponentsV2 };
+}
+
+export function createEphemeralTextContainerMessage(
+  text: string,
+  tone?: DiscordMessageTone,
+): DiscordEphemeralContainerMessage {
+  return {
+    components: [createTextContainer(text, tone)],
+    flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
+  };
 }
 
 /**

@@ -24,6 +24,7 @@ import type { DiscordAccessPolicy } from "../domain/discord-access-policy";
 import type { DiscordAccessRuleStore } from "../ports/discord-access-rule-store";
 import type { DiscordChannelRuleStore } from "../ports/discord-channel-rule-store";
 import {
+  createEphemeralTextContainerMessage,
   createTextContainer,
   createTextContainerMessage,
   truncateTextLines,
@@ -117,7 +118,9 @@ export interface DiscordChatInputInteraction extends VoiceChatCommandInteraction
   isChatInputCommand(): boolean;
   isModalSubmit(): boolean;
   reply(options: InteractionReplyOptions): Promise<unknown>;
+  editReply(options: string | InteractionReplyOptions): Promise<unknown>;
   showModal(modal: ModalBuilder): Promise<unknown>;
+  deleteReply(): Promise<void>;
 }
 
 export interface DiscordModalSubmitInteraction {
@@ -217,7 +220,7 @@ export class DiscordJsInteractionHandler {
     if (interaction.commandName === "link" || interaction.commandName === "unlink") {
       if (!this.channelLink) {
         await interaction.reply(
-          createTextContainerMessage("チャンネルのリンク操作は無効です。", "danger"),
+          createEphemeralTextContainerMessage("チャンネルのリンク操作は無効です。", "danger"),
         );
         return;
       }
