@@ -2,7 +2,11 @@ import { randomUUID } from "node:crypto";
 
 import type { Logger } from "pino";
 
-import type { DiscordChannelLinkTarget } from "../domain/discord-channel-link";
+import {
+  discordChannelLinkLocationKey,
+  type DiscordChannelLink,
+  type DiscordChannelLinkTarget,
+} from "../domain/discord-channel-link";
 import type { DiscordAccess } from "../domain/discord-access-policy";
 import {
   discordChannelAccessRequestLocationKey,
@@ -40,10 +44,15 @@ export type DiscordChannelAccessRequestOutcome =
   | { readonly kind: "already-linked"; readonly userId: string }
   | { readonly kind: "unavailable" };
 
+export type DiscordChannelUnlinkResult =
+  | { readonly kind: "unlinked"; readonly link: DiscordChannelLink }
+  | { readonly kind: "not-linked" }
+  | { readonly kind: "failed" };
+
 export interface DiscordChannelAccessServiceDependencies {
   readonly accessRuleStore: Pick<DiscordAccessRuleStore, "setAccess">;
   readonly accessRequestStore: Pick<DiscordAccessRequestStore, "list" | "save" | "remove">;
-  readonly channelLinkStore?: Pick<DiscordChannelLinkStore, "getLink" | "saveLink">;
+  readonly channelLinkStore?: Pick<DiscordChannelLinkStore, "getLink" | "saveLink" | "removeLink">;
   readonly ownerUserId?: string;
   readonly logger?: Logger;
 }
@@ -73,7 +82,7 @@ export class DiscordChannelAccessService {
 
     if (request.linkUserId) {
       const existing = this.dependencies.channelLinkStore?.getLink(request);
-      if (existing?.userId === request.linkUserId) {
+      if (existing) {
         return { kind: "already-linked", userId: existing.userId };
       }
     }
@@ -150,6 +159,13 @@ export class DiscordChannelAccessService {
       return { kind: "rejected", reason: "link-update-failed" };
     }
 
+    if (approved && pending.linkUserId) {
+      const existing = this.dependencies.channelLinkStore?.getLink(target);
+      if (existing && existing.userId !== pending.linkUserId) {
+        return { kind: "rejected", reason: "link-conflict" };
+      }
+    }
+
     // Denying a link request leaves the location's existing access rule untouched.
     if (!(pending.linkUserId && !approved)) {
       try {
@@ -193,6 +209,65 @@ export class DiscordChannelAccessService {
 
     await this.remove(pending);
     return { kind: "decided", request: pending, access: parsed.action };
+  }
+
+  async unlink(
+    target: DiscordChannelLinkTarget,
+    presentation: Pick<DiscordChannelAccessPresentation, "updatePendingNotice">,
+  ): Promise<DiscordChannelUnlinkResult> {
+    const store = this.dependencies.channelLinkStore;
+    if (!store) return { kind: "failed" };
+
+    const link = store.getLink(target);
+    if (!link) {
+      await this.cancelPending(target, presentation);
+      return { kind: "not-linked" };
+    }
+
+    try {
+      await this.dependencies.accessRuleStore.setAccess(target, "deny");
+    } catch (error) {
+      this.dependencies.logger?.error(
+        {
+          err: error,
+          event: "discord_channel_unlink_access_update_failed",
+          guildId: target.guildId,
+          channelId: target.channelId,
+          threadId: target.threadId,
+        },
+        "Failed to deny access while unlinking a Discord channel",
+      );
+      return { kind: "failed" };
+    }
+
+    try {
+      await store.removeLink(target);
+    } catch (error) {
+      this.dependencies.logger?.error(
+        {
+          err: error,
+          event: "discord_channel_unlink_failed",
+          guildId: target.guildId,
+          channelId: target.channelId,
+          threadId: target.threadId,
+        },
+        "Failed to remove a Discord channel link",
+      );
+      return { kind: "failed" };
+    }
+
+    await this.cancelPending(target, presentation);
+    return { kind: "unlinked", link };
+  }
+
+  private async cancelPending(
+    target: DiscordChannelLinkTarget,
+    presentation: Pick<DiscordChannelAccessPresentation, "updatePendingNotice">,
+  ): Promise<void> {
+    const pending = this.pendingByLocation.get(discordChannelLinkLocationKey(target));
+    if (!pending) return;
+    await this.remove(pending);
+    await presentation.updatePendingNotice(pending, "denied");
   }
 
   private remember(pending: PendingDiscordAccessRequest): void {

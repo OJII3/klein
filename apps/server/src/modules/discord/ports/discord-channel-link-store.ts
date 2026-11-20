@@ -5,4 +5,5 @@ export interface DiscordChannelLinkStore {
   load(): Promise<void>;
   getLink(target: DiscordChannelLinkTarget): DiscordChannelLink | undefined;
   saveLink(link: DiscordChannelLink): Promise<void>;
+  removeLink(target: DiscordChannelLinkTarget): Promise<void>;
 }

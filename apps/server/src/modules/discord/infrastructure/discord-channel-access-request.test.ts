@@ -141,11 +141,14 @@ function createLinkStore(initial: readonly DiscordChannelLink[] = []): {
       saveLink: async (link) => {
         links.set(linkKey(link), link);
       },
+      removeLink: async (target) => {
+        links.delete(linkKey(target));
+      },
     },
   };
 }
 
-function createLinkInteraction(): {
+function createLinkInteraction(options: { readonly userId?: string } = {}): {
   interaction: DiscordChannelLinkCommandInteraction;
   replies: Array<{ components: ReadonlyArray<{ toJSON: () => unknown }> }>;
 } {
@@ -155,7 +158,7 @@ function createLinkInteraction(): {
     interaction: {
       guildId: "guild-123",
       channelId: "thread-123",
-      user: { id: "user-123", bot: false },
+      user: { id: options.userId ?? "user-123", bot: false },
       channel: {
         id: "thread-123",
         name: "thread-name",
@@ -233,7 +236,7 @@ test("listing an already owned channel does not ask the owner again", async () =
   assert.equal(harness.ownerMessages.length, 0);
 });
 
-test("shows the current owner when a different user requests the same channel", async () => {
+test("refuses a link request when another user already owns the channel", async () => {
   const harness = createHarness();
   const link = createLinkStore([
     {
@@ -251,13 +254,18 @@ test("shows the current owner when a different user requests the same channel", 
     "owner-123",
     link.store,
   );
-  const { interaction } = createLinkInteraction();
+  const { interaction, replies } = createLinkInteraction();
 
   await requester.requestFromInteraction(interaction);
 
-  const [ownerMessage] = harness.ownerMessages;
-  assert.ok(ownerMessage);
-  assert.match(toJson(ownerMessage)[0]?.components[0]?.content ?? "", /現在の登録: <@other-user>/u);
+  const [reply] = replies;
+  assert.ok(reply);
+  assert.match(
+    toJson(reply)[0]?.components[0]?.content ?? "",
+    /既に <@other-user> のチャンネルとして登録されています/u,
+  );
+  assert.match(toJson(reply)[0]?.components[0]?.content ?? "", /\/unlink/u);
+  assert.equal(harness.ownerMessages.length, 0);
 });
 
 test("registers the channel and updates both messages when the owner approves a link", async () => {
@@ -571,4 +579,65 @@ test("ignores button presses from anyone other than the owner", async () => {
   assert.equal(await requester.handleButton(interaction), true);
   assert.equal(harness.updates.length, 0);
   assert.match(replies[0]?.content ?? "", /オーナー/u);
+});
+
+test("unlinks a location only for the bot owner", async () => {
+  const harness = createHarness();
+  const link = createLinkStore([
+    {
+      guildId: "guild-123",
+      channelId: "parent-channel",
+      threadId: "thread-123",
+      userId: "user-123",
+      linkedAt: "2026-01-01T00:00:00.000Z",
+    },
+  ]);
+  const requester = new DiscordChannelAccessRequester(
+    harness.client,
+    harness.store,
+    harness.requestStore,
+    "owner-123",
+    link.store,
+  );
+
+  const nonOwner = createLinkInteraction();
+  await requester.unlinkFromInteraction(nonOwner.interaction);
+  const [nonOwnerReply] = nonOwner.replies;
+  assert.ok(nonOwnerReply);
+  assert.match(toJson(nonOwnerReply)[0]?.components[0]?.content ?? "", /オーナーだけ/u);
+  assert.equal(link.links.size, 1);
+  assert.deepEqual(harness.updates, []);
+
+  const owner = createLinkInteraction({ userId: "owner-123" });
+  await requester.unlinkFromInteraction(owner.interaction);
+  const [ownerReply] = owner.replies;
+  assert.ok(ownerReply);
+  assert.match(toJson(ownerReply)[0]?.components[0]?.content ?? "", /リンクを解除しました/u);
+  assert.equal(link.links.size, 0);
+  assert.deepEqual(harness.updates, [
+    {
+      target: { guildId: "guild-123", channelId: "parent-channel", threadId: "thread-123" },
+      access: "deny",
+    },
+  ]);
+});
+
+test("reports when the location is not linked", async () => {
+  const harness = createHarness();
+  const link = createLinkStore();
+  const requester = new DiscordChannelAccessRequester(
+    harness.client,
+    harness.store,
+    harness.requestStore,
+    "owner-123",
+    link.store,
+  );
+  const { interaction, replies } = createLinkInteraction({ userId: "owner-123" });
+
+  await requester.unlinkFromInteraction(interaction);
+
+  const [reply] = replies;
+  assert.ok(reply);
+  assert.match(toJson(reply)[0]?.components[0]?.content ?? "", /リンクされていません/u);
+  assert.deepEqual(harness.updates, []);
 });

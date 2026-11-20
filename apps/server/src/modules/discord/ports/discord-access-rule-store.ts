@@ -10,4 +10,6 @@ export interface DiscordAccessRuleTarget {
 export interface DiscordAccessRuleStore extends DiscordAccessRules {
   load(): Promise<void>;
   setAccess(target: DiscordAccessRuleTarget, access: DiscordAccess): Promise<void>;
+  listOwnerTargets?(): readonly DiscordAccessRuleTarget[];
+  listGuildOwnerIds?(): readonly string[];
 }

@@ -73,6 +73,41 @@ test("rejects invalid access rule files", async () => {
   assert.deepEqual(store.getGuildRule("100"), { channels: { "200": {} } });
 });
 
+test("lists legacy owner channel, thread, and guild rules", async () => {
+  await using temp = await createTempDir("klein-discord-access-");
+  const filePath = join(temp.path, "discord-access.json");
+  await writeFile(
+    filePath,
+    JSON.stringify({
+      guilds: {
+        "100": {
+          access: "owner",
+          channels: {
+            "200": { access: "owner" },
+            "201": {
+              access: "allow",
+              threads: {
+                "300": { access: "owner" },
+                "301": { access: "allow" },
+              },
+            },
+          },
+        },
+        "101": { access: "deny" },
+      },
+    }),
+  );
+
+  const store = new FileDiscordAccessRuleStore(filePath);
+  await store.load();
+
+  assert.deepEqual(store.listGuildOwnerIds(), ["100"]);
+  assert.deepEqual(store.listOwnerTargets(), [
+    { guildId: "100", channelId: "200" },
+    { guildId: "100", channelId: "201", threadId: "300" },
+  ]);
+});
+
 test("writes channel and thread access without dropping other rules", async () => {
   await using temp = await createTempDir("klein-discord-access-");
   const filePath = join(temp.path, "discord-access.json");

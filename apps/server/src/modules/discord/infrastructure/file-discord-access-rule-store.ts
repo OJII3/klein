@@ -101,6 +101,25 @@ export class FileDiscordAccessRuleStore implements DiscordAccessRuleStore {
     return this.guilds[guildId];
   }
 
+  listOwnerTargets(): readonly DiscordAccessRuleTarget[] {
+    const targets: DiscordAccessRuleTarget[] = [];
+    for (const [guildId, guild] of Object.entries(this.guilds)) {
+      for (const [channelId, channel] of Object.entries(guild.channels ?? {})) {
+        if (channel.access === "owner") targets.push({ guildId, channelId });
+        for (const [threadId, thread] of Object.entries(channel.threads ?? {})) {
+          if (thread.access === "owner") targets.push({ guildId, channelId, threadId });
+        }
+      }
+    }
+    return targets;
+  }
+
+  listGuildOwnerIds(): readonly string[] {
+    return Object.entries(this.guilds)
+      .filter(([, guild]) => guild.access === "owner")
+      .map(([guildId]) => guildId);
+  }
+
   async setAccess(target: DiscordAccessRuleTarget, access: DiscordAccess): Promise<void> {
     const guild = this.guilds[target.guildId] ?? {};
     const channel = guild.channels?.[target.channelId] ?? {};

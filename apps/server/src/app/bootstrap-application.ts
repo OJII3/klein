@@ -37,6 +37,7 @@ import { createEvalFeedbackObserver } from "@runtime/pi/session-eval-store";
 import { createDiscordAccessPolicy } from "@modules/discord/domain/discord-access-policy";
 import { DiscordOperatingState } from "@modules/discord/domain/discord-operating-state";
 import { DiscordUserDirectory } from "@modules/discord/application/discord-user-directory";
+import { migrateOwnerAccessToLinks } from "@modules/discord/application/discord-owner-link-migration";
 import { resolveVoiceChatConfig } from "@modules/discord/domain/voice-chat-config";
 import { DiscordJsService } from "@modules/discord/infrastructure/discord-js-service";
 import { loadVoiceReactionPresets } from "@modules/discord/infrastructure/voice-reaction-presets";
@@ -133,10 +134,17 @@ export async function bootstrapApplication(): Promise<void> {
     resolve(agentDir, "discord-channel-links.json"),
   );
   await discordChannelLinkStore.load();
+  await migrateOwnerAccessToLinks({
+    accessRuleStore: discordAccessRuleStore,
+    channelLinkStore: discordChannelLinkStore,
+    ownerUserId,
+    logger,
+  });
   const discordAccessPolicy = createDiscordAccessPolicy(
     config.discord.access,
     ownerUserId,
     discordAccessRuleStore,
+    (target) => discordChannelLinkStore.getLink(target)?.userId,
   );
   const userMemoryConfig = resolveUserMemoryConfig(config);
   const userMemoryDirectory =

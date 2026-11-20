@@ -83,6 +83,12 @@ export class FileDiscordChannelLinkStore implements DiscordChannelLinkStore {
     await this.writeQueue;
   }
 
+  async removeLink(target: DiscordChannelLinkTarget): Promise<void> {
+    if (!this.links.delete(discordChannelLinkLocationKey(target))) return;
+    this.writeQueue = this.writeQueue.catch(() => undefined).then(() => this.persist());
+    await this.writeQueue;
+  }
+
   private async persist(): Promise<void> {
     await mkdir(dirname(this.filePath), { recursive: true });
     const temporaryPath = `${this.filePath}.${randomUUID()}.tmp`;

@@ -58,6 +58,11 @@ const CHANNEL_LINK_COMMAND = new SlashCommandBuilder()
   .setDescription("この場所をあなたのチャンネルとしてオーナーに登録してもらいます")
   .setDefaultMemberPermissions(PermissionFlagsBits.UseApplicationCommands)
   .setDMPermission(false);
+const CHANNEL_UNLINK_COMMAND = new SlashCommandBuilder()
+  .setName("unlink")
+  .setDescription("この場所のユーザーリンクを解除します")
+  .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+  .setDMPermission(false);
 const CHANNEL_RULE_MODAL_ID = "channel-rule-edit";
 const CHANNEL_RULE_INPUT_ID = "channel-rule";
 const OPERATING_MODE_REJECTION_MESSAGES: Readonly<
@@ -138,6 +143,7 @@ export interface DiscordOtherInteraction {
 
 export interface DiscordChannelLinkCommand {
   requestFromInteraction(interaction: DiscordChannelLinkCommandInteraction): Promise<void>;
+  unlinkFromInteraction(interaction: DiscordChannelLinkCommandInteraction): Promise<void>;
   getLink(target: DiscordChannelLinkTarget): DiscordChannelLink | undefined;
 }
 
@@ -188,6 +194,7 @@ export class DiscordJsInteractionHandler {
       CHANNEL_RULE_COMMAND,
       ALLOWED_CHANNELS_COMMAND,
       CHANNEL_LINK_COMMAND,
+      CHANNEL_UNLINK_COMMAND,
       ...(voiceChatController ? [VOICE_COMMAND] : []),
     ];
   }
@@ -206,14 +213,18 @@ export class DiscordJsInteractionHandler {
       return;
     }
     if (!isChatInputCommand(interaction)) return;
-    if (interaction.commandName === "link") {
+    if (interaction.commandName === "link" || interaction.commandName === "unlink") {
       if (!this.channelLink) {
         await interaction.reply(
-          createTextContainerMessage("チャンネルの登録は無効です。", "danger"),
+          createTextContainerMessage("チャンネルのリンク操作は無効です。", "danger"),
         );
         return;
       }
-      await this.channelLink.requestFromInteraction(interaction);
+      if (interaction.commandName === "link") {
+        await this.channelLink.requestFromInteraction(interaction);
+      } else {
+        await this.channelLink.unlinkFromInteraction(interaction);
+      }
       return;
     }
     if (!(await this.canUseCommandsInChannel(interaction))) {

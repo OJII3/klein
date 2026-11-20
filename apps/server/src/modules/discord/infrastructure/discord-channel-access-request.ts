@@ -38,6 +38,7 @@ const REJECTION_MESSAGES: Readonly<Record<DiscordChannelAccessRejection, string>
   expired: "このリクエストは既に処理済みか、期限切れです。",
   "rule-update-failed": "アクセスルールを更新できませんでした。",
   "link-update-failed": "チャンネルの登録を保存できませんでした。",
+  "link-conflict": "この場所は既に別のユーザーにリンクされています。",
 };
 
 interface SendableTextChannel {
@@ -127,15 +128,11 @@ function noticeFor(
 
 const REQUEST_OUTCOME_MESSAGES: Readonly<
   Record<
-    Exclude<DiscordChannelAccessRequestOutcome["kind"], "requested">,
+    Exclude<DiscordChannelAccessRequestOutcome["kind"], "requested" | "already-linked">,
     { text: string; tone: DiscordMessageTone }
   >
 > = {
   pending: { text: "この場所の承認は既にオーナーに確認しています。", tone: "warning" },
-  "already-linked": {
-    text: "この場所は既にあなたのチャンネルとして登録されています。",
-    tone: "neutral",
-  },
   unavailable: { text: "オーナーに確認できませんでした。", tone: "danger" },
 };
 
@@ -217,22 +214,20 @@ export class DiscordChannelAccessRequester implements DiscordChannelAccessPresen
   }
 
   async requestFromInteraction(interaction: DiscordChannelLinkCommandInteraction): Promise<void> {
-    if (!interaction.inGuild() || !interaction.guildId) {
+    const guildId = interaction.guildId;
+    if (!interaction.inGuild() || !guildId) {
       await interaction.reply(
         createTextContainerMessage("このコマンドはサーバー内でのみ使用できます。", "danger"),
       );
       return;
     }
 
-    const channel = await this.resolveCommandChannel(interaction);
-    const thread = channel?.isThread() && channel.parentId ? channel : undefined;
+    const location = await this.resolveCommandLocation(interaction, guildId);
     const outcome = await this.service.request(
       {
-        guildId: interaction.guildId,
-        channelId: thread?.parentId ?? channel?.id ?? interaction.channelId,
-        ...(thread ? { threadId: thread.id } : {}),
-        pendingChannelId: channel?.id ?? interaction.channelId,
-        ...(channel?.name ? { channelName: channel.name } : {}),
+        ...location.target,
+        pendingChannelId: location.pendingChannelId,
+        ...(location.channelName ? { channelName: location.channelName } : {}),
         requesterUserId: interaction.user.id,
         linkUserId: interaction.user.id,
       },
@@ -249,8 +244,54 @@ export class DiscordChannelAccessRequester implements DiscordChannelAccessPresen
       return;
     }
 
+    if (outcome.kind === "already-linked") {
+      const text =
+        outcome.userId === interaction.user.id
+          ? "この場所は既にあなたのチャンネルとして登録されています。"
+          : `この場所は既に <@${outcome.userId}> のチャンネルとして登録されています。解除はオーナーが /unlink で行えます。`;
+      await interaction.reply(createTextContainerMessage(text, "warning"));
+      return;
+    }
+
     const message = REQUEST_OUTCOME_MESSAGES[outcome.kind];
     await interaction.reply(createTextContainerMessage(message.text, message.tone));
+  }
+
+  async unlinkFromInteraction(interaction: DiscordChannelLinkCommandInteraction): Promise<void> {
+    const guildId = interaction.guildId;
+    if (!interaction.inGuild() || !guildId) {
+      await interaction.reply(
+        createTextContainerMessage("このコマンドはサーバー内でのみ使用できます。", "danger"),
+      );
+      return;
+    }
+
+    if (!this.ownerUserId || interaction.user.id !== this.ownerUserId) {
+      await interaction.reply(
+        createTextContainerMessage("この操作を実行できるのはオーナーだけです。", "danger"),
+      );
+      return;
+    }
+
+    const location = await this.resolveCommandLocation(interaction, guildId);
+    const result = await this.service.unlink(location.target, this);
+    switch (result.kind) {
+      case "unlinked":
+        await interaction.reply(
+          createTextContainerMessage("この場所のリンクを解除しました。", "success"),
+        );
+        return;
+      case "not-linked":
+        await interaction.reply(
+          createTextContainerMessage("この場所はリンクされていません。", "warning"),
+        );
+        return;
+      case "failed":
+        await interaction.reply(
+          createTextContainerMessage("リンクを解除できませんでした。", "danger"),
+        );
+        return;
+    }
   }
 
   async handleButton(interaction: DiscordChannelAccessButtonInteraction): Promise<boolean> {
@@ -311,10 +352,6 @@ export class DiscordChannelAccessRequester implements DiscordChannelAccessPresen
       ...this.describeLocation(pending),
     ];
     if (pending.linkUserId) {
-      const currentOwnerId = this.channelLinkStore?.getLink(pending)?.userId;
-      if (currentOwnerId && currentOwnerId !== pending.linkUserId) {
-        lines.push(`現在の登録: <@${currentOwnerId}>`);
-      }
       lines.push("", `<@${pending.linkUserId}> のチャンネルとして登録しますか？`);
     } else {
       lines.push("", "このチャンネルを許可しますか？");
@@ -399,6 +436,27 @@ export class DiscordChannelAccessRequester implements DiscordChannelAccessPresen
       .fetch(interaction.channelId)
       .catch(() => null);
     return isLinkChannel(fetched) ? fetched : undefined;
+  }
+
+  private async resolveCommandLocation(
+    interaction: DiscordChannelLinkCommandInteraction,
+    guildId: string,
+  ): Promise<{
+    target: DiscordChannelLinkTarget;
+    pendingChannelId: string;
+    channelName?: string;
+  }> {
+    const channel = await this.resolveCommandChannel(interaction);
+    const thread = channel?.isThread() && channel.parentId ? channel : undefined;
+    return {
+      target: {
+        guildId,
+        channelId: thread?.parentId ?? channel?.id ?? interaction.channelId,
+        ...(thread ? { threadId: thread.id } : {}),
+      },
+      pendingChannelId: channel?.id ?? interaction.channelId,
+      ...(channel?.name ? { channelName: channel.name } : {}),
+    };
   }
 
   private describeLocation(pending: PendingDiscordAccessRequest): string[] {

@@ -642,6 +642,9 @@ test("registers a channel through /link even when the channel is denied", async 
     async saveLink(link: { channelId: string; threadId?: string; userId: string }) {
       links.set(`${link.channelId}:${link.threadId ?? ""}`, { userId: link.userId });
     },
+    async removeLink(target: { channelId: string; threadId?: string }) {
+      links.delete(`${target.channelId}:${target.threadId ?? ""}`);
+    },
   };
   const service = new DiscordJsService(
     "token",
@@ -676,6 +679,84 @@ test("registers a channel through /link even when the channel is denied", async 
     assert.equal(channelMessages.length, 1);
     assert.equal(accessUpdates.length, 0);
     assert.equal(requests.size, 1);
+  } finally {
+    await service.stop();
+  }
+});
+
+test("removes a channel link through /unlink for the bot owner", async () => {
+  const fakeClient = new FakeDiscordClient();
+  const accessUpdates: Array<{ target: unknown; access: string }> = [];
+  const accessRuleStore = {
+    async load() {},
+    async setAccess(target: unknown, access: string) {
+      accessUpdates.push({ target, access });
+    },
+    getGuildRule: () => undefined,
+  };
+  const requests = new Map<string, PendingDiscordAccessRequest>();
+  const accessRequestStore = {
+    async load() {},
+    list: () => [...requests.values()],
+    async save(request: PendingDiscordAccessRequest) {
+      requests.set(request.requestId, request);
+    },
+    async remove(requestId: string) {
+      requests.delete(requestId);
+    },
+  };
+  let link: { userId: string; linkedAt: string } | undefined = {
+    userId: "member-123",
+    linkedAt: "2026-01-01T00:00:00.000Z",
+  };
+  const channelLinkStore = {
+    async load() {},
+    getLink: (target: { channelId: string; threadId?: string }) =>
+      link
+        ? {
+            guildId: "guild-123",
+            channelId: target.channelId,
+            ...(target.threadId ? { threadId: target.threadId } : {}),
+            ...link,
+          }
+        : undefined,
+    async saveLink() {},
+    async removeLink() {
+      link = undefined;
+    },
+  };
+  const service = new DiscordJsService(
+    "token",
+    createDiscordAccessPolicy({ default: "deny", directMessages: "allow" }),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    accessRuleStore,
+    "user-123",
+    accessRequestStore,
+    { createClient: () => fakeClient, channelLinkStore },
+  );
+
+  let replyContent: string | undefined;
+  const interaction = createChatInputInteraction({
+    commandName: "unlink",
+    channelId: "channel-denied",
+    reply: async (response) => {
+      replyContent = extractFirstTextContent(response);
+    },
+  });
+
+  try {
+    await service.start(async () => undefined);
+    fakeClient.emit(Events.InteractionCreate, interaction);
+    await service.flush();
+
+    assert.match(replyContent ?? "", /リンクを解除しました/u);
+    assert.equal(link, undefined);
+    assert.deepEqual(accessUpdates, [
+      { target: { guildId: "guild-123", channelId: "channel-denied" }, access: "deny" },
+    ]);
   } finally {
     await service.stop();
   }

@@ -159,3 +159,59 @@ test("owner access rejects requests when no owner is configured", () => {
   assert.equal(unconfigured.canReceive({ channelId: "dm", userId: "owner-user" }), false);
   assert.equal(unconfigured.canUseOwnerFeatures({ channelId: "dm", userId: "owner-user" }), false);
 });
+
+const links: Readonly<Record<string, string>> = {
+  "guild:owner-channel": "owner-user",
+  "guild:member-channel": "member-user",
+  "guild:parent:owner-thread": "owner-user",
+};
+
+const linkedPolicy = createDiscordAccessPolicy(
+  { default: "deny", directMessages: "deny" },
+  "owner-user",
+  createRules({
+    guild: {
+      access: "deny",
+      channels: {
+        "owner-channel": { access: "deny" },
+        "member-channel": { access: "owner" },
+        parent: { access: "owner" },
+      },
+    },
+  }),
+  (target) =>
+    links[`${target.guildId}:${target.channelId}${target.threadId ? `:${target.threadId}` : ""}`],
+);
+
+test("a link to the configured owner makes the location owner-only", () => {
+  const target = { guildId: "guild", channelId: "owner-channel" };
+  assert.equal(linkedPolicy.resolveAccess(target), "owner");
+  assert.equal(linkedPolicy.canReceive({ ...target, userId: "owner-user" }), true);
+  assert.equal(linkedPolicy.canUseOwnerFeatures({ ...target, userId: "owner-user" }), true);
+  assert.equal(linkedPolicy.canReceive({ ...target, userId: "member-user" }), false);
+  assert.equal(linkedPolicy.canUseOwnerFeatures({ ...target, userId: "member-user" }), false);
+});
+
+test("a link to another user allows everyone but grants no owner features", () => {
+  const target = { guildId: "guild", channelId: "member-channel" };
+  assert.equal(linkedPolicy.resolveAccess(target), "allow");
+  assert.equal(linkedPolicy.canReceive({ ...target, userId: "member-user" }), true);
+  assert.equal(linkedPolicy.canReceive({ ...target, userId: "stranger" }), true);
+  assert.equal(linkedPolicy.canUseOwnerFeatures({ ...target, userId: "owner-user" }), false);
+  assert.equal(linkedPolicy.canUseOwnerFeatures({ ...target, userId: "member-user" }), false);
+});
+
+test("a thread link takes precedence over the parent channel rules", () => {
+  const target = { guildId: "guild", channelId: "parent", threadId: "owner-thread" };
+  assert.equal(linkedPolicy.resolveAccess(target), "owner");
+  assert.equal(linkedPolicy.canReceive({ ...target, userId: "owner-user" }), true);
+  assert.equal(linkedPolicy.canReceive({ ...target, userId: "member-user" }), false);
+});
+
+test("unlinked locations still use the access rules", () => {
+  assert.equal(linkedPolicy.resolveAccess({ guildId: "guild", channelId: "unknown" }), "deny");
+  assert.equal(
+    linkedPolicy.canReceive({ guildId: "guild", channelId: "unknown", userId: "owner-user" }),
+    false,
+  );
+});

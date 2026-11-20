@@ -20,6 +20,7 @@ function createHarness(
     failOwnerRequest?: boolean;
     failRuleUpdate?: boolean;
     failLinkUpdate?: boolean;
+    failLinkRemove?: boolean;
     existingLinkUserId?: string;
   } = {},
 ) {
@@ -68,6 +69,10 @@ function createHarness(
         userId: link.userId,
         linkedAt: link.linkedAt,
       });
+    },
+    removeLink: async (target: { guildId: string; channelId: string; threadId?: string }) => {
+      if (options.failLinkRemove) throw new Error("store unavailable");
+      links.delete(discordChannelLinkLocationKey(target));
     },
   };
 
@@ -258,20 +263,15 @@ test("returns already-linked without asking the owner again", async () => {
   assert.equal(harness.ownerRequests.length, 0);
 });
 
-test("asks the owner before transferring a channel linked to another user", async () => {
+test("does not ask the owner when the channel is already linked to another user", async () => {
   const harness = createHarness({ existingLinkUserId: "other-user" });
 
   const outcome = await harness.service.request(linkRequest, harness.presentation);
 
-  assert.deepEqual(outcome, { kind: "requested" });
-  assert.equal(harness.ownerRequests.length, 1);
-  const pending = harness.ownerRequests[0];
-  assert.ok(pending);
-  await harness.service.handleButton({
-    customId: createDiscordChannelAccessButtonId("allow", pending.requestId),
-    userId: "owner-123",
-  });
-  assert.equal(harness.links.get("guild-123:parent-channel:thread-123")?.userId, "user-123");
+  assert.deepEqual(outcome, { kind: "already-linked", userId: "other-user" });
+  assert.equal(harness.posted.length, 0);
+  assert.equal(harness.ownerRequests.length, 0);
+  assert.equal(harness.links.get("guild-123:parent-channel:thread-123")?.userId, "other-user");
 });
 
 test("keeps the request when the channel link cannot be saved", async () => {
@@ -287,4 +287,73 @@ test("keeps the request when the channel link cannot be saved", async () => {
 
   assert.deepEqual(result, { kind: "rejected", reason: "link-update-failed" });
   assert.equal(harness.persisted.size, 1);
+});
+
+test("unlinks a channel and denies access", async () => {
+  const harness = createHarness({ existingLinkUserId: "user-123" });
+
+  const result = await harness.service.unlink(
+    { guildId: "guild-123", channelId: "parent-channel", threadId: "thread-123" },
+    harness.presentation,
+  );
+
+  assert.equal(result.kind, "unlinked");
+  assert.equal(harness.links.get("guild-123:parent-channel:thread-123"), undefined);
+  assert.deepEqual(harness.updates, [
+    {
+      target: { guildId: "guild-123", channelId: "parent-channel", threadId: "thread-123" },
+      access: "deny",
+    },
+  ]);
+});
+
+test("cancels a pending link request when the location is not linked", async () => {
+  const harness = createHarness();
+  await harness.service.request(linkRequest, harness.presentation);
+  assert.equal(harness.persisted.size, 1);
+
+  const result = await harness.service.unlink(
+    { guildId: "guild-123", channelId: "parent-channel", threadId: "thread-123" },
+    harness.presentation,
+  );
+
+  assert.deepEqual(result, { kind: "not-linked" });
+  assert.equal(harness.persisted.size, 0);
+  assert.equal(harness.notices.at(-1)?.outcome, "denied");
+});
+
+test("reports not-linked without changing access", async () => {
+  const harness = createHarness();
+
+  const result = await harness.service.unlink(
+    { guildId: "guild-123", channelId: "parent-channel", threadId: "thread-123" },
+    harness.presentation,
+  );
+
+  assert.deepEqual(result, { kind: "not-linked" });
+  assert.deepEqual(harness.updates, []);
+});
+
+test("keeps the link when access cannot be denied during unlink", async () => {
+  const harness = createHarness({ existingLinkUserId: "user-123", failRuleUpdate: true });
+
+  const result = await harness.service.unlink(
+    { guildId: "guild-123", channelId: "parent-channel", threadId: "thread-123" },
+    harness.presentation,
+  );
+
+  assert.deepEqual(result, { kind: "failed" });
+  assert.equal(harness.links.get("guild-123:parent-channel:thread-123")?.userId, "user-123");
+});
+
+test("reports failure when the link cannot be removed", async () => {
+  const harness = createHarness({ existingLinkUserId: "user-123", failLinkRemove: true });
+
+  const result = await harness.service.unlink(
+    { guildId: "guild-123", channelId: "parent-channel", threadId: "thread-123" },
+    harness.presentation,
+  );
+
+  assert.deepEqual(result, { kind: "failed" });
+  assert.equal(harness.links.get("guild-123:parent-channel:thread-123")?.userId, "user-123");
 });

@@ -64,6 +64,25 @@ test("replaces a link for the same location", async () => {
   assert.deepEqual(reloaded.getLink({ guildId: "100", channelId: "200" }), replacement);
 });
 
+test("removes a link for a location", async () => {
+  await using temp = await createTempDir("klein-discord-channel-links-");
+  const filePath = join(temp.path, "links.json");
+  const store = new FileDiscordChannelLinkStore(filePath);
+  await store.load();
+  await store.saveLink(channelLink);
+  await store.saveLink(threadLink);
+
+  await store.removeLink({ guildId: "100", channelId: "200" });
+
+  const reloaded = new FileDiscordChannelLinkStore(filePath);
+  await reloaded.load();
+  assert.equal(reloaded.getLink({ guildId: "100", channelId: "200" }), undefined);
+  assert.deepEqual(
+    reloaded.getLink({ guildId: "100", channelId: "200", threadId: "400" }),
+    threadLink,
+  );
+});
+
 test("rejects invalid channel link files", async () => {
   await using temp = await createTempDir("klein-discord-channel-links-");
   const filePath = join(temp.path, "links.json");

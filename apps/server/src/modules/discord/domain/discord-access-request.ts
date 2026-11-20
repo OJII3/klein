@@ -1,3 +1,5 @@
+import { discordChannelLinkLocationKey } from "./discord-channel-link";
+
 export interface DiscordChannelAccessRequest {
   readonly guildId: string;
   readonly channelId: string;
@@ -17,7 +19,7 @@ export interface PendingDiscordAccessRequest extends DiscordChannelAccessRequest
 export type DiscordChannelAccessAction = "allow" | "deny";
 
 export type DiscordChannelAccessRejection =
-  "owner-only" | "expired" | "rule-update-failed" | "link-update-failed";
+  "owner-only" | "expired" | "rule-update-failed" | "link-update-failed" | "link-conflict";
 
 export type DiscordChannelAccessNoticeOutcome = "allowed" | "denied" | "owner-unreachable";
 
@@ -42,5 +44,5 @@ export function parseDiscordChannelAccessButtonId(
 export function discordChannelAccessRequestLocationKey(
   request: DiscordChannelAccessRequest,
 ): string {
-  return `${request.guildId}:${request.channelId}:${request.threadId ?? ""}`;
+  return discordChannelLinkLocationKey(request);
 }
