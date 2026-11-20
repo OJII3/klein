@@ -40,10 +40,15 @@ import type { AgentTool } from "@agents/core/agent-tool";
 import type { AgentTurn, AgentTurnContext } from "@agents/core/agent-turn";
 import type { AgentPrompt, AgentRuntime } from "@agents/core/agent-runtime";
 import { toImageAnalysisFailure } from "@agents/core/image-analysis";
+import { renderWorkerDelegationSection } from "@agents/core/attached-agent";
 import type { SessionMode } from "@app/cli-options";
 import { renderWatchToolSection } from "@modules/scheduling/application/watch-tool";
 import type { WatchToolCatalog } from "@modules/scheduling/ports/watch-tool";
-import { createAgentBrowserMcpExtension, enablesAgentBrowser } from "./agent-browser-mcp";
+import {
+  AGENT_BROWSER_MCP_SERVER_NAME,
+  createAgentBrowserMcpExtension,
+  enablesAgentBrowser,
+} from "./agent-browser-mcp";
 import { createBackgroundCompactionExtension } from "./background-compaction";
 import { createFxtwitterFetchExtension } from "./fxtwitter-fetch";
 import { readLastAssistantText } from "./pi-assistant-text";
@@ -508,11 +513,13 @@ export function createResourceLoader(
     readonly surfaceTools?: readonly AgentTool[];
     readonly backgroundCompactionLeadTokens?: number;
     readonly extraExtensions?: readonly ExtensionFactory[];
+    readonly excludedSkillNames?: ReadonlySet<string>;
   },
 ): DefaultResourceLoader {
   setEmbeddedQuickJSWasmPath(resolveQuickJsWasmPath());
   const wrap = (factory: ExtensionFactory) =>
     authorization ? authorization.wrap(factory) : factory;
+  const excludedSkillNames = options?.excludedSkillNames;
   return new DefaultResourceLoader({
     cwd: process.cwd(),
     agentDir,
@@ -565,6 +572,14 @@ export function createResourceLoader(
     ],
     settingsManager,
     additionalSkillPaths: [resolve(process.cwd(), skillsDirectory)],
+    ...(excludedSkillNames && excludedSkillNames.size > 0
+      ? {
+          skillsOverride: (base) => ({
+            ...base,
+            skills: base.skills.filter((skill) => !excludedSkillNames.has(skill.name)),
+          }),
+        }
+      : {}),
     noContextFiles: true,
     noExtensions: true,
     noPromptTemplates: true,
@@ -767,8 +782,34 @@ export function createPiAgentFactory({
       const policy = resolveAgentPolicy(options.role);
       const surfaceTools = customTools.filter((tool) => tool.surface === true);
       const hasWatchAdd = customTools.some((tool) => tool.name === "watch_add");
+      const hasWorkerStart = customTools.some((tool) => tool.name === "worker_start");
+      const hasVoiceSpeak = surfaceTools.some((tool) => tool.name === "discord_speak");
+      const workerBrowserAvailable =
+        enablesAgentBrowser({ kind: "attached", taskId: "" }, options.ownerFeaturesAllowed) &&
+        authorization.allowsServer(AGENT_BROWSER_MCP_SERVER_NAME);
+      const workerT3Available =
+        options.ownerFeaturesAllowed === true && authorization.allowsTool("t3_thread_start");
+      const sessionBrowserAvailable =
+        enablesAgentBrowser(options.role, options.ownerFeaturesAllowed) &&
+        authorization.allowsServer(AGENT_BROWSER_MCP_SERVER_NAME);
+      const sessionT3Available =
+        options.role.kind === "attached" &&
+        customTools.some((tool) => tool.name === "t3_thread_start");
+      const excludedSkillNames = new Set<string>([
+        ...(sessionBrowserAvailable ? [] : ["browser-automation"]),
+        ...(sessionT3Available ? [] : ["t3-thread"]),
+      ]);
+      const workerDelegationSection =
+        hasWorkerStart && !hasVoiceSpeak
+          ? renderWorkerDelegationSection({
+              ownerBrowserAvailable: workerBrowserAvailable,
+              ownerT3Available: workerT3Available,
+              watchAvailable: hasWatchAdd,
+            })
+          : undefined;
       const systemPrompt = [
         definition.systemPrompt,
+        ...(workerDelegationSection ? [workerDelegationSection] : []),
         ...(hasWatchAdd && watchToolCatalog ? [renderWatchToolSection(watchToolCatalog)] : []),
       ]
         .filter(Boolean)
@@ -787,6 +828,7 @@ export function createPiAgentFactory({
           normalizeAssistantText: policy.assistantText === "none",
           surfaceTools,
           backgroundCompactionLeadTokens: llm.compaction?.backgroundTokens,
+          excludedSkillNames,
           extraExtensions: [
             ...(extraExtensions ?? []),
             ...(enablesAgentBrowser(options.role, options.ownerFeaturesAllowed)

@@ -13,12 +13,16 @@ export function createAttachedControlTools(
     conversationKey: { kind: "discord", channelId },
     accessScope,
   };
+  const ownerCapabilitiesNote = ownerFeaturesAllowed
+    ? " Workers in this owner conversation also have real browser automation (agent-browser) and T3 Code threads (t3_thread_*), which you do not have directly."
+    : "";
   return [
     defineTool({
       name: "worker_start",
       label: "Start Worker",
       description:
-        "Start a worker: a separate agent with its own session and tools. The worker cannot send Discord messages; its result arrives as an event. Use worker_send to give it follow-up instructions.",
+        "Start a worker: a separate agent with its own persistent session and tools. Prefer worker_start over doing multi-step web research, reading long pages or multiple sources, codemode/MCP workflows, or ongoing investigations inline in the conversation. Give a self-contained prompt; the worker cannot send Discord messages and its result arrives as an event. Use worker_send for follow-ups." +
+        ownerCapabilitiesNote,
       parameters: Type.Object({
         prompt: Type.String({ minLength: 1, maxLength: 4_000 }),
       }),
@@ -44,7 +48,7 @@ export function createAttachedControlTools(
       name: "worker_send",
       label: "Send to Worker",
       description:
-        "Send a follow-up instruction to a worker. The worker keeps its own session and returns another result.",
+        "Send a follow-up instruction to an existing worker. It resumes the worker's session and returns another result event; prefer reusing an existing worker for related follow-up work.",
       parameters: Type.Object({
         taskId: Type.String({ minLength: 1 }),
         message: Type.String({ minLength: 1, maxLength: 4_000 }),
