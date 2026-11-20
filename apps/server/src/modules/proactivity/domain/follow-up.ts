@@ -60,7 +60,7 @@ export function parseFollowUp(value: unknown): FollowUp {
     typeof channelId !== "string" ||
     channelId.length === 0 ||
     accessScope === undefined ||
-    (accessScope !== "public" && !/^owner:\d+$/u.test(accessScope)) ||
+    (accessScope !== "public" && !/^(?:owner|user):\d+$/u.test(accessScope)) ||
     typeof subject !== "string" ||
     subject.length === 0 ||
     typeof cadenceLabel !== "string" ||

@@ -24,6 +24,7 @@ import {
   isOwnerAccessScope,
   ownerAccessScope,
   PUBLIC_ACCESS_SCOPE,
+  userAccessScope,
   type AccessScope,
 } from "@shared/access";
 import type { TaskCoordinator } from "./task-coordinator";
@@ -45,7 +46,7 @@ export interface AgentCoordinatorDependencies {
     channelId: string,
     sessionKey: string,
     handoffContext?: string,
-    ownerFeaturesAllowed?: boolean,
+    accessScope?: string,
   ) => Promise<DiscordConversationAgent>;
   readonly discordUserDirectory?: DiscordUserDirectory;
   readonly channelSessionStateStore?: ChannelSessionStateStore;
@@ -80,12 +81,12 @@ export class AgentCoordinator {
     this.sessionManager = new ChannelSessionManager({
       accessPolicy: dependencies.accessPolicy,
       channelSessionStateStore: dependencies.channelSessionStateStore,
-      createAgent: (conversationKey, sessionKey, handoffContext, ownerFeaturesAllowed) =>
+      createAgent: (conversationKey, sessionKey, handoffContext, accessScope) =>
         dependencies.createDiscordAgent(
           conversationKey.channelId,
           sessionKey,
           handoffContext,
-          ownerFeaturesAllowed,
+          accessScope,
         ),
       channelApi: dependencies.channelApi,
       logger: this.logger,
@@ -216,6 +217,10 @@ export class AgentCoordinator {
       const location = await this.dependencies.channelApi.getChannelLocation(
         conversationKey.channelId,
       );
+      if (accessScope.startsWith("user:")) {
+        const userId = accessScope.slice("user:".length);
+        return accessPolicy.resolveLinkedUser({ ...location, userId, userIsBot: false }) === userId;
+      }
       const target = {
         ...location,
         userId: this.dependencies.ownerUserId,
@@ -264,10 +269,15 @@ export class AgentCoordinator {
 
     const ownerFeaturesAllowed =
       this.dependencies.accessPolicy?.canUseOwnerFeatures(target) ?? false;
+    const linkedUser = ownerFeaturesAllowed
+      ? undefined
+      : this.dependencies.accessPolicy?.resolveLinkedUser(target);
     const accessScope =
       ownerFeaturesAllowed && this.dependencies.ownerUserId
         ? ownerAccessScope(this.dependencies.ownerUserId)
-        : PUBLIC_ACCESS_SCOPE;
+        : linkedUser
+          ? userAccessScope(linkedUser)
+          : PUBLIC_ACCESS_SCOPE;
 
     const logger = this.logger.child({
       channelId: message.channelId,

@@ -3,6 +3,7 @@ import test from "node:test";
 import pino from "pino";
 
 import type { ConversationAgent } from "@agents/core/conversation-agent";
+import { createDiscordAccessPolicy } from "@modules/discord/domain/discord-access-policy";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
 import {
   getChannelRotationBucket,
@@ -12,8 +13,12 @@ import {
 } from "./channel-session-state-store";
 import { ChannelSessionManager } from "./channel-session-manager";
 
-function createHarness(initialState: ChannelSessionState) {
+function createHarness(
+  initialState: ChannelSessionState,
+  options: { readonly withAccessPolicy?: boolean } = {},
+) {
   const events: string[] = [];
+  const createdScopes: (string | undefined)[] = [];
   const savedStates: ChannelSessionState[] = [];
   let storedState = initialState;
   let turnCompleted = false;
@@ -56,8 +61,17 @@ function createHarness(initialState: ChannelSessionState) {
     },
   };
   const manager = new ChannelSessionManager({
+    ...(options.withAccessPolicy
+      ? {
+          accessPolicy: createDiscordAccessPolicy(
+            { default: "allow", directMessages: "allow" },
+            "owner-1",
+          ),
+        }
+      : {}),
     channelSessionStateStore: stateStore,
-    createAgent: async (_conversationKey, sessionKey, handoffContext) => {
+    createAgent: async (_conversationKey, sessionKey, handoffContext, accessScope) => {
+      createdScopes.push(accessScope);
       const label = agentCount++ === 0 ? "old" : "new";
       events.push(`create:${label}`);
       assert.equal(handoffContext, label === "new" ? "handoff summary" : undefined);
@@ -81,6 +95,7 @@ function createHarness(initialState: ChannelSessionState) {
   });
 
   return {
+    createdScopes,
     events,
     manager,
     savedStates,
@@ -137,6 +152,26 @@ test("runTurn rotates, clears handoff, and saves state around the turn in order"
     assert.equal(harness.savedStates[0]?.handoffContext, "handoff summary");
     assert.equal(harness.savedStates[1]?.handoffContext, undefined);
     assert.equal(harness.savedStates[2]?.sessionKey, expectedSessionKey);
+  } finally {
+    await harness.manager.dispose();
+  }
+});
+
+test("runTurn gives a linked user their own session scope", async () => {
+  const harness = createHarness(createState(), { withAccessPolicy: true });
+
+  try {
+    await harness.manager.runTurn(
+      { kind: "discord", channelId: "channel-a" },
+      "user:456",
+      async (_agent, state) => {
+        assert.equal(state.accessScope, "user:456");
+        assert.equal(state.sessionKey, "discord-channel:channel-a:user:456");
+        harness.completeTurn();
+      },
+    );
+
+    assert.equal(harness.createdScopes.at(-1), "user:456");
   } finally {
     await harness.manager.dispose();
   }

@@ -45,6 +45,10 @@ test("reads the legacy task watcher as a worker", () => {
   assert.deepEqual(parseFollowUp(legacy).watcher, { kind: "worker", id: "worker-1" });
 });
 
+test("accepts a linked user scope", () => {
+  assert.equal(parseFollowUp({ ...followUp, accessScope: "user:456" }).accessScope, "user:456");
+});
+
 test("rejects malformed follow-up records", () => {
   assert.throws(() => parseFollowUp(null), /保存形式/u);
   assert.throws(() => parseFollowUp({ ...followUp, version: 2 }), /保存形式/u);

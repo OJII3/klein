@@ -68,7 +68,7 @@ export function parseScheduledTask(value: unknown): ScheduledTask {
     typeof channelId !== "string" ||
     channelId.length === 0 ||
     accessScope === undefined ||
-    (accessScope !== "public" && !/^owner:\d+$/u.test(accessScope)) ||
+    (accessScope !== "public" && !/^(?:owner|user):\d+$/u.test(accessScope)) ||
     typeof createdAt !== "string" ||
     !Number.isFinite(Date.parse(createdAt)) ||
     typeof nextRunAt !== "string" ||

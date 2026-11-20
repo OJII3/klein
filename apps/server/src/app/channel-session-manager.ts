@@ -3,7 +3,7 @@ import type { Logger } from "pino";
 import type { ConversationAgent } from "@agents/core/conversation-agent";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
 import type { DiscordAccessPolicy } from "@modules/discord/domain/discord-access-policy";
-import { isOwnerAccessScope, ownerAccessScope, PUBLIC_ACCESS_SCOPE } from "@shared/access";
+import { ownerAccessScope, PUBLIC_ACCESS_SCOPE } from "@shared/access";
 import {
   CHANNEL_ROTATION_IDLE_MS,
   createConversationSessionKey,
@@ -24,7 +24,7 @@ export interface ChannelSessionManagerDependencies<
     conversationKey: ConversationKey,
     sessionKey: string,
     handoffContext?: string,
-    ownerFeaturesAllowed?: boolean,
+    accessScope?: string,
   ) => Promise<TAgent>;
   readonly channelApi: DiscordChannelApi;
   readonly logger: Logger;
@@ -72,13 +72,26 @@ export class ChannelSessionManager<TAgent extends ConversationAgent = Conversati
           userId: this.dependencies.ownerUserId,
           userIsBot: false,
         };
-        if (!this.dependencies.accessPolicy.canReceive(target)) continue;
-        const currentScope =
-          this.dependencies.accessPolicy.canUseOwnerFeatures(target) &&
-          this.dependencies.ownerUserId
-            ? ownerAccessScope(this.dependencies.ownerUserId)
-            : PUBLIC_ACCESS_SCOPE;
-        if (state.accessScope !== currentScope) continue;
+        if (state.accessScope?.startsWith("user:")) {
+          const userId = state.accessScope.slice("user:".length);
+          if (
+            this.dependencies.accessPolicy.resolveLinkedUser({
+              ...location,
+              userId,
+              userIsBot: false,
+            }) !== userId
+          ) {
+            continue;
+          }
+        } else {
+          if (!this.dependencies.accessPolicy.canReceive(target)) continue;
+          const currentScope =
+            this.dependencies.accessPolicy.canUseOwnerFeatures(target) &&
+            this.dependencies.ownerUserId
+              ? ownerAccessScope(this.dependencies.ownerUserId)
+              : PUBLIC_ACCESS_SCOPE;
+          if (state.accessScope !== currentScope) continue;
+        }
         channelName = location.channelName;
       }
       const restored = channelName ? { ...state, channelName } : state;
@@ -229,7 +242,7 @@ export class ChannelSessionManager<TAgent extends ConversationAgent = Conversati
       conversationKey,
       state.sessionKey,
       state.handoffContext,
-      isOwnerAccessScope(state.accessScope, this.dependencies.ownerUserId),
+      state.accessScope,
     );
     this.agents.set(key, created);
     this.agentSessionKeys.set(key, state.sessionKey);

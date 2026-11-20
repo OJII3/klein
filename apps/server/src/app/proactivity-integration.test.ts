@@ -18,6 +18,7 @@ import { FileFollowUpStore } from "@modules/proactivity/infrastructure/file-foll
 import { FileProactivePreferenceStore } from "@modules/proactivity/infrastructure/file-proactive-preference-store";
 import { FileProactiveSignalStore } from "@modules/proactivity/infrastructure/file-proactive-signal-store";
 import { createTempDir } from "../testing/temp-dir";
+import { parseAccessScope } from "@shared/access";
 import { AgentCoordinator } from "./agent-coordinator";
 import { TaskCoordinator } from "./task-coordinator";
 
@@ -122,11 +123,12 @@ async function withIntegration(
   };
   const agentCoordinator = new AgentCoordinator({
     workers,
-    createDiscordAgent: (channelId, sessionKey, handoffContext, ownerFeaturesAllowed) =>
+    createDiscordAgent: (channelId, sessionKey, handoffContext, accessScope) =>
       DiscordAgent.create(agentFactory, channelId, "system prompt", {
+        accessScope: parseAccessScope(accessScope),
         sessionKey,
         handoffContext,
-        ownerFeaturesAllowed,
+        ownerFeaturesAllowed: accessScope?.startsWith("owner:") === true,
         tools: () => [],
       }),
     channelApi,

@@ -2,7 +2,7 @@ import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
 import type { WorkerControl, WorkerScope } from "@agents/core/worker-agent";
-import type { AccessScope } from "@shared/access";
+import { accessScopeUserId, type AccessScope } from "@shared/access";
 export function createWorkerControlTools(
   target: WorkerControl,
   channelId: string,
@@ -13,16 +13,21 @@ export function createWorkerControlTools(
     conversationKey: { kind: "discord", channelId },
     accessScope,
   };
-  const ownerCapabilitiesNote = ownerFeaturesAllowed
-    ? " Workers in this owner conversation also have real browser use (agent-browser) and T3 Code threads (t3_thread_*), which you do not have directly."
-    : "";
+  const workerCapabilities = [
+    ...(accessScopeUserId(accessScope) !== undefined ? ["real browser use (agent-browser)"] : []),
+    ...(ownerFeaturesAllowed ? ["T3 Code threads (t3_thread_*)"] : []),
+  ];
+  const capabilitiesNote =
+    workerCapabilities.length > 0
+      ? ` Workers in this conversation also have ${workerCapabilities.join(" and ")}, which you do not have directly.`
+      : "";
   return [
     defineTool({
       name: "worker_start",
       label: "Start Worker",
       description:
         "Start a worker: a separate agent with its own persistent session and tools. Prefer worker_start over doing multi-step web research, reading long pages or multiple sources, codemode/MCP workflows, or ongoing investigations inline in the conversation. Give a self-contained prompt; the worker cannot send Discord messages and its result arrives as an event. Use worker_send for follow-ups." +
-        ownerCapabilitiesNote,
+        capabilitiesNote,
       parameters: Type.Object({
         prompt: Type.String({ minLength: 1, maxLength: 4_000 }),
       }),

@@ -65,6 +65,16 @@ test("stores, lists, updates, and deletes scheduled tasks by kind and scope", as
   assert.deepEqual(await store.listForScope("watch", "channel-a", "owner:123"), []);
 });
 
+test("persists tasks in a linked user scope", async () => {
+  await using temp = await createTempDir("klein-schedules-");
+  const userWatch: WatchTask = { ...watch, id: "watch-user", accessScope: "user:456" };
+  const store = new FileScheduledTaskStore(temp.path);
+  await store.create(userWatch);
+
+  const reopened = new FileScheduledTaskStore(temp.path);
+  assert.deepEqual(await reopened.listForScope("watch", "channel-a", "user:456"), [userWatch]);
+});
+
 test("rejects the old reminder file shape", async () => {
   await using temp = await createTempDir("klein-schedules-");
   const directory = temp.path;

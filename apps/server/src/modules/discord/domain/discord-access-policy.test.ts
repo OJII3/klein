@@ -173,6 +173,30 @@ test("a thread link takes precedence over the parent channel rules", () => {
   assert.equal(linkedPolicy.canReceive({ ...target, userId: "member-user" }), false);
 });
 
+test("a linked user owns the private session for their own channel", () => {
+  const target = { guildId: "guild", channelId: "member-channel" };
+  assert.equal(linkedPolicy.resolveLinkedUser({ ...target, userId: "member-user" }), "member-user");
+  assert.equal(linkedPolicy.resolveLinkedUser({ ...target, userId: "stranger" }), undefined);
+  assert.equal(
+    linkedPolicy.resolveLinkedUser({ ...target, userId: "member-user", userIsBot: true }),
+    undefined,
+  );
+  assert.equal(
+    linkedPolicy.resolveLinkedUser({
+      guildId: "guild",
+      channelId: "unknown",
+      userId: "member-user",
+    }),
+    undefined,
+  );
+});
+
+test("a thread link resolves its linked user", () => {
+  const target = { guildId: "guild", channelId: "parent", threadId: "owner-thread" };
+  assert.equal(linkedPolicy.resolveLinkedUser({ ...target, userId: "owner-user" }), "owner-user");
+  assert.equal(linkedPolicy.resolveLinkedUser({ ...target, userId: "member-user" }), undefined);
+});
+
 test("unlinked locations still use the access rules", () => {
   assert.equal(linkedPolicy.resolveAccess({ guildId: "guild", channelId: "unknown" }), "deny");
   assert.equal(

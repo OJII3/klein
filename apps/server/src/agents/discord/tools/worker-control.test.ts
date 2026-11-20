@@ -183,7 +183,7 @@ test("rejects worker_send, worker_close, and worker_list outside the bound scope
   }
 });
 
-test("describes owner-only worker capabilities only when owner features are allowed", () => {
+test("describes worker capabilities that the conversation scope grants", () => {
   const { target } = createTarget();
   const publicTools = unpackControlTools(
     createWorkerControlTools(target, "channel-1", "public", false),
@@ -191,9 +191,14 @@ test("describes owner-only worker capabilities only when owner features are allo
   const ownerTools = unpackControlTools(
     createWorkerControlTools(target, "channel-1", "owner:123", true),
   );
+  const linkedTools = unpackControlTools(
+    createWorkerControlTools(target, "channel-1", "user:456", false),
+  );
 
   assert.match(publicTools.workerStart.description, /Prefer worker_start/);
-  assert.doesNotMatch(publicTools.workerStart.description, /t3_thread_\*/);
+  assert.doesNotMatch(publicTools.workerStart.description, /agent-browser|t3_thread_\*/);
   assert.match(ownerTools.workerStart.description, /agent-browser/);
   assert.match(ownerTools.workerStart.description, /t3_thread_\*/);
+  assert.match(linkedTools.workerStart.description, /agent-browser/);
+  assert.doesNotMatch(linkedTools.workerStart.description, /t3_thread_\*/);
 });

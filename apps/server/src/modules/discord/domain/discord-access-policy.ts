@@ -46,6 +46,8 @@ export interface DiscordAccessPolicy {
   canReceive(target: DiscordAccessTarget): boolean;
   resolveAccess(target: DiscordAccessTarget): DiscordAccess;
   canUseOwnerFeatures(target: DiscordAccessTarget): boolean;
+  /** The linked user whose private session this message belongs to, if any. */
+  resolveLinkedUser(target: DiscordAccessTarget): string | undefined;
 }
 
 function isOwner(ownerUserId: string | undefined, target: DiscordAccessTarget): boolean {
@@ -89,6 +91,16 @@ export function createDiscordAccessPolicy(
     resolveAccess(configuration, rules, ownerUserId, resolveChannelOwner, target) === "owner" &&
     isOwner(ownerUserId, target);
 
+  const resolveLinkedUser = (target: DiscordAccessTarget): string | undefined => {
+    if (target.userIsBot || !target.guildId || !target.userId) return undefined;
+    const linkedUser = resolveChannelOwner?.({
+      guildId: target.guildId,
+      channelId: target.channelId,
+      ...(target.threadId ? { threadId: target.threadId } : {}),
+    });
+    return linkedUser === target.userId ? linkedUser : undefined;
+  };
+
   return {
     canReceive(target) {
       return isAccessAllowed(
@@ -99,5 +111,6 @@ export function createDiscordAccessPolicy(
     resolveAccess: (target) =>
       resolveAccess(configuration, rules, ownerUserId, resolveChannelOwner, target),
     canUseOwnerFeatures,
+    resolveLinkedUser,
   };
 }

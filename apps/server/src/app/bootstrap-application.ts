@@ -299,15 +299,19 @@ export async function bootstrapApplication(): Promise<void> {
     channelId: string,
     sessionKey: string,
     handoffContext?: string,
-    ownerFeaturesAllowed = false,
-  ) =>
-    DiscordAgent.create(piAgentFactory, channelId, systemPrompt, {
+    accessScope?: string,
+  ) => {
+    const ownerFeaturesAllowed = isOwnerAccessScope(accessScope, ownerUserId);
+    const scope = parseAccessScope(accessScope);
+    return DiscordAgent.create(piAgentFactory, channelId, systemPrompt, {
+      accessScope: scope,
       handoffContext,
       ownerFeaturesAllowed,
       ownerUserId,
       sessionKey,
       tools: (toolContext) =>
         createDiscordAgentTools({
+          accessScope: scope,
           analyzeImage: toolContext.analyzeImage,
           channelApi: discordService,
           channelId,
@@ -324,6 +328,7 @@ export async function bootstrapApplication(): Promise<void> {
           ...(proactiveCoordinator ? { proactive: proactiveCoordinator } : {}),
         }),
     });
+  };
   const userMemoryCoordinator =
     userMemoryConfig?.enabled === true && userMemoryStore && userMemoryDirectory
       ? new UserMemoryCoordinator({

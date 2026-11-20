@@ -45,6 +45,13 @@ test("parses a stored signal with optional evidence and delivery", () => {
   assert.deepEqual(parseProactiveSignal(signal), signal);
 });
 
+test("accepts a linked user scope", () => {
+  assert.equal(
+    parseProactiveSignal({ ...signal, accessScope: "user:456" }).accessScope,
+    "user:456",
+  );
+});
+
 test("rejects malformed signal records", () => {
   assert.throws(() => parseProactiveSignal(null), /保存形式/u);
   assert.throws(() => parseProactiveSignal({ ...signal, version: 2 }), /保存形式/u);

@@ -57,6 +57,10 @@
                 },
                 {
                   "type": "string",
+                  "const": "user"
+                },
+                {
+                  "type": "string",
                   "const": "owner"
                 }
               ]
@@ -73,6 +77,10 @@
                     {
                       "type": "string",
                       "const": "deny"
+                    },
+                    {
+                      "type": "string",
+                      "const": "user"
                     },
                     {
                       "type": "string",
@@ -100,6 +108,10 @@
                 },
                 {
                   "type": "string",
+                  "const": "user"
+                },
+                {
+                  "type": "string",
                   "const": "owner"
                 }
               ]
@@ -116,6 +128,10 @@
                     {
                       "type": "string",
                       "const": "deny"
+                    },
+                    {
+                      "type": "string",
+                      "const": "user"
                     },
                     {
                       "type": "string",

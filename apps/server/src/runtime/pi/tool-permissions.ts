@@ -4,7 +4,6 @@ import type {
   ExtensionToolContext,
   ToolLoadout,
 } from "@earendil-works/pi-coding-agent";
-import { isAccessAllowed, type AccessLevel } from "@shared/access";
 import { isRecord } from "@shared/type-guards";
 
 const MCP_RESOURCE_TOOLS = new Set([
@@ -13,7 +12,12 @@ const MCP_RESOURCE_TOOLS = new Set([
   "read_mcp_resource",
 ]);
 
-export type ToolAccess = AccessLevel;
+/** Public conversations, linked-user conversations, and owner conversations. */
+export type ToolSessionAccess = "public" | "user" | "owner";
+
+/** Permission level for a tool or MCP server. `user` includes the owner. */
+export type ToolAccess = "allow" | "deny" | "user" | "owner";
+
 export interface ToolPermissions {
   readonly tools?: {
     readonly default?: ToolAccess;
@@ -29,9 +33,11 @@ export interface ToolPermissions {
 export class ToolAuthorization {
   private readonly servers = new Set<string>();
   constructor(
-    readonly ownerSession: boolean,
+    readonly sessionAccess: ToolSessionAccess,
     private readonly permissions: ToolPermissions = {},
     private readonly alwaysAllowedTools: ReadonlySet<string> = new Set(),
+    /** Application-registered servers and the level they require by default. */
+    private readonly builtinServerAccess: Readonly<Record<string, ToolAccess>> = {},
   ) {}
   rememberServers(names: readonly string[]): void {
     for (const name of names) this.servers.add(name);
@@ -45,7 +51,10 @@ export class ToolAuthorization {
   }
   allowsServer(name: string): boolean {
     return this.allows(
-      this.permissions.mcp?.servers?.[name] ?? this.permissions.mcp?.default ?? "owner",
+      this.permissions.mcp?.servers?.[name] ??
+        this.builtinServerAccess[name] ??
+        this.permissions.mcp?.default ??
+        "owner",
     );
   }
   allowsTool(name: string): boolean {
@@ -67,7 +76,10 @@ export class ToolAuthorization {
     );
   }
   private allows(access: ToolAccess): boolean {
-    return isAccessAllowed(access, this.ownerSession);
+    if (access === "allow") return true;
+    if (access === "deny") return false;
+    if (access === "user") return this.sessionAccess !== "public";
+    return this.sessionAccess === "owner";
   }
   extension: ExtensionFactory = (pi) => {
     pi.on("before_agent_start", () => {

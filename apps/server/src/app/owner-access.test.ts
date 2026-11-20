@@ -10,6 +10,7 @@ import { createDiscordAccessPolicy } from "@modules/discord/domain/discord-acces
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import { DiscordOperatingState } from "@modules/discord/domain/discord-operating-state";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
+import { isOwnerAccessScope, parseAccessScope } from "@shared/access";
 import { AgentCoordinator } from "./agent-coordinator";
 import { ChannelSessionStateStore, getChannelRotationBucket } from "./channel-session-state-store";
 import { TaskCoordinator } from "./task-coordinator";
@@ -29,6 +30,7 @@ const message: DiscordMessage = {
 function createHarness(
   store: ChannelSessionStateStore,
   ownerLinked: boolean | (() => boolean) = false,
+  linkedUserId?: string,
 ) {
   const isOwnerLinked = typeof ownerLinked === "function" ? ownerLinked : () => ownerLinked;
   const creations: AgentCreationOptions[] = [];
@@ -78,8 +80,10 @@ function createHarness(
           guildId === "guild" ? { channels: { channel: { access: "allow" as const } } } : undefined,
       },
       (target) =>
-        isOwnerLinked() && target.guildId === "guild" && target.channelId === "channel"
-          ? ownerId
+        target.guildId === "guild" && target.channelId === "channel"
+          ? isOwnerLinked()
+            ? ownerId
+            : linkedUserId
           : undefined,
     ),
     workers: {
@@ -98,11 +102,12 @@ function createHarness(
     },
     ownerUserId: ownerId,
     channelSessionStateStore: store,
-    createDiscordAgent: (channelId, sessionKey, handoffContext, ownerFeaturesAllowed) =>
+    createDiscordAgent: (channelId, sessionKey, handoffContext, accessScope) =>
       DiscordAgent.create(factory, channelId, "system prompt", {
+        accessScope: parseAccessScope(accessScope),
         sessionKey,
         handoffContext,
-        ownerFeaturesAllowed,
+        ownerFeaturesAllowed: isOwnerAccessScope(accessScope, ownerId),
         ownerUserId: ownerId,
         tools: () => [],
       }),
@@ -153,6 +158,30 @@ test("only owner messages create private sessions and never enter shared memory"
     assert.equal(harness.creations[0].sessionKey, "discord-channel:channel:owner:123");
     assert.equal(harness.creations[0].ownerFeaturesAllowed, true);
     assert.equal(harness.remembered.length, 0);
+  } finally {
+    await harness.coordinator.dispose();
+  }
+});
+
+test("a linked non-owner user gets a private session without owner features", async () => {
+  await using temp = await createTempDir("klein-owner-");
+  const directory = temp.path;
+  const store = new ChannelSessionStateStore(directory);
+  const harness = createHarness(store, false, "linked-user");
+  try {
+    await harness.coordinator.handleDiscordMessage({
+      ...message,
+      author: { ...message.author, id: "linked-user" },
+    });
+    assert.equal(harness.creations[0].sessionKey, "discord-channel:channel:user:linked-user");
+    assert.equal(harness.creations[0].ownerFeaturesAllowed, false);
+
+    await harness.coordinator.handleDiscordMessage({
+      ...message,
+      author: { ...message.author, id: "bystander" },
+    });
+    assert.equal(harness.creations.at(-1)?.sessionKey, "discord-channel:channel:public");
+    assert.equal(harness.creations.at(-1)?.ownerFeaturesAllowed, false);
   } finally {
     await harness.coordinator.dispose();
   }

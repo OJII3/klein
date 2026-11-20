@@ -11,12 +11,14 @@ import {
   type DiscordTurnContext,
 } from "./discord-message-agent-turn";
 import { BOT_MESSAGE_GUIDANCE } from "./prompt-policy";
+import type { AccessScope } from "@shared/access";
 
 export interface DiscordAgentCreateOptions {
   readonly sessionKey?: string;
   readonly handoffContext?: string;
   readonly ownerFeaturesAllowed?: boolean;
   readonly ownerUserId?: string;
+  readonly accessScope?: AccessScope;
   readonly tools?: (context: AgentToolContext) => readonly ToolDefinition[];
 }
 
@@ -54,6 +56,7 @@ export class DiscordAgent implements DiscordConversationAgent {
           : undefined,
         sessionKey: options.sessionKey ?? `discord-channel:${channelId}`,
         ownerFeaturesAllowed,
+        ...(options.accessScope ? { accessScope: options.accessScope } : {}),
       },
     );
 
