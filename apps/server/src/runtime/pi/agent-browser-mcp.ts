@@ -1,9 +1,10 @@
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, renameSync } from "node:fs";
 import { resolve } from "node:path";
 
 import type { ExtensionFactory, McpServerConfig } from "@earendil-works/pi-coding-agent";
 
 import type { AgentRole } from "@agents/core/agent-role";
+import { userEnvironmentKey, type UserEnvironment } from "@shared/user-environment";
 
 /** Server tools are named `mcp__agent_browser__<tool>`. */
 export const AGENT_BROWSER_MCP_SERVER_NAME = "agent_browser";
@@ -26,14 +27,27 @@ export function enablesAgentBrowser(role: AgentRole, browserUserId: string | und
   return role.kind === "worker" && browserUserId !== undefined;
 }
 
-/** A Discord user id is safe as a session name and directory name once sanitized. */
-export function browserProfileKey(userId: string): string {
-  return userId.replaceAll(/[^0-9A-Za-z_-]/g, "_");
+/** The profile dir keeps cookies, storage, and service workers between runs. */
+export function agentBrowserProfileDirectory(environment: UserEnvironment): string {
+  return resolve(environment.credentialsDirectory, "browser");
 }
 
-/** The profile dir keeps cookies, storage, and service workers between runs. */
-export function createAgentBrowserProfileDirectory(agentDir: string, userId: string): string {
-  return resolve(agentDir, "browser-profiles", browserProfileKey(userId));
+/** Moves a profile written before per-user environments so existing logins survive. */
+export function migrateLegacyAgentBrowserProfile(
+  agentDir: string,
+  environment: UserEnvironment,
+): string {
+  const profileDirectory = agentBrowserProfileDirectory(environment);
+  const legacyDirectory = resolve(
+    agentDir,
+    "browser-profiles",
+    userEnvironmentKey(environment.userId),
+  );
+  if (!existsSync(profileDirectory) && existsSync(legacyDirectory)) {
+    mkdirSync(environment.credentialsDirectory, { recursive: true, mode: 0o700 });
+    renameSync(legacyDirectory, profileDirectory);
+  }
+  return profileDirectory;
 }
 
 /**
@@ -51,7 +65,7 @@ export function createAgentBrowserMcpConfig(userId: string, profileDirectory: st
     command: "agent-browser",
     args: ["mcp", "--tools", "core"],
     env: {
-      AGENT_BROWSER_SESSION: `discord-user-${browserProfileKey(userId)}`,
+      AGENT_BROWSER_SESSION: `discord-user-${userEnvironmentKey(userId)}`,
       AGENT_BROWSER_PROFILE: profileDirectory,
       AGENT_BROWSER_NAMESPACE,
       AGENT_BROWSER_CONTENT_BOUNDARIES: "1",
