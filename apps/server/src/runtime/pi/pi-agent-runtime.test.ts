@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import test from "node:test";
 import { join, resolve as resolvePath } from "node:path";
@@ -23,6 +24,7 @@ import { Type } from "typebox";
 import type { AgentEvent } from "@agents/core/agent-event";
 import { ImageAnalysisError } from "@agents/core/image-analysis";
 import { isRecord, parseJson } from "@shared/type-guards";
+import { resolveUserEnvironment } from "@shared/user-environment";
 import { createTempDir } from "../../testing/temp-dir";
 import {
   BACKGROUND_COMPACTION_LEAD_TOKENS,
@@ -1378,6 +1380,71 @@ test("compactForHandoff formats Goal and summary prompt with characterName", asy
   );
   assert.equal(summary, "## Goal\n月見ヤチヨとして振る舞う\n\n## 引き継ぎ\n- テスト項目");
   runtime.dispose();
+});
+
+test("runs linked-user workers in their own workspace", async () => {
+  await using temp = await createTempDir("klein-user-workspace-");
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  const provider = fauxProvider({ tokensPerSecond: 100_000 });
+  const model = provider.getModel();
+  const modelRuntime = await ModelRuntime.create({
+    credentials: new InMemoryCredentialStore(),
+    modelsPath: null,
+    refreshOnCreate: false,
+  });
+  modelRuntime.registerNativeProvider(provider.provider);
+  const sessionCwds: { sessionKey: string; cwd: string }[] = [];
+  const factory = createPiAgentFactory({
+    agentDir: temp.path,
+    characterName: "クライン",
+    llm: { provider: model.provider, model: model.id },
+    logger: pino({ level: "silent" }),
+    modelRuntime,
+    sessionMode: "new",
+    onSessionCreated(session, context) {
+      sessionCwds.push({ sessionKey: context.sessionKey, cwd: session.sessionManager.getCwd() });
+    },
+  });
+
+  try {
+    const conversation = await factory.create({ systemPrompt: "Conversation." }, () => [], {
+      role: { kind: "conversation" },
+      sessionKey: "conversation",
+      accessScope: "user:123",
+    });
+    conversation.dispose();
+
+    const linkedWorker = await factory.create({ systemPrompt: "Worker." }, () => [], {
+      role: { kind: "worker", workerId: "linked-worker" },
+      sessionKey: "linked-worker",
+      accessScope: "user:123",
+    });
+    linkedWorker.dispose();
+
+    const publicWorker = await factory.create({ systemPrompt: "Worker." }, () => [], {
+      role: { kind: "worker", workerId: "public-worker" },
+      sessionKey: "public-worker",
+    });
+    publicWorker.dispose();
+  } finally {
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+  }
+
+  const workspaceDirectory = resolveUserEnvironment(temp.path, "123").workspaceDirectory;
+  assert.equal(
+    sessionCwds.find((session) => session.sessionKey === "linked-worker")?.cwd,
+    workspaceDirectory,
+  );
+  assert.equal(
+    sessionCwds.find((session) => session.sessionKey === "conversation")?.cwd,
+    process.cwd(),
+  );
+  assert.equal(
+    sessionCwds.find((session) => session.sessionKey === "public-worker")?.cwd,
+    process.cwd(),
+  );
+  assert.equal(existsSync(workspaceDirectory), true);
 });
 
 test("appends worker delegation guidance to text conversation prompts based on owner permissions", async () => {

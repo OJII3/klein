@@ -1,12 +1,16 @@
 import assert from "node:assert/strict";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import test from "node:test";
 
 import type { AgentRole } from "@agents/core/agent-role";
+import { resolveUserEnvironment } from "@shared/user-environment";
+import { createTempDir } from "../../testing/temp-dir";
 import {
-  browserProfileKey,
+  agentBrowserProfileDirectory,
   createAgentBrowserMcpConfig,
-  createAgentBrowserProfileDirectory,
   enablesAgentBrowser,
+  migrateLegacyAgentBrowserProfile,
 } from "./agent-browser-mcp";
 
 test("registers agent-browser with the core MCP tools", () => {
@@ -29,13 +33,43 @@ test("names the browser session and profile after the linked user", () => {
   );
 });
 
-test("sanitizes user ids for session names and profile directories", () => {
-  assert.equal(browserProfileKey("123"), "123");
-  assert.equal(browserProfileKey("user/../456"), "user____456");
+test("keeps the profile inside the user's credentials", () => {
+  const environment = resolveUserEnvironment("/tmp/agent", "123");
+
   assert.equal(
-    createAgentBrowserProfileDirectory("/tmp/agent", "123"),
-    "/tmp/agent/browser-profiles/123",
+    agentBrowserProfileDirectory(environment),
+    "/tmp/agent/users/123/credentials/browser",
   );
+  assert.equal(
+    createAgentBrowserMcpConfig("user/../456", "/tmp/profile").env.AGENT_BROWSER_SESSION,
+    "discord-user-user____456",
+  );
+});
+
+test("moves a browser profile written before per-user environments", async () => {
+  await using temp = await createTempDir("klein-browser-profile-");
+  const environment = resolveUserEnvironment(temp.path, "123");
+  const legacyDirectory = join(temp.path, "browser-profiles", "123");
+  mkdirSync(legacyDirectory, { recursive: true });
+  writeFileSync(join(legacyDirectory, "Cookies"), "session");
+
+  const profileDirectory = migrateLegacyAgentBrowserProfile(temp.path, environment);
+
+  assert.equal(profileDirectory, agentBrowserProfileDirectory(environment));
+  assert.equal(readFileSync(join(profileDirectory, "Cookies"), "utf8"), "session");
+  assert.equal(existsSync(legacyDirectory), false);
+});
+
+test("keeps a migrated profile instead of the legacy directory", async () => {
+  await using temp = await createTempDir("klein-browser-profile-");
+  const environment = resolveUserEnvironment(temp.path, "123");
+  const profileDirectory = agentBrowserProfileDirectory(environment);
+  mkdirSync(profileDirectory, { recursive: true });
+  writeFileSync(join(profileDirectory, "Cookies"), "current");
+
+  migrateLegacyAgentBrowserProfile(temp.path, environment);
+
+  assert.equal(readFileSync(join(profileDirectory, "Cookies"), "utf8"), "current");
 });
 
 test("bounds page output and lets the daemon exit after a pause", () => {

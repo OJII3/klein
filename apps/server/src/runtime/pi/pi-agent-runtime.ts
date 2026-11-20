@@ -44,12 +44,17 @@ import { renderWorkerDelegationSection } from "@agents/core/worker-agent";
 import type { SessionMode } from "@app/cli-options";
 import { renderWatchToolSection } from "@modules/scheduling/application/watch-tool";
 import { accessScopeUserId, parseAccessScope } from "@shared/access";
+import {
+  ensureUserEnvironment,
+  resolveUserEnvironment,
+  type UserEnvironment,
+} from "@shared/user-environment";
 import type { WatchToolCatalog } from "@modules/scheduling/ports/watch-tool";
 import {
   AGENT_BROWSER_MCP_SERVER_NAME,
   createAgentBrowserMcpExtension,
-  createAgentBrowserProfileDirectory,
   enablesAgentBrowser,
+  migrateLegacyAgentBrowserProfile,
 } from "./agent-browser-mcp";
 import { createBackgroundCompactionExtension } from "./background-compaction";
 import { createFxtwitterFetchExtension } from "./fxtwitter-fetch";
@@ -736,11 +741,14 @@ export function createPiAgentFactory({
         { usageReporter },
       );
       const browserUserId = accessScopeUserId(parseAccessScope(options.accessScope));
+      const userEnvironment = browserUserId
+        ? ensureUserEnvironment(resolveUserEnvironment(agentDir, browserUserId))
+        : undefined;
       const sessionManager = createPiSessionManager(
         agentDir,
         options.sessionKey,
         options.resumeSession === true ? "resume" : sessionMode,
-        process.cwd(),
+        workerCwd(options.role, userEnvironment),
         options.role,
       );
       const sessionId = sessionManager.getSessionId();
@@ -835,11 +843,11 @@ export function createPiAgentFactory({
           excludedSkillNames,
           extraExtensions: [
             ...(extraExtensions ?? []),
-            ...(sessionBrowserAvailable && browserUserId
+            ...(sessionBrowserAvailable && userEnvironment
               ? [
                   createAgentBrowserMcpExtension(
-                    browserUserId,
-                    createAgentBrowserProfileDirectory(agentDir, browserUserId),
+                    userEnvironment.userId,
+                    migrateLegacyAgentBrowserProfile(agentDir, userEnvironment),
                   ),
                 ]
               : []),
@@ -904,6 +912,14 @@ export function createPiAgentFactory({
       );
     },
   };
+}
+
+/**
+ * Workers with a linked user run in that user's workspace. Conversation agents
+ * and public scopes stay in the repository until a shell is opened to them.
+ */
+function workerCwd(role: AgentRole, environment: UserEnvironment | undefined): string {
+  return role.kind === "worker" && environment ? environment.workspaceDirectory : process.cwd();
 }
 
 function extractUserMessageText(
