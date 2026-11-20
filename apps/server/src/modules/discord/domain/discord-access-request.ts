@@ -5,6 +5,8 @@ export interface DiscordChannelAccessRequest {
   readonly pendingChannelId: string;
   readonly channelName?: string;
   readonly requesterUserId: string;
+  /** When set, approval also registers this user as the location's owner. */
+  readonly linkUserId?: string;
 }
 
 export interface PendingDiscordAccessRequest extends DiscordChannelAccessRequest {
@@ -14,7 +16,8 @@ export interface PendingDiscordAccessRequest extends DiscordChannelAccessRequest
 
 export type DiscordChannelAccessAction = "allow" | "deny";
 
-export type DiscordChannelAccessRejection = "owner-only" | "expired" | "rule-update-failed";
+export type DiscordChannelAccessRejection =
+  "owner-only" | "expired" | "rule-update-failed" | "link-update-failed";
 
 export type DiscordChannelAccessNoticeOutcome = "allowed" | "denied" | "owner-unreachable";
 

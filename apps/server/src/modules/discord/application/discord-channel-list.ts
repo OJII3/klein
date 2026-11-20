@@ -14,6 +14,15 @@ export interface DiscordAllowedChannelListDependencies {
   readonly getGuildRule: (guildId: string) => DiscordGuildAccessRule | undefined;
   readonly resolveAccess: (target: DiscordAccessTarget) => DiscordAccess;
   readonly resolveChannelName: (channelId: string) => Promise<string | undefined>;
+  readonly resolveChannelOwner?: (target: {
+    readonly channelId: string;
+    readonly threadId?: string;
+  }) => string | undefined;
+}
+
+function formatAccessLabel(access: DiscordAccess, ownerId: string | undefined): string {
+  const label = ACCESS_LABELS[access];
+  return ownerId ? `${label}、<@${ownerId}> のチャンネル` : label;
 }
 
 export interface DiscordAllowedChannelListInput {
@@ -51,7 +60,8 @@ export async function buildAllowedDiscordChannelLines(
     const channelName = await dependencies.resolveChannelName(channelId);
     const channelReference = channelName ? `#${channelName}` : channelId;
     if (channelAllowed) {
-      lines.push(`・${channelReference}（${ACCESS_LABELS[channelAccess]}）`);
+      const ownerId = dependencies.resolveChannelOwner?.({ channelId });
+      lines.push(`・${channelReference}（${formatAccessLabel(channelAccess, ownerId)}）`);
       listed += 1;
     }
 
@@ -60,10 +70,12 @@ export async function buildAllowedDiscordChannelLines(
       if (threadAccess === "deny") continue;
       const threadName = await dependencies.resolveChannelName(threadId);
       const threadReference = threadName ? `#${threadName}` : threadId;
+      const ownerId = dependencies.resolveChannelOwner?.({ channelId, threadId });
+      const threadLabel = formatAccessLabel(threadAccess, ownerId);
       lines.push(
         channelAllowed
-          ? `　└ ${threadReference}（${ACCESS_LABELS[threadAccess]}）`
-          : `・${channelReference} / ${threadReference}（${ACCESS_LABELS[threadAccess]}）`,
+          ? `　└ ${threadReference}（${threadLabel}）`
+          : `・${channelReference} / ${threadReference}（${threadLabel}）`,
       );
       listed += 1;
     }

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { Logger } from "pino";
 
+import type { DiscordChannelLinkTarget } from "../domain/discord-channel-link";
 import type { DiscordAccess } from "../domain/discord-access-policy";
 import {
   discordChannelAccessRequestLocationKey,
@@ -13,6 +14,7 @@ import {
 } from "../domain/discord-access-request";
 import type { DiscordAccessRequestStore } from "../ports/discord-access-request-store";
 import type { DiscordAccessRuleStore } from "../ports/discord-access-rule-store";
+import type { DiscordChannelLinkStore } from "../ports/discord-channel-link-store";
 
 export interface DiscordChannelAccessPresentation {
   postPendingNotice(request: PendingDiscordAccessRequest): Promise<{ messageId?: string }>;
@@ -32,9 +34,16 @@ export type DiscordChannelAccessButtonResult =
       readonly access: DiscordAccess;
     };
 
+export type DiscordChannelAccessRequestOutcome =
+  | { readonly kind: "requested" }
+  | { readonly kind: "pending" }
+  | { readonly kind: "already-linked"; readonly userId: string }
+  | { readonly kind: "unavailable" };
+
 export interface DiscordChannelAccessServiceDependencies {
   readonly accessRuleStore: Pick<DiscordAccessRuleStore, "setAccess">;
   readonly accessRequestStore: Pick<DiscordAccessRequestStore, "list" | "save" | "remove">;
+  readonly channelLinkStore?: Pick<DiscordChannelLinkStore, "getLink" | "saveLink">;
   readonly ownerUserId?: string;
   readonly logger?: Logger;
 }
@@ -56,11 +65,18 @@ export class DiscordChannelAccessService {
   async request(
     request: DiscordChannelAccessRequest,
     presentation: DiscordChannelAccessPresentation,
-  ): Promise<void> {
-    if (!this.dependencies.ownerUserId) return;
+  ): Promise<DiscordChannelAccessRequestOutcome> {
+    if (!this.dependencies.ownerUserId) return { kind: "unavailable" };
 
     const key = discordChannelAccessRequestLocationKey(request);
-    if (this.pendingByLocation.has(key)) return;
+    if (this.pendingByLocation.has(key)) return { kind: "pending" };
+
+    if (request.linkUserId) {
+      const existing = this.dependencies.channelLinkStore?.getLink(request);
+      if (existing?.userId === request.linkUserId) {
+        return { kind: "already-linked", userId: existing.userId };
+      }
+    }
 
     let pending: PendingDiscordAccessRequest = {
       ...request,
@@ -102,10 +118,11 @@ export class DiscordChannelAccessService {
         "Failed to ask the owner about Discord channel access",
       );
       await presentation.updatePendingNotice(pending, "owner-unreachable");
-      return;
+      return { kind: "unavailable" };
     }
 
     await this.save(pending);
+    return { kind: "requested" };
   }
 
   async handleButton(button: {
@@ -122,27 +139,56 @@ export class DiscordChannelAccessService {
     const pending = this.pendingByRequestId.get(parsed.requestId);
     if (!pending) return { kind: "rejected", reason: "expired" };
 
-    try {
-      await this.dependencies.accessRuleStore.setAccess(
-        {
-          guildId: pending.guildId,
-          channelId: pending.channelId,
-          ...(pending.threadId ? { threadId: pending.threadId } : {}),
-        },
-        parsed.action,
-      );
-    } catch (error) {
-      this.dependencies.logger?.error(
-        {
-          err: error,
-          event: "discord_channel_access_update_failed",
-          guildId: pending.guildId,
-          channelId: pending.channelId,
-          threadId: pending.threadId,
-        },
-        "Failed to update Discord channel access",
-      );
-      return { kind: "rejected", reason: "rule-update-failed" };
+    const approved = parsed.action === "allow";
+    const target: DiscordChannelLinkTarget = {
+      guildId: pending.guildId,
+      channelId: pending.channelId,
+      ...(pending.threadId ? { threadId: pending.threadId } : {}),
+    };
+
+    if (approved && pending.linkUserId && !this.dependencies.channelLinkStore) {
+      return { kind: "rejected", reason: "link-update-failed" };
+    }
+
+    // Denying a link request leaves the location's existing access rule untouched.
+    if (!(pending.linkUserId && !approved)) {
+      try {
+        await this.dependencies.accessRuleStore.setAccess(target, parsed.action);
+      } catch (error) {
+        this.dependencies.logger?.error(
+          {
+            err: error,
+            event: "discord_channel_access_update_failed",
+            guildId: pending.guildId,
+            channelId: pending.channelId,
+            threadId: pending.threadId,
+          },
+          "Failed to update Discord channel access",
+        );
+        return { kind: "rejected", reason: "rule-update-failed" };
+      }
+    }
+
+    if (approved && pending.linkUserId) {
+      try {
+        await this.dependencies.channelLinkStore?.saveLink({
+          ...target,
+          userId: pending.linkUserId,
+          linkedAt: new Date().toISOString(),
+        });
+      } catch (error) {
+        this.dependencies.logger?.error(
+          {
+            err: error,
+            event: "discord_channel_link_update_failed",
+            guildId: pending.guildId,
+            channelId: pending.channelId,
+            threadId: pending.threadId,
+          },
+          "Failed to register the Discord channel link",
+        );
+        return { kind: "rejected", reason: "link-update-failed" };
+      }
     }
 
     await this.remove(pending);

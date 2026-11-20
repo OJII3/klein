@@ -28,6 +28,8 @@ import {
   createTextContainerMessage,
   truncateTextLines,
 } from "./discord-component-message";
+import type { DiscordChannelLink, DiscordChannelLinkTarget } from "../domain/discord-channel-link";
+import type { DiscordChannelLinkCommandInteraction } from "./discord-channel-access-request";
 import {
   DiscordVoiceChatController,
   VOICE_COMMAND,
@@ -49,6 +51,11 @@ const CHANNEL_RULE_COMMAND = new SlashCommandBuilder()
 const ALLOWED_CHANNELS_COMMAND = new SlashCommandBuilder()
   .setName("channels")
   .setDescription("このサーバーで明示的に許可されたチャンネルとスレッドを表示します")
+  .setDefaultMemberPermissions(PermissionFlagsBits.UseApplicationCommands)
+  .setDMPermission(false);
+const CHANNEL_LINK_COMMAND = new SlashCommandBuilder()
+  .setName("link")
+  .setDescription("この場所をあなたのチャンネルとしてオーナーに登録してもらいます")
   .setDefaultMemberPermissions(PermissionFlagsBits.UseApplicationCommands)
   .setDMPermission(false);
 const CHANNEL_RULE_MODAL_ID = "channel-rule-edit";
@@ -129,6 +136,11 @@ export interface DiscordOtherInteraction {
   isModalSubmit(): boolean;
 }
 
+export interface DiscordChannelLinkCommand {
+  requestFromInteraction(interaction: DiscordChannelLinkCommandInteraction): Promise<void>;
+  getLink(target: DiscordChannelLinkTarget): DiscordChannelLink | undefined;
+}
+
 export type DiscordHandlerInteraction =
   DiscordChatInputInteraction | DiscordModalSubmitInteraction | DiscordOtherInteraction;
 
@@ -168,12 +180,14 @@ export class DiscordJsInteractionHandler {
     private readonly voiceChatController?: DiscordVoiceChatController,
     channelRuleStore?: DiscordChannelRuleStore,
     private readonly accessRuleStore?: DiscordAccessRuleStore,
+    private readonly channelLink?: DiscordChannelLinkCommand,
   ) {
     this.channelRuleCommand = new DiscordChannelRuleCommand(channelRuleStore);
     this.commands = [
       OPERATING_MODE_COMMAND,
       CHANNEL_RULE_COMMAND,
       ALLOWED_CHANNELS_COMMAND,
+      CHANNEL_LINK_COMMAND,
       ...(voiceChatController ? [VOICE_COMMAND] : []),
     ];
   }
@@ -192,6 +206,16 @@ export class DiscordJsInteractionHandler {
       return;
     }
     if (!isChatInputCommand(interaction)) return;
+    if (interaction.commandName === "link") {
+      if (!this.channelLink) {
+        await interaction.reply(
+          createTextContainerMessage("チャンネルの登録は無効です。", "danger"),
+        );
+        return;
+      }
+      await this.channelLink.requestFromInteraction(interaction);
+      return;
+    }
     if (!(await this.canUseCommandsInChannel(interaction))) {
       await interaction.reply({
         content: "このチャンネルではコマンドを利用できません。",
@@ -295,6 +319,7 @@ export class DiscordJsInteractionHandler {
         getGuildRule: (id) => this.accessRuleStore?.getGuildRule(id),
         resolveAccess: (target) => this.accessPolicy.resolveAccess(target),
         resolveChannelName: (id) => fetchChannelName(interaction.client, id),
+        resolveChannelOwner: (target) => this.channelLink?.getLink({ guildId, ...target })?.userId,
       },
     );
 

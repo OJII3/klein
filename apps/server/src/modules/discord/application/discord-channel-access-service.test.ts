@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { DiscordAccess } from "../domain/discord-access-policy";
+import { discordChannelLinkLocationKey } from "../domain/discord-channel-link";
 import {
   createDiscordChannelAccessButtonId,
   type DiscordChannelAccessNoticeOutcome,
@@ -14,7 +15,14 @@ import {
   type DiscordChannelAccessPresentation,
 } from "./discord-channel-access-service";
 
-function createHarness(options: { failOwnerRequest?: boolean; failRuleUpdate?: boolean } = {}) {
+function createHarness(
+  options: {
+    failOwnerRequest?: boolean;
+    failRuleUpdate?: boolean;
+    failLinkUpdate?: boolean;
+    existingLinkUserId?: string;
+  } = {},
+) {
   const persisted = new Map<string, PendingDiscordAccessRequest>();
   const posted: PendingDiscordAccessRequest[] = [];
   const ownerRequests: PendingDiscordAccessRequest[] = [];
@@ -23,6 +31,45 @@ function createHarness(options: { failOwnerRequest?: boolean; failRuleUpdate?: b
     outcome: DiscordChannelAccessNoticeOutcome;
   }> = [];
   const updates: Array<{ target: DiscordAccessRuleTarget; access: DiscordAccess }> = [];
+  const links = new Map<string, { userId: string; linkedAt: string }>();
+
+  if (options.existingLinkUserId) {
+    links.set(
+      discordChannelLinkLocationKey({
+        guildId: "guild-123",
+        channelId: "parent-channel",
+        threadId: "thread-123",
+      }),
+      {
+        userId: options.existingLinkUserId,
+        linkedAt: "2026-01-01T00:00:00.000Z",
+      },
+    );
+  }
+  const channelLinkStore = {
+    getLink: (target: { guildId: string; channelId: string; threadId?: string }) => {
+      const link = links.get(discordChannelLinkLocationKey(target));
+      return link
+        ? {
+            ...target,
+            ...link,
+          }
+        : undefined;
+    },
+    saveLink: async (link: {
+      guildId: string;
+      channelId: string;
+      threadId?: string;
+      userId: string;
+      linkedAt: string;
+    }) => {
+      if (options.failLinkUpdate) throw new Error("store unavailable");
+      links.set(discordChannelLinkLocationKey(link), {
+        userId: link.userId,
+        linkedAt: link.linkedAt,
+      });
+    },
+  };
 
   const presentation: DiscordChannelAccessPresentation = {
     postPendingNotice: async (request) => {
@@ -54,10 +101,20 @@ function createHarness(options: { failOwnerRequest?: boolean; failRuleUpdate?: b
         persisted.delete(requestId);
       },
     },
+    channelLinkStore,
     ownerUserId: "owner-123",
   });
 
-  return { notices, ownerRequests, persisted, posted, presentation, service, updates };
+  return {
+    links,
+    notices,
+    ownerRequests,
+    persisted,
+    posted,
+    presentation,
+    service,
+    updates,
+  };
 }
 
 const request: DiscordChannelAccessRequest = {
@@ -67,6 +124,11 @@ const request: DiscordChannelAccessRequest = {
   pendingChannelId: "pending-channel",
   channelName: "thread-name",
   requesterUserId: "user-123",
+};
+
+const linkRequest: DiscordChannelAccessRequest = {
+  ...request,
+  linkUserId: "user-123",
 };
 
 test("posts a pending notice, asks the owner and persists the request", async () => {
@@ -145,4 +207,84 @@ test("removes the request when the owner cannot be reached", async () => {
   assert.equal(harness.notices.length, 1);
   assert.equal(harness.notices[0]?.outcome, "owner-unreachable");
   assert.equal(harness.notices[0]?.request.pendingMessageId, "pending-message-1");
+});
+
+test("registers the requester as the owner when a link request is approved", async () => {
+  const harness = createHarness();
+  await harness.service.request(linkRequest, harness.presentation);
+  const pending = harness.ownerRequests[0];
+  assert.ok(pending);
+
+  const decided = await harness.service.handleButton({
+    customId: createDiscordChannelAccessButtonId("allow", pending.requestId),
+    userId: "owner-123",
+  });
+
+  assert.equal(decided.kind, "decided");
+  assert.deepEqual(harness.updates, [
+    {
+      target: { guildId: "guild-123", channelId: "parent-channel", threadId: "thread-123" },
+      access: "allow",
+    },
+  ]);
+  assert.equal(harness.links.get("guild-123:parent-channel:thread-123")?.userId, "user-123");
+  assert.equal(harness.persisted.size, 0);
+});
+
+test("leaves the access rule unchanged when a link request is denied", async () => {
+  const harness = createHarness();
+  await harness.service.request(linkRequest, harness.presentation);
+  const pending = harness.ownerRequests[0];
+  assert.ok(pending);
+
+  const decided = await harness.service.handleButton({
+    customId: createDiscordChannelAccessButtonId("deny", pending.requestId),
+    userId: "owner-123",
+  });
+
+  assert.equal(decided.kind, "decided");
+  assert.deepEqual(harness.updates, []);
+  assert.equal(harness.links.size, 0);
+  assert.equal(harness.persisted.size, 0);
+});
+
+test("returns already-linked without asking the owner again", async () => {
+  const harness = createHarness({ existingLinkUserId: "user-123" });
+
+  const outcome = await harness.service.request(linkRequest, harness.presentation);
+
+  assert.deepEqual(outcome, { kind: "already-linked", userId: "user-123" });
+  assert.equal(harness.posted.length, 0);
+  assert.equal(harness.ownerRequests.length, 0);
+});
+
+test("asks the owner before transferring a channel linked to another user", async () => {
+  const harness = createHarness({ existingLinkUserId: "other-user" });
+
+  const outcome = await harness.service.request(linkRequest, harness.presentation);
+
+  assert.deepEqual(outcome, { kind: "requested" });
+  assert.equal(harness.ownerRequests.length, 1);
+  const pending = harness.ownerRequests[0];
+  assert.ok(pending);
+  await harness.service.handleButton({
+    customId: createDiscordChannelAccessButtonId("allow", pending.requestId),
+    userId: "owner-123",
+  });
+  assert.equal(harness.links.get("guild-123:parent-channel:thread-123")?.userId, "user-123");
+});
+
+test("keeps the request when the channel link cannot be saved", async () => {
+  const harness = createHarness({ failLinkUpdate: true });
+  await harness.service.request(linkRequest, harness.presentation);
+  const pending = harness.ownerRequests[0];
+  assert.ok(pending);
+
+  const result = await harness.service.handleButton({
+    customId: createDiscordChannelAccessButtonId("allow", pending.requestId),
+    userId: "owner-123",
+  });
+
+  assert.deepEqual(result, { kind: "rejected", reason: "link-update-failed" });
+  assert.equal(harness.persisted.size, 1);
 });

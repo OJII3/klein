@@ -30,6 +30,7 @@ import type {
 } from "../ports/discord-gateway";
 import type { DiscordAccessRuleStore } from "../ports/discord-access-rule-store";
 import type { DiscordAccessRequestStore } from "../ports/discord-access-request-store";
+import type { DiscordChannelLinkStore } from "../ports/discord-channel-link-store";
 import type { DiscordChannelRuleStore } from "../ports/discord-channel-rule-store";
 
 import {
@@ -261,6 +262,7 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
     options?: {
       readonly enableReactions?: boolean;
       readonly createClient?: (clientOptions: ClientOptions) => DiscordServiceClient;
+      readonly channelLinkStore?: DiscordChannelLinkStore;
     },
   ) {
     this.logger = logger?.child({ component: "discord-service" });
@@ -268,13 +270,6 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
     this.voiceChatController = voiceChat
       ? new DiscordVoiceChatController(accessPolicy, logger, voiceChat)
       : undefined;
-    this.interactionHandler = new DiscordJsInteractionHandler(
-      accessPolicy,
-      (mode) => this.setOperatingMode(mode),
-      this.voiceChatController,
-      channelRuleStore,
-      accessRuleStore,
-    );
     const enableReactions = options?.enableReactions === true;
     const clientOptions: ClientOptions = {
       intents: [
@@ -306,9 +301,18 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
             accessRuleStore,
             accessRequestStore,
             ownerUserId,
+            options?.channelLinkStore,
             this.logger,
           )
         : undefined;
+    this.interactionHandler = new DiscordJsInteractionHandler(
+      accessPolicy,
+      (mode) => this.setOperatingMode(mode),
+      this.voiceChatController,
+      channelRuleStore,
+      accessRuleStore,
+      this.channelAccessRequester,
+    );
     this.messageIngest = new DiscordMessageIngest({
       accessPolicy,
       reader: this.messageAdapter,

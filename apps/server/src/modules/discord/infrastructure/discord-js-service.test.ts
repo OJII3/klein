@@ -18,6 +18,7 @@ import { createDiscordAccessPolicy } from "../domain/discord-access-policy";
 import type { DiscordMessage } from "../domain/discord-message";
 import type { DiscordReactionEvent } from "../domain/discord-reaction";
 import { DiscordOperatingState } from "../domain/discord-operating-state";
+import type { PendingDiscordAccessRequest } from "../ports/discord-access-request-store";
 import type {
   DiscordChatInputInteraction,
   DiscordModalSubmitInteraction,
@@ -581,6 +582,100 @@ test("lists explicitly allowed channels and threads with their access levels", a
       ].join("\n"),
     );
     assert.equal(flags, MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral);
+  } finally {
+    await service.stop();
+  }
+});
+
+test("registers a channel through /link even when the channel is denied", async () => {
+  const fakeClient = new FakeDiscordClient();
+  const ownerMessages: InteractionReplyOptions[] = [];
+  fakeClient.users.fetch = async () => ({
+    send: async (payload) => {
+      ownerMessages.push(payload);
+      return undefined;
+    },
+  });
+  const channelMessages: unknown[] = [];
+  fakeClient.channels.fetch = async (id) => ({
+    id,
+    isTextBased: () => true,
+    isThread: () => false,
+    send: async (payload: unknown) => {
+      channelMessages.push(payload);
+      return { id: "pending-message-1" };
+    },
+  });
+
+  const accessUpdates: Array<{ target: unknown; access: string }> = [];
+  const links = new Map<string, { userId: string }>();
+  const accessRuleStore = {
+    async load() {},
+    async setAccess(target: unknown, access: string) {
+      accessUpdates.push({ target, access });
+    },
+    getGuildRule: () => undefined,
+  };
+  const requests = new Map<string, PendingDiscordAccessRequest>();
+  const accessRequestStore = {
+    async load() {},
+    list: () => [...requests.values()],
+    async save(request: PendingDiscordAccessRequest) {
+      requests.set(request.requestId, request);
+    },
+    async remove(requestId: string) {
+      requests.delete(requestId);
+    },
+  };
+  const channelLinkStore = {
+    async load() {},
+    getLink: (target: { channelId: string; threadId?: string }) =>
+      links.get(`${target.channelId}:${target.threadId ?? ""}`)
+        ? {
+            guildId: "guild-123",
+            channelId: target.channelId,
+            ...(target.threadId ? { threadId: target.threadId } : {}),
+            userId: links.get(`${target.channelId}:${target.threadId ?? ""}`)?.userId ?? "",
+            linkedAt: "2026-01-01T00:00:00.000Z",
+          }
+        : undefined,
+    async saveLink(link: { channelId: string; threadId?: string; userId: string }) {
+      links.set(`${link.channelId}:${link.threadId ?? ""}`, { userId: link.userId });
+    },
+  };
+  const service = new DiscordJsService(
+    "token",
+    createDiscordAccessPolicy({ default: "deny", directMessages: "allow" }),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    accessRuleStore,
+    "owner-123",
+    accessRequestStore,
+    { createClient: () => fakeClient, channelLinkStore },
+  );
+
+  let replyContent: string | undefined;
+  const interaction = createChatInputInteraction({
+    commandName: "link",
+    channelId: "channel-denied",
+    reply: async (response) => {
+      replyContent = extractFirstTextContent(response);
+    },
+  });
+
+  try {
+    await service.start(async () => undefined);
+    fakeClient.emit(Events.InteractionCreate, interaction);
+    await service.flush();
+
+    assert.match(replyContent ?? "", /オーナーに確認しています/u);
+    assert.equal(ownerMessages.length, 1);
+    assert.match(extractFirstTextContent(ownerMessages[0]) ?? "", /チャンネルの登録リクエスト/u);
+    assert.equal(channelMessages.length, 1);
+    assert.equal(accessUpdates.length, 0);
+    assert.equal(requests.size, 1);
   } finally {
     await service.stop();
   }
