@@ -14,8 +14,6 @@ const PendingDiscordAccessRequestSchema = Type.Object(
     pendingChannelId: DiscordIdSchema,
     channelName: Type.Optional(Type.String({ minLength: 1 })),
     requesterUserId: DiscordIdSchema,
-    /** Legacy field from requests created before link requests had their own store. */
-    linkUserId: Type.Optional(DiscordIdSchema),
     pendingMessageId: Type.Optional(Type.String({ minLength: 1 })),
   },
   { additionalProperties: false },
