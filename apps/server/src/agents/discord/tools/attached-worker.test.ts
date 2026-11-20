@@ -62,6 +62,56 @@ test("registers a worker watch with the worker's task id", async () => {
   assert.equal(watch?.kind === "watch" ? watch.ownerTaskId : undefined, "attached-1");
 });
 
+test("adds the T3 thread tools only when a runner is supplied", () => {
+  const store = new InMemoryScheduledTaskStore();
+  const t3Runner = {
+    async list() {
+      return [];
+    },
+    async start() {
+      return { threadId: "mcp:1", status: "completed" };
+    },
+    async send() {
+      return { threadId: "mcp:1", status: "completed" };
+    },
+    async show() {
+      return {
+        thread: { id: "mcp:1", title: "T", status: "completed" },
+        messages: [],
+      };
+    },
+  };
+
+  const withoutT3 = createAttachedWorkerTools(
+    createStubDiscordChannelApi(),
+    "channel-a",
+    "public",
+    "attached-1",
+    store,
+    runner,
+  );
+  const withT3 = createAttachedWorkerTools(
+    createStubDiscordChannelApi(),
+    "channel-a",
+    "owner:1",
+    "attached-1",
+    store,
+    runner,
+    undefined,
+    undefined,
+    t3Runner,
+  );
+
+  assert.equal(
+    withoutT3.some((tool) => tool.name.startsWith("t3_thread_")),
+    false,
+  );
+  assert.deepEqual(
+    withT3.filter((tool) => tool.name.startsWith("t3_thread_")).map((tool) => tool.name),
+    ["t3_thread_start", "t3_thread_send", "t3_thread_show", "t3_thread_list"],
+  );
+});
+
 test("wires image analysis into the worker's discord_read tool", async () => {
   const store = new InMemoryScheduledTaskStore();
   let analyzedPrompt: unknown;

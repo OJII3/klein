@@ -70,6 +70,12 @@
 
 `agent-browser` が PATH にあり、Chrome を起動できる必要がある。Nix の devShell には agent-browser が含まれる。Chrome は `agent-browser install` で用意するか、既存の実行ファイルを `AGENT_BROWSER_EXECUTABLE_PATH` に指定する。ツールは deferred で登録されるため、ワーカーは `tool_search` で読み込んでから使う。手順はプロファイルの `browser-automation` スキルに置く。ブラウザはローカルサービスにも到達できるため、所有者以外の会話の付随タスクには登録しない。
 
+## T3 Code スレッド
+
+所有者の会話から始まった付随タスクには、`t3_thread_*` ツールを渡す。ワーカーは T3 Code のスレッドを開始し、`wait` が有効なら実行が終わるまで待って返信を受け取る。`t3_thread_send` で同じスレッドに続きを頼み、`t3_thread_show` で状態と最新メッセージを読み、`t3_thread_list` でプロジェクトのスレッドを一覧する。`t3_thread_start` は `project`、`title`、`worktree`、`branch` を受け取る。
+
+`t3` CLI が PATH にあり、T3 Code のサーバーが動いている必要がある。スレッドはプロジェクトの既定の provider・model・権限で動くため、所有者の付随タスクだけに渡す。手順はプロファイルの `t3-thread` スキルに置く。
+
 ## リモート MCP ツール
 
 MCP ツールは Pi のエージェントディレクトリ (`.runtime/pi`) に登録する。
