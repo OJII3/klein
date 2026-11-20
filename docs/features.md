@@ -4,7 +4,7 @@
 
 ## セッション
 
-セッションの履歴とローテーションの状態は `<runtime.agentDir>/sessions` と `<runtime.agentDir>/channel-sessions` に保存する。既存の `pi-durable` SQLite データベースは起動時に自動で移行する。
+セッションの履歴とローテーションの状態は `<runtime.agentDir>/sessions` と `<runtime.agentDir>/channel-sessions` に保存する。
 
 ## Discord
 
@@ -30,7 +30,7 @@
 
 共有メモリは、ギルド・チャンネル・スレッドの各スコープに置く長期記憶である。`features.sharedMemory.enabled` を有効にすると、Klein は最近の会話からギルドに永続する事実と好みを定期的に抽出し、バックグラウンドエージェントが read、write、edit ツールを使って `.runtime/memory` (`features.sharedMemory.directory` でも指定できる) の下のファイルを直接読み書きする。ギルド全体は `{guildId}/MEMORY.md`、チャンネルは `{guildId}/{channelId}/MEMORY.md`、スレッドは `{guildId}/{channelId}/{threadId}/MEMORY.md` に保存する。
 
-各ファイルは `# MEMORY.md` と短い説明から始まり、`## Facts` と `## Preferences` の 2 節だけを持つ。各項目はメタデータを持たない 1 行の箇条書きで、日付が必要なら本文に含める。抽出は既定で会話のチャンネルを対象とし、事実がサーバー全体に当てはまる場合に限りギルドへ昇格させる。取得ではその場所に応じてギルド、チャンネル、スレッドのメモリをすべて加える。メモリ機能が有効なとき、旧 `{guildId}/MEMORY.json` は起動時に各スコープの Markdown へ移行し、`MEMORY.json.migrated` に改名する。
+各ファイルは `# MEMORY.md` と短い説明から始まり、`## Facts` と `## Preferences` の 2 節だけを持つ。各項目はメタデータを持たない 1 行の箇条書きで、日付が必要なら本文に含める。抽出は既定で会話のチャンネルを対象とし、事実がサーバー全体に当てはまる場合に限りギルドへ昇格させる。取得ではその場所に応じてギルド、チャンネル、スレッドのメモリをすべて加える。
 
 `features.userMemory.enabled` を有効にすると、Klein は Discord ユーザーごとに 1 つの Markdown ファイルを `<runtime.agentDir>/user-memory/{userId}.md` (`features.userMemory.directory` でも指定できる) に保つ。`{userId}` は Discord の数値ユーザー ID である。YAML フロントマターは `discord_id` (ユーザーが設定したユーザー名で、`@` より後の部分)、`display_name`、`nickname`、`first_name`、`last_name`、`summary`、`impression`、`updated_at` を保持する。`impression` は -100 から 100 までの整数で、0 が中立である。本文は Facts、History、In common、Strengthening の節からなる。Facts には確認済みの事実だけを書き、不明な値には `不明` を置く。誕生日や記念日のような日付は `- <key>: YYYY-MM-DD` の形で書く (例: `- birthday: 2000-01-02`)。Klein はユーザーからのメッセージを処理した時点でファイルを作り、会話がアイドルになった後に `features.userMemory.llm` (既定値は `llm`) のバックグラウンドエージェントが read、write、edit ツールでファイルを読み書きする。バックグラウンドエージェントは `display_name` と `impression` を変更しない。`user_memory_get` ツールはメッセージに表示される `@username` を受け取り、`<runtime.agentDir>/discord-users.json` を通して数値ユーザー ID に解決する。このファイルは Klein がメッセージで見たユーザーから作る共有の対応表であり、発言したか返信の著者として現れたユーザーだけを解決できる。会話の Pi セッションでユーザーが初めて発言したとき、Klein はそのユーザーのメモリをそのターンのコンテキストに加える。メモリにまだ内容がなければ、コンテキストは初対面であることを伝える。メモリの更新はバックグラウンドでのみ行い、ユーザーメモリを表示名で検索することはできない。
 

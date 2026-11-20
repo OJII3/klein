@@ -26,7 +26,6 @@ import {
 } from "@runtime/pi/pi-agent-runtime";
 import { PiStandaloneSessionRunner } from "@runtime/pi/pi-standalone-session-runner";
 import { createPiMinimalAgentFactory } from "@runtime/pi/pi-minimal-agent-factory";
-import { migratePiDurableStorage } from "@runtime/pi/pi-durable-migration";
 import { createPiUsageReporterFromEnv } from "@runtime/pi/pi-usage-reporter";
 import { createT3CliThreadRunner } from "@runtime/t3/t3-cli-thread-runner";
 import { createWatchFetchTool } from "@runtime/pi/watch-fetch-tool";
@@ -48,7 +47,6 @@ import { FileDiscordUserStore } from "@modules/discord/infrastructure/file-disco
 import { SharedMemoryCoordinator } from "@modules/shared-memory/application/shared-memory-coordinator";
 import { resolveSharedMemoryConfig } from "@modules/shared-memory/application/shared-memory-config";
 import { MarkdownSharedMemoryStore } from "@modules/shared-memory/infrastructure/markdown-shared-memory-store";
-import { migrateLegacySharedMemory } from "@modules/shared-memory/infrastructure/json-shared-memory-migration";
 import { createWebUiSharedMemoryAccessor } from "@modules/shared-memory/application/shared-memory-web-accessor";
 import { ProactiveCoordinator } from "@modules/proactivity/application/proactive-coordinator";
 import { resolveProactivityConfig } from "@modules/proactivity/application/proactive-config";
@@ -110,7 +108,6 @@ export async function bootstrapApplication(): Promise<void> {
     : undefined;
   const taskCoordinator = new TaskCoordinator();
   const tts = config.features.tts?.enabled ? new Sbv2Tts(config.features.tts.serverUrl) : undefined;
-  await migratePiDurableStorage({ agentDir, logger });
   const discordUserDirectory = new DiscordUserDirectory(
     new FileDiscordUserStore(resolve(agentDir, "discord-users.json")),
     logger,
@@ -388,9 +385,6 @@ export async function bootstrapApplication(): Promise<void> {
     { enableReactions: true },
   );
   const memorySessionId = `memory-${randomUUID()}`;
-  if (sharedMemoryConfig.enabled) {
-    await migrateLegacySharedMemory(sharedMemoryConfig.directory, logger);
-  }
   const sharedMemoryCoordinator = sharedMemoryConfig.enabled
     ? new SharedMemoryCoordinator({
         store: new MarkdownSharedMemoryStore(sharedMemoryConfig.directory),
