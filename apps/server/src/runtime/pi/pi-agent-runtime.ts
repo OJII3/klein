@@ -796,7 +796,7 @@ export function createPiAgentFactory({
         options.role.kind === "worker" &&
         customTools.some((tool) => tool.name === "t3_thread_start");
       const excludedSkillNames = new Set<string>([
-        ...(sessionBrowserAvailable ? [] : ["browser-automation"]),
+        ...(sessionBrowserAvailable ? [] : ["browser-use"]),
         ...(sessionT3Available ? [] : ["t3-thread"]),
       ]);
       const workerDelegationSection =

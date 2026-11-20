@@ -1129,7 +1129,7 @@ test("loads skills from the default profile directory", async () => {
       .getSkills()
       .skills.map((skill) => skill.name)
       .toSorted(),
-    ["browser-automation", "honkai-character-dialogue", "t3-thread"],
+    ["browser-use", "honkai-character-dialogue", "t3-thread"],
   );
   assert.deepEqual(loader.getSkills().diagnostics, []);
 });
@@ -1487,16 +1487,16 @@ test("appends worker delegation guidance to text conversation prompts based on o
     assert.match(ownerPrompt, /## Workers \(`worker_start`\)/);
     assert.match(ownerPrompt, /agent-browser/);
     assert.match(ownerPrompt, /t3_thread_\*/);
-    assert.doesNotMatch(ownerPrompt, /browser-automation|t3-thread/);
+    assert.doesNotMatch(ownerPrompt, /browser-use|t3-thread/);
     assert.match(publicPrompt, /## Workers \(`worker_start`\)/);
     assert.match(publicPrompt, /NOT available in this conversation/);
-    assert.doesNotMatch(publicPrompt, /browser-automation|t3-thread/);
+    assert.doesNotMatch(publicPrompt, /browser-use|t3-thread/);
     assert.doesNotMatch(voicePrompt, /## Workers \(`worker_start`\)/);
-    assert.doesNotMatch(voicePrompt, /browser-automation|t3-thread/);
+    assert.doesNotMatch(voicePrompt, /browser-use|t3-thread/);
     assert.match(restrictedOwnerPrompt, /NOT available in this conversation/);
-    assert.match(ownerWorkerPrompt, /<name>browser-automation<\/name>/);
+    assert.match(ownerWorkerPrompt, /<name>browser-use<\/name>/);
     assert.match(ownerWorkerPrompt, /<name>t3-thread<\/name>/);
-    assert.doesNotMatch(publicWorkerPrompt, /browser-automation|t3-thread/);
+    assert.doesNotMatch(publicWorkerPrompt, /browser-use|t3-thread/);
   } finally {
     if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
     else process.env.PI_CODING_AGENT_DIR = previousAgentDir;

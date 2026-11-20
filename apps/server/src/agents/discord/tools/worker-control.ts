@@ -14,7 +14,7 @@ export function createWorkerControlTools(
     accessScope,
   };
   const ownerCapabilitiesNote = ownerFeaturesAllowed
-    ? " Workers in this owner conversation also have real browser automation (agent-browser) and T3 Code threads (t3_thread_*), which you do not have directly."
+    ? " Workers in this owner conversation also have real browser use (agent-browser) and T3 Code threads (t3_thread_*), which you do not have directly."
     : "";
   return [
     defineTool({

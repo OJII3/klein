@@ -1,15 +1,15 @@
 ---
-name: browser-automation
+name: browser-use
 description: Use when opening, reading, clicking, filling, or taking screenshots of real web pages in a browser. Trigger when static fetch cannot read a page or when login, form submission, or dynamic UI verification is needed.
 ---
 
-# Browser Automation
+# Browser Use
 
 Use the MCP tools provided by Vercel's `agent-browser` to operate a real headless browser.
 
 ## Loading Tools
 
-Browser tools are registered as deferred. Before using them, call `tool_search` with `"browser"` to load tools starting with `mcp__agent_browser__`. If none are found, report in your result that browser automation is unavailable in this environment.
+Browser tools are registered as deferred. Before using them, call `tool_search` with `"browser"` to load tools starting with `mcp__agent_browser__`. If none are found, report in your result that browser use is unavailable in this environment.
 
 ## Workflow
 

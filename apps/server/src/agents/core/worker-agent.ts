@@ -59,7 +59,7 @@ export function renderWorkerDelegationSection(options: WorkerDelegationPromptOpt
   const workerOnlyCapabilities: string[] = [];
   if (options.ownerBrowserAvailable) {
     workerOnlyCapabilities.push(
-      "- Real headless browser automation (`agent-browser`): open JavaScript-rendered pages, click, fill forms, wait for dynamic content, and take screenshots.",
+      "- Real headless browser use (`agent-browser`): open JavaScript-rendered pages, click, fill forms, wait for dynamic content, and take screenshots.",
     );
   }
   if (options.ownerT3Available) {
@@ -92,7 +92,7 @@ export function renderWorkerDelegationSection(options: WorkerDelegationPromptOpt
           "Whenever a request needs these capabilities, delegate with `worker_start` instead of declining or falling back to static `fetch_content`.",
         ]
       : [
-          "Owner-only worker capabilities (real browser automation via `agent-browser` and T3 Code threads via `t3_thread_*`) are NOT available in this conversation. Do not start a worker for them or promise to use them.",
+          "Owner-only worker capabilities (real browser use via `agent-browser` and T3 Code threads via `t3_thread_*`) are NOT available in this conversation. Do not start a worker for them or promise to use them.",
         ]),
     "",
     "Give `worker_start` a self-contained prompt with the goal, context, URLs, message IDs, and constraints (a worker does not see this conversation history unless you summarize it or pass message IDs for `discord_read`). A worker cannot send Discord messages; its output arrives later as a `worker.result` event, and you decide whether and how to reply.",

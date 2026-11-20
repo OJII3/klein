@@ -12,7 +12,7 @@ const MAX_PAGE_OUTPUT_CHARS = 20_000;
 const DAEMON_IDLE_TIMEOUT_MS = 10 * 60 * 1_000;
 
 /**
- * Browser automation reaches the open web and local services, so it stays
+ * Browser use reaches the open web and local services, so it stays
  * limited to tasks whose conversation has owner features. The conversation
  * agent delegates browsing to a worker instead of holding a browser itself.
  */
