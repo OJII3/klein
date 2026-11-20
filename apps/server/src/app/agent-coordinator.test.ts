@@ -28,6 +28,7 @@ import type {
 } from "@modules/scheduling/domain/scheduled-task";
 import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
 import type { WatchCheckRunner } from "@modules/scheduling/ports/watch-check-runner";
+import { isOwnerAccessScope, parseAccessScope } from "@shared/access";
 import { TaskCoordinator } from "./task-coordinator";
 import { AgentCoordinator, type AgentCoordinatorDependencies } from "./agent-coordinator";
 import { ChannelSessionStateStore, getChannelRotationBucket } from "./channel-session-state-store";
@@ -131,11 +132,12 @@ function createHarness(
     agentCoordinator: new AgentCoordinator({
       ...options,
       workers,
-      createDiscordAgent: (channelId, sessionKey, handoffContext, allowOwnerFeatures) =>
+      createDiscordAgent: (channelId, sessionKey, handoffContext, accessScope) =>
         DiscordAgent.create(agentFactory, channelId, "system prompt", {
+          accessScope: parseAccessScope(accessScope),
           sessionKey,
           handoffContext,
-          ownerFeaturesAllowed: allowOwnerFeatures,
+          ownerFeaturesAllowed: isOwnerAccessScope(accessScope, options.ownerUserId),
           ownerUserId: options.ownerUserId,
           tools: () => [],
         }),
@@ -902,6 +904,28 @@ for (const { scope, access, owner, delivered } of [
     }
   });
 }
+
+test("delivers a linked user's reminder while the channel link remains", async () => {
+  const reminder: ReminderTask = { ...dueReminder, accessScope: "user:456" };
+  const reminders = createScheduledTaskStore(reminder);
+  const harness = createHarness(undefined, reminders.store, {
+    ownerUserId: "123",
+    accessPolicy: createDiscordAccessPolicy(
+      { default: "deny", directMessages: "deny" },
+      "123",
+      undefined,
+      (target) => (target.channelId === "test-channel" ? "456" : undefined),
+    ),
+  });
+  try {
+    await harness.agentCoordinator.deliverDueTasks(Date.parse("2026-10-14T00:02:00.000Z"));
+    assert.equal(harness.workerStarts.length, 1);
+    assert.equal(harness.workerStarts[0]?.accessScope, "user:456");
+    assert.equal(harness.workerStarts[0]?.ownerFeaturesAllowed, false);
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
 
 test("advances a recurring reminder without changing its stable ownership", async () => {
   const reminder: ReminderTask = {

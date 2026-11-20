@@ -18,6 +18,20 @@ test("owner access is determined by session permissions", () => {
   }
 });
 
+test("built-in servers bypass the owner-only MCP default but not an explicit denial", () => {
+  const auth = new ToolAuthorization(false, {
+    mcp: { servers: { agent_browser: "allow", blocked: "deny" } },
+  });
+  auth.allowBuiltinServers(["agent_browser", "blocked"]);
+
+  assert.equal(auth.allowsServer("agent_browser"), true);
+  assert.equal(auth.allowsServer("blocked"), false);
+
+  const defaultDenied = new ToolAuthorization(false, { mcp: { default: "deny" } });
+  defaultDenied.allowBuiltinServers(["agent_browser"]);
+  assert.equal(defaultDenied.allowsServer("agent_browser"), true);
+});
+
 test("MCP resource calls check session permissions for exact servers and listings", () => {
   for (const session of [false, true]) {
     const auth = new ToolAuthorization(session, {

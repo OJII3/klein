@@ -67,9 +67,11 @@
 
 ## ブラウザ操作
 
-所有者の会話から始まったワーカーには、Vercel の agent-browser を MCP サーバーとして登録する。ワーカーは実ブラウザでページを開き、accessibility tree の ref を使ってクリックや入力を行い、表示を待って本文を読む。ツールは `--tools core` に限定するため、cookie、保存済み認証、network、ファイル入出力は使えない。ページ出力は 20,000 文字で切り詰め、内容境界のマーカーを付ける。ブラウザセッションはワーカー ID ごとに分かれ、10 分間操作がなければデーモンが終了する。
+チャンネルまたはスレッドをリンクしたユーザーの会話から始まったワーカーには、Vercel の agent-browser を MCP サーバーとして登録する。ワーカーは実ブラウザでページを開き、accessibility tree の ref を使ってクリックや入力を行い、表示を待って本文を読む。ツールは `--tools core` に限定するため、cookie、保存済み認証、network、ファイル入出力は使えない。ページ出力は 20,000 文字で切り詰め、内容境界のマーカーを付ける。10 分間操作がなければデーモンが終了する。
 
-`agent-browser` が PATH にあり、Chrome を起動できる必要がある。Nix の devShell には agent-browser が含まれる。Chrome は `agent-browser install` で用意するか、既存の実行ファイルを `AGENT_BROWSER_EXECUTABLE_PATH` に指定する。ツールは deferred で登録されるため、ワーカーは `tool_search` で読み込んでから使う。手順はプロファイルの `browser-use` スキルに置く。ブラウザはローカルサービスにも到達できるため、所有者以外の会話のワーカーには登録しない。
+ブラウザの識別子はリンクした Discord ユーザー ID である。同じユーザーが複数のチャンネルをリンクしていても、ブラウザセッションと Chrome プロファイル（`<agentDir>/browser-profiles/<userId>`）は共通で、タブも共有する。同一ユーザーのワーカーが同時に動くとタブを取り合うことがある。Chrome は同じプロファイルディレクトリで複数インスタンスを起動できないため、セッションはワーカーではなくユーザー単位にしている。リンクしていないユーザーの会話や、リンクされたチャンネル内の別メンバーの会話には、ブラウザツールを登録しない。
+
+`agent-browser` が PATH にあり、Chrome を起動できる必要がある。Nix の devShell には agent-browser が含まれる。Chrome は `agent-browser install` で用意するか、既存の実行ファイルを `AGENT_BROWSER_EXECUTABLE_PATH` に指定する。ツールは deferred で登録されるため、ワーカーは `tool_search` で読み込んでから使う。手順はプロファイルの `browser-use` スキルに置く。プロファイルには cookie が保存されるため、ディレクトリは 0700 で作る。ブラウザはローカルサービスにも到達できるため、リンクした本人以外の会話のワーカーには登録しない。
 
 ## T3 Code スレッド
 

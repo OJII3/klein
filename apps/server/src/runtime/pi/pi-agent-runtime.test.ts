@@ -1414,7 +1414,12 @@ test("appends worker delegation guidance to text conversation prompts based on o
     const ownerRuntime = await createFactory().create(
       { systemPrompt: "Base prompt." },
       () => [makeSurfaceTool("discord_send"), makeWorkerStart()],
-      { role: { kind: "conversation" }, sessionKey: "owner-conv", ownerFeaturesAllowed: true },
+      {
+        role: { kind: "conversation" },
+        sessionKey: "owner-conv",
+        ownerFeaturesAllowed: true,
+        accessScope: "owner:owner-user",
+      },
     );
     ownerRuntime.dispose();
 
@@ -1442,6 +1447,7 @@ test("appends worker delegation guidance to text conversation prompts based on o
         role: { kind: "conversation" },
         sessionKey: "restricted-owner-conv",
         ownerFeaturesAllowed: true,
+        accessScope: "owner:owner-user",
       },
     );
     restrictedOwnerRuntime.dispose();
@@ -1453,6 +1459,7 @@ test("appends worker delegation guidance to text conversation prompts based on o
         role: { kind: "worker", workerId: "task-owner" },
         sessionKey: "owner-worker",
         ownerFeaturesAllowed: true,
+        accessScope: "owner:owner-user",
       },
     );
     ownerWorkerRuntime.dispose();
@@ -1468,6 +1475,18 @@ test("appends worker delegation guidance to text conversation prompts based on o
     );
     publicWorkerRuntime.dispose();
 
+    const linkedWorkerRuntime = await createFactory().create(
+      { systemPrompt: "Worker prompt." },
+      () => [],
+      {
+        role: { kind: "worker", workerId: "task-linked" },
+        sessionKey: "linked-worker",
+        ownerFeaturesAllowed: false,
+        accessScope: "user:member-user",
+      },
+    );
+    linkedWorkerRuntime.dispose();
+
     const [
       ownerPrompt,
       publicPrompt,
@@ -1475,6 +1494,7 @@ test("appends worker delegation guidance to text conversation prompts based on o
       restrictedOwnerPrompt,
       ownerWorkerPrompt,
       publicWorkerPrompt,
+      linkedWorkerPrompt,
     ] = capturedPrompts;
     assert.ok(
       ownerPrompt &&
@@ -1482,21 +1502,24 @@ test("appends worker delegation guidance to text conversation prompts based on o
         voicePrompt &&
         restrictedOwnerPrompt &&
         ownerWorkerPrompt &&
-        publicWorkerPrompt,
+        publicWorkerPrompt &&
+        linkedWorkerPrompt,
     );
     assert.match(ownerPrompt, /## Workers \(`worker_start`\)/);
     assert.match(ownerPrompt, /agent-browser/);
     assert.match(ownerPrompt, /t3_thread_\*/);
     assert.doesNotMatch(ownerPrompt, /browser-use|t3-thread/);
     assert.match(publicPrompt, /## Workers \(`worker_start`\)/);
-    assert.match(publicPrompt, /NOT available in this conversation/);
+    assert.match(publicPrompt, /This conversation does not have/);
     assert.doesNotMatch(publicPrompt, /browser-use|t3-thread/);
     assert.doesNotMatch(voicePrompt, /## Workers \(`worker_start`\)/);
     assert.doesNotMatch(voicePrompt, /browser-use|t3-thread/);
-    assert.match(restrictedOwnerPrompt, /NOT available in this conversation/);
+    assert.match(restrictedOwnerPrompt, /This conversation does not have/);
     assert.match(ownerWorkerPrompt, /<name>browser-use<\/name>/);
     assert.match(ownerWorkerPrompt, /<name>t3-thread<\/name>/);
     assert.doesNotMatch(publicWorkerPrompt, /browser-use|t3-thread/);
+    assert.match(linkedWorkerPrompt, /<name>browser-use<\/name>/);
+    assert.doesNotMatch(linkedWorkerPrompt, /t3-thread/);
   } finally {
     if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
     else process.env.PI_CODING_AGENT_DIR = previousAgentDir;

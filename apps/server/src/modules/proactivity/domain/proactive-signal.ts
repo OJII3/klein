@@ -90,7 +90,7 @@ export function parseProactiveSignal(value: unknown): ProactiveSignal {
     typeof channelId !== "string" ||
     channelId.length === 0 ||
     accessScope === undefined ||
-    (accessScope !== "public" && !/^owner:\d+$/u.test(accessScope)) ||
+    (accessScope !== "public" && !/^(?:owner|user):\d+$/u.test(accessScope)) ||
     (audience !== "owner" && audience !== "public") ||
     !isSourceKind(sourceKind) ||
     (sourceRef !== undefined && (typeof sourceRef !== "string" || sourceRef.length === 0)) ||

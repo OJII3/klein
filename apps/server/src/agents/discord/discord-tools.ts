@@ -9,7 +9,7 @@ import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-tas
 import type { WatchCheckRunner } from "@modules/scheduling/ports/watch-check-runner";
 import type { TextToSpeech } from "@modules/tts/ports/text-to-speech";
 import type { UserMemoryStore } from "@modules/user-memory/ports/user-memory-store";
-import { ownerAccessScope, PUBLIC_ACCESS_SCOPE } from "@shared/access";
+import { ownerAccessScope, PUBLIC_ACCESS_SCOPE, type AccessScope } from "@shared/access";
 import { createReminderTools } from "../tools/reminder";
 import { createProactiveTools, type ProactiveToolCoordinator } from "../tools/proactive";
 import { createPromiseGuard, type PromiseGuardMode } from "../tools/promise-guard";
@@ -32,6 +32,7 @@ export interface DiscordAgentToolsOptions {
   readonly requesterUserId?: () => string | undefined;
   readonly ownerFeaturesAllowed: boolean;
   readonly ownerUserId?: string;
+  readonly accessScope?: AccessScope;
   readonly speak?: (text: string, toolCallId?: string) => Promise<void>;
   readonly tts?: TextToSpeech;
   readonly scheduledTaskStore?: ScheduledTaskStore;
@@ -54,7 +55,8 @@ export function createDiscordAgentTools(
     options.ownerFeaturesAllowed && options.ownerUserId ? options.ownerUserId : undefined;
   const ownerFeaturesAllowed = ownerUserId !== undefined;
   const accessScope =
-    ownerUserId !== undefined ? ownerAccessScope(ownerUserId) : PUBLIC_ACCESS_SCOPE;
+    options.accessScope ??
+    (ownerUserId !== undefined ? ownerAccessScope(ownerUserId) : PUBLIC_ACCESS_SCOPE);
   const proactive = options.proactive;
   const promiseGuard =
     proactive && options.promiseGuard

@@ -197,6 +197,11 @@ export class ScheduledTaskDeliveryCoordinator {
       return accessPolicy.resolveAccess(location) === "allow";
     }
 
+    if (task.accessScope.startsWith("user:")) {
+      const userId = task.accessScope.slice("user:".length);
+      return accessPolicy.resolveLinkedUser({ ...location, userId, userIsBot: false }) === userId;
+    }
+
     const ownerUserId = this.dependencies.ownerUserId;
     return (
       isOwnerAccessScope(task.accessScope, ownerUserId) &&

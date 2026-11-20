@@ -14,6 +14,7 @@ import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
 import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
 import type { WatchCheckRunner } from "@modules/scheduling/ports/watch-check-runner";
+import type { AccessScope } from "@shared/access";
 import { isRecord } from "@shared/type-guards";
 import type { AgentEvent } from "../core/agent-event";
 import type { AgentFactory, AgentToolContext } from "../core/agent-factory";
@@ -56,6 +57,7 @@ function createToolsFor(
   options: {
     readonly ownerFeaturesAllowed?: boolean;
     readonly ownerUserId?: string;
+    readonly accessScope?: AccessScope;
     readonly scheduledTaskStore?: ScheduledTaskStore;
     readonly speak?: (text: string, toolCallId?: string) => Promise<void>;
   } = {},
@@ -65,6 +67,7 @@ function createToolsFor(
       analyzeImage: toolContext.analyzeImage,
       channelApi,
       channelId,
+      accessScope: options.accessScope,
       ownerFeaturesAllowed: options.ownerFeaturesAllowed ?? false,
       ownerUserId: options.ownerUserId,
       requesterUserId: toolContext.requesterId,
@@ -482,11 +485,13 @@ test("keeps reminders across session rotation and isolates channel and access sc
     channelId: string,
     ownerFeaturesAllowed: boolean,
     ownerUserId?: string,
+    accessScope?: AccessScope,
   ) {
     let tools: readonly ToolDefinition[] = [];
     const buildTools = createToolsFor(createStubDiscordChannelApi(), channelId, {
       ownerFeaturesAllowed,
       ownerUserId,
+      accessScope,
       scheduledTaskStore: store,
     });
     await DiscordAgent.create(
@@ -507,6 +512,7 @@ test("keeps reminders across session rotation and isolates channel and access sc
         sessionKey,
         ownerFeaturesAllowed,
         ownerUserId,
+        accessScope,
         tools: (toolContext) => {
           tools = buildTools(toolContext);
           return tools;
@@ -549,12 +555,19 @@ test("keeps reminders across session rotation and isolates channel and access sc
       .deleted,
     true,
   );
-  for (const [allowed, userId, expectedScope] of [
-    [true, "123", "owner:123"],
-    [true, undefined, "public"],
-    [false, "123", "public"],
+  for (const [allowed, userId, accessScope, expectedScope] of [
+    [true, "123", "owner:123", "owner:123"],
+    [true, undefined, undefined, "public"],
+    [false, "123", undefined, "public"],
+    [false, undefined, "user:456", "user:456"],
   ] as const) {
-    const tools = await createSessionTools("session-any", "channel-a", allowed, userId);
+    const tools = await createSessionTools(
+      "session-any",
+      "channel-a",
+      allowed,
+      userId,
+      accessScope,
+    );
     const result = await executeToolByName(tools, "reminder_add", {
       message: "通知",
       schedule: { type: "after", minutes: 1 },

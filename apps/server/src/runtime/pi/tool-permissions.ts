@@ -28,6 +28,7 @@ export interface ToolPermissions {
 /** Session permissions are trusted application metadata, never model arguments. */
 export class ToolAuthorization {
   private readonly servers = new Set<string>();
+  private readonly builtinServers = new Set<string>();
   constructor(
     readonly ownerSession: boolean,
     private readonly permissions: ToolPermissions = {},
@@ -35,6 +36,14 @@ export class ToolAuthorization {
   ) {}
   rememberServers(names: readonly string[]): void {
     for (const name of names) this.servers.add(name);
+  }
+  /**
+   * Application-registered servers such as the per-user browser. They bypass
+   * the owner-only MCP default because their registration already encodes the
+   * session's capability, but an explicit per-server permission still wins.
+   */
+  allowBuiltinServers(names: readonly string[]): void {
+    for (const name of names) this.builtinServers.add(name);
   }
   allowsResource(input: unknown): boolean {
     if (isRecord(input) && typeof input.server === "string") {
@@ -44,9 +53,10 @@ export class ToolAuthorization {
     return true;
   }
   allowsServer(name: string): boolean {
-    return this.allows(
-      this.permissions.mcp?.servers?.[name] ?? this.permissions.mcp?.default ?? "owner",
-    );
+    const configured = this.permissions.mcp?.servers?.[name];
+    if (configured) return this.allows(configured);
+    if (this.builtinServers.has(name)) return true;
+    return this.allows(this.permissions.mcp?.default ?? "owner");
   }
   allowsTool(name: string): boolean {
     if (this.alwaysAllowedTools.has(name)) return true;

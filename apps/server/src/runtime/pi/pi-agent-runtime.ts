@@ -43,10 +43,12 @@ import { toImageAnalysisFailure } from "@agents/core/image-analysis";
 import { renderWorkerDelegationSection } from "@agents/core/worker-agent";
 import type { SessionMode } from "@app/cli-options";
 import { renderWatchToolSection } from "@modules/scheduling/application/watch-tool";
+import { accessScopeUserId, parseAccessScope } from "@shared/access";
 import type { WatchToolCatalog } from "@modules/scheduling/ports/watch-tool";
 import {
   AGENT_BROWSER_MCP_SERVER_NAME,
   createAgentBrowserMcpExtension,
+  createAgentBrowserProfileDirectory,
   enablesAgentBrowser,
 } from "./agent-browser-mcp";
 import { createBackgroundCompactionExtension } from "./background-compaction";
@@ -733,6 +735,7 @@ export function createPiAgentFactory({
         }),
         { usageReporter },
       );
+      const browserUserId = accessScopeUserId(parseAccessScope(options.accessScope));
       const sessionManager = createPiSessionManager(
         agentDir,
         options.sessionKey,
@@ -774,6 +777,7 @@ export function createPiAgentFactory({
         permissions,
         skillReadTool ? new Set([skillReadTool.name]) : undefined,
       );
+      if (browserUserId) authorization.allowBuiltinServers([AGENT_BROWSER_MCP_SERVER_NAME]);
       const customTools: PiTool[] = [
         ...createTools(toolContext),
         ...(skillReadTool ? [skillReadTool] : []),
@@ -785,12 +789,12 @@ export function createPiAgentFactory({
       const hasWorkerStart = customTools.some((tool) => tool.name === "worker_start");
       const hasVoiceSpeak = surfaceTools.some((tool) => tool.name === "discord_speak");
       const workerBrowserAvailable =
-        enablesAgentBrowser({ kind: "worker", workerId: "" }, options.ownerFeaturesAllowed) &&
+        enablesAgentBrowser({ kind: "worker", workerId: "" }, browserUserId) &&
         authorization.allowsServer(AGENT_BROWSER_MCP_SERVER_NAME);
       const workerT3Available =
         options.ownerFeaturesAllowed === true && authorization.allowsTool("t3_thread_start");
       const sessionBrowserAvailable =
-        enablesAgentBrowser(options.role, options.ownerFeaturesAllowed) &&
+        enablesAgentBrowser(options.role, browserUserId) &&
         authorization.allowsServer(AGENT_BROWSER_MCP_SERVER_NAME);
       const sessionT3Available =
         options.role.kind === "worker" &&
@@ -802,8 +806,8 @@ export function createPiAgentFactory({
       const workerDelegationSection =
         hasWorkerStart && !hasVoiceSpeak
           ? renderWorkerDelegationSection({
-              ownerBrowserAvailable: workerBrowserAvailable,
-              ownerT3Available: workerT3Available,
+              browserAvailable: workerBrowserAvailable,
+              t3Available: workerT3Available,
               watchAvailable: hasWatchAdd,
             })
           : undefined;
@@ -831,8 +835,13 @@ export function createPiAgentFactory({
           excludedSkillNames,
           extraExtensions: [
             ...(extraExtensions ?? []),
-            ...(enablesAgentBrowser(options.role, options.ownerFeaturesAllowed)
-              ? [createAgentBrowserMcpExtension(options.sessionKey)]
+            ...(sessionBrowserAvailable && browserUserId
+              ? [
+                  createAgentBrowserMcpExtension(
+                    browserUserId,
+                    createAgentBrowserProfileDirectory(agentDir, browserUserId),
+                  ),
+                ]
               : []),
           ],
         },

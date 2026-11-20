@@ -45,8 +45,8 @@ export interface WorkerControl {
 }
 
 export interface WorkerDelegationPromptOptions {
-  readonly ownerBrowserAvailable: boolean;
-  readonly ownerT3Available: boolean;
+  readonly browserAvailable: boolean;
+  readonly t3Available: boolean;
   readonly watchAvailable: boolean;
 }
 
@@ -57,16 +57,21 @@ export interface WorkerDelegationPromptOptions {
  */
 export function renderWorkerDelegationSection(options: WorkerDelegationPromptOptions): string {
   const workerOnlyCapabilities: string[] = [];
-  if (options.ownerBrowserAvailable) {
+  if (options.browserAvailable) {
     workerOnlyCapabilities.push(
       "- Real headless browser use (`agent-browser`): open JavaScript-rendered pages, click, fill forms, wait for dynamic content, and take screenshots.",
     );
   }
-  if (options.ownerT3Available) {
+  if (options.t3Available) {
     workerOnlyCapabilities.push(
       "- T3 Code threads (`t3_thread_*`): hand repository edits, coding, tests, and PR creation to a T3 Code agent.",
     );
   }
+
+  const unavailableCapabilities = [
+    ...(options.browserAvailable ? [] : ["real browser use via `agent-browser`"]),
+    ...(options.t3Available ? [] : ["T3 Code threads via `t3_thread_*`"]),
+  ];
 
   const lines = [
     "## Workers (`worker_start`)",
@@ -87,13 +92,16 @@ export function renderWorkerDelegationSection(options: WorkerDelegationPromptOpt
     "",
     ...(workerOnlyCapabilities.length > 0
       ? [
-          "This conversation has owner permissions, so workers also have capabilities you do NOT have directly:",
+          "Workers in this conversation also have capabilities you do NOT have directly:",
           ...workerOnlyCapabilities,
           "Whenever a request needs these capabilities, delegate with `worker_start` instead of declining or falling back to static `fetch_content`.",
         ]
-      : [
-          "Owner-only worker capabilities (real browser use via `agent-browser` and T3 Code threads via `t3_thread_*`) are NOT available in this conversation. Do not start a worker for them or promise to use them.",
-        ]),
+      : []),
+    ...(unavailableCapabilities.length > 0
+      ? [
+          `This conversation does not have ${unavailableCapabilities.join(" or ")}. Do not start a worker for them or promise to use them.`,
+        ]
+      : []),
     "",
     "Give `worker_start` a self-contained prompt with the goal, context, URLs, message IDs, and constraints (a worker does not see this conversation history unless you summarize it or pass message IDs for `discord_read`). A worker cannot send Discord messages; its output arrives later as a `worker.result` event, and you decide whether and how to reply.",
   ];

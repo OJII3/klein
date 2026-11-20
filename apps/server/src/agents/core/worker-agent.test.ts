@@ -3,10 +3,10 @@ import test from "node:test";
 
 import { renderWorkerDelegationSection } from "./worker-agent";
 
-test("renders owner-only browser and T3 capabilities when enabled", () => {
+test("renders browser and T3 capabilities when enabled", () => {
   const section = renderWorkerDelegationSection({
-    ownerBrowserAvailable: true,
-    ownerT3Available: true,
+    browserAvailable: true,
+    t3Available: true,
     watchAvailable: true,
   });
 
@@ -14,17 +14,30 @@ test("renders owner-only browser and T3 capabilities when enabled", () => {
   assert.match(section, /agent-browser/);
   assert.match(section, /t3_thread_\*/);
   assert.match(section, /watch_add/);
-  assert.doesNotMatch(section, /browser-use|t3-thread/);
+  assert.doesNotMatch(section, /not available in this conversation/);
 });
 
-test("notes that owner-only capabilities are disabled when not allowed", () => {
+test("notes disabled capabilities without claiming owner permissions", () => {
   const section = renderWorkerDelegationSection({
-    ownerBrowserAvailable: false,
-    ownerT3Available: false,
+    browserAvailable: false,
+    t3Available: false,
     watchAvailable: false,
   });
 
   assert.match(section, /worker_start/);
-  assert.match(section, /NOT available in this conversation/);
+  assert.match(section, /does not have/);
+  assert.doesNotMatch(section, /owner permissions/);
   assert.doesNotMatch(section, /watch_add/);
+});
+
+test("mentions only the capabilities that are unavailable", () => {
+  const section = renderWorkerDelegationSection({
+    browserAvailable: true,
+    t3Available: false,
+    watchAvailable: false,
+  });
+
+  assert.match(section, /agent-browser/);
+  assert.match(section, /does not have T3 Code threads via `t3_thread_\*`/);
+  assert.doesNotMatch(section, /does not have real browser use via `agent-browser`/);
 });

@@ -30,4 +30,4 @@ After `agent_browser_open` and `agent_browser_snapshot`, read body text with `ag
 - Never enter passwords, API keys, or payment details. If required, report that in your result.
 - Do not perform external side effects such as purchases, form submissions, posts, or deletions unless explicitly requested in the task.
 - Return only saved file paths for screenshots; images are not attached to the conversation.
-- Each worker has an isolated browser session and cannot see other workers' tabs.
+- The browser session and profile are configured per linked Discord user. Workers for the same user share one browser and its tabs, including across channels. Do not override the session with a `session` argument, and avoid navigating the active tab away from a page another task may be using.

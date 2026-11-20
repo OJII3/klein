@@ -1,3 +1,4 @@
+import type { AccessScope } from "@shared/access";
 import type { AgentDefinition } from "./agent-definition";
 import type { AgentRole } from "./agent-role";
 import type { AgentPrompt, AgentRuntime } from "./agent-runtime";
@@ -20,6 +21,8 @@ export interface AgentCreationOptions {
   readonly role: AgentRole;
   readonly sessionKey: string;
   readonly ownerFeaturesAllowed?: boolean;
+  /** Private scope of the conversation, which also names the browser profile. */
+  readonly accessScope?: AccessScope;
   readonly initialContext?: string;
   /** Continue the most recent session in the session directory instead of starting a new one. */
   readonly resumeSession?: boolean;
