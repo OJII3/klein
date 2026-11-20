@@ -14,6 +14,7 @@ test("renders owner-only browser and T3 capabilities when enabled", () => {
   assert.match(section, /agent-browser/);
   assert.match(section, /t3_thread_\*/);
   assert.match(section, /watch_add/);
+  assert.doesNotMatch(section, /browser-automation|t3-thread/);
 });
 
 test("notes that owner-only capabilities are disabled when not allowed", () => {

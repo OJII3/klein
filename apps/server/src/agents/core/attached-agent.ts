@@ -59,17 +59,17 @@ export function renderWorkerDelegationSection(options: WorkerDelegationPromptOpt
   const workerOnlyCapabilities: string[] = [];
   if (options.ownerBrowserAvailable) {
     workerOnlyCapabilities.push(
-      "- Real headless browser automation (`agent-browser` via `tool_search`): open JavaScript-rendered pages, click, fill forms, wait for dynamic content, and take screenshots (see the `browser-automation` skill).",
+      "- Real headless browser automation (`agent-browser`): open JavaScript-rendered pages, click, fill forms, wait for dynamic content, and take screenshots.",
     );
   }
   if (options.ownerT3Available) {
     workerOnlyCapabilities.push(
-      "- T3 Code threads (`t3_thread_*`): hand repository edits, coding, tests, and PR creation to a T3 Code agent (see the `t3-thread` skill).",
+      "- T3 Code threads (`t3_thread_*`): hand repository edits, coding, tests, and PR creation to a T3 Code agent.",
     );
   }
 
   const lines = [
-    "## Workers (`worker_start` / 付随タスク)",
+    "## Workers (`worker_start`)",
     "",
     "Workers run in their own persistent Pi session outside this conversation. Prefer `worker_start` by default for anything beyond a single quick lookup so this conversation stays responsive and free of search/page/tool clutter.",
     "",

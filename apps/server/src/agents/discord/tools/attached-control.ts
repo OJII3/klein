@@ -21,7 +21,7 @@ export function createAttachedControlTools(
       name: "worker_start",
       label: "Start Worker",
       description:
-        "Start a worker (付随タスク): a separate agent with its own persistent session and tools. Prefer worker_start over doing multi-step web research, reading long pages or multiple sources, codemode/MCP workflows, or ongoing investigations inline in the conversation. Give a self-contained prompt; the worker cannot send Discord messages and its result arrives as an event. Use worker_send for follow-ups." +
+        "Start a worker: a separate agent with its own persistent session and tools. Prefer worker_start over doing multi-step web research, reading long pages or multiple sources, codemode/MCP workflows, or ongoing investigations inline in the conversation. Give a self-contained prompt; the worker cannot send Discord messages and its result arrives as an event. Use worker_send for follow-ups." +
         ownerCapabilitiesNote,
       parameters: Type.Object({
         prompt: Type.String({ minLength: 1, maxLength: 4_000 }),

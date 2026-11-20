@@ -1449,15 +1449,57 @@ test("appends worker delegation guidance to text conversation prompts based on o
     );
     restrictedOwnerRuntime.dispose();
 
-    const [ownerPrompt, publicPrompt, voicePrompt, restrictedOwnerPrompt] = capturedPrompts;
-    assert.ok(ownerPrompt && publicPrompt && voicePrompt && restrictedOwnerPrompt);
-    assert.match(ownerPrompt, /## Workers \(`worker_start` \/ 付随タスク\)/);
+    const ownerAttachedRuntime = await createFactory().create(
+      { systemPrompt: "Worker prompt." },
+      () => [makeT3ThreadStart()],
+      {
+        role: { kind: "attached", taskId: "task-owner" },
+        sessionKey: "owner-worker",
+        ownerFeaturesAllowed: true,
+      },
+    );
+    ownerAttachedRuntime.dispose();
+
+    const publicAttachedRuntime = await createFactory().create(
+      { systemPrompt: "Worker prompt." },
+      () => [],
+      {
+        role: { kind: "attached", taskId: "task-public" },
+        sessionKey: "public-worker",
+        ownerFeaturesAllowed: false,
+      },
+    );
+    publicAttachedRuntime.dispose();
+
+    const [
+      ownerPrompt,
+      publicPrompt,
+      voicePrompt,
+      restrictedOwnerPrompt,
+      ownerAttachedPrompt,
+      publicAttachedPrompt,
+    ] = capturedPrompts;
+    assert.ok(
+      ownerPrompt &&
+        publicPrompt &&
+        voicePrompt &&
+        restrictedOwnerPrompt &&
+        ownerAttachedPrompt &&
+        publicAttachedPrompt,
+    );
+    assert.match(ownerPrompt, /## Workers \(`worker_start`\)/);
     assert.match(ownerPrompt, /agent-browser/);
     assert.match(ownerPrompt, /t3_thread_\*/);
-    assert.match(publicPrompt, /## Workers \(`worker_start` \/ 付随タスク\)/);
+    assert.doesNotMatch(ownerPrompt, /browser-automation|t3-thread/);
+    assert.match(publicPrompt, /## Workers \(`worker_start`\)/);
     assert.match(publicPrompt, /NOT available in this conversation/);
-    assert.doesNotMatch(voicePrompt, /## Workers \(`worker_start` \/ 付随タスク\)/);
+    assert.doesNotMatch(publicPrompt, /browser-automation|t3-thread/);
+    assert.doesNotMatch(voicePrompt, /## Workers \(`worker_start`\)/);
+    assert.doesNotMatch(voicePrompt, /browser-automation|t3-thread/);
     assert.match(restrictedOwnerPrompt, /NOT available in this conversation/);
+    assert.match(ownerAttachedPrompt, /<name>browser-automation<\/name>/);
+    assert.match(ownerAttachedPrompt, /<name>t3-thread<\/name>/);
+    assert.doesNotMatch(publicAttachedPrompt, /browser-automation|t3-thread/);
   } finally {
     if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
     else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
@@ -1470,6 +1512,18 @@ function makeWorkerStart() {
     label: "Start Worker",
     description: "Start a worker",
     parameters: Type.Object({ prompt: Type.String() }),
+    async execute() {
+      return { content: [{ type: "text", text: "ok" }], details: {} };
+    },
+  });
+}
+
+function makeT3ThreadStart() {
+  return defineTool({
+    name: "t3_thread_start",
+    label: "Start T3 Thread",
+    description: "Start a T3 thread",
+    parameters: Type.Object({ message: Type.String() }),
     async execute() {
       return { content: [{ type: "text", text: "ok" }], details: {} };
     },
