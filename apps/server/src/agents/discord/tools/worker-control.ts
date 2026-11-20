@@ -14,7 +14,9 @@ export function createWorkerControlTools(
     accessScope,
   };
   const workerCapabilities = [
-    ...(accessScopeUserId(accessScope) !== undefined ? ["real browser use (agent-browser)"] : []),
+    ...(accessScopeUserId(accessScope) !== undefined
+      ? ["real browser use (agent-browser)", "a sandboxed shell (bash)"]
+      : []),
     ...(ownerFeaturesAllowed ? ["T3 Code threads (t3_thread_*)"] : []),
   ];
   const capabilitiesNote =

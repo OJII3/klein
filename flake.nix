@@ -24,6 +24,7 @@
           devShells.default = pkgs.mkShell {
             packages = [
               pkgs.agent-browser
+              pkgs.bubblewrap
               pkgs.bun
               pkgs.cloudflared
             ];
