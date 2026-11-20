@@ -92,6 +92,7 @@ import { PiRuntimeTrace } from "./pi-runtime-trace";
 import type { PiUsageReporter } from "./pi-usage-reporter";
 import { createSkillReadTool } from "./skill-read-tool";
 import { ToolAuthorization, type ToolPermissions } from "./tool-permissions";
+import { createUserShellTool, enablesUserShell } from "./user-shell-sandbox";
 
 export {
   createPiModelRuntime,
@@ -740,9 +741,13 @@ export function createPiAgentFactory({
         }),
         { usageReporter },
       );
-      const browserUserId = accessScopeUserId(parseAccessScope(options.accessScope));
-      const userEnvironment = browserUserId
-        ? ensureUserEnvironment(resolveUserEnvironment(agentDir, browserUserId))
+      const linkedUserId = accessScopeUserId(parseAccessScope(options.accessScope));
+      const userEnvironment = linkedUserId
+        ? ensureUserEnvironment(resolveUserEnvironment(agentDir, linkedUserId))
+        : undefined;
+      const workerShellAvailable = userEnvironment !== undefined;
+      const userShellTool = enablesUserShell(options.role, userEnvironment)
+        ? createUserShellTool(userEnvironment)
         : undefined;
       const sessionManager = createPiSessionManager(
         agentDir,
@@ -781,14 +786,15 @@ export function createPiAgentFactory({
       };
 
       const authorization = new ToolAuthorization(
-        options.ownerFeaturesAllowed === true ? "owner" : browserUserId ? "user" : "public",
+        options.ownerFeaturesAllowed === true ? "owner" : linkedUserId ? "user" : "public",
         permissions,
         skillReadTool ? new Set([skillReadTool.name]) : undefined,
-        browserUserId ? { [AGENT_BROWSER_MCP_SERVER_NAME]: "user" } : undefined,
+        linkedUserId ? { [AGENT_BROWSER_MCP_SERVER_NAME]: "user" } : undefined,
       );
       const customTools: PiTool[] = [
         ...createTools(toolContext),
         ...(skillReadTool ? [skillReadTool] : []),
+        ...(userShellTool ? [userShellTool] : []),
       ].filter((tool) => authorization.allowsTool(tool.name));
       assertSurfaceToolsAllowed(options.role, customTools);
       const policy = resolveAgentPolicy(options.role);
@@ -797,12 +803,12 @@ export function createPiAgentFactory({
       const hasWorkerStart = customTools.some((tool) => tool.name === "worker_start");
       const hasVoiceSpeak = surfaceTools.some((tool) => tool.name === "discord_speak");
       const workerBrowserAvailable =
-        enablesAgentBrowser({ kind: "worker", workerId: "" }, browserUserId) &&
+        enablesAgentBrowser({ kind: "worker", workerId: "" }, linkedUserId) &&
         authorization.allowsServer(AGENT_BROWSER_MCP_SERVER_NAME);
       const workerT3Available =
         options.ownerFeaturesAllowed === true && authorization.allowsTool("t3_thread_start");
       const sessionBrowserAvailable =
-        enablesAgentBrowser(options.role, browserUserId) &&
+        enablesAgentBrowser(options.role, linkedUserId) &&
         authorization.allowsServer(AGENT_BROWSER_MCP_SERVER_NAME);
       const sessionT3Available =
         options.role.kind === "worker" &&
@@ -816,6 +822,7 @@ export function createPiAgentFactory({
           ? renderWorkerDelegationSection({
               browserAvailable: workerBrowserAvailable,
               t3Available: workerT3Available,
+              shellAvailable: workerShellAvailable,
               watchAvailable: hasWatchAdd,
             })
           : undefined;
@@ -871,7 +878,7 @@ export function createPiAgentFactory({
         thinkingLevel: llm.thinkingLevel,
         excludeTools: [
           ...(skillReadTool ? [] : ["read"]),
-          "bash",
+          ...(userShellTool ? [] : ["bash"]),
           "edit",
           "write",
           "grep",

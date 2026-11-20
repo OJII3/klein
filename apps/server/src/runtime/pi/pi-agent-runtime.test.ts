@@ -1394,6 +1394,7 @@ test("runs linked-user workers in their own workspace", async () => {
   });
   modelRuntime.registerNativeProvider(provider.provider);
   const sessionCwds: { sessionKey: string; cwd: string }[] = [];
+  const sessionTools: { sessionKey: string; toolNames: string[] }[] = [];
   const factory = createPiAgentFactory({
     agentDir: temp.path,
     characterName: "クライン",
@@ -1403,6 +1404,10 @@ test("runs linked-user workers in their own workspace", async () => {
     sessionMode: "new",
     onSessionCreated(session, context) {
       sessionCwds.push({ sessionKey: context.sessionKey, cwd: session.sessionManager.getCwd() });
+      sessionTools.push({
+        sessionKey: context.sessionKey,
+        toolNames: session.getAllTools().map((tool) => tool.name),
+      });
     },
   });
 
@@ -1445,6 +1450,21 @@ test("runs linked-user workers in their own workspace", async () => {
     process.cwd(),
   );
   assert.equal(existsSync(workspaceDirectory), true);
+  assert.ok(
+    sessionTools
+      .find((session) => session.sessionKey === "linked-worker")
+      ?.toolNames.includes("bash"),
+  );
+  assert.ok(
+    !sessionTools
+      .find((session) => session.sessionKey === "conversation")
+      ?.toolNames.includes("bash"),
+  );
+  assert.ok(
+    !sessionTools
+      .find((session) => session.sessionKey === "public-worker")
+      ?.toolNames.includes("bash"),
+  );
 });
 
 test("appends worker delegation guidance to text conversation prompts based on owner permissions", async () => {

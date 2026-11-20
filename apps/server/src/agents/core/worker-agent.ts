@@ -47,6 +47,8 @@ export interface WorkerControl {
 export interface WorkerDelegationPromptOptions {
   readonly browserAvailable: boolean;
   readonly t3Available: boolean;
+  /** The linked user's sandboxed shell belongs to workers in this conversation. */
+  readonly shellAvailable: boolean;
   readonly watchAvailable: boolean;
 }
 
@@ -67,10 +69,16 @@ export function renderWorkerDelegationSection(options: WorkerDelegationPromptOpt
       "- T3 Code threads (`t3_thread_*`): hand repository edits, coding, tests, and PR creation to a T3 Code agent.",
     );
   }
+  if (options.shellAvailable) {
+    workerOnlyCapabilities.push(
+      "- A sandboxed shell (`bash`): run commands in the linked user's private workspace, with other users' files and Klein's configuration hidden.",
+    );
+  }
 
   const unavailableCapabilities = [
     ...(options.browserAvailable ? [] : ["real browser use via `agent-browser`"]),
     ...(options.t3Available ? [] : ["T3 Code threads via `t3_thread_*`"]),
+    ...(options.shellAvailable ? [] : ["a sandboxed shell"]),
   ];
 
   const lines = [
