@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { renderWorkerDelegationSection } from "./worker-agent";
+import { renderWorkerDelegationSection, renderWorkerT3ThreadSection } from "./worker-agent";
 
 test("renders browser, T3, and shell capabilities when enabled", () => {
   const section = renderWorkerDelegationSection({
@@ -46,4 +46,13 @@ test("mentions only the capabilities that are unavailable", () => {
   assert.match(section, /does not have T3 Code threads via `t3_thread_\*`/);
   assert.match(section, /does not have T3 Code threads via `t3_thread_\*` or a sandboxed shell/);
   assert.doesNotMatch(section, /does not have real browser use via `agent-browser`/);
+});
+
+test("renders worker guidance for routing repository work to T3 threads", () => {
+  const section = renderWorkerT3ThreadSection();
+
+  assert.match(section, /t3_thread_start/);
+  assert.match(section, /t3_thread_send/);
+  assert.match(section, /t3_thread_show/);
+  assert.match(section, /PR creation/);
 });

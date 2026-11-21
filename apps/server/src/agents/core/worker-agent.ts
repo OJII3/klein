@@ -116,3 +116,17 @@ export function renderWorkerDelegationSection(options: WorkerDelegationPromptOpt
 
   return lines.join("\n");
 }
+
+/**
+ * Renders guidance for a worker that has the T3 Code thread tools. Repository
+ * work stays in a thread instead of the worker's own session.
+ */
+export function renderWorkerT3ThreadSection(): string {
+  return [
+    "## T3 Code threads (`t3_thread_*`)",
+    "",
+    "Repository work belongs in a T3 Code thread: hand code edits, tests, builds, commits, and PR creation to `t3_thread_start` instead of doing them in your own session.",
+    "",
+    "Continue the same thread with `t3_thread_send` for follow-ups, and check a long run with `t3_thread_show`. Report the thread's status, result, and link in your result.",
+  ].join("\n");
+}

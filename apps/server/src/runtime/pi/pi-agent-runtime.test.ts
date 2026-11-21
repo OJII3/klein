@@ -1630,9 +1630,10 @@ test("appends worker delegation guidance to text conversation prompts based on o
     assert.match(restrictedOwnerPrompt, /This conversation does not have/);
     assert.match(ownerWorkerPrompt, /<name>browser-use<\/name>/);
     assert.match(ownerWorkerPrompt, /<name>t3-thread<\/name>/);
-    assert.doesNotMatch(publicWorkerPrompt, /browser-use|t3-thread/);
+    assert.match(ownerWorkerPrompt, /## T3 Code threads/);
+    assert.doesNotMatch(publicWorkerPrompt, /browser-use|t3-thread|## T3 Code threads/);
     assert.match(linkedWorkerPrompt, /<name>browser-use<\/name>/);
-    assert.doesNotMatch(linkedWorkerPrompt, /t3-thread/);
+    assert.doesNotMatch(linkedWorkerPrompt, /t3-thread|## T3 Code threads/);
   } finally {
     if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
     else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
