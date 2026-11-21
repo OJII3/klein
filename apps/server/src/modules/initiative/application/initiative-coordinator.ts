@@ -8,11 +8,13 @@ import type {
   ChannelSessionStateStore,
 } from "@app/channel-session-state-store";
 import type { DiscordOperatingState } from "@modules/discord/domain/discord-operating-state";
+import type { DiscordChannelLocation } from "@modules/discord/ports/discord-channel-api";
 import type { ProactiveCoordinator } from "@modules/proactivity/application/proactive-coordinator";
 import type { DeliveryDecision } from "@modules/proactivity/domain/proactive-delivery-policy";
 import { japanDateKey } from "@modules/proactivity/domain/japan-time";
 import type { ProactiveSignal } from "@modules/proactivity/domain/proactive-signal";
 import type { ProactivePreferenceStore } from "@modules/proactivity/ports/proactive-preference-store";
+import type { SharedMemoryLocation } from "@modules/shared-memory/domain/shared-memory";
 import { renderUserMemory } from "@modules/user-memory/domain/user-memory-format";
 import type { UserMemoryStore } from "@modules/user-memory/ports/user-memory-store";
 import {
@@ -46,6 +48,7 @@ const MINUTE_MS = 60 * 1_000;
 const HOUR_MS = 60 * MINUTE_MS;
 const PLANNER_RETRY_BACKOFF_MS = 15 * MINUTE_MS;
 const STALE_RUNNING_MS = 10 * MINUTE_MS;
+const RUNNING_RECOVERY_MS = 30 * MINUTE_MS;
 
 export interface InitiativeCoordinatorOptions {
   readonly config: ResolvedInitiativeConfig;
@@ -56,9 +59,11 @@ export interface InitiativeCoordinatorOptions {
   readonly preferenceStore: ProactivePreferenceStore;
   readonly planner: InitiativePlanner;
   readonly proactive: Pick<ProactiveCoordinator, "ingestGoalResult" | "dismissSignal">;
-  readonly workers: Pick<WorkerControl, "start">;
+  readonly workers: Pick<WorkerControl, "start" | "list">;
   readonly operatingState: Pick<DiscordOperatingState, "isActive">;
   readonly userMemoryStore?: Pick<UserMemoryStore, "read">;
+  readonly getChannelLocation?: (channelId: string) => Promise<DiscordChannelLocation>;
+  readonly getSharedMemory?: (location: SharedMemoryLocation) => Promise<string | undefined>;
   readonly ownerUserId?: string;
   readonly logger?: Logger;
   readonly now?: () => number;
@@ -165,6 +170,26 @@ export class InitiativeCoordinator {
                 markGoalFailed(goal, "worker was not started", now),
               );
               this.log("initiative_goal_failed", goal);
+            }
+            continue;
+          }
+
+          if (goal.status === "running" && goal.workerId !== undefined) {
+            if (now - Date.parse(goal.updatedAt) >= RUNNING_RECOVERY_MS) {
+              const workers = this.options.workers.list({
+                conversationKey: { kind: "discord", channelId: goal.channelId },
+                accessScope: goal.accessScope,
+              });
+              if (!workers.some((worker) => worker.id === goal.workerId)) {
+                const { workerId: _workerId, ...rest } = goal;
+                const requeued = {
+                  ...rest,
+                  status: "scheduled" as const,
+                  updatedAt: new Date(now).toISOString(),
+                };
+                await this.options.goalStore.update(requeued);
+                this.log("initiative_goal_requeued", requeued);
+              }
             }
             continue;
           }
@@ -339,17 +364,24 @@ export class InitiativeCoordinator {
     const plannerState =
       (await this.options.plannerStateStore.get(state.conversationKey.channelId, accessScope)) ??
       createEmptyPlannerState(state.conversationKey.channelId, accessScope);
+    const sameSession = plannerState.lastSessionKey === state.sessionKey;
     const today = japanDateKey(now);
     const plansToday = plannerState.plansOnDate === today ? plannerState.plansToday : 0;
     if (plansToday >= this.options.config.maxPlansPerDay) return;
 
     const lastPlannedAt =
       plannerState.lastPlannedAt === undefined ? undefined : Date.parse(plannerState.lastPlannedAt);
-    if (lastPlannedAt !== undefined && lastPlannedAt >= state.lastActivityAt) return;
+    if (sameSession && lastPlannedAt !== undefined && lastPlannedAt >= state.lastActivityAt) return;
 
     const lastAttemptAt =
       plannerState.lastAttemptAt === undefined ? undefined : Date.parse(plannerState.lastAttemptAt);
-    if (lastAttemptAt !== undefined && now - lastAttemptAt < PLANNER_RETRY_BACKOFF_MS) return;
+    if (
+      sameSession &&
+      lastAttemptAt !== undefined &&
+      now - lastAttemptAt < PLANNER_RETRY_BACKOFF_MS
+    ) {
+      return;
+    }
 
     const messages = await this.options.transcriptReader.read({
       sessionKey: state.sessionKey,
@@ -359,7 +391,7 @@ export class InitiativeCoordinator {
     if (messages.length === 0) return;
 
     const lastMessageId = messages.at(-1)?.id;
-    if (lastMessageId === plannerState.lastMessageId) return;
+    if (sameSession && lastMessageId === plannerState.lastMessageId) return;
 
     this.options.logger?.info(
       { event: "initiative_plan_started", channelId: state.conversationKey.channelId },
@@ -370,6 +402,7 @@ export class InitiativeCoordinator {
       accessScope,
     });
     const userMemory = await this.readUserMemory(accessScope);
+    const sharedMemory = await this.readSharedMemory(state.conversationKey.channelId);
     const goals = await this.options.goalStore.listForScope(
       state.conversationKey.channelId,
       accessScope,
@@ -385,11 +418,13 @@ export class InitiativeCoordinator {
         existingGoals: goals,
         preferences,
         ...(userMemory !== undefined ? { userMemory } : {}),
+        ...(sharedMemory !== undefined ? { sharedMemory } : {}),
         maxGoals: this.options.config.maxGoalsPerPlan,
       });
     } catch (error) {
       await this.options.plannerStateStore.save({
         ...plannerState,
+        lastSessionKey: state.sessionKey,
         plansOnDate: today,
         plansToday: plansToday + 1,
         lastAttemptAt: new Date(now).toISOString(),
@@ -404,6 +439,18 @@ export class InitiativeCoordinator {
     const existingGoals = [...goals];
     let created = 0;
     for (const proposal of proposals.slice(0, this.options.config.maxGoalsPerPlan)) {
+      if ((proposal.sourceMessageIds?.length ?? 0) === 0) {
+        this.options.logger?.info(
+          {
+            event: "initiative_goal_rejected",
+            channelId: state.conversationKey.channelId,
+            reason: "source messages are required for planner goals",
+          },
+          "Rejected an initiative goal proposal",
+        );
+        continue;
+      }
+
       const decision = decideGoalProposal(
         { proposal, existingGoals, preferences, now },
         {
@@ -442,6 +489,7 @@ export class InitiativeCoordinator {
 
     await this.options.plannerStateStore.save({
       ...plannerState,
+      lastSessionKey: state.sessionKey,
       plansOnDate: today,
       plansToday: plansToday + 1,
       lastAttemptAt: new Date(now).toISOString(),
@@ -476,21 +524,47 @@ export class InitiativeCoordinator {
     }
   }
 
+  private async readSharedMemory(channelId: string): Promise<string | undefined> {
+    const getLocation = this.options.getChannelLocation;
+    const getContext = this.options.getSharedMemory;
+    if (!getLocation || !getContext) return undefined;
+
+    try {
+      const location = await getLocation(channelId);
+      if (!location.guildId) return undefined;
+      return await getContext({
+        guildId: location.guildId,
+        channelId: location.channelId,
+        ...(location.threadId !== undefined ? { threadId: location.threadId } : {}),
+      });
+    } catch (error) {
+      this.options.logger?.warn(
+        { err: error, event: "initiative_shared_memory_read_failed", channelId },
+        "Failed to read shared memory for initiative planning",
+      );
+      return undefined;
+    }
+  }
+
   private async startGoal(goal: InitiativeGoal, now: number): Promise<void> {
-    const running = markGoalRunning(goal, now);
+    const workerId = `worker-${randomUUID()}`;
+    const running = { ...markGoalRunning(goal, now), workerId };
     await this.options.goalStore.update(running);
 
     try {
-      const workerId = await this.options.workers.start({
+      const startedWorkerId = await this.options.workers.start({
+        id: workerId,
         conversationKey: { kind: "discord", channelId: goal.channelId },
         accessScope: goal.accessScope,
         ownerFeaturesAllowed: isOwnerAccessScope(goal.accessScope, this.options.ownerUserId),
         prompt: buildGoalWorkerPrompt(goal),
         closeAfterResult: true,
       });
-      await this.options.goalStore.update({ ...running, workerId });
+      if (startedWorkerId !== workerId) {
+        await this.options.goalStore.update({ ...running, workerId: startedWorkerId });
+      }
       this.options.logger?.info(
-        { event: "initiative_goal_started", goalId: goal.id, workerId },
+        { event: "initiative_goal_started", goalId: goal.id, workerId: startedWorkerId },
         "Started an initiative goal",
       );
     } catch (error) {
@@ -564,6 +638,7 @@ export function buildGoalWorkerPrompt(goal: InitiativeGoal): string {
     `実行計画: ${goal.plan}`,
     `期限: ${goal.dueAt}`,
     "結果を簡潔に返してください。ユーザーに直接話しかけないでください。",
+    "結果は3〜5行の箇条書きにし、全体を1,500文字以内にしてください。",
     "確認できたことと不明なことを分けてください。",
     "読み取りと、一時ディレクトリ内で完結する試作だけを行ってください。",
     "既存ファイルの削除や変更、購入、送金、第三者への連絡、アカウント設定の変更はしないでください。",

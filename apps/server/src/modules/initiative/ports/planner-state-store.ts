@@ -5,6 +5,7 @@ export interface PlannerState {
   readonly channelId: string;
   readonly accessScope: AccessScope;
   readonly lastMessageId?: string;
+  readonly lastSessionKey?: string;
   readonly lastPlannedAt?: string;
   readonly lastAttemptAt?: string;
   readonly plansOnDate?: string;

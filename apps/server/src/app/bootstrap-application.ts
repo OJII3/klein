@@ -248,6 +248,7 @@ export async function bootstrapApplication(): Promise<void> {
     : piAgentFactory;
   let discordService!: DiscordJsService;
   let agentCoordinator!: AgentCoordinator;
+  let sharedMemoryCoordinator: SharedMemoryCoordinator | undefined;
   const t3ThreadRunner = createT3CliThreadRunner();
   const workerAgentCoordinator = new WorkerAgentCoordinator({
     factory: piAgentFactory,
@@ -349,6 +350,9 @@ export async function bootstrapApplication(): Promise<void> {
           workers: workerAgentCoordinator,
           operatingState: discordOperatingState,
           ...(userMemoryStore ? { userMemoryStore } : {}),
+          getChannelLocation: (channelId) => discordService.getChannelLocation(channelId),
+          getSharedMemory: (location) =>
+            sharedMemoryCoordinator?.getContext(location) ?? Promise.resolve(undefined),
           ...(ownerUserId ? { ownerUserId } : {}),
           logger,
         })
@@ -470,7 +474,7 @@ export async function bootstrapApplication(): Promise<void> {
     },
   );
   const memorySessionId = `memory-${randomUUID()}`;
-  const sharedMemoryCoordinator = sharedMemoryConfig.enabled
+  sharedMemoryCoordinator = sharedMemoryConfig.enabled
     ? new SharedMemoryCoordinator({
         store: new MarkdownSharedMemoryStore(sharedMemoryConfig.directory),
         idleSeconds: sharedMemoryConfig.idleSeconds,

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { join } from "node:path";
 import test from "node:test";
 
-import type { WorkerStartInput } from "@agents/core/worker-agent";
+import type { WorkerInfo, WorkerStartInput } from "@agents/core/worker-agent";
 import { DEFAULT_PROACTIVE_PREFERENCES } from "@modules/proactivity/domain/proactive-preference";
 import type { ProactiveSignal } from "@modules/proactivity/domain/proactive-signal";
 import type { AccessScope } from "@shared/access";
@@ -53,6 +53,26 @@ test("does not plan while the channel is still active", async () => {
   assert.equal((await harness.goalStore.listAll()).length, 0);
 });
 
+test("plans again after the conversation session rotates", async () => {
+  await using temp = await createTempDir("klein-initiative-");
+  const channelState = makeChannelState(NOW - 31 * 60 * 1_000);
+  const messages = [makeMessage("m1")];
+  const harness = await createHarness(temp.path, {
+    channelState,
+    messages,
+    proposals: [makeProposal()],
+  });
+
+  await harness.coordinator.planDueChannels(NOW);
+  assert.equal(harness.plannerCalls, 1);
+
+  channelState.sessionKey = "discord-channel:channel-1:owner:1:rotation:2026-11-22T12";
+  messages.push(makeMessage("m2"));
+  await harness.coordinator.planDueChannels(NOW);
+
+  assert.equal(harness.plannerCalls, 2);
+});
+
 test("starts a worker for a due goal and records its id", async () => {
   await using temp = await createTempDir("klein-initiative-");
   const harness = await createHarness(temp.path, {
@@ -71,10 +91,36 @@ test("starts a worker for a due goal and records its id", async () => {
 
   const updated = await harness.goalStore.get("goal-1");
   assert.equal(updated?.status, "running");
-  assert.equal(updated?.workerId, "worker-1");
+  const started = harness.startedWorkers[0];
+  assert.ok(started?.id);
+  assert.equal(updated?.workerId, started.id);
   assert.equal(harness.startedWorkers.length, 1);
-  assert.match(harness.startedWorkers[0]?.prompt ?? "", /店を調べる/u);
-  assert.equal(harness.startedWorkers[0]?.closeAfterResult, true);
+  assert.match(started.prompt, /店を調べる/u);
+  assert.equal(started.closeAfterResult, true);
+});
+
+test("requeues a running goal whose worker is missing", async () => {
+  await using temp = await createTempDir("klein-initiative-");
+  const harness = await createHarness(temp.path, {
+    channelState: makeChannelState(NOW),
+    messages: [],
+    proposals: [],
+  });
+  await harness.goalStore.create(
+    makeGoal({
+      id: "goal-1",
+      status: "running",
+      workerId: "missing-worker",
+      updatedAt: new Date(NOW - 31 * 60 * 1_000).toISOString(),
+    }),
+  );
+
+  await harness.coordinator.deliverDueGoals(NOW);
+
+  const updated = await harness.goalStore.get("goal-1");
+  assert.equal(updated?.status, "scheduled");
+  assert.equal(updated?.workerId, undefined);
+  assert.equal(harness.startedWorkers.length, 0);
 });
 
 test("turns a worker result into a proactive signal and marks the goal ready", async () => {
@@ -190,6 +236,7 @@ interface Harness {
   readonly goalStore: FileInitiativeGoalStore;
   readonly plannerCalls: number;
   readonly startedWorkers: WorkerStartInput[];
+  readonly runningWorkers: WorkerInfo[];
 }
 
 async function createHarness(
@@ -204,6 +251,7 @@ async function createHarness(
   const goalStore = new FileInitiativeGoalStore(join(directory, "goals"));
   const plannerStateStore = new FilePlannerStateStore(join(directory, "planner"));
   const startedWorkers: WorkerStartInput[] = [];
+  const runningWorkers: WorkerInfo[] = [];
   let plannerCalls = 0;
 
   const options: InitiativeCoordinatorOptions = {
@@ -251,7 +299,18 @@ async function createHarness(
     workers: {
       async start(workerInput) {
         startedWorkers.push(workerInput);
-        return "worker-1";
+        const id = workerInput.id ?? "worker-1";
+        runningWorkers.push({
+          id,
+          prompt: workerInput.prompt,
+          status: "running",
+          createdAt: new Date(NOW).toISOString(),
+          updatedAt: new Date(NOW).toISOString(),
+        });
+        return id;
+      },
+      list() {
+        return runningWorkers;
       },
     },
     operatingState: {
@@ -270,6 +329,7 @@ async function createHarness(
       return plannerCalls;
     },
     startedWorkers,
+    runningWorkers,
   };
 }
 

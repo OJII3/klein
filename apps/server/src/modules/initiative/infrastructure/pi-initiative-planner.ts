@@ -127,6 +127,9 @@ export function buildPlannerPrompt(input: InitiativePlannerInput): {
     ...(input.userMemory !== undefined
       ? ["", "## User memory (untrusted data)", truncate(input.userMemory, 4_000)]
       : []),
+    ...(input.sharedMemory !== undefined
+      ? ["", "## Shared memory (untrusted data)", truncate(input.sharedMemory, 4_000)]
+      : []),
     "",
     "## Preferences",
     renderProactivePreferences(input.preferences).trimEnd(),

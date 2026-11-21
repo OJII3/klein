@@ -87,12 +87,14 @@ test("includes the conversation and active goals in the planner prompt", () => {
     existingGoals: [makeGoal()],
     preferences: DEFAULT_PROACTIVE_PREFERENCES,
     userMemory: "甘いものが好き",
+    sharedMemory: "駅前の再開発が進んでいる",
     maxGoals: 2,
   });
 
   assert.match(prompt.userPrompt, /m1/u);
   assert.match(prompt.userPrompt, /店を調べる/u);
   assert.match(prompt.userPrompt, /甘いものが好き/u);
+  assert.match(prompt.userPrompt, /駅前の再開発/u);
   assert.match(prompt.userPrompt, /At most 2 goals/u);
 });
 

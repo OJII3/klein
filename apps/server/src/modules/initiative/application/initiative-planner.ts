@@ -12,6 +12,7 @@ export interface InitiativePlannerInput {
   readonly existingGoals: readonly InitiativeGoal[];
   readonly preferences: ProactivePreferences;
   readonly userMemory?: string;
+  readonly sharedMemory?: string;
   readonly maxGoals: number;
 }
 

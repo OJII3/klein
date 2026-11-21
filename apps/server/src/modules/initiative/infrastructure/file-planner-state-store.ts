@@ -61,6 +61,7 @@ function parsePlannerState(
     channelId,
     accessScope,
     ...optionalText(value, "lastMessageId"),
+    ...optionalText(value, "lastSessionKey"),
     ...optionalTimestamp(value, "lastPlannedAt"),
     ...optionalTimestamp(value, "lastAttemptAt"),
     ...optionalText(value, "plansOnDate"),

@@ -27,13 +27,16 @@ export function createInitiativeTools(
       name: "goal_create",
       label: "Create Initiative Goal",
       description:
-        "Create a goal for yourself to do later in this conversation. Use it when the user shows clear interest in something you could research, try, or recommend. The plan must be self-contained for a worker. due_at must be an ISO 8601 timestamp with a timezone.",
+        "Create a goal for yourself to do later in this conversation. Use it when the user shows clear interest in something you could research, try, or recommend. The plan must be self-contained for a worker. due_at must be an ISO 8601 timestamp with a timezone. Only low-risk goals are accepted for now.",
       parameters: Type.Object({
         title: Type.String({ minLength: 1, maxLength: 200 }),
         rationale: Type.String({ minLength: 1, maxLength: 2_000 }),
         plan: Type.String({ minLength: 1, maxLength: 8_000 }),
         due_at: Type.String({ minLength: 1 }),
         expires_at: Type.Optional(Type.String({ minLength: 1 })),
+        risk: Type.Optional(
+          Type.Union([Type.Literal("low"), Type.Literal("medium"), Type.Literal("high")]),
+        ),
         delivery: Type.Optional(goalDeliverySchema),
         source_message_ids: Type.Optional(
           Type.Array(Type.String({ minLength: 1 }), { maxItems: 20 }),
@@ -49,6 +52,7 @@ export function createInitiativeTools(
           plan: params.plan,
           dueAt: params.due_at,
           ...(params.expires_at !== undefined ? { expiresAt: params.expires_at } : {}),
+          ...(params.risk !== undefined ? { risk: params.risk } : {}),
           ...(params.delivery !== undefined ? { delivery: params.delivery } : {}),
           ...(params.source_message_ids !== undefined
             ? { sourceMessageIds: params.source_message_ids }
