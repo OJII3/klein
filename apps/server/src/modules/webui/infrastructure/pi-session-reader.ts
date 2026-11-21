@@ -9,7 +9,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 
 import type {
-  ChannelNameReader,
+  DiscordNameReader,
   ViewerPage,
   ViewerSessionDetail,
   ViewerSessionQuery,
@@ -29,7 +29,7 @@ import { listPiSessionDirectories } from "./pi-session-files";
 export class PiSessionReader implements ViewerSessionReader {
   constructor(
     private readonly agentDirectory: string,
-    private readonly channelNames?: ChannelNameReader,
+    private readonly channelNames?: DiscordNameReader,
   ) {}
 
   async list(query: ViewerSessionQuery = {}): Promise<ViewerPage<ViewerSessionSummary>> {

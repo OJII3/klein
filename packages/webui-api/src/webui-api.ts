@@ -31,6 +31,17 @@ export function createWebUiApp(dependencies: WebUiDependencies) {
         return handleRouteError(set, dependencies.logger, error, "Failed to list Discord channels");
       }
     })
+    .get("/api/guilds", async ({ set }) => {
+      try {
+        if (!dependencies.guildNames) return { items: [] };
+        const names = await dependencies.guildNames.read();
+        return {
+          items: [...names].map(([guildId, name]) => ({ guildId, name })),
+        };
+      } catch (error) {
+        return handleRouteError(set, dependencies.logger, error, "Failed to list Discord guilds");
+      }
+    })
     .get("/api/tools", async ({ set }) => {
       try {
         return await dependencies.toolUsage.read();
