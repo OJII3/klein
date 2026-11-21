@@ -40,7 +40,10 @@ import type { AgentTool } from "@agents/core/agent-tool";
 import type { AgentTurn, AgentTurnContext } from "@agents/core/agent-turn";
 import type { AgentPrompt, AgentRuntime } from "@agents/core/agent-runtime";
 import { toImageAnalysisFailure } from "@agents/core/image-analysis";
-import { renderWorkerDelegationSection } from "@agents/core/worker-agent";
+import {
+  renderWorkerDelegationSection,
+  renderWorkerT3ThreadSection,
+} from "@agents/core/worker-agent";
 import type { SessionMode } from "@app/cli-options";
 import { renderWatchToolSection } from "@modules/scheduling/application/watch-tool";
 import { accessScopeUserId, parseAccessScope } from "@shared/access";
@@ -831,9 +834,11 @@ export function createPiAgentFactory({
               watchAvailable: hasWatchAdd,
             })
           : undefined;
+      const workerT3ThreadSection = sessionT3Available ? renderWorkerT3ThreadSection() : undefined;
       const systemPrompt = [
         definition.systemPrompt,
         ...(workerDelegationSection ? [workerDelegationSection] : []),
+        ...(workerT3ThreadSection ? [workerT3ThreadSection] : []),
         ...(hasWatchAdd && watchToolCatalog ? [renderWatchToolSection(watchToolCatalog)] : []),
       ]
         .filter(Boolean)
