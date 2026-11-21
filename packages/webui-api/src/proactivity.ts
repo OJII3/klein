@@ -16,7 +16,7 @@ export interface ProactiveSignalView {
   readonly accessScope: string;
   readonly audience: "owner" | "public";
   readonly source: {
-    readonly kind: "watch" | "worker" | "memory" | "connector";
+    readonly kind: "watch" | "worker" | "memory" | "connector" | "goal";
     readonly ref?: string;
   };
   readonly topic: string;
@@ -64,10 +64,38 @@ export interface ProactivePreferenceView {
   readonly notes: readonly string[];
 }
 
+export type InitiativeGoalStatus =
+  "scheduled" | "running" | "ready" | "delivered" | "dismissed" | "expired" | "failed";
+
+export type InitiativeGoalRisk = "low" | "medium" | "high";
+
+export type InitiativeGoalDelivery = "interrupt" | "attach" | "digest" | "silent";
+
+export interface InitiativeGoalView {
+  readonly id: string;
+  readonly channelId: string;
+  readonly accessScope: string;
+  readonly title: string;
+  readonly rationale: string;
+  readonly plan: string;
+  readonly dueAt: string;
+  readonly expiresAt: string;
+  readonly risk: InitiativeGoalRisk;
+  readonly deliveryMode?: InitiativeGoalDelivery;
+  readonly status: InitiativeGoalStatus;
+  readonly createdBy: "planner" | "conversation";
+  readonly createdAt: string;
+  readonly updatedAt: string;
+  readonly workerId?: string;
+  readonly signalId?: string;
+  readonly lastError?: string;
+}
+
 export interface ProactivitySnapshot {
   readonly signals: readonly ProactiveSignalView[];
   readonly signalsTruncated: boolean;
   readonly followUps: readonly FollowUpView[];
+  readonly goals: readonly InitiativeGoalView[];
   readonly preferences: readonly ProactivePreferenceView[];
 }
 

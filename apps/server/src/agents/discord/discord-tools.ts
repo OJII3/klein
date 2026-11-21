@@ -12,6 +12,7 @@ import type { UserMemoryStore } from "@modules/user-memory/ports/user-memory-sto
 import { ownerAccessScope, PUBLIC_ACCESS_SCOPE, type AccessScope } from "@shared/access";
 import { createReminderTools } from "../tools/reminder";
 import { createProactiveTools, type ProactiveToolCoordinator } from "../tools/proactive";
+import { createInitiativeTools, type InitiativeToolCoordinator } from "../tools/initiative";
 import { createPromiseGuard, type PromiseGuardMode } from "../tools/promise-guard";
 import { createUserMemoryTools } from "../tools/user-memory";
 import { createWatchTools } from "../tools/watch";
@@ -41,6 +42,7 @@ export interface DiscordAgentToolsOptions {
   readonly discordUserDirectory?: DiscordUserResolver;
   readonly workers?: WorkerControl;
   readonly proactive?: ProactiveToolCoordinator;
+  readonly initiative?: InitiativeToolCoordinator;
   readonly promiseGuard?: { readonly mode: PromiseGuardMode; readonly logger: Logger };
 }
 
@@ -116,6 +118,9 @@ export function createDiscordAgentTools(
           options.requesterUserId ?? (() => undefined),
           options.ownerUserId,
         )
+      : []),
+    ...(options.initiative && accessScope !== PUBLIC_ACCESS_SCOPE
+      ? createInitiativeTools(options.initiative, options.channelId, accessScope)
       : []),
   ];
 }
