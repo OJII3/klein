@@ -8,6 +8,10 @@ import type { AccessScope } from "@shared/access";
 import { createT3ThreadTools, type T3ThreadRunner } from "@agents/tools/t3-thread";
 import { createWatchTools } from "@agents/tools/watch";
 import { createDiscordImageAnalysis, createDiscordReadTool } from "./discord-read";
+import {
+  createDiscordUserProfileTool,
+  type DiscordUserProfileToolDependencies,
+} from "./discord-user-profile";
 
 /**
  * Tools for a worker. The worker reads the conversation it
@@ -17,7 +21,7 @@ import { createDiscordImageAnalysis, createDiscordReadTool } from "./discord-rea
  * thread tools, which let it hand coding work to a T3 Code agent.
  */
 export function createWorkerTools(
-  channelApi: Pick<DiscordChannelApi, "readMessage">,
+  channelApi: Pick<DiscordChannelApi, "readMessage" | "getChannelLocation">,
   channelId: string,
   accessScope: AccessScope,
   ownerWorkerId: string,
@@ -26,6 +30,7 @@ export function createWorkerTools(
   requester?: Parameters<DiscordChannelApi["readMessage"]>[1],
   analyzeImage?: AgentImageAnalyzer,
   t3ThreadRunner?: T3ThreadRunner,
+  userProfiles?: DiscordUserProfileToolDependencies,
 ): readonly ToolDefinition[] {
   return [
     createDiscordReadTool(
@@ -34,6 +39,7 @@ export function createWorkerTools(
       createDiscordImageAnalysis(analyzeImage),
       requester,
     ),
+    ...(userProfiles ? [createDiscordUserProfileTool(channelApi, channelId, userProfiles)] : []),
     ...createWatchTools(
       scheduledTaskStore,
       channelId,

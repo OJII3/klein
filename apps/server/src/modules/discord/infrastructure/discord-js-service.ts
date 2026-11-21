@@ -13,6 +13,8 @@ import { DiscordMessageIngest } from "../application/discord-message-ingest";
 import { DiscordReactionIngest } from "../application/discord-reaction-ingest";
 import type { DiscordAccessPolicy } from "../domain/discord-access-policy";
 import type { DiscordChoiceRequest } from "../domain/discord-choice";
+import { isValidDiscordUserId } from "../domain/discord-user";
+import type { DiscordUserProfile } from "../domain/discord-user-profile";
 import {
   DiscordOperatingState,
   type DiscordOperatingMode,
@@ -33,6 +35,7 @@ import type { DiscordAccessRequestStore } from "../ports/discord-access-request-
 import type { DiscordApprovalRequestStore } from "../ports/discord-approval-request-store";
 import type { DiscordChannelLinkStore } from "../ports/discord-channel-link-store";
 import type { DiscordChannelRuleStore } from "../ports/discord-channel-rule-store";
+import type { DiscordUserProfileReader } from "../ports/discord-user-profile-reader";
 import type { PendingDiscordChannelLinkRequest } from "../domain/discord-channel-link-request";
 
 import {
@@ -56,6 +59,12 @@ import {
   type DiscordHandlerInteraction,
 } from "./discord-js-interaction-handler";
 import { DiscordJsMessageAdapter, type DiscordAdapterMessage } from "./discord-js-message-adapter";
+import {
+  toDiscordUserProfile,
+  type DiscordServiceProfileGuild,
+  type DiscordServiceProfileGuildMember,
+  type DiscordServiceProfileUser,
+} from "./discord-js-user-profile";
 
 const DISCORD_MESSAGE_LIMIT = 2_000;
 interface SendableChannel {
@@ -146,6 +155,10 @@ export interface DiscordServiceReadyClient {
   };
 }
 
+export type DiscordServiceSendableUser = DiscordServiceProfileUser & {
+  send(payload: DiscordContainerMessage): Promise<unknown>;
+};
+
 export interface DiscordServiceClient extends DiscordChoiceClient, DiscordChannelAccessClient {
   readonly user: {
     readonly id: string;
@@ -157,9 +170,10 @@ export interface DiscordServiceClient extends DiscordChoiceClient, DiscordChanne
   };
   readonly guilds: {
     readonly cache: ReadonlyMap<string, { readonly name?: string }>;
+    fetch(id: string): Promise<DiscordServiceProfileGuild>;
   };
   readonly users: {
-    fetch(id: string): Promise<{ send(payload: DiscordContainerMessage): Promise<unknown> }>;
+    fetch(id: string, options?: { readonly force?: boolean }): Promise<DiscordServiceSendableUser>;
   };
   once(
     event: Events.ClientReady,
@@ -236,7 +250,9 @@ function splitMessage(content: string): string[] {
   return chunks;
 }
 
-export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
+export class DiscordJsService
+  implements DiscordGateway, DiscordChannelApi, DiscordUserProfileReader
+{
   private readonly client: DiscordServiceClient;
   private readonly channels = new Map<string, SendableChannel>();
   private readonly voiceChatController?: DiscordVoiceChatController;
@@ -526,6 +542,24 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
     };
   }
 
+  async readUserProfile(userId: string, guildId?: string): Promise<DiscordUserProfile | undefined> {
+    if (!isValidDiscordUserId(userId)) return undefined;
+
+    let user: DiscordServiceProfileUser;
+    try {
+      user = await this.client.users.fetch(userId, { force: true });
+    } catch (error) {
+      this.logger?.warn(
+        { err: error, event: "discord_user_profile_fetch_failed", userId },
+        "Failed to fetch Discord user profile",
+      );
+      return undefined;
+    }
+
+    const membership = guildId ? await this.fetchGuildMembership(userId, guildId) : undefined;
+    return toDiscordUserProfile({ user, ...membership });
+  }
+
   stopAccepting(): void {
     this.acceptingMessages = false;
 
@@ -566,6 +600,34 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
 
     this.channels.set(channelId, channel);
     return channel;
+  }
+
+  private async fetchGuildMembership(
+    userId: string,
+    guildId: string,
+  ): Promise<
+    | {
+        readonly guild: DiscordServiceProfileGuild;
+        readonly member: DiscordServiceProfileGuildMember;
+      }
+    | undefined
+  > {
+    try {
+      const guild = await this.client.guilds.fetch(guildId);
+      const member = await guild.members.fetch(userId);
+      return { guild, member };
+    } catch (error) {
+      this.logger?.warn(
+        {
+          err: error,
+          event: "discord_guild_member_profile_fetch_failed",
+          guildId,
+          userId,
+        },
+        "Failed to fetch Discord guild member profile",
+      );
+      return undefined;
+    }
   }
 
   private async handleMessage(message: DiscordServiceMessage): Promise<void> {
