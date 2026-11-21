@@ -61,6 +61,10 @@ export class FileProactiveSignalStore implements ProactiveSignalStore {
       .toSorted(compareSignals);
   }
 
+  async listAll(): Promise<readonly ProactiveSignal[]> {
+    return (await this.readAll()).toSorted(compareSignals);
+  }
+
   async listAllQueued(): Promise<readonly ProactiveSignal[]> {
     const signals = await this.readAll();
     return signals.filter((signal) => signal.status === "queued").toSorted(compareSignals);

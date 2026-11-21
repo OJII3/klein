@@ -122,6 +122,49 @@ test("serves health, logs, Pi sessions, and scoped memory through Elysia", async
     piSessions: new PiSessionReader(agentDirectory, channelNames),
     pinoLogs: new PinoJsonlReader(logDirectory),
     toolUsage: new PiToolUsageReader(agentDirectory),
+    proactivity: {
+      read: async () => ({
+        signals: [
+          {
+            id: "signal-1",
+            channelId: "123",
+            accessScope: "owner:1",
+            audience: "owner",
+            source: { kind: "watch", ref: "watch-1" },
+            topic: "weather",
+            summary: "雨が降りそう",
+            urgency: "today",
+            observedAt: "2026-09-11T00:00:00.000Z",
+            status: "queued",
+            deliveryMode: "attach",
+          },
+        ],
+        signalsTruncated: false,
+        followUps: [
+          {
+            id: "follow-up-1",
+            channelId: "123",
+            accessScope: "owner:1",
+            subject: "天気を確認する",
+            watcher: { kind: "watch", id: "watch-1" },
+            cadenceLabel: "5分ごと",
+            status: "active",
+            createdAt: "2026-09-11T00:00:00.000Z",
+            updatedAt: "2026-09-11T00:00:00.000Z",
+          },
+        ],
+        preferences: [
+          {
+            key: "user-1",
+            scope: "user",
+            userId: "1",
+            delivery: { defaultMode: "attach" },
+            topics: [],
+            notes: ["短く"],
+          },
+        ],
+      }),
+    },
   });
 
   const health = await app.handle(new Request("http://localhost/api/health"));
@@ -157,6 +200,51 @@ test("serves health, logs, Pi sessions, and scoped memory through Elysia", async
     tools: [],
     totalCalls: 0,
     totalErrors: 0,
+  });
+
+  const proactivity = await app.handle(new Request("http://localhost/api/proactivity"));
+  assert.equal(proactivity.status, 200);
+  assert.deepEqual(await readJson(proactivity), {
+    enabled: true,
+    signals: [
+      {
+        id: "signal-1",
+        channelId: "123",
+        accessScope: "owner:1",
+        audience: "owner",
+        source: { kind: "watch", ref: "watch-1" },
+        topic: "weather",
+        summary: "雨が降りそう",
+        urgency: "today",
+        observedAt: "2026-09-11T00:00:00.000Z",
+        status: "queued",
+        deliveryMode: "attach",
+      },
+    ],
+    signalsTruncated: false,
+    followUps: [
+      {
+        id: "follow-up-1",
+        channelId: "123",
+        accessScope: "owner:1",
+        subject: "天気を確認する",
+        watcher: { kind: "watch", id: "watch-1" },
+        cadenceLabel: "5分ごと",
+        status: "active",
+        createdAt: "2026-09-11T00:00:00.000Z",
+        updatedAt: "2026-09-11T00:00:00.000Z",
+      },
+    ],
+    preferences: [
+      {
+        key: "user-1",
+        scope: "user",
+        userId: "1",
+        delivery: { defaultMode: "attach" },
+        topics: [],
+        notes: ["短く"],
+      },
+    ],
   });
 
   const sessions = await app.handle(new Request("http://localhost/api/sessions"));

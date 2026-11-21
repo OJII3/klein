@@ -70,6 +70,7 @@ import { startWebUi } from "@modules/webui/infrastructure/elysia-webui-app";
 import { PinoJsonlReader } from "@modules/webui/infrastructure/pino-jsonl-reader";
 import { PiSessionReader } from "@modules/webui/infrastructure/pi-session-reader";
 import { PiToolUsageReader } from "@modules/webui/infrastructure/pi-tool-usage-reader";
+import { ProactivityStoreReader } from "@modules/webui/infrastructure/proactivity-store-reader";
 import { Sbv2Tts } from "@modules/tts/infrastructure/sbv2-tts";
 import { WebSocketAsrClient } from "@modules/asr/infrastructure/websocket-asr-client";
 import { FileScheduledTaskStore } from "@modules/scheduling/infrastructure/file-scheduled-task-store";
@@ -285,11 +286,16 @@ export async function bootstrapApplication(): Promise<void> {
       }
     },
   });
+  const proactivePreferenceStore = new FileProactivePreferenceStore(
+    proactivityConfig.preferencesDirectory,
+  );
+  const proactiveFollowUpStore = new FileFollowUpStore(proactivityConfig.followUpDirectory);
+  const proactiveSignalStore = new FileProactiveSignalStore(proactivityConfig.signalDirectory);
   const proactiveCoordinator = proactivityConfig.enabled
     ? new ProactiveCoordinator({
-        preferenceStore: new FileProactivePreferenceStore(proactivityConfig.preferencesDirectory),
-        followUpStore: new FileFollowUpStore(proactivityConfig.followUpDirectory),
-        signalStore: new FileProactiveSignalStore(proactivityConfig.signalDirectory),
+        preferenceStore: proactivePreferenceStore,
+        followUpStore: proactiveFollowUpStore,
+        signalStore: proactiveSignalStore,
         scheduledTaskStore,
         workers: workerAgentCoordinator,
         defaults: proactivityConfig.defaults,
@@ -495,6 +501,15 @@ export async function bootstrapApplication(): Promise<void> {
         }),
         pinoLogs: new PinoJsonlReader(logDirectory),
         toolUsage: new PiToolUsageReader(agentDir),
+        ...(proactivityConfig.enabled
+          ? {
+              proactivity: new ProactivityStoreReader({
+                preferenceStore: proactivePreferenceStore,
+                followUpStore: proactiveFollowUpStore,
+                signalStore: proactiveSignalStore,
+              }),
+            }
+          : {}),
         port: webUiConfig.port,
         staticDirectory: resolveWebUiStaticDirectory(),
         cloudflaredEnabled: webUiConfig.cloudflaredEnabled,

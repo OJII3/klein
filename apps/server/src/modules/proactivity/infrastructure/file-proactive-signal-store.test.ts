@@ -143,6 +143,15 @@ test("lists queued signals by scope and planned delivery mode", async () => {
     assert.deepEqual(await store.listQueued("channel-a", "owner:123", "digest"), [digest]);
     assert.deepEqual(await store.listQueued("channel-a", "owner:123", "silent"), []);
     assert.deepEqual(await store.listQueued("channel-a", "public"), [publicScope]);
+    assert.deepEqual(await store.listAll(), [
+      attach,
+      surfaced,
+      digest,
+      plain,
+      otherChannel,
+      publicScope,
+      otherChannelPublic,
+    ]);
     assert.deepEqual(await store.listAllQueued(), [
       attach,
       digest,

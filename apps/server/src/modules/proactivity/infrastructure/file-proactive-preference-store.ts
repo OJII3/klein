@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
+import { basename, dirname, resolve } from "node:path";
 
 import { isFileNotFound } from "@shared/type-guards";
 
@@ -16,7 +16,10 @@ import {
   proactivePreferenceKey,
   type ProactivePreferenceTarget,
 } from "../domain/proactive-preference-scope";
-import type { ProactivePreferenceStore } from "../ports/proactive-preference-store";
+import type {
+  ProactivePreferenceStore,
+  StoredProactivePreferences,
+} from "../ports/proactive-preference-store";
 
 export class FileProactivePreferenceStore implements ProactivePreferenceStore {
   private readonly directory: string;
@@ -31,6 +34,19 @@ export class FileProactivePreferenceStore implements ProactivePreferenceStore {
     return markdown === undefined
       ? DEFAULT_PROACTIVE_PREFERENCES
       : parseProactivePreferences(markdown);
+  }
+
+  async list(): Promise<readonly StoredProactivePreferences[]> {
+    const files = await this.getFiles();
+    return Promise.all(
+      files.map(async (path) => {
+        const key = basename(path, ".md");
+        return {
+          key,
+          preferences: parseProactivePreferences(await readFile(path, "utf8")),
+        };
+      }),
+    );
   }
 
   async update(
@@ -55,6 +71,21 @@ export class FileProactivePreferenceStore implements ProactivePreferenceStore {
       if (isFileNotFound(error)) return undefined;
       throw error;
     }
+  }
+
+  private async getFiles(): Promise<string[]> {
+    let entries;
+    try {
+      entries = await readdir(this.directory, { withFileTypes: true });
+    } catch (error) {
+      if (isFileNotFound(error)) return [];
+      throw error;
+    }
+
+    return entries
+      .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
+      .map((entry) => resolve(this.directory, entry.name))
+      .toSorted();
   }
 
   private async write(filePath: string, markdown: string): Promise<void> {

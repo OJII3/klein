@@ -8,5 +8,6 @@ export interface FollowUpStore {
   delete(id: string): Promise<boolean>;
   get(id: string): Promise<FollowUp | undefined>;
   listForScope(channelId: string, accessScope: AccessScope): Promise<readonly FollowUp[]>;
+  listAll(): Promise<readonly FollowUp[]>;
   listByWatcher(kind: FollowUpWatcher["kind"], id: string): Promise<readonly FollowUp[]>;
 }

@@ -49,6 +49,27 @@ export function createWebUiApp(dependencies: WebUiDependencies) {
         return handleRouteError(set, dependencies.logger, error, "Failed to aggregate tool usage");
       }
     })
+    .get("/api/proactivity", async ({ set }) => {
+      try {
+        if (!dependencies.proactivity) {
+          return {
+            enabled: false,
+            signals: [],
+            signalsTruncated: false,
+            followUps: [],
+            preferences: [],
+          };
+        }
+        return { enabled: true, ...(await dependencies.proactivity.read()) };
+      } catch (error) {
+        return handleRouteError(
+          set,
+          dependencies.logger,
+          error,
+          "Failed to read proactivity state",
+        );
+      }
+    })
     .get(
       "/api/logs",
       async ({ query, set }) => {
