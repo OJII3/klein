@@ -13,7 +13,7 @@ export interface ProactiveSignal {
   readonly channelId: string;
   readonly accessScope: AccessScope;
   readonly audience: "owner" | "public";
-  readonly source: { kind: "watch" | "worker" | "memory" | "connector"; ref?: string };
+  readonly source: { kind: "watch" | "worker" | "memory" | "connector" | "goal"; ref?: string };
   readonly topic: string;
   readonly summary: string;
   readonly evidence?: { url?: string; text?: string };
@@ -43,6 +43,7 @@ const SOURCE_KINDS: readonly ProactiveSignal["source"]["kind"][] = [
   "worker",
   "memory",
   "connector",
+  "goal",
 ];
 
 const DELIVERY_MODES: readonly ProactiveDeliveryMode[] = [

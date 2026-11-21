@@ -57,6 +57,7 @@ export function createWebUiApp(dependencies: WebUiDependencies) {
             signals: [],
             signalsTruncated: false,
             followUps: [],
+            goals: [],
             preferences: [],
           };
         }

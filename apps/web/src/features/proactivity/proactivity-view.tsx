@@ -5,6 +5,10 @@ import {
   type FollowUpStatus,
   type FollowUpView,
   type FollowUpWatcherKind,
+  type InitiativeGoalDelivery,
+  type InitiativeGoalRisk,
+  type InitiativeGoalStatus,
+  type InitiativeGoalView,
   type ProactiveDeliveryMode,
   type ProactivePreferenceView,
   type ProactiveSignalStatus,
@@ -95,6 +99,39 @@ const WATCHER_LABELS: Readonly<Record<FollowUpWatcherKind, string>> = {
   worker: "ワーカー",
 };
 
+const GOAL_STATUS_LABELS: Readonly<Record<InitiativeGoalStatus, string>> = {
+  scheduled: "実行待ち",
+  running: "実行中",
+  ready: "結果あり",
+  delivered: "配信済み",
+  dismissed: "取り下げ",
+  expired: "期限切れ",
+  failed: "失敗",
+};
+
+const GOAL_STATUS_TONES: Readonly<Record<InitiativeGoalStatus, string>> = {
+  scheduled: "badge-info badge-soft",
+  running: "badge-warning badge-soft",
+  ready: "badge-success badge-soft",
+  delivered: "badge-ghost",
+  dismissed: "badge-ghost",
+  expired: "badge-ghost",
+  failed: "badge-error badge-soft",
+};
+
+const GOAL_RISK_LABELS: Readonly<Record<InitiativeGoalRisk, string>> = {
+  low: "低リスク",
+  medium: "中リスク",
+  high: "高リスク",
+};
+
+const GOAL_DELIVERY_LABELS: Readonly<Record<InitiativeGoalDelivery, string>> = {
+  interrupt: "すぐ話す",
+  attach: "次の発言に添える",
+  digest: "まとめて話す",
+  silent: "保存のみ",
+};
+
 const TOPIC_MODE_LABELS: Readonly<Record<ProactiveTopicMode, string>> = {
   allow: "許可",
   mute: "禁止",
@@ -112,15 +149,20 @@ export function ProactivityView({
   const surfacedSignals = report?.signals.filter((signal) => signal.status === "surfaced") ?? [];
   const activeFollowUps =
     report?.followUps.filter((followUp) => followUp.status === "active") ?? [];
+  const activeGoals =
+    report?.goals.filter(
+      (goal) => goal.status === "scheduled" || goal.status === "running" || goal.status === "ready",
+    ) ?? [];
 
   return (
     <section className="flex flex-col gap-4" aria-labelledby="proactivity-heading">
-      <ViewHeader headingId="proactivity-heading" title="自発的な発言">
+      <ViewHeader headingId="proactivity-heading" title="自発">
         {report && (
           <StatStrip>
             <Stat label="保留中の候補" value={queuedSignals.length.toLocaleString("ja-JP")} />
             <Stat label="提示済み" value={surfacedSignals.length.toLocaleString("ja-JP")} />
             <Stat label="追跡中の約束" value={activeFollowUps.length.toLocaleString("ja-JP")} />
+            <Stat label="Goal" value={activeGoals.length.toLocaleString("ja-JP")} />
             <Stat label="好み" value={report.preferences.length.toLocaleString("ja-JP")} />
           </StatStrip>
         )}
@@ -133,7 +175,7 @@ export function ProactivityView({
         </div>
       ) : !error && !report ? null : report && !report.enabled ? (
         <div className="card border border-base-300 bg-base-100">
-          <EmptyState>自発的な発言は無効です</EmptyState>
+          <EmptyState>自発的な活動は無効です</EmptyState>
         </div>
       ) : report ? (
         <>
@@ -142,6 +184,7 @@ export function ProactivityView({
             signals={report.signals}
             truncated={report.signalsTruncated}
           />
+          <GoalSection channelNames={channelNames} goals={report.goals} />
           <FollowUpSection channelNames={channelNames} followUps={report.followUps} />
           <PreferenceSection channelNames={channelNames} preferences={report.preferences} />
         </>
@@ -282,6 +325,86 @@ function SignalRow({
           {signal.expiresAt && (
             <p className="mt-0.5">期限 {formatCompactTimestamp(signal.expiresAt)}</p>
           )}
+        </div>
+      </div>
+    </li>
+  );
+}
+
+function GoalSection({
+  channelNames,
+  goals,
+}: {
+  channelNames: ReadonlyMap<string, string>;
+  goals: readonly InitiativeGoalView[];
+}) {
+  return (
+    <section className="card overflow-hidden border border-base-300 bg-base-100">
+      <div className="flex items-baseline justify-between gap-2 border-b border-line px-4 py-3">
+        <h2 className="text-sm font-semibold text-ink">Goal</h2>
+        <span className="font-mono text-[0.68rem] text-ink-faint">
+          {goals.length.toLocaleString("ja-JP")} 件
+        </span>
+      </div>
+
+      {goals.length === 0 ? (
+        <EmptyState>自分で立てた Goal はありません</EmptyState>
+      ) : (
+        <ul>
+          {goals.map((goal) => (
+            <GoalRow channelNames={channelNames} goal={goal} key={goal.id} />
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function GoalRow({
+  channelNames,
+  goal,
+}: {
+  channelNames: ReadonlyMap<string, string>;
+  goal: InitiativeGoalView;
+}) {
+  return (
+    <li className="border-b border-line/70 px-4 py-3 last:border-b-0">
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className={`badge badge-sm ${GOAL_STATUS_TONES[goal.status]}`}>
+              {GOAL_STATUS_LABELS[goal.status]}
+            </span>
+            <span className="badge badge-sm badge-ghost">{GOAL_RISK_LABELS[goal.risk]}</span>
+            {goal.deliveryMode && (
+              <span className="badge badge-sm badge-ghost">
+                {GOAL_DELIVERY_LABELS[goal.deliveryMode]}
+              </span>
+            )}
+            <span className="text-[0.7rem] text-ink-faint">
+              {channelLabel(channelNames, goal.channelId)} · {scopeLabel(goal.accessScope)}
+            </span>
+            <span className="text-[0.7rem] text-ink-faint">
+              {goal.createdBy === "planner" ? "Planner" : "会話"}
+            </span>
+          </div>
+          <p className="mt-1.5 text-sm font-medium leading-snug text-ink">{goal.title}</p>
+          <p className="mt-1 text-[0.78rem] leading-snug text-ink-soft">{goal.rationale}</p>
+          <details className="mt-2">
+            <summary className="cursor-pointer text-[0.7rem] text-ink-soft">実行計画</summary>
+            <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-surface-muted p-2 font-mono text-[0.68rem] text-ink-soft">
+              {goal.plan}
+            </pre>
+          </details>
+          {goal.lastError && (
+            <p className="mt-1 text-[0.7rem] text-error">失敗: {goal.lastError}</p>
+          )}
+        </div>
+        <div className="shrink-0 text-right text-[0.68rem] text-ink-faint">
+          <p>実行 {formatCompactTimestamp(goal.dueAt)}</p>
+          <p className="mt-0.5">期限 {formatCompactTimestamp(goal.expiresAt)}</p>
+          {goal.workerId && <p className="mt-0.5 font-mono">{goal.workerId}</p>}
+          {goal.signalId && <p className="mt-0.5 font-mono">{goal.signalId}</p>}
         </div>
       </div>
     </li>
