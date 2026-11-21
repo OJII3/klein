@@ -124,3 +124,39 @@ test("shares user preferences across channels and keeps public channels separate
     ]);
   });
 });
+
+test("lists every stored preference file by key", async () => {
+  await withTempDir(async (directory) => {
+    const store = new FileProactivePreferenceStore(directory);
+    await store.update(ownerTarget, { kind: "add_note", text: "所有者の好み" });
+    await store.update(publicTarget, { kind: "set_topic", topic: "weather", mode: "mute" });
+    await writeFile(join(directory, "notes.txt"), "ignored", "utf8");
+
+    assert.deepEqual(await store.list(), [
+      {
+        key: "channel-channel-c",
+        preferences: {
+          delivery: {},
+          topics: [{ mode: "mute", topic: "weather" }],
+          notes: [],
+        },
+      },
+      {
+        key: "user-123",
+        preferences: {
+          delivery: {},
+          topics: [],
+          notes: ["所有者の好み"],
+        },
+      },
+    ]);
+  });
+});
+
+test("lists no preferences when the directory is missing", async () => {
+  await withTempDir(async (directory) => {
+    const store = new FileProactivePreferenceStore(join(directory, "missing"));
+
+    assert.deepEqual(await store.list(), []);
+  });
+});

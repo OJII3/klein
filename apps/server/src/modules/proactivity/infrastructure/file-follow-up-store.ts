@@ -54,6 +54,10 @@ export class FileFollowUpStore implements FollowUpStore {
       .toSorted(compareFollowUps);
   }
 
+  async listAll(): Promise<readonly FollowUp[]> {
+    return (await this.readAll()).toSorted(compareFollowUps);
+  }
+
   async listByWatcher(kind: FollowUpWatcher["kind"], id: string): Promise<readonly FollowUp[]> {
     const followUps = await this.readAll();
     return followUps

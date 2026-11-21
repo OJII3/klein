@@ -7,9 +7,11 @@ import { useGuilds } from "./hooks/use-guilds";
 import { useLogs } from "./hooks/use-logs";
 import { useSessions } from "./hooks/use-sessions";
 import { useMemory } from "./hooks/use-memory";
+import { useProactivity } from "./hooks/use-proactivity";
 import { useToolUsage } from "./hooks/use-tool-usage";
 import { LogsView } from "./features/logs/logs-view";
 import { MemoryView } from "./features/memory/memory-view";
+import { ProactivityView } from "./features/proactivity/proactivity-view";
 import { SessionsView } from "./features/sessions/sessions-view";
 import { ToolsView } from "./features/tools/tools-view";
 import { memoryScopeKey, type MemorySelection } from "./api";
@@ -33,7 +35,11 @@ export default function App() {
     selectedScopeKey: route.view === "memory" ? route.scopeKey : null,
   });
   const toolUsage = useToolUsage({ active: route.view === "tools", onUpdated });
-  const channelNames = useChannels(route.view === "memory");
+  const proactivity = useProactivity({
+    active: route.view === "proactivity",
+    onUpdated,
+  });
+  const channelNames = useChannels(route.view === "memory" || route.view === "proactivity");
   const guildNames = useGuilds(route.view === "memory");
 
   const selectSession = useCallback((sessionId: string) => {
@@ -47,13 +53,15 @@ export default function App() {
   const { reload: reloadSessions } = sessions;
   const { reload: reloadMemory } = memory;
   const { reload: reloadToolUsage } = toolUsage;
+  const { reload: reloadProactivity } = proactivity;
 
   const refreshCurrentView = useCallback(() => {
     if (route.view === "logs") reloadLogs();
     else if (route.view === "sessions") void reloadSessions();
     else if (route.view === "tools") void reloadToolUsage();
+    else if (route.view === "proactivity") void reloadProactivity();
     else reloadMemory();
-  }, [reloadLogs, reloadMemory, reloadSessions, reloadToolUsage, route.view]);
+  }, [reloadLogs, reloadMemory, reloadProactivity, reloadSessions, reloadToolUsage, route.view]);
 
   return (
     <AppShell
@@ -99,6 +107,14 @@ export default function App() {
           loading={toolUsage.loading}
           onRetry={() => void toolUsage.reload()}
           report={toolUsage.report}
+        />
+      ) : route.view === "proactivity" ? (
+        <ProactivityView
+          channelNames={channelNames}
+          error={proactivity.error}
+          loading={proactivity.loading}
+          onRetry={() => void proactivity.reload()}
+          report={proactivity.report}
         />
       ) : (
         <MemoryView

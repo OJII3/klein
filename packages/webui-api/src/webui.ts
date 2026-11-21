@@ -4,6 +4,7 @@ import type {
   UserMemoryEditor,
   UserMemoryReader,
 } from "./memory";
+import type { ProactivityReader } from "./proactivity";
 import type {
   DiscordNameReader,
   ToolUsageReader,
@@ -26,5 +27,6 @@ export interface WebUiDependencies {
   readonly pinoLogs: ViewerLogReader;
   readonly piSessions: ViewerSessionReader;
   readonly toolUsage: ToolUsageReader;
+  readonly proactivity?: ProactivityReader;
   readonly logger?: WebUiLogger;
 }

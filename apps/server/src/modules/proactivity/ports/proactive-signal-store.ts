@@ -13,6 +13,7 @@ export interface ProactiveSignalStore {
     accessScope: AccessScope,
     mode?: ProactiveDeliveryMode,
   ): Promise<readonly ProactiveSignal[]>;
+  listAll(): Promise<readonly ProactiveSignal[]>;
   listAllQueued(): Promise<readonly ProactiveSignal[]>;
   countSurfacedSince(channelId: string, accessScope: AccessScope, since: string): Promise<number>;
 }

@@ -15,6 +15,7 @@ interface AppShellProps {
 const VIEWS: { value: View; label: string }[] = [
   { value: "logs", label: "ログ" },
   { value: "sessions", label: "セッション" },
+  { value: "proactivity", label: "自発" },
   { value: "tools", label: "ツール" },
   { value: "memory", label: "メモリ" },
 ];

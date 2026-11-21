@@ -1,6 +1,9 @@
 import { treaty } from "@elysia/eden";
 
 import type {
+  FollowUpStatus,
+  FollowUpView,
+  FollowUpWatcherKind,
   SharedMemoryFile,
   SharedMemoryGuild,
   SharedMemoryScope,
@@ -9,6 +12,13 @@ import type {
   MemoryScopeSummary,
   PiViewerEvent,
   PinoViewerEvent,
+  ProactiveDeliveryMode,
+  ProactivePreferenceView,
+  ProactiveSignalStatus,
+  ProactiveSignalView,
+  ProactiveTopicMode,
+  ProactiveUrgency,
+  ProactivityReport,
   ToolUsageReport,
   ToolUsageStat,
   UserMemory,
@@ -23,12 +33,22 @@ import type {
 } from "@klein/webui-api";
 
 export type {
+  FollowUpStatus,
+  FollowUpView,
+  FollowUpWatcherKind,
   SharedMemoryFile,
   SharedMemoryGuild,
   SharedMemoryScope,
   McpServerUsageStat,
   MemoryScope,
   MemoryScopeSummary,
+  ProactiveDeliveryMode,
+  ProactivePreferenceView,
+  ProactiveSignalStatus,
+  ProactiveSignalView,
+  ProactiveTopicMode,
+  ProactiveUrgency,
+  ProactivityReport,
   ToolUsageReport,
   ToolUsageStat,
   UserMemory,
@@ -187,6 +207,10 @@ export function listMemoryScopes(): Promise<MemoryScopesResponse> {
 
 export function getToolUsage(): Promise<ToolUsageReport> {
   return unwrap<ToolUsageReport>(client.api.tools.get());
+}
+
+export function getProactivity(): Promise<ProactivityReport> {
+  return unwrap<ProactivityReport>(client.api.proactivity.get());
 }
 
 export function getSharedMemory(guildId: string): Promise<SharedMemoryResponse> {

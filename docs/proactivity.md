@@ -178,6 +178,10 @@ watch の wake とワーカーの結果を届けるときも同じブロック�
 
 検出は日本語の限られた言い回しに対して行う。条件と報告の組 (見つけたら教える、変わったら知らせる、届いたら連絡する)、継続的な確認 (監視しておく、チェックしておく、確認しておく)、後日の報告 (後で教える、あとで報告する) を対象にする。有効な約束が1件でもあれば送信を許可する。意味の判定ではなく、約束の登録漏れを見つけるための補助である。
 
+## Web UI
+
+Web UI の「自発」画面は `GET /api/proactivity` を読み、保留中の候補、約束、保存されている好みを表示する。候補は観測の新しい順に最大 200 件を返し、それを超える場合は最新のみであることを示す。候補は状態で絞り込め、根拠の本文と URL、由来、配信方法、期限を確認できる。約束は作成の新しい順、好みはファイルのキー順に並べる。画面は読み取り専用であり、好みの変更は引き続き `proactive_preference_update` ツールだけが行う。
+
 ## 設定
 
 `config/config.jsonc` の `features.proactivity` で制御する。
@@ -213,13 +217,14 @@ watch の wake とワーカーの結果を届けるときも同じブロック�
 - `AgentCoordinator.deliverDueDigests` によるダイジェスト配信と、スケジュール確認と同じ間隔での起動
 - `discord_send` の約束監査 (`off`、`log`、`block`)
 - `proactive_signal_list` と `proactive_signal_dismiss`、期限切れの除外、恒久 mute に必要な `permanent: true`
+- Web UI の「自発」画面と `GET /api/proactivity` による候補、約束、好みの閲覧
 - `config/PROACTIVITY.md` と `docs/features.md` の更新
 
 確認は `bun fmt`、`bun lint:fix`、`bun test`、`bun run typecheck`、`bun run build` で行う。
 
 ## 対象外
 
-- Web UI の候補一覧と好みの編集画面
+- Web UI からの好みの編集
 - 外部サービスやデバイスのコネクタ
 - 目標管理
 

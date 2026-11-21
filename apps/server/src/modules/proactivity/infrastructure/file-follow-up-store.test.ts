@@ -55,6 +55,7 @@ test("stores, finds, lists, updates, and deletes follow-ups", async () => {
     assert.deepEqual(await store.listForScope("channel-a", "owner:123"), [first]);
     assert.deepEqual(await store.listForScope("channel-a", "public"), []);
     assert.deepEqual(await store.listForScope("channel-b", "public"), [second]);
+    assert.deepEqual(await store.listAll(), [first, second]);
     assert.deepEqual(await store.listByWatcher("watch", "watch-1"), [first]);
     assert.deepEqual(await store.listByWatcher("worker", "worker-1"), [second]);
     assert.deepEqual(await store.listByWatcher("watch", "worker-1"), []);

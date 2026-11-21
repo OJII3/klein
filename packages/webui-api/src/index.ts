@@ -1,5 +1,6 @@
 export * from "./api-schema";
 export * from "./memory";
+export * from "./proactivity";
 export * from "./tool-usage";
 export * from "./viewer-event";
 export * from "./viewer-readers";
