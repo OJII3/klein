@@ -8,7 +8,6 @@ import {
   MessageFlags,
   Partials,
   type ClientOptions,
-  type ContainerBuilder,
   type InteractionReplyOptions,
   type ModalBuilder,
 } from "discord.js";
@@ -30,10 +29,30 @@ import {
   type DiscordServiceChannel,
   type DiscordServiceClient,
   type DiscordServiceMessage,
+  type DiscordServiceSendableUser,
 } from "./discord-js-service";
+import type { DiscordServiceProfileGuild } from "./discord-js-user-profile";
 
 interface FakeDiscordChannel extends DiscordServiceChannel {
   send?(payload: unknown): Promise<unknown>;
+}
+
+function createProfileUser(
+  overrides: Partial<DiscordServiceSendableUser> = {},
+): DiscordServiceSendableUser {
+  return {
+    id: "user-123",
+    username: "satsuki",
+    globalName: null,
+    displayName: "さつき",
+    bot: false,
+    createdAt: new Date("2020-01-01T00:00:00.000Z"),
+    avatarURL: () => null,
+    bannerURL: () => null,
+    flags: { toArray: () => [] },
+    send: async () => undefined,
+    ...overrides,
+  };
 }
 
 class FakeDiscordClient extends EventEmitter implements DiscordServiceClient {
@@ -48,20 +67,28 @@ class FakeDiscordClient extends EventEmitter implements DiscordServiceClient {
   };
 
   users: {
-    fetch: (id: string) => Promise<{
-      send: (payload: {
-        components: ContainerBuilder[];
-        flags: MessageFlags.IsComponentsV2;
-      }) => Promise<unknown>;
-    }>;
+    fetch: (
+      id: string,
+      options?: { readonly force?: boolean },
+    ) => Promise<DiscordServiceSendableUser>;
   } = {
-    fetch: async () => ({
-      send: async () => undefined,
-    }),
+    fetch: async () => createProfileUser(),
   };
 
-  guilds: { cache: Map<string, { readonly name?: string }> } = {
+  guilds: {
+    cache: Map<string, { readonly name?: string }>;
+    fetch: (id: string) => Promise<DiscordServiceProfileGuild>;
+  } = {
     cache: new Map(),
+    fetch: async (id) => ({
+      id,
+      name: id,
+      members: {
+        async fetch() {
+          throw new Error("Unexpected guild member fetch");
+        },
+      },
+    }),
   };
 
   login = async (): Promise<string> => "token";
@@ -614,6 +641,7 @@ test("registers a channel through /link even when the channel is denied", async 
   const fakeClient = new FakeDiscordClient();
   const ownerMessages: InteractionReplyOptions[] = [];
   fakeClient.users.fetch = async () => ({
+    ...createProfileUser(),
     send: async (payload) => {
       ownerMessages.push(payload);
       return undefined;
@@ -1124,6 +1152,7 @@ test("asks the owner when mentioned in a channel that is not allowed and shows a
     },
   });
   fakeClient.users.fetch = async () => ({
+    ...createProfileUser(),
     send: async (payload: unknown) => {
       ownerMessages.push(payload);
       return { id: "owner-message" };
@@ -1478,4 +1507,83 @@ test("enables reaction intents, partials, and MessageReactionAdd listener only w
     await defaultService.stop();
     await optInService.stop();
   }
+});
+
+test("reads a user profile with the current server's member fields", async () => {
+  const userId = "123456789012345678";
+  const guildId = "987654321098765432";
+  const fakeClient = new FakeDiscordClient();
+  let userFetchOptions: unknown;
+
+  fakeClient.users.fetch = async (id: string, options?: { readonly force?: boolean }) => {
+    userFetchOptions = options;
+    return createProfileUser({
+      id,
+      username: "alice",
+      globalName: "Alice Global",
+      displayName: "Alice",
+      createdAt: new Date("2020-01-01T00:00:00.000Z"),
+      avatarURL: () => "https://cdn.discordapp.com/avatars/123/avatar.png",
+      bannerURL: () => "https://cdn.discordapp.com/banners/123/banner.png",
+      hexAccentColor: "#abcdef",
+      flags: { toArray: () => ["Staff"] },
+    });
+  };
+  fakeClient.guilds.fetch = async (id) => ({
+    id,
+    name: "テストサーバー",
+    members: {
+      async fetch(memberId) {
+        assert.equal(memberId, userId);
+        return {
+          nickname: "A",
+          displayName: "A",
+          joinedAt: new Date("2021-02-03T04:05:06.000Z"),
+          premiumSince: new Date("2022-03-04T05:06:07.000Z"),
+          roles: {
+            cache: new Map([
+              [guildId, { id: guildId, name: "@everyone", position: 0 }],
+              ["role-admin", { id: "role-admin", name: "Admin", position: 10 }],
+            ]),
+          },
+        };
+      },
+    },
+  });
+  const service = new DiscordJsService(
+    "token",
+    createDiscordAccessPolicy({ default: "allow", directMessages: "allow" }),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    { createClient: () => fakeClient },
+  );
+
+  const profile = await service.readUserProfile(userId, guildId);
+
+  assert.deepEqual(userFetchOptions, { force: true });
+  assert.deepEqual(profile, {
+    id: userId,
+    username: "alice",
+    displayName: "A",
+    globalName: "Alice Global",
+    bot: false,
+    accountCreatedAt: "2020-01-01T00:00:00.000Z",
+    avatarUrl: "https://cdn.discordapp.com/avatars/123/avatar.png",
+    bannerUrl: "https://cdn.discordapp.com/banners/123/banner.png",
+    accentColor: "#abcdef",
+    flags: ["Staff"],
+    guild: {
+      id: guildId,
+      name: "テストサーバー",
+      nickname: "A",
+      joinedAt: "2021-02-03T04:05:06.000Z",
+      boostingSince: "2022-03-04T05:06:07.000Z",
+      roles: [{ id: "role-admin", name: "Admin" }],
+    },
+  });
 });

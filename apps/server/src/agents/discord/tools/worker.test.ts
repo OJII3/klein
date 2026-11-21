@@ -6,6 +6,7 @@ import {
   createStubDiscordChannelApi,
   createStubExtensionToolContext,
 } from "@agents/testing/test-stubs";
+import type { DiscordUserProfile } from "@modules/discord/domain/discord-user-profile";
 import type { WatchCheckRunner } from "@modules/scheduling/ports/watch-check-runner";
 import { createWorkerTools } from "./worker";
 
@@ -29,6 +30,50 @@ test("gives a worker the read tool and its own watch tools", () => {
   assert.deepEqual(
     tools.map((tool) => tool.name),
     ["discord_read", "watch_add", "watch_update", "watch_list", "watch_get", "watch_delete"],
+  );
+});
+
+test("adds the Discord user profile tool when profile dependencies are supplied", () => {
+  const profile: DiscordUserProfile = {
+    id: "1",
+    username: "alice",
+    displayName: "Alice",
+    bot: false,
+    accountCreatedAt: "2020-01-01T00:00:00.000Z",
+    flags: [],
+  };
+  const tools = createWorkerTools(
+    createStubDiscordChannelApi(),
+    "channel-a",
+    "public",
+    "worker-1",
+    new InMemoryScheduledTaskStore(),
+    runner,
+    undefined,
+    undefined,
+    undefined,
+    {
+      users: {
+        resolve: (username) =>
+          username === "alice"
+            ? { id: "1", username: "alice", displayName: "Alice", bot: false }
+            : undefined,
+      },
+      profiles: { readUserProfile: async () => profile },
+    },
+  );
+
+  assert.deepEqual(
+    tools.map((tool) => tool.name),
+    [
+      "discord_read",
+      "discord_user_profile",
+      "watch_add",
+      "watch_update",
+      "watch_list",
+      "watch_get",
+      "watch_delete",
+    ],
   );
 });
 
@@ -117,6 +162,9 @@ test("wires image analysis into the worker's discord_read tool", async () => {
   let analyzedPrompt: unknown;
   const tools = createWorkerTools(
     {
+      async getChannelLocation(channelId) {
+        return { channelId };
+      },
       async readMessage() {
         return {
           author: {

@@ -261,6 +261,7 @@ export async function bootstrapApplication(): Promise<void> {
         ownerRequester,
         toolContext.analyzeImage,
         ownerRequester ? t3ThreadRunner : undefined,
+        { users: discordUserDirectory, profiles: discordService },
       );
     },
     onResult: (delivery) =>
