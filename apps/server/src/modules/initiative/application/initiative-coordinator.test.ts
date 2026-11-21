@@ -244,6 +244,9 @@ async function createHarness(
           signal: makeSignal(),
         };
       },
+      async dismissSignal() {
+        return false;
+      },
     },
     workers: {
       async start(workerInput) {

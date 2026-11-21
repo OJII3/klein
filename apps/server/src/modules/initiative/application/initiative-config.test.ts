@@ -87,3 +87,18 @@ test("stays disabled when proactivity is disabled", () => {
 
   assert.equal(config.enabled, false);
 });
+
+test("rejects propose mode until the approval flow exists", () => {
+  assert.throws(
+    () =>
+      resolveInitiativeConfig(
+        createConfig({
+          enabled: true,
+          initiative: { enabled: true, approval: "propose" },
+        }),
+        "/tmp/klein-agent",
+        true,
+      ),
+    /propose is not implemented/u,
+  );
+});

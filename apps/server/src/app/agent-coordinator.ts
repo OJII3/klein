@@ -175,14 +175,22 @@ export class AgentCoordinator {
     accessScope: AccessScope,
     result: WorkerResult,
   ): Promise<void> {
-    if (!(await this.isWorkerDeliveryAllowed(conversationKey, accessScope))) return;
-
     const initiativeResult = await this.dependencies.initiative?.handleWorkerResult(result);
     if (initiativeResult) {
       if ("ignored" in initiativeResult) return;
-      await this.deliverInitiativeResult(initiativeResult);
+      const goalConversationKey = {
+        kind: "discord",
+        channelId: initiativeResult.goal.channelId,
+      } as const;
+      if (
+        await this.isWorkerDeliveryAllowed(goalConversationKey, initiativeResult.goal.accessScope)
+      ) {
+        await this.deliverInitiativeResult(initiativeResult);
+      }
       return;
     }
+
+    if (!(await this.isWorkerDeliveryAllowed(conversationKey, accessScope))) return;
 
     let delivered = false;
     await this.sessionManager.runForConversation(conversationKey, async () => {

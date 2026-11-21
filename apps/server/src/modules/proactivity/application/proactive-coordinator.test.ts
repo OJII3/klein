@@ -18,7 +18,7 @@ import { markSignalSurfaced, type ProactiveSignal } from "../domain/proactive-si
 import { FileFollowUpStore } from "../infrastructure/file-follow-up-store";
 import { FileProactivePreferenceStore } from "../infrastructure/file-proactive-preference-store";
 import { FileProactiveSignalStore } from "../infrastructure/file-proactive-signal-store";
-import { ProactiveCoordinator } from "./proactive-coordinator";
+import { ProactiveCoordinator, type ProactiveCoordinatorOptions } from "./proactive-coordinator";
 
 const NOW = Date.parse("2026-11-20T12:00:00.000Z");
 const CREATED_AT = "2026-11-20T00:00:00.000Z";
@@ -113,6 +113,7 @@ async function withCoordinator(
     readonly workerInfos?: readonly WorkerInfo[];
     readonly now?: number;
     readonly defaults?: ProactivePolicyDefaults;
+    readonly onSignalSurfaced?: ProactiveCoordinatorOptions["onSignalSurfaced"];
   } = {},
 ): Promise<void> {
   await using temp = await createTempDir("klein-proactive-coordinator-");
@@ -130,6 +131,7 @@ async function withCoordinator(
     scheduledTaskStore,
     workers,
     defaults: options.defaults ?? DEFAULT_POLICY_DEFAULTS,
+    ...(options.onSignalSurfaced ? { onSignalSurfaced: options.onSignalSurfaced } : {}),
     now: () => options.now ?? NOW,
   });
 
@@ -525,6 +527,32 @@ test("marks signals surfaced and notifies only active follow-ups watching them",
     await coordinator.markSignalsSurfaced([makeSignal("signal-2")], "silent", NOW);
     assert.equal((await followUpStore.get("silent-follow-up"))?.status, "active");
   });
+});
+
+test("notifies the surfaced hook for goal signals but not for silent signals", async () => {
+  const surfaced: { readonly id: string; readonly mode: string }[] = [];
+  await withCoordinator(
+    async ({ coordinator }) => {
+      await coordinator.markSignalsSurfaced(
+        [makeSignal("goal-1", { source: { kind: "goal", ref: "goal-1" } })],
+        "attach",
+        NOW,
+      );
+      assert.deepEqual(surfaced, [{ id: "goal-1", mode: "attach" }]);
+
+      await coordinator.markSignalsSurfaced(
+        [makeSignal("goal-2", { source: { kind: "goal", ref: "goal-2" } })],
+        "silent",
+        NOW,
+      );
+      assert.deepEqual(surfaced, [{ id: "goal-1", mode: "attach" }]);
+    },
+    {
+      onSignalSurfaced: async (signal, mode) => {
+        surfaced.push({ id: signal.id, mode });
+      },
+    },
+  );
 });
 
 test("attaches up to five queued signals and expires overdue ones", async () => {

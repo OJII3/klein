@@ -161,7 +161,7 @@ export function isGoalDue(goal: InitiativeGoal, now: number): boolean {
 }
 
 export function isGoalExpired(goal: InitiativeGoal, now: number): boolean {
-  return Date.parse(goal.expiresAt) <= now;
+  return isActiveGoal(goal) && Date.parse(goal.expiresAt) <= now;
 }
 
 export function markGoalRunning(goal: InitiativeGoal, now: number): InitiativeGoal {

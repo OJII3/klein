@@ -59,6 +59,11 @@ export interface ProactiveCoordinatorOptions {
   readonly scheduledTaskStore: ScheduledTaskStore;
   readonly workers: Pick<WorkerControl, "list">;
   readonly defaults: ProactivePolicyDefaults;
+  readonly onSignalSurfaced?: (
+    signal: ProactiveSignal,
+    mode: ProactiveDeliveryMode,
+    now: number,
+  ) => Promise<void>;
   readonly logger?: Logger;
   readonly now?: () => number;
 }
@@ -294,6 +299,16 @@ export class ProactiveCoordinator {
     for (const signal of signals) {
       await this.options.signalStore.update(markSignalSurfaced(signal, mode, now));
       if (mode === "silent") continue;
+
+      try {
+        await this.options.onSignalSurfaced?.(signal, mode, now);
+      } catch (error) {
+        this.options.logger?.warn(
+          { err: error, event: "proactive_signal_surfaced_hook_failed", signalId: signal.id },
+          "Failed to run the signal surfaced hook",
+        );
+      }
+
       if (signal.source.kind !== "watch" || signal.source.ref === undefined) continue;
 
       const followUps = await this.options.followUpStore.listByWatcher("watch", signal.source.ref);

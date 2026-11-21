@@ -34,9 +34,15 @@ export function resolveInitiativeConfig(
 ): ResolvedInitiativeConfig {
   const initiative = config.features.proactivity?.initiative;
   const llm = initiative?.llm ?? config.llm;
+  const enabled = proactivityEnabled && (initiative?.enabled ?? false);
+  if (enabled && initiative?.approval === "propose") {
+    throw new Error(
+      "features.proactivity.initiative.approval: propose is not implemented yet; use auto or off",
+    );
+  }
 
   return {
-    enabled: proactivityEnabled && (initiative?.enabled ?? false),
+    enabled,
     goalsDirectory: resolve(initiative?.goalsDirectory ?? resolve(agentDir, "initiative/goals")),
     plannerStateDirectory: resolve(
       initiative?.plannerStateDirectory ?? resolve(agentDir, "initiative/planner"),

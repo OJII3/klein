@@ -55,7 +55,7 @@ export interface InitiativeCoordinatorOptions {
   readonly transcriptReader: ConversationTranscriptReader;
   readonly preferenceStore: ProactivePreferenceStore;
   readonly planner: InitiativePlanner;
-  readonly proactive: Pick<ProactiveCoordinator, "ingestGoalResult">;
+  readonly proactive: Pick<ProactiveCoordinator, "ingestGoalResult" | "dismissSignal">;
   readonly workers: Pick<WorkerControl, "start">;
   readonly operatingState: Pick<DiscordOperatingState, "isActive">;
   readonly userMemoryStore?: Pick<UserMemoryStore, "read">;
@@ -225,6 +225,17 @@ export class InitiativeCoordinator {
     const updated = failed
       ? markGoalFailed(goal, resultText, now)
       : markGoalReady(goal, outcome.signal.id, now);
+
+    const current = await this.options.goalStore.get(goal.id);
+    if (current?.status !== "running") {
+      await this.options.proactive.dismissSignal(
+        goal.channelId,
+        goal.accessScope,
+        outcome.signal.id,
+      );
+      return { ignored: true, reason: `goal is ${current?.status ?? "missing"}` };
+    }
+
     await this.options.goalStore.update(updated);
     this.log(failed ? "initiative_goal_failed" : "initiative_goal_completed", updated);
 
@@ -350,6 +361,10 @@ export class InitiativeCoordinator {
     const lastMessageId = messages.at(-1)?.id;
     if (lastMessageId === plannerState.lastMessageId) return;
 
+    this.options.logger?.info(
+      { event: "initiative_plan_started", channelId: state.conversationKey.channelId },
+      "Started initiative planning",
+    );
     const preferences = await this.options.preferenceStore.read({
       channelId: state.conversationKey.channelId,
       accessScope,

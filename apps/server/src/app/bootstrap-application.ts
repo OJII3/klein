@@ -309,6 +309,7 @@ export async function bootstrapApplication(): Promise<void> {
   );
   const proactiveFollowUpStore = new FileFollowUpStore(proactivityConfig.followUpDirectory);
   const proactiveSignalStore = new FileProactiveSignalStore(proactivityConfig.signalDirectory);
+  let initiativeCoordinator: InitiativeCoordinator | undefined;
   const proactiveCoordinator = proactivityConfig.enabled
     ? new ProactiveCoordinator({
         preferenceStore: proactivePreferenceStore,
@@ -317,6 +318,10 @@ export async function bootstrapApplication(): Promise<void> {
         scheduledTaskStore,
         workers: workerAgentCoordinator,
         defaults: proactivityConfig.defaults,
+        onSignalSurfaced: async (signal, _mode, now) => {
+          if (signal.source.kind !== "goal" || signal.source.ref === undefined) return;
+          await initiativeCoordinator?.markResultDelivered(signal.source.ref, now);
+        },
         logger,
       })
     : undefined;
@@ -326,7 +331,7 @@ export async function bootstrapApplication(): Promise<void> {
   const initiativePlannerStateStore = initiativeConfig.enabled
     ? new FilePlannerStateStore(initiativeConfig.plannerStateDirectory)
     : undefined;
-  const initiativeCoordinator =
+  initiativeCoordinator =
     initiativeConfig.enabled &&
     initiativePlanner &&
     initiativeGoalStore &&
