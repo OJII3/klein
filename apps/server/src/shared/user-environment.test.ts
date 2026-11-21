@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { statSync } from "node:fs";
+import { mkdirSync, statSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 
@@ -23,7 +23,36 @@ test("keeps each linked user inside their own directory", () => {
 
 test("sanitizes user ids for directory names", () => {
   assert.equal(userEnvironmentKey("123"), "123");
-  assert.equal(userEnvironmentKey("user/../456"), "user____456");
+  assert.equal(userEnvironmentKey("user/../456").includes("/"), false);
+  assert.notEqual(userEnvironmentKey("a-b"), userEnvironmentKey("a_b"));
+});
+
+test("repairs permissions on an existing environment", async () => {
+  await using temp = await createTempDir("klein-user-environment-mode-");
+  const environment = resolveUserEnvironment(temp.path, "123");
+  mkdirSync(environment.rootDirectory, { recursive: true, mode: 0o755 });
+  mkdirSync(environment.workspaceDirectory, { recursive: true, mode: 0o755 });
+
+  ensureUserEnvironment(environment);
+
+  for (const directory of [
+    environment.rootDirectory,
+    environment.workspaceDirectory,
+    environment.homeDirectory,
+    environment.credentialsDirectory,
+    environment.temporaryDirectory,
+  ]) {
+    assert.equal(statSync(directory).mode & 0o777, 0o700, directory);
+  }
+});
+
+test("rejects a symlinked user environment directory", async () => {
+  await using temp = await createTempDir("klein-user-environment-symlink-");
+  const environment = resolveUserEnvironment(temp.path, "123");
+  mkdirSync(environment.rootDirectory, { recursive: true, mode: 0o700 });
+  symlinkSync(environment.rootDirectory, environment.workspaceDirectory);
+
+  assert.throws(() => ensureUserEnvironment(environment), /not a real directory/);
 });
 
 test("creates the environment with owner-only permissions", async () => {

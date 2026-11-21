@@ -1,5 +1,13 @@
 import { spawn } from "node:child_process";
-import { accessSync, constants, existsSync, realpathSync } from "node:fs";
+import {
+  accessSync,
+  chmodSync,
+  constants,
+  existsSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+} from "node:fs";
 import { constants as osConstants } from "node:os";
 import { delimiter, isAbsolute, relative, resolve, sep } from "node:path";
 
@@ -43,9 +51,36 @@ const FALLBACK_PATH_ENTRIES = [
 const SHELL_CANDIDATES = ["/bin/bash", "/usr/bin/bash", "/bin/sh"] as const;
 
 /** Files whose symlink targets may live outside the read-only system paths. */
-const NETWORK_CONFIGURATION_FILES = ["/etc/resolv.conf", "/etc/hosts"] as const;
+const NETWORK_CONFIGURATION_FILES = ["/etc/hosts"] as const;
 
-const MAX_TIMEOUT_MS = 2_147_483_647;
+const RESOLV_CONF_PATH = "/etc/resolv.conf";
+const SANDBOX_RESOLV_CONF_FILE = "resolv.conf";
+const DEFAULT_DNS_SERVER = "1.1.1.1";
+const MAX_DNS_HOSTS = 2;
+
+const DEFAULT_TIMEOUT_SECONDS = 600;
+const MAX_TIMEOUT_SECONDS = 3_600;
+const MAX_OUTPUT_BYTES = 64 * 1024 * 1024;
+
+/**
+ * Loose per-process limits set inside the sandbox. They are backstops against
+ * runaway commands, not a replacement for cgroup memory and disk quotas. The
+ * hard limits keep a child from raising them again.
+ */
+const SHELL_ULIMITS = [
+  "ulimit -H -c 0 2>/dev/null || true",
+  "ulimit -S -c 0 2>/dev/null || true",
+  "ulimit -H -f 2097152 2>/dev/null || true",
+  "ulimit -S -f 2097152 2>/dev/null || true",
+  "ulimit -H -n 8192 2>/dev/null || true",
+  "ulimit -S -n 8192 2>/dev/null || true",
+  "ulimit -H -u 2048 2>/dev/null || true",
+  "ulimit -S -u 2048 2>/dev/null || true",
+  "ulimit -H -v 8388608 2>/dev/null || true",
+  "ulimit -S -v 8388608 2>/dev/null || true",
+  "ulimit -H -t 3600 2>/dev/null || true",
+  "ulimit -S -t 3600 2>/dev/null || true",
+] as const;
 
 /**
  * A sandboxed shell belongs to workers started from a linked user's
@@ -59,11 +94,10 @@ export function enablesUserShell(
   return role.kind === "worker" && environment !== undefined;
 }
 
-/** The bubblewrap binary the sandbox spawns, when it is installed. */
-export function resolveBubblewrapBinary(): string | undefined {
+function resolveExecutable(name: string): string | undefined {
   for (const directory of (process.env.PATH ?? "").split(delimiter)) {
     if (!directory) continue;
-    const candidate = resolve(directory, "bwrap");
+    const candidate = resolve(directory, name);
     try {
       accessSync(candidate, constants.X_OK);
       return candidate;
@@ -72,6 +106,16 @@ export function resolveBubblewrapBinary(): string | undefined {
     }
   }
   return undefined;
+}
+
+/** The bubblewrap binary the sandbox spawns, when it is installed. */
+export function resolveBubblewrapBinary(): string | undefined {
+  return resolveExecutable("bwrap");
+}
+
+/** The pasta binary that provides the outbound network namespace. */
+export function resolvePastaBinary(): string | undefined {
+  return resolveExecutable("pasta");
 }
 
 /**
@@ -107,13 +151,93 @@ export function createUserShellTool(environment: UserEnvironment): PiTool {
   });
 }
 
+export interface SandboxDns {
+  /** Address written to the sandbox's resolv.conf and intercepted by pasta. */
+  readonly forward: string;
+  /** Host resolvers pasta forwards DNS queries to. */
+  readonly hosts: readonly string[];
+}
+
 /**
- * Runs each command in a fresh bubblewrap namespace. The shell sees a minimal
- * root with read-only system paths, the user's workspace, home, and temporary
- * directory, and no process, IPC, UTS, or cgroup visibility. Network access
- * stays shared because shell work commonly needs to download tools and data.
+ * Picks DNS servers for the sandbox. systemd-resolved commonly exposes a
+ * loopback stub, which is unreachable from pasta's netns, so loopback entries
+ * are dropped in favour of the default gateway.
  */
-export function createBubblewrapBashOperations(environment: UserEnvironment): BashOperations {
+export function resolveSandboxDns(
+  read: (path: string) => string = (path) => {
+    try {
+      return readFileSync(path, "utf8");
+    } catch {
+      return "";
+    }
+  },
+): SandboxDns {
+  const nameservers = [
+    ...parseNameservers(read("/run/systemd/resolve/resolv.conf")),
+    ...parseNameservers(read(RESOLV_CONF_PATH)),
+  ];
+  const unique = [...new Set(nameservers)].slice(0, MAX_DNS_HOSTS);
+  const gateway = parseDefaultIpv4Gateway(read("/proc/net/route"));
+  const forward = gateway ?? unique[0] ?? DEFAULT_DNS_SERVER;
+  const hosts = [...new Set([...unique, ...(gateway ? [gateway] : [])])].slice(0, MAX_DNS_HOSTS);
+
+  return { forward, hosts: hosts.length > 0 ? hosts : [DEFAULT_DNS_SERVER] };
+}
+
+export function parseNameservers(content: string): string[] {
+  const nameservers = content.split("\n").flatMap((line) => {
+    const match = /^\s*nameserver\s+(\S+)/u.exec(line);
+    return match?.[1] ? [match[1]] : [];
+  });
+  return [...new Set(nameservers.filter((address) => isRoutableNameserver(address)))];
+}
+
+function isRoutableNameserver(address: string): boolean {
+  const lower = address.toLowerCase();
+  return (
+    lower !== "::1" &&
+    lower !== "0.0.0.0" &&
+    !lower.startsWith("127.") &&
+    !lower.startsWith("::ffff:127.") &&
+    !lower.startsWith("fe80:")
+  );
+}
+
+/** Reads the IPv4 default gateway from /proc/net/route. */
+export function parseDefaultIpv4Gateway(content: string): string | undefined {
+  for (const line of content.split("\n").slice(1)) {
+    const columns = line.trim().split(/\s+/u);
+    if (columns.length < 3) continue;
+    const destination = columns[1];
+    const gateway = columns[2];
+    if (destination !== "00000000" || gateway === undefined || gateway === "00000000") continue;
+    const octets = gateway.match(/../gu);
+    if (!octets || octets.length !== 4) continue;
+    return octets
+      .toReversed()
+      .map((octet) => Number.parseInt(octet, 16))
+      .join(".");
+  }
+  return undefined;
+}
+
+export interface UserShellLimits {
+  /** Wall-clock timeout used when the tool call does not pass one. */
+  readonly defaultTimeoutSeconds?: number;
+  /** Total output bytes before the command is killed. */
+  readonly maxOutputBytes?: number;
+}
+
+/**
+ * Runs each command in a pasta network namespace and a fresh bubblewrap
+ * namespace. Pasta provides outbound NAT while keeping the host's loopback and
+ * its local listeners out of reach. Filesystem access stays limited to the
+ * user's workspace, home, and temporary directory.
+ */
+export function createBubblewrapBashOperations(
+  environment: UserEnvironment,
+  limits: UserShellLimits = {},
+): BashOperations {
   return {
     exec: async (command, _cwd, { onData, signal, timeout }) => {
       if (signal?.aborted) throw new Error("aborted");
@@ -124,15 +248,36 @@ export function createBubblewrapBashOperations(environment: UserEnvironment): Ba
           "bubblewrap (bwrap) is required to run shell commands in a user environment",
         );
       }
+      const pasta = resolvePastaBinary();
+      if (!pasta) {
+        throw new Error("pasta (passt) is required to run shell commands in a user environment");
+      }
 
-      const timeoutMs = resolveTimeoutMs(timeout);
-      const child = spawn(bubblewrap, buildBubblewrapArguments(environment, command), {
-        cwd: "/",
-        env: { PATH: "/usr/bin:/bin" },
-        detached: true,
-        stdio: ["ignore", "pipe", "pipe"],
-      });
+      const effectiveTimeout = timeout ?? limits.defaultTimeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;
+      const timeoutMs = resolveTimeoutMs(effectiveTimeout);
+      const dns = resolveSandboxDns();
+      writeSandboxResolvConf(environment, dns);
+      const maxOutputBytes = limits.maxOutputBytes ?? MAX_OUTPUT_BYTES;
+      const pastaArguments = buildPastaArguments(bubblewrap, environment, command, dns);
+      // Keep the sandbox tied to Klein's lifetime even though pasta sits between
+      // them; `--die-with-parent` alone only follows pasta.
+      const setpriv = resolveExecutable("setpriv");
+      const child = setpriv
+        ? spawn(setpriv, ["--pdeathsig", "SIGKILL", "--", pasta, ...pastaArguments], {
+            cwd: "/",
+            env: { PATH: "/usr/bin:/bin" },
+            detached: true,
+            stdio: ["ignore", "pipe", "pipe"],
+          })
+        : spawn(pasta, pastaArguments, {
+            cwd: "/",
+            env: { PATH: "/usr/bin:/bin" },
+            detached: true,
+            stdio: ["ignore", "pipe", "pipe"],
+          });
 
+      let outputBytes = 0;
+      let outputLimitExceeded = false;
       let timedOut = false;
       let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
       const kill = () => {
@@ -145,16 +290,24 @@ export function createBubblewrapBashOperations(environment: UserEnvironment): Ba
         }
       };
       const onAbort = () => kill();
+      const handleData = (data: Buffer) => {
+        if (outputLimitExceeded) return;
+        outputBytes += data.byteLength;
+        if (outputBytes > maxOutputBytes) {
+          outputLimitExceeded = true;
+          kill();
+          return;
+        }
+        onData(data);
+      };
 
       try {
-        if (timeoutMs !== undefined) {
-          timeoutHandle = setTimeout(() => {
-            timedOut = true;
-            kill();
-          }, timeoutMs);
-        }
-        child.stdout?.on("data", onData);
-        child.stderr?.on("data", onData);
+        timeoutHandle = setTimeout(() => {
+          timedOut = true;
+          kill();
+        }, timeoutMs);
+        child.stdout?.on("data", handleData);
+        child.stderr?.on("data", handleData);
         if (signal) {
           if (signal.aborted) onAbort();
           else signal.addEventListener("abort", onAbort, { once: true });
@@ -162,9 +315,12 @@ export function createBubblewrapBashOperations(environment: UserEnvironment): Ba
 
         const { exitCode, signalCode } = await waitForExit(child);
         if (signal?.aborted) throw new Error("aborted");
+        if (outputLimitExceeded) {
+          throw new Error(`output limit exceeded: ${maxOutputBytes} bytes`);
+        }
+        if (timedOut) throw new Error(`timeout:${effectiveTimeout}`);
         const resolvedExitCode =
           exitCode ?? (signalCode ? 128 + (osConstants.signals[signalCode] ?? 0) : 1);
-        if (timedOut) throw new Error(`timeout:${timeout}`);
         return { exitCode: resolvedExitCode };
       } finally {
         if (timeoutHandle) clearTimeout(timeoutHandle);
@@ -172,6 +328,34 @@ export function createBubblewrapBashOperations(environment: UserEnvironment): Ba
       }
     },
   };
+}
+
+export function buildPastaArguments(
+  bubblewrap: string,
+  environment: UserEnvironment,
+  command: string,
+  dns: SandboxDns,
+): string[] {
+  return [
+    "-q",
+    "-f",
+    "--config-net",
+    "--no-map-gw",
+    "-t",
+    "none",
+    "-u",
+    "none",
+    "-T",
+    "none",
+    "-U",
+    "none",
+    ...dns.hosts.flatMap((host) => ["--dns-host", host]),
+    "--dns-forward",
+    dns.forward,
+    "--",
+    bubblewrap,
+    ...buildBubblewrapArguments(environment, command),
+  ];
 }
 
 export function buildBubblewrapArguments(environment: UserEnvironment, command: string): string[] {
@@ -188,14 +372,17 @@ export function buildBubblewrapArguments(environment: UserEnvironment, command: 
   return [
     "--die-with-parent",
     "--new-session",
-    "--unshare-all",
-    "--share-net",
+    "--unshare-user-try",
+    "--unshare-ipc",
+    "--unshare-pid",
+    "--unshare-uts",
+    "--unshare-cgroup-try",
     "--cap-drop",
     "ALL",
     ...SYSTEM_READ_ONLY_PATHS.flatMap((path) =>
       existsSync(path) ? ["--ro-bind", path, path] : [],
     ),
-    ...networkConfigurationArguments(),
+    ...networkConfigurationArguments(environment),
     "--proc",
     "/proc",
     "--dev",
@@ -218,31 +405,45 @@ export function buildBubblewrapArguments(environment: UserEnvironment, command: 
     ...Object.entries(variables).flatMap(([name, value]) => ["--setenv", name, value]),
     shell,
     "-c",
-    command,
+    `${SHELL_ULIMITS.join("\n")}\n${command}`,
   ];
 }
 
-function networkConfigurationArguments(): string[] {
-  return NETWORK_CONFIGURATION_FILES.flatMap((file) => {
+function writeSandboxResolvConf(environment: UserEnvironment, dns: SandboxDns): void {
+  const path = resolve(environment.credentialsDirectory, SANDBOX_RESOLV_CONF_FILE);
+  writeFileSync(path, `nameserver ${dns.forward}\n`, { mode: 0o600 });
+  chmodSync(path, 0o600);
+}
+
+function networkConfigurationArguments(environment: UserEnvironment): string[] {
+  const argumentsForFiles = NETWORK_CONFIGURATION_FILES.flatMap((file) => {
     if (!existsSync(file)) return [];
     const target = realpathSync(file);
     if (SYSTEM_READ_ONLY_PATHS.some((root) => isWithinRoot(target, root))) return [];
-    // /etc/resolv.conf commonly points into /run, which is not mounted as a
-    // whole so that host sockets stay hidden.
     return ["--ro-bind", target, target];
   });
+  const sandboxResolvConf = resolve(environment.credentialsDirectory, SANDBOX_RESOLV_CONF_FILE);
+  if (existsSync(sandboxResolvConf) && existsSync(RESOLV_CONF_PATH)) {
+    return [...argumentsForFiles, "--ro-bind", sandboxResolvConf, realpathSync(RESOLV_CONF_PATH)];
+  }
+  return [...argumentsForFiles, ...hostResolvConfArguments()];
 }
 
-function resolveTimeoutMs(timeout: number | undefined): number | undefined {
-  if (timeout === undefined) return undefined;
+function hostResolvConfArguments(): string[] {
+  if (!existsSync(RESOLV_CONF_PATH)) return [];
+  const target = realpathSync(RESOLV_CONF_PATH);
+  if (SYSTEM_READ_ONLY_PATHS.some((root) => isWithinRoot(target, root))) return [];
+  return ["--ro-bind", target, target];
+}
+
+function resolveTimeoutMs(timeout: number): number {
   if (!Number.isFinite(timeout) || timeout <= 0) {
     throw new Error("Invalid timeout: must be a finite number of seconds");
   }
-  const timeoutMs = timeout * 1000;
-  if (timeoutMs > MAX_TIMEOUT_MS) {
-    throw new Error(`Invalid timeout: maximum is ${MAX_TIMEOUT_MS / 1000} seconds`);
+  if (timeout > MAX_TIMEOUT_SECONDS) {
+    throw new Error(`Invalid timeout: maximum is ${MAX_TIMEOUT_SECONDS} seconds`);
   }
-  return timeoutMs;
+  return timeout * 1000;
 }
 
 function isWithinRoot(path: string, root: string): boolean {

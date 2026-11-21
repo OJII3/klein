@@ -67,15 +67,17 @@
 
 ## ユーザー環境
 
-チャンネルまたはスレッドをリンクしたユーザーには、`<runtime.agentDir>/users/<userId>/` に専用の環境を作る。`userId` は Discord の数値 ID で、ディレクトリ名に使えない文字は `_` に置き換える。環境は `workspace/`、`home/`、`credentials/`、`tmp/` からなり、すべて 0700 で作る。
+チャンネルまたはスレッドをリンクしたユーザーには、`<runtime.agentDir>/users/<userId>/` に専用の環境を作る。`userId` は Discord の数値 ID で、数値以外の ID にはディレクトリ名の衝突を避けるハッシュを付ける。環境は `workspace/`、`home/`、`credentials/`、`tmp/` からなり、既存のディレクトリも含めてすべて 0700 に揃える。シンボリックリンクや別ユーザー所有のディレクトリは拒否する。
 
 - **workspace** — リンクしたユーザーのワーカーの作業ディレクトリ。会話エージェントと、リンクのない公開スコープのワーカーは従来どおりリポジトリのルートで動く。
 - **home** — シェルの `HOME`。`XDG_CONFIG_HOME`、`XDG_CACHE_HOME`、`XDG_DATA_HOME`、`XDG_STATE_HOME`、`TMPDIR` もこの環境の下を指す。
 - **credentials** — そのユーザーだけが使う認証情報の置き場。現在はブラウザプロファイルを保存する。
 
-リンクしたユーザーのワーカーは `bash` ツールを持つ。コマンドはユーザー環境ごとに bubblewrap のサンドボックスで実行し、書き込めるのは `workspace/`、`home/`、`tmp/` だけである。`credentials/`、他のユーザーの環境、Klein のリポジトリと設定、ホストのプロセスは見えない。システムの実行ファイルと `/nix/store` は読み取り専用で公開し、`PATH` はサンドボックス内に存在する項目だけに絞る。ネットワークは共有するため、パッケージの取得や `git clone` はできる。
+リンクしたユーザーのワーカーは `bash` ツールを持つ。コマンドはユーザー環境ごとに pasta のネットワーク名前空間と bubblewrap のサンドボックスで実行し、書き込めるのは `workspace/`、`home/`、`tmp/` だけである。`credentials/`、他のユーザーの環境、Klein のリポジトリと設定、ホストのプロセスは見えない。システムの実行ファイルと `/nix/store` は読み取り専用で公開し、`PATH` はサンドボックス内に存在する項目だけに絞る。ネットワークは pasta の外向き NAT を使うため、パッケージの取得や `git clone` はできる。pasta はホストの loopback とローカルの待ち受けポートをサンドボックスへ転送しないため、Klein の WebUI や他の localhost サービスには到達できない。ホストの他のインターフェースアドレス、LAN、クラウドのメタデータへの到達は残るので、必要なら別途 egress 制御を入れる。
 
-サンドボックスは `bwrap` を実行する。Nix の devShell には bubblewrap が含まれる。シェルを開くには unprivileged user namespace を作れる環境が必要である。bwrap がない場合、`bash` ツールの呼び出しはエラーになる。
+コマンドの既定タイムアウトは 600 秒で、上限は 3600 秒、出力は 64 MiB で打ち切る。サンドボックス内では `ulimit` でプロセス数、仮想メモリ、ファイルサイズ、CPU 時間、ファイルディスクリプタに緩い上限をかける。これらは暴走コマンドへの防御であり、cgroup によるメモリとディスクの quota の代わりではない。
+
+サンドボックスは `bwrap` と `pasta` を実行する。Nix の devShell には bubblewrap と passt が含まれる。シェルを開くには unprivileged user namespace と `/dev/net/tun` が必要である。どちらかがない場合、`bash` ツールの呼び出しはエラーになる。
 
 ## ブラウザ操作
 
@@ -93,7 +95,7 @@
 
 ## リモート MCP ツール
 
-MCP ツールは Pi のエージェントディレクトリ (`.runtime/pi`) に登録する。
+MCP ツールは Pi のエージェントディレクトリ (`.runtime/pi`) に登録する。ワーカーの作業ディレクトリにある `.pi/mcp.json` は読まない。リンクしたユーザーの workspace は書き込み可能なため、そこにある設定を信頼するとホスト上で任意のコマンドが起動してしまう。
 
 ```sh
 PI_CODING_AGENT_DIR=.runtime/pi bunx pi mcp add docs --url https://mcp.example.com/mcp --exposure deferred

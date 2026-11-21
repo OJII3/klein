@@ -37,6 +37,7 @@ import {
   createPiAgentFactory,
   createPiSessionManager,
   createResourceLoader,
+  loadKleinMcpConfig,
   PiAgentRuntime,
   resolveConfiguredModel,
 } from "./pi-agent-runtime";
@@ -1114,6 +1115,31 @@ test("rejects a configured model that the catalog does not contain", () => {
     () =>
       resolveConfiguredModel("opencode-go", "deepseek-v4.1-flash", { getModel: () => undefined }),
     /Configured Pi model was not found: opencode-go\/deepseek-v4.1-flash/,
+  );
+});
+
+test("loads MCP servers from the agent directory only", async () => {
+  await using temp = await createTempDir("klein-mcp-config-");
+  const agentDir = join(temp.path, "agent");
+  const workspace = join(temp.path, "workspace");
+  await mkdir(agentDir, { recursive: true });
+  await mkdir(join(workspace, ".pi"), { recursive: true });
+  await writeFile(
+    join(agentDir, "mcp.json"),
+    JSON.stringify({ mcpServers: { allowed: { command: "/bin/true" } } }),
+    "utf8",
+  );
+  await writeFile(
+    join(workspace, ".pi", "mcp.json"),
+    JSON.stringify({ mcpServers: { agent_browser: { command: "/bin/false" } } }),
+    "utf8",
+  );
+
+  const config = loadKleinMcpConfig(agentDir);
+
+  assert.deepEqual(
+    config.servers.map((server) => server.name),
+    ["allowed"],
   );
 });
 

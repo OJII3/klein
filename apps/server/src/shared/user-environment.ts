@@ -1,9 +1,10 @@
-import { mkdirSync } from "node:fs";
-import { resolve } from "node:path";
+import { createHash } from "node:crypto";
+import { chmodSync, lstatSync, mkdirSync, realpathSync } from "node:fs";
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 
 /**
  * Files and credentials that belong to one linked Discord user. Worker sessions
- * run in the workspace, and a future shell will see only this directory tree.
+ * run in the workspace, and the shell sees only this directory tree.
  */
 export interface UserEnvironment {
   readonly userId: string;
@@ -14,9 +15,15 @@ export interface UserEnvironment {
   readonly temporaryDirectory: string;
 }
 
-/** A Discord user id is safe as a directory name once sanitized. */
+/**
+ * A Discord user id is safe as a directory name once sanitized. Non-numeric ids
+ * get a hash suffix so that different ids cannot collapse to the same directory.
+ */
 export function userEnvironmentKey(userId: string): string {
-  return userId.replaceAll(/[^0-9A-Za-z_-]/g, "_");
+  if (/^[0-9]+$/u.test(userId)) return userId;
+  const sanitized = userId.replaceAll(/[^0-9A-Za-z_-]/g, "_");
+  const suffix = createHash("sha256").update(userId).digest("hex").slice(0, 12);
+  return `${sanitized}-${suffix}`;
 }
 
 export function resolveUserEnvironment(agentDir: string, userId: string): UserEnvironment {
@@ -31,18 +38,52 @@ export function resolveUserEnvironment(agentDir: string, userId: string): UserEn
   };
 }
 
-/** Creates the environment with owner-only permissions. Existing files are kept. */
+/**
+ * Creates the environment with owner-only permissions and repairs existing
+ * directories. A symlink or a directory owned by another user is rejected
+ * instead of being followed into an unrelated tree.
+ */
 export function ensureUserEnvironment(environment: UserEnvironment): UserEnvironment {
-  for (const directory of [
+  const usersDirectory = dirname(environment.rootDirectory);
+  const directories = [
     environment.rootDirectory,
     environment.workspaceDirectory,
     environment.homeDirectory,
     environment.credentialsDirectory,
     environment.temporaryDirectory,
-  ]) {
+  ];
+
+  for (const directory of [usersDirectory, ...directories]) {
     mkdirSync(directory, { recursive: true, mode: 0o700 });
+    const stats = lstatSync(directory);
+    if (!stats.isDirectory() || stats.isSymbolicLink()) {
+      throw new Error(`User environment path is not a real directory: ${directory}`);
+    }
+    if (process.platform !== "win32") {
+      const uid = process.getuid?.();
+      if (uid !== undefined && stats.uid !== uid) {
+        throw new Error(`User environment path is not owned by the current user: ${directory}`);
+      }
+      chmodSync(directory, 0o700);
+    }
   }
+
+  const resolvedRoot = realpathSync(environment.rootDirectory);
+  for (const directory of directories.slice(1)) {
+    if (!isWithinDirectory(resolvedRoot, realpathSync(directory))) {
+      throw new Error(`User environment path escapes the user's root: ${directory}`);
+    }
+  }
+
   return environment;
+}
+
+function isWithinDirectory(root: string, path: string): boolean {
+  const relativePath = relative(root, path);
+  return (
+    relativePath === "" ||
+    (!relativePath.startsWith(`..${sep}`) && relativePath !== ".." && !isAbsolute(relativePath))
+  );
 }
 
 /** Environment variables that keep a user's tools inside their own environment. */
