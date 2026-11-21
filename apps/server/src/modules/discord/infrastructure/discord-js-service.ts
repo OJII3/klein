@@ -155,6 +155,9 @@ export interface DiscordServiceClient extends DiscordChoiceClient, DiscordChanne
   readonly channels: {
     fetch(id: string): Promise<DiscordServiceChannel | null>;
   };
+  readonly guilds: {
+    readonly cache: ReadonlyMap<string, { readonly name?: string }>;
+  };
   readonly users: {
     fetch(id: string): Promise<{ send(payload: DiscordContainerMessage): Promise<unknown> }>;
   };
@@ -430,6 +433,14 @@ export class DiscordJsService implements DiscordGateway, DiscordChannelApi {
       { event: "discord_operating_mode_changed", mode },
       "Changed Discord operating mode",
     );
+  }
+
+  listGuildNames(): ReadonlyMap<string, string> {
+    const names = new Map<string, string>();
+    for (const [guildId, guild] of this.client.guilds.cache) {
+      if (guild.name) names.set(guildId, guild.name);
+    }
+    return names;
   }
 
   async getChannelLocation(channelId: string): Promise<DiscordChannelLocation> {

@@ -19,6 +19,7 @@ import { formatCompactTimestamp } from "../../lib/format";
 
 interface MemoryViewProps {
   channelNames: ReadonlyMap<string, string>;
+  guildNames: ReadonlyMap<string, string>;
   enabled: boolean;
   userMemoryEnabled: boolean;
   scopes: readonly MemoryScopeSummary[];
@@ -53,6 +54,7 @@ const USER_SECTIONS: readonly { key: UserMemorySectionKey; label: string }[] = [
 export function MemoryView(props: MemoryViewProps) {
   const {
     channelNames,
+    guildNames,
     enabled,
     userMemoryEnabled,
     scopes,
@@ -85,11 +87,12 @@ export function MemoryView(props: MemoryViewProps) {
         .filter((summary) => summary.scope.type === "guild")
         .filter(
           (summary) =>
-            summary.scope.type === "guild" &&
-            (!normalizedQuery ||
-              `guild ${summary.scope.guildId} ギルド`.toLowerCase().includes(normalizedQuery)),
+            !normalizedQuery ||
+            `${summary.scope.guildId} ${guildNames.get(summary.scope.guildId) ?? ""} ギルド`
+              .toLowerCase()
+              .includes(normalizedQuery),
         ),
-    [normalizedQuery, scopes],
+    [guildNames, normalizedQuery, scopes],
   );
   const filteredUsers = useMemo(
     () =>
@@ -161,10 +164,8 @@ export function MemoryView(props: MemoryViewProps) {
                           selectedScope !== null &&
                           memoryScopeKey(selectedScope) === memoryScopeKey(summary.scope)
                         }
-                        subtitle={
-                          summary.scope.type === "guild" ? summary.scope.guildId : undefined
-                        }
-                        title="共有メモリ"
+                        subtitle={summary.scope.guildId}
+                        title={guildNames.get(summary.scope.guildId) ?? "共有メモリ"}
                       />
                     ))
                   )}
@@ -225,6 +226,7 @@ export function MemoryView(props: MemoryViewProps) {
                   deletingFileKey={deletingFileKey}
                   files={sharedMemory ?? []}
                   guildId={selectedScope.guildId}
+                  guildName={guildNames.get(selectedScope.guildId)}
                   onDelete={onDeleteFile}
                   onSave={onSaveFile}
                   savingFileKey={savingFileKey}
@@ -309,6 +311,7 @@ function ScopeItem({
 function SharedMemoryDetail({
   files,
   guildId,
+  guildName,
   channelNames,
   savingFileKey,
   deletingFileKey,
@@ -317,6 +320,7 @@ function SharedMemoryDetail({
 }: {
   files: readonly SharedMemoryFile[];
   guildId: string;
+  guildName?: string;
   channelNames: ReadonlyMap<string, string>;
   savingFileKey: string | null;
   deletingFileKey: string | null;
@@ -329,7 +333,7 @@ function SharedMemoryDetail({
     <div className="flex min-w-0 flex-col">
       <header className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-4 py-4">
         <div className="min-w-0">
-          <h2 className="text-[1.05rem] font-semibold text-ink">共有メモリ</h2>
+          <h2 className="text-[1.05rem] font-semibold text-ink">{guildName ?? "共有メモリ"}</h2>
           <p className="mt-1 truncate font-mono text-[0.64rem] text-ink-faint">guild {guildId}</p>
         </div>
         <p className="shrink-0 font-mono text-[0.68rem] text-ink-faint">

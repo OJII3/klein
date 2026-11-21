@@ -54,6 +54,9 @@ test("serves health, logs, Pi sessions, and scoped memory through Elysia", async
   };
   const app = createWebUiApp({
     channelNames,
+    guildNames: {
+      read: async () => new Map([["guild-a", "テストサーバー"]]),
+    },
     displayName: "Klein",
     memory: {
       listScopes: async () => [
@@ -133,6 +136,12 @@ test("serves health, logs, Pi sessions, and scoped memory through Elysia", async
   assert.equal(channels.status, 200);
   assert.deepEqual(await readJson(channels), {
     items: [{ channelId: "123", name: "general" }],
+  });
+
+  const guilds = await app.handle(new Request("http://localhost/api/guilds"));
+  assert.equal(guilds.status, 200);
+  assert.deepEqual(await readJson(guilds), {
+    items: [{ guildId: "guild-a", name: "テストサーバー" }],
   });
 
   const logs = await app.handle(new Request("http://localhost/api/logs?limit=1"));

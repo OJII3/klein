@@ -54,6 +54,15 @@ export interface ChannelsResponse {
   items: ChannelSummary[];
 }
 
+export interface GuildSummary {
+  guildId: string;
+  name: string;
+}
+
+export interface GuildsResponse {
+  items: GuildSummary[];
+}
+
 export interface MetaResponse {
   displayName: string;
 }
@@ -153,6 +162,10 @@ export function listSessions(query: SessionQuery = {}): Promise<SessionsResponse
 
 export function listChannels(): Promise<ChannelsResponse> {
   return unwrap<ChannelsResponse>(client.api.channels.get());
+}
+
+export function listGuilds(): Promise<GuildsResponse> {
+  return unwrap<GuildsResponse>(client.api.guilds.get());
 }
 
 export function getMeta(): Promise<MetaResponse> {

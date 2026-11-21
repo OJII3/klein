@@ -5,7 +5,7 @@ import type {
   UserMemoryReader,
 } from "./memory";
 import type {
-  ChannelNameReader,
+  DiscordNameReader,
   ToolUsageReader,
   ViewerLogReader,
   ViewerSessionReader,
@@ -17,7 +17,8 @@ export interface WebUiLogger {
 
 export interface WebUiDependencies {
   readonly displayName: string;
-  readonly channelNames?: ChannelNameReader;
+  readonly channelNames?: DiscordNameReader;
+  readonly guildNames?: DiscordNameReader;
   readonly memory?: MemoryScopeReader;
   readonly memoryEditor?: SharedMemoryEditor;
   readonly userMemory?: UserMemoryReader;

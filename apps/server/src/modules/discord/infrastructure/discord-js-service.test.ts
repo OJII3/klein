@@ -984,6 +984,29 @@ test("resolves current channel locations, including thread parents and direct me
   }
 });
 
+test("lists cached guild names", async () => {
+  const fakeClient = new FakeDiscordClient();
+  fakeClient.guilds.cache.set("guild-123", { name: "テストサーバー" });
+  fakeClient.guilds.cache.set("guild-456", {});
+  const service = new DiscordJsService(
+    "token",
+    createDiscordAccessPolicy({ default: "allow", directMessages: "allow" }),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    { createClient: () => fakeClient },
+  );
+  try {
+    assert.deepEqual([...service.listGuildNames()], [["guild-123", "テストサーバー"]]);
+  } finally {
+    await service.stop();
+  }
+});
+
 test("opens the rule modal with the channel's own rule and a fresh custom id", async () => {
   const fakeClient = new FakeDiscordClient();
   const rules = new Map([

@@ -3,6 +3,7 @@ import { useCallback, useState } from "preact/hooks";
 import { AppShell } from "./components/app-shell";
 import { useChannels } from "./hooks/use-channels";
 import { useDisplayName } from "./hooks/use-meta";
+import { useGuilds } from "./hooks/use-guilds";
 import { useLogs } from "./hooks/use-logs";
 import { useSessions } from "./hooks/use-sessions";
 import { useMemory } from "./hooks/use-memory";
@@ -33,6 +34,7 @@ export default function App() {
   });
   const toolUsage = useToolUsage({ active: route.view === "tools", onUpdated });
   const channelNames = useChannels(route.view === "memory");
+  const guildNames = useGuilds(route.view === "memory");
 
   const selectSession = useCallback((sessionId: string) => {
     navigate(`/sessions?session=${encodeURIComponent(sessionId)}`);
@@ -101,6 +103,7 @@ export default function App() {
       ) : (
         <MemoryView
           channelNames={channelNames}
+          guildNames={guildNames}
           detailError={memory.detailError}
           deletingFileKey={memory.deletingFileKey}
           deletingUserMemory={memory.deletingUserMemory}

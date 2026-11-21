@@ -486,6 +486,9 @@ export async function bootstrapApplication(): Promise<void> {
         channelNames: {
           read: () => channelSessionStateStore.listChannelNames(),
         },
+        guildNames: {
+          read: async () => discordService.listGuildNames(),
+        },
         piSessions: new PiSessionReader(agentDir, {
           read: () => channelSessionStateStore.listChannelNames(),
         }),
