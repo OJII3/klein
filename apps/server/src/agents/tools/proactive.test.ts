@@ -76,18 +76,18 @@ function textOf(result: { content: readonly unknown[] }): string {
     : "";
 }
 
-test("updates preferences only for the owner who started the turn", async () => {
-  const changes: unknown[] = [];
+test("lets linked users update their own preferences and keeps public channels owner-only", async () => {
+  const updates: unknown[] = [];
   const coordinator = createCoordinator({
-    async updatePreference(change) {
-      changes.push(change);
+    async updatePreference(target, change) {
+      updates.push({ target, change });
       return preferences;
     },
   });
   const ctx = await createStubExtensionToolContext();
   const change = { kind: "set_delivery", key: "max_per_day", value: "2" } as const;
 
-  const publicTools = createProactiveTools(
+  const ownerPublicTools = createProactiveTools(
     coordinator,
     "channel-a",
     "public",
@@ -95,9 +95,16 @@ test("updates preferences only for the owner who started the turn", async () => 
     "user-1",
   );
   await assert.rejects(
-    publicTools[0].execute("tool-call", { change }, undefined, undefined, ctx),
+    createProactiveTools(coordinator, "channel-a", "public", () => "user-2", "user-1")[0].execute(
+      "tool-call",
+      { change },
+      undefined,
+      undefined,
+      ctx,
+    ),
     /所有者/u,
   );
+  await ownerPublicTools[0].execute("tool-call", { change }, undefined, undefined, ctx);
 
   const otherRequesterTools = createProactiveTools(
     coordinator,
@@ -108,7 +115,7 @@ test("updates preferences only for the owner who started the turn", async () => 
   );
   await assert.rejects(
     otherRequesterTools[0].execute("tool-call", { change }, undefined, undefined, ctx),
-    /所有者/u,
+    /この会話のユーザー/u,
   );
 
   const ownerTools = createProactiveTools(
@@ -118,10 +125,40 @@ test("updates preferences only for the owner who started the turn", async () => 
     () => "user-1",
     "user-1",
   );
-  const result = await ownerTools[0].execute("tool-call", { change }, undefined, undefined, ctx);
+  await ownerTools[0].execute("tool-call", { change }, undefined, undefined, ctx);
+
+  const linkedUserTools = createProactiveTools(
+    coordinator,
+    "channel-b",
+    "user:user-2",
+    () => "user-2",
+    "user-1",
+  );
+  const result = await linkedUserTools[0].execute(
+    "tool-call",
+    { change },
+    undefined,
+    undefined,
+    ctx,
+  );
   const text = textOf(result);
 
-  assert.deepEqual(changes, [change]);
+  await assert.rejects(
+    createProactiveTools(
+      coordinator,
+      "channel-b",
+      "user:user-2",
+      () => "user-3",
+      "user-1",
+    )[0].execute("tool-call", { change }, undefined, undefined, ctx),
+    /この会話のユーザー/u,
+  );
+
+  assert.deepEqual(updates, [
+    { target: { channelId: "channel-a", accessScope: "public" }, change },
+    { target: { channelId: "channel-a", accessScope: "owner:user-1" }, change },
+    { target: { channelId: "channel-b", accessScope: "user:user-2" }, change },
+  ]);
   assert.match(text, /配信: 既定=attach, 1日の上限=2/u);
   assert.match(text, /話題: weather: 禁止 until 2026-12-01/u);
   assert.doesNotMatch(text, /このメモはツールの応答に出さない/u);
@@ -131,7 +168,7 @@ test("requires permanent: true for an open-ended mute", async () => {
   const changes: unknown[] = [];
   const tools = createProactiveTools(
     createCoordinator({
-      async updatePreference(change) {
+      async updatePreference(_target, change) {
         changes.push(change);
         return preferences;
       },

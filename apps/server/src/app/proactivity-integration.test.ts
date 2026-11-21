@@ -65,7 +65,7 @@ async function withIntegration(
   const signalStore = new FileProactiveSignalStore(join(temp.path, "signals"));
   const followUpStore = new FileFollowUpStore(join(temp.path, "follow-ups"));
   const proactive = new ProactiveCoordinator({
-    preferenceStore: new FileProactivePreferenceStore(join(temp.path, "preferences.md")),
+    preferenceStore: new FileProactivePreferenceStore(join(temp.path, "preferences")),
     followUpStore,
     signalStore,
     scheduledTaskStore: new InMemoryScheduledTaskStore(),

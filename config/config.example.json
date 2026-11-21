@@ -64,7 +64,7 @@
     },
     "proactivity": {
       "enabled": false,
-      "preferencesFile": ".runtime/pi/proactive/preferences.md",
+      "preferencesDirectory": ".runtime/pi/proactive/preferences",
       "followUpDirectory": ".runtime/pi/proactive/follow-ups",
       "signalDirectory": ".runtime/pi/proactive/signals",
       "defaultMode": "attach",

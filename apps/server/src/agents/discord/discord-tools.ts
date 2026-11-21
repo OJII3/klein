@@ -114,7 +114,7 @@ export function createDiscordAgentTools(
           options.channelId,
           accessScope,
           options.requesterUserId ?? (() => undefined),
-          ownerUserId,
+          options.ownerUserId,
         )
       : []),
   ];

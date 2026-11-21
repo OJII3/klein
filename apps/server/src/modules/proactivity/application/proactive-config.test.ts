@@ -26,7 +26,7 @@ test("returns disabled defaults when proactivity is not configured", () => {
 
   assert.deepEqual(config, {
     enabled: false,
-    preferencesFile: resolve("/tmp/klein-agent", "proactive/preferences.md"),
+    preferencesDirectory: resolve("/tmp/klein-agent", "proactive/preferences"),
     followUpDirectory: resolve("/tmp/klein-agent", "proactive/follow-ups"),
     signalDirectory: resolve("/tmp/klein-agent", "proactive/signals"),
     defaults: {
@@ -42,7 +42,7 @@ test("keeps explicit paths and policy values", () => {
   const config = resolveProactivityConfig(
     createConfig({
       enabled: true,
-      preferencesFile: "custom/preferences.md",
+      preferencesDirectory: "custom/preferences",
       followUpDirectory: "/srv/klein/follow-ups",
       signalDirectory: "signals",
       defaultMode: "digest",
@@ -57,7 +57,7 @@ test("keeps explicit paths and policy values", () => {
 
   assert.deepEqual(config, {
     enabled: true,
-    preferencesFile: resolve("custom/preferences.md"),
+    preferencesDirectory: resolve("custom/preferences"),
     followUpDirectory: resolve("/srv/klein/follow-ups"),
     signalDirectory: resolve("signals"),
     defaults: {
