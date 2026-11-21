@@ -1,11 +1,15 @@
 ---
 name: t3-thread
-description: Use when delegating coding tasks to a T3 Code thread. Trigger when repository edits, testing, or PR creation should be handled by a separate T3 Code agent.
+description: Use when a task needs repository work such as code edits, tests, builds, commits, or PR creation. Prefer a T3 Code thread over doing the work in this session.
 ---
 
 # T3 Code Threads
 
 Use the `t3_thread_*` tools to start, inspect, and continue T3 Code threads. If the `t3` CLI is unavailable in the environment, tool calls will fail; report that in your result.
+
+## When to Use
+
+Prefer a T3 Code thread for any repository work: code edits, tests, builds, commits, branches, and PRs. Keep planning, review, and reporting in this session, and do not edit the repository directly unless the task explicitly asks for it. Continue an existing thread with `t3_thread_send` instead of starting a new one for follow-up work.
 
 ## Workflow
 
