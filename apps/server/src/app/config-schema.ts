@@ -111,7 +111,7 @@ const ProactiveDeliveryModeSchema = Type.Union([
 const ProactivityConfigurationSchema = Type.Object(
   {
     enabled: Type.Boolean(),
-    preferencesFile: Type.Optional(Type.String({ minLength: 1 })),
+    preferencesDirectory: Type.Optional(Type.String({ minLength: 1 })),
     followUpDirectory: Type.Optional(Type.String({ minLength: 1 })),
     signalDirectory: Type.Optional(Type.String({ minLength: 1 })),
     defaultMode: Type.Optional(ProactiveDeliveryModeSchema),

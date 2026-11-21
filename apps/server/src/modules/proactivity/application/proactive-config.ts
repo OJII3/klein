@@ -11,7 +11,7 @@ const DEFAULT_PROMISE_GUARD = "log";
 
 export interface ResolvedProactivityConfig {
   readonly enabled: boolean;
-  readonly preferencesFile: string;
+  readonly preferencesDirectory: string;
   readonly followUpDirectory: string;
   readonly signalDirectory: string;
   readonly defaults: ProactivePolicyDefaults;
@@ -26,8 +26,8 @@ export function resolveProactivityConfig(
 
   return {
     enabled: proactivity?.enabled ?? false,
-    preferencesFile: resolve(
-      proactivity?.preferencesFile ?? resolve(agentDir, "proactive/preferences.md"),
+    preferencesDirectory: resolve(
+      proactivity?.preferencesDirectory ?? resolve(agentDir, "proactive/preferences"),
     ),
     followUpDirectory: resolve(
       proactivity?.followUpDirectory ?? resolve(agentDir, "proactive/follow-ups"),

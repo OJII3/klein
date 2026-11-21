@@ -286,7 +286,7 @@ export async function bootstrapApplication(): Promise<void> {
   });
   const proactiveCoordinator = proactivityConfig.enabled
     ? new ProactiveCoordinator({
-        preferenceStore: new FileProactivePreferenceStore(proactivityConfig.preferencesFile),
+        preferenceStore: new FileProactivePreferenceStore(proactivityConfig.preferencesDirectory),
         followUpStore: new FileFollowUpStore(proactivityConfig.followUpDirectory),
         signalStore: new FileProactiveSignalStore(proactivityConfig.signalDirectory),
         scheduledTaskStore,

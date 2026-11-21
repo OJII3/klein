@@ -53,13 +53,14 @@
 `features.proactivity.enabled` を有効にすると、Klein は監視の wake やワーカーの結果を会話の外から受け取り、自分から話すかを決める。設定、保存形式、設計は [proactivity.md](proactivity.md) にある。
 
 - **設定** — `features.proactivity` の `defaultMode`、`quietHours`、`digestAt`、`maxPerDay`、`publicChannels`、`promiseGuard` が既定値と監査を決める。好みのファイルに値があればそちらを優先する。
-- **保存場所** — 好みは `<runtime.agentDir>/proactive/preferences.md`、約束は `proactive/follow-ups/<id>.json`、候補は `proactive/signals/<id>.json` に保存する。
+- **保存場所** — 好みは `proactive/preferences/<key>.md`、約束は `proactive/follow-ups/<id>.json`、候補は `proactive/signals/<id>.json` に保存する。好みの `<key>` は所有者とリンク済みユーザーでは `user-<userId>`、公開チャンネルでは `channel-<channelId>` になる。
+- **単位** — 所有者のダイレクトメッセージと、所有者またはリンク済みユーザーのリンク済みチャンネルおよびスレッドでは、ユーザー単位の好みを同じユーザーの複数チャンネルで共有する。公開チャンネルではチャンネル単位の好みをその場の全員に使う。
 - **届け方** — 好みと設定から `interrupt`、`attach`、`digest`、`silent` を決める。`interrupt` は会話エージェントをすぐ起こし、`attach` は次のユーザー発言のコンテキストに載せ、`digest` は `digestAt` にまとめ、`silent` は保存だけにする。まとめは、その日の `digestAt` より前に観測した候補だけを対象にし、それ以降の候補は翌日に回す。
 - **監視の優先度** — `watch_add` の `priority` が `urgent` の wake は `now`、`normal` は `today` として扱う。`urgent` はユーザーがすぐ知りたいと明示した監視だけに使う。
 - **約束と監査** — `follow_up_create` は監視、リマインダー、ワーカーの実体がなければ失敗する。`discord_send` は送信前に本文が追跡を約束していないか調べ、`features.proactivity.promiseGuard` の `off`、`log`、`block` に従う。既定は `log` で、有効な約束がないまま約束している文面を記録する。`block` は送信を止める。
 - **候補の確認** — `proactive_signal_list` はこの会話に保留中の候補を一覧し、`proactive_signal_dismiss` は候補を取り下げて同じ内容の再通知を止める。
 - **公開チャンネル** — `publicChannels` が `false` でも、ユーザーが明示的に登録した監視に由来する候補は公開チャンネルへ配信する。それ以外の自発的な候補は公開チャンネルでは保存だけにする。
-- **制限** — 好みを変更できるのは所有者だけで、公開チャンネルで所有者以外が言ったことは設定にしない。Web UI の候補一覧、外部コネクタ、複数ユーザーの個人設定、目標管理は対象外である。
+- **制限** — 好みを変更できるのは、ユーザー単位のスコープではそのユーザー本人、公開チャンネルでは所有者だけである。Web UI の候補一覧、外部コネクタ、目標管理は対象外である。
 
 ## ワーカー
 

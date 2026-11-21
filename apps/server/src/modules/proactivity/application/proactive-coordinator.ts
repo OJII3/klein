@@ -30,6 +30,7 @@ import {
   type ProactivePreferenceChange,
   type ProactivePreferences,
 } from "../domain/proactive-preference";
+import type { ProactivePreferenceTarget } from "../domain/proactive-preference-scope";
 import {
   createSignalDedupeKey,
   formatSignal,
@@ -97,8 +98,7 @@ export class ProactiveCoordinator {
     readonly channelId: string;
     readonly accessScope: AccessScope;
   }): Promise<ProactiveContext> {
-    const preferences =
-      input.accessScope === "public" ? undefined : await this.readPreferencesContext();
+    const preferences = await this.readPreferencesContext(input);
     const waitingOn = formatWaitingOn(
       await this.synchronizeFollowUps(input.channelId, input.accessScope),
     );
@@ -141,7 +141,10 @@ export class ProactiveCoordinator {
       return { decision: { mode: "silent", reason: "duplicate" }, signal: duplicate };
     }
 
-    const preferences = await this.options.preferenceStore.read();
+    const preferences = await this.options.preferenceStore.read({
+      channelId: watch.channelId,
+      accessScope: watch.accessScope,
+    });
     const deliveredToday = await this.options.signalStore.countSurfacedSince(
       watch.channelId,
       watch.accessScope,
@@ -195,7 +198,10 @@ export class ProactiveCoordinator {
 
     const batches: ProactiveDigestBatch[] = [];
     for (const group of groups.values()) {
-      const preferences = await this.options.preferenceStore.read();
+      const preferences = await this.options.preferenceStore.read({
+        channelId: group.channelId,
+        accessScope: group.accessScope,
+      });
       const digestAt = preferences.delivery.digestAt ?? this.options.defaults.digestAt;
       if (digestAt === undefined) continue;
 
@@ -252,8 +258,11 @@ export class ProactiveCoordinator {
     }
   }
 
-  updatePreference(change: ProactivePreferenceChange): Promise<ProactivePreferences> {
-    return this.options.preferenceStore.update(change);
+  updatePreference(
+    target: ProactivePreferenceTarget,
+    change: ProactivePreferenceChange,
+  ): Promise<ProactivePreferences> {
+    return this.options.preferenceStore.update(target, change);
   }
 
   async createFollowUp(input: {
@@ -381,8 +390,10 @@ export class ProactiveCoordinator {
     return selected.map((signal) => formatSignal(signal)).join("\n");
   }
 
-  private async readPreferencesContext(): Promise<string | undefined> {
-    const preferences = await this.options.preferenceStore.read();
+  private async readPreferencesContext(
+    target: ProactivePreferenceTarget,
+  ): Promise<string | undefined> {
+    const preferences = await this.options.preferenceStore.read(target);
     return isEmptyPreferences(preferences) ? undefined : renderProactivePreferences(preferences);
   }
 

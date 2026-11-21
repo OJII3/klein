@@ -8,8 +8,12 @@ import type {
   ProactivePreferences,
   ProactiveTopicMode,
 } from "@modules/proactivity/domain/proactive-preference";
+import {
+  canUpdateProactivePreferences,
+  type ProactivePreferenceTarget,
+} from "@modules/proactivity/domain/proactive-preference-scope";
 import type { ProactiveSignal } from "@modules/proactivity/domain/proactive-signal";
-import { isOwnerAccessScope, type AccessScope } from "@shared/access";
+import type { AccessScope } from "@shared/access";
 
 export type ProactiveToolCoordinator = Pick<
   ProactiveCoordinator,
@@ -66,17 +70,22 @@ export function createProactiveTools(
   requesterUserId: () => string | undefined,
   ownerUserId?: string,
 ) {
+  const target: ProactivePreferenceTarget = { channelId, accessScope };
   return [
     defineTool({
       name: "proactive_preference_update",
       label: "Update Proactive Preferences",
       description:
-        "Update how proactively Klein speaks in this conversation. Only the owner can change these preferences.",
+        "Update how proactively Klein speaks in this conversation. Linked users can change their own preferences; in public channels only the owner can change them.",
       parameters: Type.Object({ change: preferenceChangeSchema }),
       exposure: "deferred",
       async execute(_toolCallId, params) {
-        if (!isOwnerAccessScope(accessScope, ownerUserId) || requesterUserId() !== ownerUserId) {
-          throw new Error("好みの変更は所有者だけができます。");
+        if (!canUpdateProactivePreferences(target, requesterUserId(), ownerUserId)) {
+          throw new Error(
+            accessScope === "public"
+              ? "公開チャンネルの好みの変更は所有者だけができます。"
+              : "好みの変更はこの会話のユーザーだけができます。",
+          );
         }
 
         const request = params.change;
@@ -100,7 +109,7 @@ export function createProactiveTools(
                 ...(request.until !== undefined ? { until: request.until } : {}),
               }
             : request;
-        const preferences = await coordinator.updatePreference(change);
+        const preferences = await coordinator.updatePreference(target, change);
         return {
           content: [{ type: "text", text: formatPreferencesSummary(preferences) }],
           details: {

@@ -17,9 +17,13 @@ Klein はチャンネルのメッセージに反応するだけではなく、�
 
 ## 対象範囲
 
-最初の実装では、好みの変更と自発的な発言の既定の対象を所有者のスコープに限る。所有者のダイレクトメッセージと、所有者専用のチャンネルが既定の対象である。公開チャンネルでは、ユーザーが明示的に登録した監視 (watch) に由来する候補だけを配信し、それ以外は保存だけにする。チャンネル単位の好みと配信上限が揃ったら、`publicChannels` で他の候補も有効化できる。
+好みと自発的な発言の対象は会話のスコープで決める。
 
-好みの変更は所有者だけができる。公開チャンネルで所有者以外が「この話題はいらない」と言っても、そのチャンネルの設定は変えない。
+- 所有者のダイレクトメッセージと、所有者またはリンク済みユーザーのリンク済みチャンネルおよびスレッドはユーザー単位とする。同じユーザーの複数のリンク済みチャンネルで好みを共有する。
+- 公開チャンネルはチャンネル単位とする。そのチャンネルで話す全員に同じ好みを使う。
+- 公開チャンネルでは、ユーザーが明示的に登録した監視 (watch) に由来する候補だけを既定で配信し、それ以外は保存だけにする。`publicChannels` で他の候補も有効化できる。
+
+好みを変更できるのは、ユーザー単位のスコープではそのユーザー本人、公開チャンネルでは所有者だけとする。公開チャンネルで所有者以外が「この話題はいらない」と言っても、そのチャンネルの設定は変えない。
 
 ## 用語
 
@@ -36,7 +40,7 @@ Klein はチャンネルのメッセージに反応するだけではなく、�
 
 ### 好みの台帳
 
-`<runtime.agentDir>/proactive/preferences.md` に保存する。ファイルは人間が読める Markdown とし、更新は `proactive_preference_update` ツールだけが行う。エージェントに汎用の write ツールは渡さない。
+`<runtime.agentDir>/proactive/preferences/<key>.md` に保存する。`<key>` はユーザー単位のスコープでは `user-<userId>`、公開チャンネルでは `channel-<channelId>` とする。以前の単一ファイル `proactive/preferences.md` は読み込まない。ファイルは人間が読める Markdown とし、更新は `proactive_preference_update` ツールだけが行う。エージェントに汎用の write ツールは渡さない。
 
 ```markdown
 # Proactive preferences
@@ -149,7 +153,7 @@ watch の `priority` が `urgent` のとき候補の urgency は `now`、`normal
 
 会話エージェントには次のブロックを渡す。既存の `AgentTurnContext.blocks` を使い、システムプロンプトには入れない。
 
-- `<proactive-preferences>` は所有者またはチャンネルの好み。長すぎる場合は `Delivery` と `Topics` を優先し、`Notes` を後ろに落とす。
+- `<proactive-preferences>` はその会話のユーザーまたはチャンネルの好み。長すぎる場合は `Delivery` と `Topics` を優先し、`Notes` を後ろに落とす。
 - `<waiting-on>` はこのチャンネルの有効な約束。最大8件。
 - `<pending-signals>` は `attach` 待ちの候補。最大5件。
 
@@ -159,7 +163,7 @@ watch の wake とワーカーの結果を届けるときも同じブロック�
 
 すべて `features.proactivity.enabled` が真のときだけ会話エージェントに渡す。
 
-- `proactive_preference_update` は好みを更新する。`set_delivery`、`set_topic`、`remove_topic`、`add_note` を受ける。`set_topic` で `until` を省略した `mute` は、恒久を意図する場合に限り `permanent: true` を必要とする。所有者以外の呼び出しは拒否する。
+- `proactive_preference_update` は好みを更新する。`set_delivery`、`set_topic`、`remove_topic`、`add_note` を受ける。`set_topic` で `until` を省略した `mute` は、恒久を意図する場合に限り `permanent: true` を必要とする。ユーザー単位のスコープではそのユーザー本人、公開チャンネルでは所有者だけが呼べる。
 - `follow_up_create` は監視、リマインダー、ワーカーを指定して約束を作る。watcher が見つからなければ失敗する。
 - `follow_up_list` はこのチャンネルの有効な約束を返す。
 - `follow_up_close` は約束を `done` または `dismissed` にする。
@@ -183,7 +187,7 @@ watch の wake とワーカーの結果を届けるときも同じブロック�
   "features": {
     "proactivity": {
       "enabled": true,
-      "preferencesFile": ".runtime/pi/proactive/preferences.md",
+      "preferencesDirectory": ".runtime/pi/proactive/preferences",
       "followUpDirectory": ".runtime/pi/proactive/follow-ups",
       "signalDirectory": ".runtime/pi/proactive/signals",
       "defaultMode": "attach",
@@ -197,12 +201,13 @@ watch の wake とワーカーの結果を届けるときも同じブロック�
 }
 ```
 
-`preferencesFile`、`followUpDirectory`、`signalDirectory` を省略した場合は `<runtime.agentDir>` の下の既定値を使う。`quietHours` と `digestAt` は設定の既定値であり、好みのファイルに値があればそちらを優先する。`promiseGuard` を省略した場合は `log` になる。
+`preferencesDirectory`、`followUpDirectory`、`signalDirectory` を省略した場合は `<runtime.agentDir>` の下の既定値を使う。`quietHours` と `digestAt` は設定の既定値であり、好みのファイルに値があればそちらを優先する。`promiseGuard` を省略した場合は `log` になる。
 
 ## 実装済みの範囲
 
 - 好み、約束、候補のドメインとファイル保存
 - 設定、`ProactiveCoordinator`、`proactive_preference_update`、ターンコンテキストへの好み、`<waiting-on>`、`<pending-signals>` の描画
+- ユーザー単位とチャンネル単位の好み、リンク済みユーザーによる自分の好みの変更、公開チャンネルでの所有者だけの変更
 - `follow_up_create`、`follow_up_list`、`follow_up_close` と、監視の削除、一回だけのリマインダーの配信、ワーカーの結果配送を `done` に反映する処理
 - watch の wake の候補化、配信ゲート、`attach` と `digest` のキュー、当日の配信数、重複排除
 - `AgentCoordinator.deliverDueDigests` によるダイジェスト配信と、スケジュール確認と同じ間隔での起動
@@ -216,7 +221,6 @@ watch の wake とワーカーの結果を届けるときも同じブロック�
 
 - Web UI の候補一覧と好みの編集画面
 - 外部サービスやデバイスのコネクタ
-- 複数ユーザーの個人設定
 - 目標管理
 
 これらは、候補のキューと好みの台帳が動いてから別に設計する。

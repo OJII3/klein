@@ -513,7 +513,7 @@
             "enabled": {
               "type": "boolean"
             },
-            "preferencesFile": {
+            "preferencesDirectory": {
               "type": "string",
               "minLength": 1
             },

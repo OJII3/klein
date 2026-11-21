@@ -22,6 +22,7 @@ import { ProactiveCoordinator } from "./proactive-coordinator";
 
 const NOW = Date.parse("2026-11-20T12:00:00.000Z");
 const CREATED_AT = "2026-11-20T00:00:00.000Z";
+const OWNER_TARGET = { channelId: "channel-a", accessScope: "owner:123" } as const;
 const DEFAULT_POLICY_DEFAULTS: ProactivePolicyDefaults = {
   defaultMode: "attach",
   maxPerDay: 3,
@@ -115,7 +116,7 @@ async function withCoordinator(
   } = {},
 ): Promise<void> {
   await using temp = await createTempDir("klein-proactive-coordinator-");
-  const preferenceStore = new FileProactivePreferenceStore(join(temp.path, "preferences.md"));
+  const preferenceStore = new FileProactivePreferenceStore(join(temp.path, "preferences"));
   const followUpStore = new FileFollowUpStore(join(temp.path, "follow-ups"));
   const signalStore = new FileProactiveSignalStore(join(temp.path, "signals"));
   const scheduledTaskStore = new InMemoryScheduledTaskStore(options.tasks ?? []);
@@ -142,7 +143,7 @@ async function withCoordinator(
   });
 }
 
-test("returns preferences for the owner but not for public channels", async () => {
+test("returns preferences for each user and public channel separately", async () => {
   await withCoordinator(async ({ coordinator, preferenceStore }) => {
     const empty = await coordinator.getContext({
       channelId: "channel-a",
@@ -150,7 +151,7 @@ test("returns preferences for the owner but not for public channels", async () =
     });
     assert.deepEqual(empty, {});
 
-    await preferenceStore.update({ kind: "add_note", text: "作業中は短く" });
+    await preferenceStore.update(OWNER_TARGET, { kind: "add_note", text: "作業中は短く" });
 
     const owner = await coordinator.getContext({
       channelId: "channel-a",
@@ -164,6 +165,23 @@ test("returns preferences for the owner but not for public channels", async () =
       accessScope: "public",
     });
     assert.equal(publicChannel.preferences, undefined);
+
+    await preferenceStore.update(
+      { channelId: "channel-a", accessScope: "public" },
+      { kind: "add_note", text: "チャンネルの好み" },
+    );
+    const configuredPublic = await coordinator.getContext({
+      channelId: "channel-a",
+      accessScope: "public",
+    });
+    assert.match(configuredPublic.preferences ?? "", /チャンネルの好み/u);
+    assert.doesNotMatch(configuredPublic.preferences ?? "", /作業中は短く/u);
+
+    const linkedUser = await coordinator.getContext({
+      channelId: "channel-a",
+      accessScope: "user:456",
+    });
+    assert.equal(linkedUser.preferences, undefined);
   });
 });
 
@@ -462,6 +480,28 @@ test("delivers a public watch signal even when public channels are disabled", as
   });
 });
 
+test("applies the preferences of the linked user who owns the watch", async () => {
+  await withCoordinator(async ({ coordinator, preferenceStore, signalStore }) => {
+    await preferenceStore.update(
+      { channelId: "channel-a", accessScope: "user:456" },
+      { kind: "set_topic", topic: "在庫監視", mode: "mute" },
+    );
+
+    const result = await coordinator.ingestWatchSignal({
+      watch: { ...watchTask, accessScope: "user:456" },
+      output: "在庫が3個になりました",
+      now: NOW,
+    });
+
+    assert.deepEqual(result.decision, { mode: "silent", reason: "topic-muted" });
+    assert.equal((await signalStore.get(result.signal.id))?.status, "surfaced");
+    assert.deepEqual((await signalStore.get(result.signal.id))?.delivery, {
+      mode: "silent",
+      surfacedAt: new Date(NOW).toISOString(),
+    });
+  });
+});
+
 test("marks signals surfaced and notifies only active follow-ups watching them", async () => {
   await withCoordinator(async ({ coordinator, signalStore, followUpStore }) => {
     await followUpStore.create(followUp({ id: "active" }));
@@ -655,7 +695,11 @@ test("collects one digest batch per channel and access scope", async () => {
 test("uses the digest time from the preferences", async () => {
   await withCoordinator(
     async ({ coordinator, preferenceStore, signalStore }) => {
-      await preferenceStore.update({ kind: "set_delivery", key: "digest_at", value: "08:00" });
+      await preferenceStore.update(OWNER_TARGET, {
+        kind: "set_delivery",
+        key: "digest_at",
+        value: "08:00",
+      });
       await signalStore.create(digestSignal("early", "2026-11-19T22:00:00.000Z"));
 
       const batches = await coordinator.collectDueDigests(BEFORE_DIGEST);
@@ -704,7 +748,7 @@ test("completes active and notified follow-ups for a finished watcher", async ()
 test("does not count silent deliveries toward the daily limit", async () => {
   await withCoordinator(
     async ({ coordinator, preferenceStore, signalStore }) => {
-      await preferenceStore.update({
+      await preferenceStore.update(OWNER_TARGET, {
         kind: "set_delivery",
         key: "max_per_day",
         value: "1",
