@@ -56,7 +56,7 @@ const ALLOWED_CHANNELS_COMMAND = new SlashCommandBuilder()
   .setDMPermission(false);
 const CHANNEL_LINK_COMMAND = new SlashCommandBuilder()
   .setName("link")
-  .setDescription("この場所をあなたのチャンネルとしてオーナーに登録してもらいます")
+  .setDescription("この場所をあなたのチャンネルとして登録します")
   .setDefaultMemberPermissions(PermissionFlagsBits.UseApplicationCommands)
   .setDMPermission(false);
 const CHANNEL_UNLINK_COMMAND = new SlashCommandBuilder()
