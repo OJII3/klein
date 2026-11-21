@@ -67,6 +67,24 @@
       "preferencesDirectory": ".runtime/pi/proactive/preferences",
       "followUpDirectory": ".runtime/pi/proactive/follow-ups",
       "signalDirectory": ".runtime/pi/proactive/signals",
+      "initiative": {
+        "enabled": false,
+        "goalsDirectory": ".runtime/pi/initiative/goals",
+        "plannerStateDirectory": ".runtime/pi/initiative/planner",
+        "llm": {
+          "provider": "opencode-go",
+          "model": "qwen3.8-flash",
+          "thinkingLevel": "low"
+        },
+        "planAfterIdleMinutes": 30,
+        "planWithinHours": 48,
+        "maxMessages": 80,
+        "maxPlansPerDay": 12,
+        "maxGoalsPerDay": 4,
+        "maxActiveGoals": 3,
+        "maxGoalsPerPlan": 2,
+        "approval": "auto"
+      },
       "defaultMode": "attach",
       "quietHours": {
         "start": "23:00",

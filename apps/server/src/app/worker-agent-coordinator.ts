@@ -142,7 +142,10 @@ export class WorkerAgentCoordinator implements WorkerControl {
     }
 
     const { conversationKey } = input;
-    const id = `worker-${randomUUID()}`;
+    const id = input.id ?? `worker-${randomUUID()}`;
+    if (this.workers.has(id)) {
+      throw new Error(`Worker already exists: ${id}`);
+    }
     const runtime = await this.options.factory.create(
       { systemPrompt: this.options.systemPrompt },
       (toolContext) =>

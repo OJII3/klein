@@ -29,6 +29,8 @@ export interface WorkerScope {
 }
 
 export interface WorkerStartInput extends WorkerScope {
+  /** Optional pre-generated worker id. The coordinator creates one when omitted. */
+  readonly id?: string;
   readonly ownerFeaturesAllowed: boolean;
   readonly prompt: string;
   /**

@@ -39,6 +39,7 @@ import {
   markSignalExpired,
   markSignalSurfaced,
   type ProactiveSignal,
+  type ProactiveUrgency,
 } from "../domain/proactive-signal";
 import type { FollowUpStore } from "../ports/follow-up-store";
 import type { ProactivePreferenceStore } from "../ports/proactive-preference-store";
@@ -58,6 +59,11 @@ export interface ProactiveCoordinatorOptions {
   readonly scheduledTaskStore: ScheduledTaskStore;
   readonly workers: Pick<WorkerControl, "list">;
   readonly defaults: ProactivePolicyDefaults;
+  readonly onSignalSurfaced?: (
+    signal: ProactiveSignal,
+    mode: ProactiveDeliveryMode,
+    now: number,
+  ) => Promise<void>;
   readonly logger?: Logger;
   readonly now?: () => number;
 }
@@ -71,6 +77,17 @@ export interface ProactiveContext {
 export interface WatchSignalInput {
   readonly watch: WatchTask;
   readonly output: string;
+  readonly now: number;
+}
+
+export interface GoalSignalInput {
+  readonly goalId: string;
+  readonly channelId: string;
+  readonly accessScope: AccessScope;
+  readonly topic: string;
+  readonly summary: string;
+  readonly delivery?: ProactiveDeliveryMode;
+  readonly expiresAt?: string;
   readonly now: number;
 }
 
@@ -136,18 +153,61 @@ export class ProactiveCoordinator {
       status: "queued",
     };
 
+    return this.ingestSignal(signal, now);
+  }
+
+  async ingestGoalResult(
+    input: GoalSignalInput,
+  ): Promise<{ readonly decision: DeliveryDecision; readonly signal: ProactiveSignal }> {
+    const urgency: ProactiveUrgency =
+      input.delivery === "interrupt"
+        ? "now"
+        : input.delivery === "digest"
+          ? "digest"
+          : input.delivery === "silent"
+            ? "silent"
+            : "today";
+    const summary = input.summary.slice(0, SIGNAL_EVIDENCE_LIMIT);
+    const signal: ProactiveSignal = {
+      version: 1,
+      id: randomUUID(),
+      channelId: input.channelId,
+      accessScope: input.accessScope,
+      audience: input.accessScope === "public" ? "public" : "owner",
+      source: { kind: "goal", ref: input.goalId },
+      topic: input.topic,
+      summary,
+      urgency,
+      dedupeKey: createSignalDedupeKey({
+        sourceKind: "goal",
+        sourceRef: input.goalId,
+        topic: input.topic,
+        evidence: { text: summary },
+      }),
+      observedAt: new Date(input.now).toISOString(),
+      expiresAt: input.expiresAt ?? new Date(input.now + SIGNAL_LIFETIME_MS).toISOString(),
+      status: "queued",
+    };
+
+    return this.ingestSignal(signal, input.now);
+  }
+
+  private async ingestSignal(
+    signal: ProactiveSignal,
+    now: number,
+  ): Promise<{ readonly decision: DeliveryDecision; readonly signal: ProactiveSignal }> {
     const duplicate = await this.options.signalStore.findActiveByDedupeKey(signal.dedupeKey);
     if (duplicate) {
       return { decision: { mode: "silent", reason: "duplicate" }, signal: duplicate };
     }
 
     const preferences = await this.options.preferenceStore.read({
-      channelId: watch.channelId,
-      accessScope: watch.accessScope,
+      channelId: signal.channelId,
+      accessScope: signal.accessScope,
     });
     const deliveredToday = await this.options.signalStore.countSurfacedSince(
-      watch.channelId,
-      watch.accessScope,
+      signal.channelId,
+      signal.accessScope,
       japanDayStartIso(now),
     );
     const decision = decideDelivery({
@@ -155,7 +215,7 @@ export class ProactiveCoordinator {
       preferences,
       defaults: this.options.defaults,
       now,
-      publicChannel: watch.accessScope === "public",
+      publicChannel: signal.accessScope === "public",
       deliveredToday,
     });
     const queued: ProactiveSignal = { ...signal, delivery: { mode: decision.mode } };
@@ -239,6 +299,16 @@ export class ProactiveCoordinator {
     for (const signal of signals) {
       await this.options.signalStore.update(markSignalSurfaced(signal, mode, now));
       if (mode === "silent") continue;
+
+      try {
+        await this.options.onSignalSurfaced?.(signal, mode, now);
+      } catch (error) {
+        this.options.logger?.warn(
+          { err: error, event: "proactive_signal_surfaced_hook_failed", signalId: signal.id },
+          "Failed to run the signal surfaced hook",
+        );
+      }
+
       if (signal.source.kind !== "watch" || signal.source.ref === undefined) continue;
 
       const followUps = await this.options.followUpStore.listByWatcher("watch", signal.source.ref);

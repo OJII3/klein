@@ -140,6 +140,7 @@ test("serves health, logs, Pi sessions, and scoped memory through Elysia", async
           },
         ],
         signalsTruncated: false,
+        goals: [],
         followUps: [
           {
             id: "follow-up-1",
@@ -235,6 +236,7 @@ test("serves health, logs, Pi sessions, and scoped memory through Elysia", async
         updatedAt: "2026-09-11T00:00:00.000Z",
       },
     ],
+    goals: [],
     preferences: [
       {
         key: "user-1",
