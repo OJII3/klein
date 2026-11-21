@@ -461,28 +461,11 @@ function SharedMemoryFileCard({
           value={draft}
         />
       ) : (
-        <>
-          <MemoryItems label="Facts" items={file.facts} />
-          <MemoryItems label="Preferences" items={file.preferences} />
-        </>
+        <pre className="mt-3 max-h-[36rem] overflow-auto rounded border border-line bg-surface-muted p-3 font-mono text-[0.76rem] leading-6 whitespace-pre-wrap break-words text-ink-soft">
+          {file.content}
+        </pre>
       )}
     </section>
-  );
-}
-
-function MemoryItems({ label, items }: { label: string; items: readonly string[] }) {
-  if (items.length === 0) return null;
-  return (
-    <div className="mt-3">
-      <h4 className="text-[0.66rem] font-medium tracking-wide text-ink-faint">{label}</h4>
-      <ul className="mt-1 list-disc space-y-1 pl-5 text-[0.82rem] leading-6 text-ink-soft">
-        {items.map((item) => (
-          <li className="break-words" key={item}>
-            {item}
-          </li>
-        ))}
-      </ul>
-    </div>
   );
 }
 
