@@ -4,7 +4,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import type { AgentRole } from "@agents/core/agent-role";
-import { resolveUserEnvironment } from "@shared/user-environment";
+import { resolveUserEnvironment, userEnvironmentKey } from "@shared/user-environment";
 import { createTempDir } from "../../testing/temp-dir";
 import {
   agentBrowserProfileDirectory,
@@ -42,7 +42,7 @@ test("keeps the profile inside the user's credentials", () => {
   );
   assert.equal(
     createAgentBrowserMcpConfig("user/../456", "/tmp/profile").env.AGENT_BROWSER_SESSION,
-    "discord-user-user____456",
+    `discord-user-${userEnvironmentKey("user/../456")}`,
   );
 });
 

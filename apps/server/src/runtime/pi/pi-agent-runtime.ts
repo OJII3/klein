@@ -72,7 +72,7 @@ import {
   renderTurnContext,
   TURN_CONTEXT_CUSTOM_TYPE,
 } from "./pi-turn-context";
-import { loadMcpConfig, setEmbeddedQuickJSWasmPath } from "./pi-internals";
+import { loadMcpConfig, setEmbeddedQuickJSWasmPath, type LoadedPiMcpConfig } from "./pi-internals";
 import { resolveQuickJsWasmPath } from "./quickjs-wasm";
 import { PiImageAnalyzer, type ImageAnalyzer } from "./pi-image-analyzer";
 import {
@@ -507,6 +507,15 @@ export class PiAgentRuntime implements AgentRuntime {
   }
 }
 
+/**
+ * MCP servers belong to Klein's agent directory, never to a session's working
+ * directory. Worker sessions run in a linked user's writable workspace, so
+ * trusting project configs there would let that user start a host process.
+ */
+export function loadKleinMcpConfig(agentDir: string): LoadedPiMcpConfig {
+  return loadMcpConfig({ agentDir, cwd: process.cwd(), projectTrusted: false });
+}
+
 export function createResourceLoader(
   agentDir: string,
   systemPrompt: string,
@@ -543,12 +552,8 @@ export function createResourceLoader(
         createMcpExtension(
           authorization
             ? {
-                loadConfig: (ctx) => {
-                  const config = loadMcpConfig({
-                    agentDir,
-                    cwd: ctx.cwd,
-                    projectTrusted: ctx.isProjectTrusted(),
-                  });
+                loadConfig: () => {
+                  const config = loadKleinMcpConfig(agentDir);
                   authorization.rememberServers(config.servers.map((server) => server.name));
                   return {
                     ...config,
@@ -833,7 +838,11 @@ export function createPiAgentFactory({
       ]
         .filter(Boolean)
         .join("\n\n");
-      const settingsManager = SettingsManager.create(process.cwd(), agentDir);
+      // Sessions can run in a linked user's writable workspace, so project
+      // settings are never trusted even though the repository's own are.
+      const settingsManager = SettingsManager.create(process.cwd(), agentDir, {
+        projectTrusted: false,
+      });
       const resourceLoader = createResourceLoader(
         agentDir,
         systemPrompt,

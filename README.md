@@ -4,10 +4,10 @@ Pi-based communication agent for Discord.
 
 ## Quick start
 
-Requires [Nix](https://nixos.org/) with flakes enabled, or Bun 1.4.4+. Sandboxed user shells also require `bwrap` (bubblewrap) with unprivileged user namespaces; the devShell includes it.
+Requires [Nix](https://nixos.org/) with flakes enabled, or Bun 1.4.4+. Sandboxed user shells also require `bwrap` (bubblewrap) and `pasta` (passt) with unprivileged user namespaces and `/dev/net/tun`; the devShell includes both.
 
 ```sh
-nix develop          # optional: provides Bun, cloudflared, agent-browser, and bubblewrap
+nix develop          # optional: provides Bun, cloudflared, agent-browser, bubblewrap, and passt
 bun install
 
 cp config/config.example.json config/config.jsonc

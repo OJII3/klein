@@ -27,6 +27,7 @@
               pkgs.bubblewrap
               pkgs.bun
               pkgs.cloudflared
+              pkgs.passt
             ];
             shellHook = ''
               bun --version > .bun-version
