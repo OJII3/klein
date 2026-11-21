@@ -214,6 +214,9 @@ function SignalRow({
   channelNames: ReadonlyMap<string, string>;
   signal: ProactiveSignalView;
 }) {
+  const evidenceUrl = signal.evidence?.url;
+  const externalEvidenceUrl = evidenceUrl === undefined ? undefined : toExternalUrl(evidenceUrl);
+
   return (
     <li className="border-b border-line/70 px-4 py-3 last:border-b-0">
       <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
@@ -253,15 +256,20 @@ function SignalRow({
                   {signal.evidence.text}
                 </pre>
               )}
-              {signal.evidence.url && (
+              {evidenceUrl && externalEvidenceUrl && (
                 <a
                   className="mt-1 inline-block break-all text-[0.7rem] text-blue hover:underline"
-                  href={signal.evidence.url}
+                  href={externalEvidenceUrl}
                   rel="noreferrer"
                   target="_blank"
                 >
-                  {signal.evidence.url}
+                  {evidenceUrl}
                 </a>
+              )}
+              {evidenceUrl && !externalEvidenceUrl && (
+                <p className="mt-1 break-all font-mono text-[0.7rem] text-ink-faint">
+                  {evidenceUrl}
+                </p>
               )}
             </details>
           )}
@@ -502,6 +510,15 @@ function countSignalStatuses(
 function channelLabel(channelNames: ReadonlyMap<string, string>, channelId: string): string {
   const name = channelNames.get(channelId);
   return name ? `#${name}` : channelId;
+}
+
+function toExternalUrl(value: string): string | undefined {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function scopeLabel(scope: string): string {
