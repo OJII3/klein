@@ -42,6 +42,11 @@ import type { DiscordChannelLinkStore } from "../ports/discord-channel-link-stor
 import type { DiscordChannelRuleStore } from "../ports/discord-channel-rule-store";
 import type { DiscordUserProfileReader } from "../ports/discord-user-profile-reader";
 import type { PendingDiscordChannelLinkRequest } from "../domain/discord-channel-link-request";
+import type { SecretControl } from "../../secrets/application/secret-service";
+import {
+  DiscordSecretRequester,
+  type DiscordSecretButtonInteraction,
+} from "../../secrets/infrastructure/discord-secret-requester";
 
 import {
   DiscordChannelAccessRequester,
@@ -258,6 +263,16 @@ function isButtonInteraction(
   );
 }
 
+function isSecretButtonInteraction(
+  interaction: DiscordServiceInteraction,
+): interaction is DiscordServiceButtonInteraction & DiscordSecretButtonInteraction {
+  return (
+    isButtonInteraction(interaction) &&
+    "showModal" in interaction &&
+    typeof interaction.showModal === "function"
+  );
+}
+
 function isSendableChannel(value: unknown): value is SendableChannel {
   return (
     typeof value === "object" &&
@@ -289,6 +304,7 @@ export class DiscordJsService
   private readonly reactionIngest: DiscordReactionIngest;
   private readonly channelAccessRequester?: DiscordChannelAccessRequester;
   private readonly channelLinkRequester?: DiscordChannelLinkRequester;
+  private readonly secretRequester?: DiscordSecretRequester;
   private readonly choiceRequester: DiscordChoiceRequester;
   private readonly pendingTasks = new Set<Promise<void>>();
   private onMessage?: DiscordMessageHandler;
@@ -317,6 +333,7 @@ export class DiscordJsService
         DiscordApprovalRequestStore<PendingDiscordChannelLinkRequest>,
         "list" | "save" | "remove"
       >;
+      readonly secrets?: SecretControl;
     },
   ) {
     this.logger = logger?.child({ component: "discord-service" });
@@ -369,6 +386,13 @@ export class DiscordJsService
             logger: this.logger,
           })
         : undefined;
+    this.secretRequester = options?.secrets
+      ? new DiscordSecretRequester({
+          client: this.client,
+          service: options.secrets,
+          logger: this.logger,
+        })
+      : undefined;
     this.interactionHandler = new DiscordJsInteractionHandler(
       accessPolicy,
       (mode) => this.setOperatingMode(mode),
@@ -376,6 +400,7 @@ export class DiscordJsService
       channelRuleStore,
       accessRuleStore,
       this.channelLinkRequester,
+      this.secretRequester,
     );
     this.messageIngest = new DiscordMessageIngest({
       accessPolicy,
@@ -791,6 +816,13 @@ export class DiscordJsService
   }
 
   private async handleInteraction(interaction: DiscordServiceInteraction): Promise<void> {
+    if (
+      this.secretRequester &&
+      isSecretButtonInteraction(interaction) &&
+      (await this.secretRequester.handleButton(interaction))
+    ) {
+      return;
+    }
     if (
       isButtonInteraction(interaction) &&
       (await this.choiceRequester.handleButton(interaction))

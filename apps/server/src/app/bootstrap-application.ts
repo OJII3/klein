@@ -18,6 +18,7 @@ import { VoiceChatCoordinator } from "./voice-chat-coordinator";
 import { DiscordAgent } from "@agents/discord/discord-agent";
 import { createDiscordAgentTools } from "@agents/discord/discord-tools";
 import { createWorkerTools } from "@agents/discord/tools/worker";
+import { createSecretTools } from "@agents/tools/secrets";
 import {
   createPiAgentFactory,
   createPiModelRuntime,
@@ -30,6 +31,7 @@ import { createPiUsageReporterFromEnv } from "@runtime/pi/pi-usage-reporter";
 import { createT3CliThreadRunner } from "@runtime/t3/t3-cli-thread-runner";
 import { createT3SqliteProjectLister } from "@runtime/t3/t3-sqlite-project-lister";
 import { createWatchFetchTool } from "@runtime/pi/watch-fetch-tool";
+import { runSandboxedCommand } from "@runtime/pi/user-shell-sandbox";
 import { PiSharedMemoryAgent } from "@runtime/pi/pi-shared-memory-agent";
 import { PiUserMemoryAgent } from "@runtime/pi/pi-user-memory-agent";
 import { PiVoiceTranscriptQueueSelector } from "@runtime/pi/pi-voice-transcript-queue-selector";
@@ -80,9 +82,13 @@ import { Sbv2Tts } from "@modules/tts/infrastructure/sbv2-tts";
 import { WebSocketAsrClient } from "@modules/asr/infrastructure/websocket-asr-client";
 import { FileScheduledTaskStore } from "@modules/scheduling/infrastructure/file-scheduled-task-store";
 import { QuickJsWatchCheckRunner } from "@modules/scheduling/infrastructure/quickjs-watch-check-runner";
+import { SecretService } from "@modules/secrets/application/secret-service";
+import { FileSecretStore } from "@modules/secrets/infrastructure/file-secret-store";
+import { FileSecretRequestStore } from "@modules/secrets/infrastructure/file-secret-request-store";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import type { DiscordReactionEvent } from "@modules/discord/domain/discord-reaction";
-import { isOwnerAccessScope, parseAccessScope } from "@shared/access";
+import { accessScopeUserId, isOwnerAccessScope, parseAccessScope } from "@shared/access";
+import { ensureUserEnvironment, resolveUserEnvironment } from "@shared/user-environment";
 
 const DISCORD_USAGE_STATUS_REFRESH_INTERVAL_MS = 60 * 60 * 1_000;
 const CHANNEL_CONTEXT_ROTATION_CHECK_INTERVAL_MS = 60 * 1_000;
@@ -244,7 +250,38 @@ export async function bootstrapApplication(): Promise<void> {
   let sharedMemoryCoordinator: SharedMemoryCoordinator | undefined;
   const t3ThreadRunner = createT3CliThreadRunner();
   const t3ProjectLister = createT3SqliteProjectLister();
-  const workerAgentCoordinator = new WorkerAgentCoordinator({
+  let workerAgentCoordinator!: WorkerAgentCoordinator;
+  const secretService = new SecretService({
+    secrets: new FileSecretStore(agentDir, logger),
+    requests: new FileSecretRequestStore(resolve(agentDir, "secret-requests.json")),
+    onResolved: async (request, outcome) => {
+      const scope = parseAccessScope(request.accessScope);
+      if (!scope) return;
+      const sent = await workerAgentCoordinator.send(
+        {
+          conversationKey: { kind: "discord", channelId: request.channelId },
+          accessScope: scope,
+        },
+        request.workerId,
+        outcome === "saved"
+          ? `シークレット "${request.label}" (${request.service}) が保存されました。secret_list で確認し、secret_run で使えます。`
+          : `シークレット "${request.label}" (${request.service}) の入力はキャンセルされました。必要なら secret_request で再依頼できます。`,
+      );
+      if (!sent) {
+        logger.info(
+          {
+            event: "secret_request_worker_unavailable",
+            requestId: request.requestId,
+            workerId: request.workerId,
+          },
+          "The worker for a secret request is no longer available",
+        );
+      }
+    },
+    logger,
+  });
+  await secretService.load();
+  workerAgentCoordinator = new WorkerAgentCoordinator({
     factory: piAgentFactory,
     systemPrompt: WORKER_SYSTEM_PROMPT,
     logger,
@@ -265,7 +302,7 @@ export async function bootstrapApplication(): Promise<void> {
         ownerUserId && isOwnerAccessScope(accessScope, ownerUserId)
           ? { userId: ownerUserId }
           : undefined;
-      return createWorkerTools(
+      const workerTools = createWorkerTools(
         discordService,
         conversationKey.channelId,
         accessScope,
@@ -278,6 +315,20 @@ export async function bootstrapApplication(): Promise<void> {
         ownerRequester ? t3ProjectLister : undefined,
         { users: discordUserDirectory, profiles: discordService },
       );
+      const workerUserId = accessScopeUserId(accessScope);
+      if (!workerUserId) return workerTools;
+      return [
+        ...workerTools,
+        ...createSecretTools({
+          secrets: secretService,
+          userId: workerUserId,
+          channelId: conversationKey.channelId,
+          accessScope,
+          workerId,
+          environment: ensureUserEnvironment(resolveUserEnvironment(agentDir, workerUserId)),
+          runCommand: runSandboxedCommand,
+        }),
+      ];
     },
     onResult: (delivery) =>
       agentCoordinator.deliverWorkerResult(
@@ -465,6 +516,7 @@ export async function bootstrapApplication(): Promise<void> {
       enableReactions: true,
       channelLinkStore: discordChannelLinkStore,
       channelLinkRequestStore: discordChannelLinkRequestStore,
+      secrets: secretService,
     },
   );
   const memorySessionId = `memory-${randomUUID()}`;
