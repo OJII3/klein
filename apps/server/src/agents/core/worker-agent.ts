@@ -49,8 +49,8 @@ export interface WorkerControl {
 export interface WorkerDelegationPromptOptions {
   readonly browserAvailable: boolean;
   readonly t3Available: boolean;
-  /** The conversation can inspect existing T3 threads with `t3_thread_show` and `t3_thread_list`. */
-  readonly t3ReadAvailable: boolean;
+  /** The conversation can list T3 projects with `t3_project_list`. */
+  readonly t3ProjectAvailable: boolean;
   /** The linked user's sandboxed shell belongs to workers in this conversation. */
   readonly shellAvailable: boolean;
   readonly watchAvailable: boolean;
@@ -104,9 +104,9 @@ export function renderWorkerDelegationSection(options: WorkerDelegationPromptOpt
     "",
     "Keep only trivial single-step checks (such as one quick `web_search`, `fetch_content`, or `discord_read`) inline.",
     "",
-    ...(options.t3ReadAvailable
+    ...(options.t3ProjectAvailable
       ? [
-          "You can inspect existing T3 Code threads directly with `t3_thread_show` and `t3_thread_list`; start or continue a thread through a worker.",
+          "You can list T3 Code projects directly with `t3_project_list` to choose the project id or workspace path for a worker.",
           "",
         ]
       : []),
@@ -145,7 +145,7 @@ export function renderWorkerT3ThreadSection(): string {
     "",
     "Repository work belongs in a T3 Code thread: hand code edits, tests, builds, commits, and PR creation to `t3_thread_start` instead of doing them in your own session.",
     "",
-    "Threads are not limited to Klein's own repository. Pass a project id or a path inside any existing repository in `project` to work on that repository, including Klein's source code. A thread runs directly on this machine, so it can also edit dotfiles and change machine settings.",
+    "Threads are not limited to Klein's own repository. Pass a project id or a path inside any existing repository in `project` to work on that repository, including Klein's source code. Use `t3_project_list` when you need to find the right project. A thread runs directly on this machine, so it can also edit dotfiles and change machine settings.",
     "",
     "Continue the same thread with `t3_thread_send` for follow-ups, and check a long run with `t3_thread_show`. Report the thread's status, result, and link in your result.",
   ].join("\n");

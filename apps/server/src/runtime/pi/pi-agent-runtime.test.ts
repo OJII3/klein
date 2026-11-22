@@ -1526,7 +1526,7 @@ test("appends worker delegation guidance to text conversation prompts based on o
   try {
     const ownerRuntime = await createFactory().create(
       { systemPrompt: "Base prompt." },
-      () => [makeSurfaceTool("discord_send"), makeWorkerStart(), makeT3ThreadShow()],
+      () => [makeSurfaceTool("discord_send"), makeWorkerStart(), makeT3ProjectList()],
       {
         role: { kind: "conversation" },
         sessionKey: "owner-conv",
@@ -1621,7 +1621,7 @@ test("appends worker delegation guidance to text conversation prompts based on o
     assert.match(ownerPrompt, /## Workers \(`worker_start`\)/);
     assert.match(ownerPrompt, /agent-browser/);
     assert.match(ownerPrompt, /t3_thread_start/);
-    assert.match(ownerPrompt, /t3_thread_show/);
+    assert.match(ownerPrompt, /t3_project_list/);
     assert.doesNotMatch(ownerPrompt, /browser-use|t3-thread/);
     assert.match(publicPrompt, /## Workers \(`worker_start`\)/);
     assert.match(publicPrompt, /This conversation does not have/);
@@ -1665,12 +1665,12 @@ function makeT3ThreadStart() {
   });
 }
 
-function makeT3ThreadShow() {
+function makeT3ProjectList() {
   return defineTool({
-    name: "t3_thread_show",
-    label: "Show T3 Thread",
-    description: "Show a T3 thread",
-    parameters: Type.Object({ threadId: Type.String() }),
+    name: "t3_project_list",
+    label: "List T3 Projects",
+    description: "List T3 projects",
+    parameters: Type.Object({}),
     async execute() {
       return { content: [{ type: "text", text: "ok" }], details: {} };
     },

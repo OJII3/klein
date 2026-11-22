@@ -5,6 +5,7 @@ import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-a
 import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
 import type { WatchCheckRunner } from "@modules/scheduling/ports/watch-check-runner";
 import type { AccessScope } from "@shared/access";
+import { createT3ProjectListTool, type T3ProjectLister } from "@agents/tools/t3-project";
 import { createT3ThreadTools, type T3ThreadRunner } from "@agents/tools/t3-thread";
 import { createWatchTools } from "@agents/tools/watch";
 import { createDiscordImageAnalysis, createDiscordReadTool } from "./discord-read";
@@ -18,7 +19,7 @@ import {
  * belongs to but never writes to the surface. A watch it registers belongs to
  * the worker, so its wake resumes this worker session instead of the
  * conversation session. An owner-scoped worker also receives the T3 Code
- * thread tools, which let it hand coding work to a T3 Code agent.
+ * project and thread tools, which let it hand coding work to a T3 Code agent.
  */
 export function createWorkerTools(
   channelApi: Pick<DiscordChannelApi, "readMessage" | "getChannelLocation">,
@@ -30,6 +31,7 @@ export function createWorkerTools(
   requester?: Parameters<DiscordChannelApi["readMessage"]>[1],
   analyzeImage?: AgentImageAnalyzer,
   t3ThreadRunner?: T3ThreadRunner,
+  t3ProjectLister?: T3ProjectLister,
   userProfiles?: DiscordUserProfileToolDependencies,
 ): readonly ToolDefinition[] {
   return [
@@ -47,6 +49,7 @@ export function createWorkerTools(
       watchCheckRunner,
       ownerWorkerId,
     ),
+    ...(t3ProjectLister ? [createT3ProjectListTool(t3ProjectLister)] : []),
     ...(t3ThreadRunner ? createT3ThreadTools(t3ThreadRunner) : []),
   ];
 }

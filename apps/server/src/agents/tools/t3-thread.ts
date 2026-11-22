@@ -149,16 +149,6 @@ export function createT3ThreadTools(runner: T3ThreadRunner): readonly ToolDefini
         };
       },
     }),
-    ...createT3ThreadReadTools(runner),
-  ] as const;
-}
-
-/**
- * Read-only T3 thread tools for a conversation that inspects existing threads
- * without starting or continuing them.
- */
-export function createT3ThreadReadTools(runner: T3ThreadRunner): readonly ToolDefinition[] {
-  return [
     defineTool({
       name: "t3_thread_show",
       label: "Show T3 Thread",
