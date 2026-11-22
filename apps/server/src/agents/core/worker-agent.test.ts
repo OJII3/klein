@@ -24,6 +24,20 @@ test("renders browser, T3, and shell capabilities when enabled", () => {
   assert.doesNotMatch(section, /not available in this conversation/);
 });
 
+test("tells the conversation agent to speak as the one who did the work", () => {
+  const section = renderWorkerDelegationSection({
+    browserAvailable: false,
+    t3Available: false,
+    t3ProjectAvailable: false,
+    shellAvailable: false,
+    watchAvailable: false,
+  });
+
+  assert.match(section, /speak as the one who did the work/);
+  assert.match(section, /never say you had, let, or made a worker do something/);
+  assert.match(section, /「ワーカーに調べさせる」/);
+});
+
 test("notes disabled capabilities without claiming owner permissions", () => {
   const section = renderWorkerDelegationSection({
     browserAvailable: false,
