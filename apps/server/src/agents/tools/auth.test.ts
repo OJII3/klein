@@ -21,7 +21,7 @@ const request: AuthRequest = {
   service: "github",
   label: "GitHub",
   reason: "Issueを確認するため",
-  fields: [{ key: "token", label: "トークン" }],
+  fields: [{ key: "token", label: "トークン", env: "GH_TOKEN" }],
   createdAt: "2026-11-22T00:00:00.000Z",
   expiresAt: "2026-11-22T00:15:00.000Z",
 };
@@ -29,7 +29,7 @@ const request: AuthRequest = {
 const summary: AuthCredentialSummary = {
   service: "github",
   label: "GitHub",
-  fields: [{ key: "token", label: "トークン" }],
+  fields: [{ key: "token", label: "トークン", env: "GH_TOKEN" }],
   updatedAt: "2026-11-22T00:00:00.000Z",
 };
 
@@ -46,7 +46,7 @@ test("requests credentials through the Discord flow", async () => {
   await using temp = await createTempDir("klein-auth-tools-");
   const environment = ensureUserEnvironment(resolveUserEnvironment(temp.path, "123"));
   const requests: unknown[] = [];
-  const credentials: Pick<AuthCredentialControl, "request" | "list" | "read"> = {
+  const credentials: Pick<AuthCredentialControl, "request" | "list" | "read" | "delete"> = {
     async request(draft) {
       requests.push(draft);
       return { kind: "requested", request };
@@ -56,6 +56,9 @@ test("requests credentials through the Discord flow", async () => {
     },
     async read() {
       return values;
+    },
+    async delete() {
+      return false;
     },
   };
   const tools = createAuthTools({
@@ -77,7 +80,7 @@ test("requests credentials through the Discord flow", async () => {
       service: "github",
       label: "GitHub",
       reason: "Issueを確認するため",
-      fields: [{ key: "token", label: "トークン" }],
+      fields: [{ key: "token", label: "トークン", env: "GH_TOKEN" }],
     },
     undefined,
     undefined,
@@ -93,7 +96,7 @@ test("requests credentials through the Discord flow", async () => {
       service: "github",
       label: "GitHub",
       reason: "Issueを確認するため",
-      fields: [{ key: "token", label: "トークン" }],
+      fields: [{ key: "token", label: "トークン", env: "GH_TOKEN" }],
     },
   ]);
   assert.match(result.content[0]?.type === "text" ? result.content[0].text : "", /direct message/u);
@@ -102,7 +105,7 @@ test("requests credentials through the Discord flow", async () => {
 test("lists services without values", async () => {
   await using temp = await createTempDir("klein-auth-tools-list-");
   const environment = ensureUserEnvironment(resolveUserEnvironment(temp.path, "123"));
-  const credentials: Pick<AuthCredentialControl, "request" | "list" | "read"> = {
+  const credentials: Pick<AuthCredentialControl, "request" | "list" | "read" | "delete"> = {
     async request() {
       return { kind: "unavailable" };
     },
@@ -111,6 +114,9 @@ test("lists services without values", async () => {
     },
     async read() {
       return undefined;
+    },
+    async delete() {
+      return false;
     },
   };
   const tools = createAuthTools({
@@ -130,6 +136,7 @@ test("lists services without values", async () => {
   const text = result.content[0]?.type === "text" ? result.content[0].text : "";
   assert.match(text, /github/u);
   assert.match(text, /KLEIN_AUTH_GITHUB_TOKEN/u);
+  assert.match(text, /GH_TOKEN/u);
   assert.doesNotMatch(text, /ghp_secret_value/u);
 });
 
@@ -137,7 +144,7 @@ test("injects credential fields into the sandbox and redacts printed values", as
   await using temp = await createTempDir("klein-auth-tools-run-");
   const environment = ensureUserEnvironment(resolveUserEnvironment(temp.path, "123"));
   const seen: { environment: Readonly<Record<string, string>>; command: string }[] = [];
-  const credentials: Pick<AuthCredentialControl, "request" | "list" | "read"> = {
+  const credentials: Pick<AuthCredentialControl, "request" | "list" | "read" | "delete"> = {
     async request() {
       return { kind: "unavailable" };
     },
@@ -146,6 +153,9 @@ test("injects credential fields into the sandbox and redacts printed values", as
     },
     async read() {
       return values;
+    },
+    async delete() {
+      return false;
     },
   };
   const tools = createAuthTools({
@@ -175,9 +185,51 @@ test("injects credential fields into the sandbox and redacts printed values", as
   assert.equal(seen.length, 1);
   assert.deepEqual(seen[0]?.environment, {
     KLEIN_AUTH_GITHUB_TOKEN: "ghp_secret_value",
+    GH_TOKEN: "ghp_secret_value",
   });
   const text = result.content[0]?.type === "text" ? result.content[0].text : "";
   assert.doesNotMatch(text, /ghp_secret_value/u);
   assert.match(text, /\[redacted\]/u);
   assert.match(text, /KLEIN_AUTH_GITHUB_TOKEN/u);
+});
+
+test("deletes saved credentials only for the linked user", async () => {
+  await using temp = await createTempDir("klein-auth-tools-delete-");
+  const environment = ensureUserEnvironment(resolveUserEnvironment(temp.path, "123"));
+  const deleted: { userId: string; service: string }[] = [];
+  const credentials: Pick<AuthCredentialControl, "request" | "list" | "read" | "delete"> = {
+    async request() {
+      return { kind: "unavailable" };
+    },
+    async list() {
+      return [summary];
+    },
+    async read() {
+      return undefined;
+    },
+    async delete(userId, service) {
+      deleted.push({ userId, service });
+      return true;
+    },
+  };
+  const tools = createAuthTools({
+    credentials,
+    userId: "123",
+    channelId: "channel-1",
+    accessScope: "user:123",
+    workerId: "worker-1",
+    environment,
+    runCommand: unusedRunCommand,
+  });
+  const tool = tools.find((candidate) => candidate.name === "auth_delete");
+  assert.ok(tool);
+  const ctx = await createStubExtensionToolContext();
+
+  const result = await tool.execute("tool-call", { service: "github" }, undefined, undefined, ctx);
+
+  assert.deepEqual(deleted, [{ userId: "123", service: "github" }]);
+  assert.match(
+    result.content[0]?.type === "text" ? result.content[0].text : "",
+    /Deleted the saved credentials/u,
+  );
 });

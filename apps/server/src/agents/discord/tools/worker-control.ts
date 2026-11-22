@@ -18,7 +18,7 @@ export function createWorkerControlTools(
       ? [
           "real browser use (agent-browser)",
           "a sandboxed shell (bash)",
-          "credential requests by direct message (auth_request, auth_list, auth_run)",
+          "credential requests by direct message (auth_request, auth_list, auth_run, auth_delete)",
         ]
       : []),
     ...(ownerFeaturesAllowed

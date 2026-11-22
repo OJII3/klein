@@ -3,6 +3,7 @@ import { Type } from "typebox";
 
 import type { AuthCredentialControl } from "@modules/auth/application/auth-credential-service";
 import {
+  AUTH_ENVIRONMENT_ALIAS_PATTERN,
   AUTH_FIELD_KEY_PATTERN,
   AUTH_SERVICE_PATTERN,
   authEnvironmentVariableName,
@@ -31,7 +32,7 @@ export type AuthCommandRunner = (
 ) => Promise<AuthCommandResult>;
 
 export interface AuthToolDependencies {
-  readonly credentials: Pick<AuthCredentialControl, "request" | "list" | "read">;
+  readonly credentials: Pick<AuthCredentialControl, "request" | "list" | "read" | "delete">;
   readonly userId: string;
   readonly channelId: string;
   readonly accessScope: AccessScope;
@@ -76,6 +77,13 @@ export function createAuthTools(dependencies: AuthToolDependencies): readonly To
                 pattern: AUTH_FIELD_KEY_PATTERN.source,
               }),
               label: Type.String({ minLength: 1, maxLength: 45 }),
+              env: Type.Optional(
+                Type.String({
+                  minLength: 1,
+                  maxLength: 64,
+                  pattern: AUTH_ENVIRONMENT_ALIAS_PATTERN.source,
+                }),
+              ),
             },
             { additionalProperties: false },
           ),
@@ -202,6 +210,7 @@ export function createAuthTools(dependencies: AuthToolDependencies): readonly To
             throw new Error(`The credential for ${params.service} is missing ${field.key}.`);
           }
           environment[authEnvironmentVariableName(params.service, field.key)] = value;
+          if (field.env) environment[field.env] = value;
         }
 
         const result = await dependencies.runCommand(dependencies.environment, params.command, {
@@ -210,6 +219,34 @@ export function createAuthTools(dependencies: AuthToolDependencies): readonly To
           ...(signal ? { signal } : {}),
         });
         return formatRunResult(params.service, credential, environment, result);
+      },
+    }),
+    defineTool({
+      name: "auth_delete",
+      label: "Delete Credentials",
+      description:
+        "Permanently delete the saved credentials for a service. Use this only when the user explicitly asks to remove or revoke a saved credential.",
+      parameters: Type.Object({
+        service: Type.String({
+          minLength: 1,
+          maxLength: 32,
+          pattern: AUTH_SERVICE_PATTERN.source,
+        }),
+      }),
+      exposure: "deferred",
+      async execute(_toolCallId, params) {
+        const deleted = await dependencies.credentials.delete(dependencies.userId, params.service);
+        return {
+          content: [
+            {
+              type: "text",
+              text: deleted
+                ? `Deleted the saved credentials for ${params.service}.`
+                : `No saved credentials for ${params.service} were found.`,
+            },
+          ],
+          details: { service: params.service, deleted },
+        };
       },
     }),
   ];
@@ -251,10 +288,11 @@ function formatRunResult(
 
 function formatCredentialLine(credential: AuthCredentialSummary): string {
   const fields = credential.fields
-    .map(
-      (field) =>
-        `${field.key} (${field.label}) -> ${authEnvironmentVariableName(credential.service, field.key)}`,
-    )
+    .map((field) => {
+      const canonical = authEnvironmentVariableName(credential.service, field.key);
+      const alias = field.env ? `, ${field.env}` : "";
+      return `${field.key} (${field.label}) -> ${canonical}${alias}`;
+    })
     .join(", ");
   return `- ${credential.service}: ${credential.label}; fields: ${fields}; updated: ${credential.updatedAt}`;
 }

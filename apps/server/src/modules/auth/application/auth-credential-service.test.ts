@@ -47,7 +47,7 @@ class MemoryCredentialStore implements AuthCredentialStore {
   }
 
   async delete(): Promise<boolean> {
-    return false;
+    return true;
   }
 }
 
@@ -59,7 +59,7 @@ const draft = {
   service: "github",
   label: "GitHub",
   reason: "Issueを確認するため",
-  fields: [{ key: "token", label: "トークン" }],
+  fields: [{ key: "token", label: "トークン", env: "GH_TOKEN" }],
 };
 
 function createHarness(now = new Date("2026-11-22T00:00:00.000Z")) {
@@ -98,7 +98,7 @@ test("requests once and saves submitted values for the linked user", async () =>
       input: {
         service: "github",
         label: "GitHub",
-        fields: [{ key: "token", label: "トークン" }],
+        fields: [{ key: "token", label: "トークン", env: "GH_TOKEN" }],
         values: { token: "secret-token" },
         updatedAt: "2026-11-22T00:00:00.000Z",
       },
@@ -146,6 +146,22 @@ test("allows only the requested user to complete or cancel", async () => {
     "cancelled",
   );
   assert.deepEqual(harness.resolved, [{ request: requested.request, outcome: "cancelled" }]);
+});
+
+test("rejects reserved environment aliases", async () => {
+  const harness = createHarness();
+  const outcome = await harness.service.request({
+    ...draft,
+    fields: [{ key: "token", label: "トークン", env: "PATH" }],
+  });
+
+  assert.equal(outcome.kind, "invalid");
+  assert.match(outcome.kind === "invalid" ? outcome.message : "", /reserved/u);
+});
+
+test("deletes credentials through the store", async () => {
+  const harness = createHarness();
+  assert.equal(await harness.service.delete("123", "github"), true);
 });
 
 test("expires a request before it can be completed", async () => {

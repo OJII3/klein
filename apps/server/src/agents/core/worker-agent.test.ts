@@ -109,6 +109,7 @@ test("renders credential guidance without promising values to the model", () => 
   assert.match(section, /auth_request/);
   assert.match(section, /auth_list/);
   assert.match(section, /auth_run/);
+  assert.match(section, /auth_delete/);
   assert.match(section, /KLEIN_AUTH_/);
   assert.match(section, /redacts/);
   assert.match(section, /never enter this conversation/);

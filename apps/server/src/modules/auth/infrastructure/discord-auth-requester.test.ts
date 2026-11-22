@@ -23,7 +23,7 @@ const request: AuthRequest = {
   service: "github",
   label: "GitHub",
   reason: "Issueを確認するため",
-  fields: [{ key: "token", label: "トークン" }],
+  fields: [{ key: "token", label: "トークン", env: "GH_TOKEN" }],
   createdAt: "2026-11-22T00:00:00.000Z",
   expiresAt: "2026-11-22T00:15:00.000Z",
   dmChannelId: "dm-channel",
@@ -38,13 +38,13 @@ const draft: AuthRequestDraft = {
   service: "github",
   label: "GitHub",
   reason: "Issueを確認するため",
-  fields: [{ key: "token", label: "トークン" }],
+  fields: [{ key: "token", label: "トークン", env: "GH_TOKEN" }],
 };
 
 const credential: AuthCredentialSummary = {
   service: "github",
   label: "GitHub",
-  fields: [{ key: "token", label: "トークン" }],
+  fields: [{ key: "token", label: "トークン", env: "GH_TOKEN" }],
   updatedAt: "2026-11-22T00:00:00.000Z",
 };
 
@@ -82,6 +82,9 @@ function createHarness(options: { dmFails?: boolean; completed?: AuthSubmissionO
     },
     async read(): Promise<AuthCredentialValues | undefined> {
       return undefined;
+    },
+    async delete() {
+      return false;
     },
   };
 
@@ -170,6 +173,7 @@ test("sends a Components v2 direct message and remembers it", async () => {
   const serialized = JSON.stringify(payload);
   assert.match(serialized, new RegExp(`"flags":${MessageFlags.IsComponentsV2}`, "u"));
   assert.match(serialized, /認証情報の入力/u);
+  assert.match(serialized, /GH_TOKEN/u);
   assert.match(serialized, /klein-auth:input:request-1/u);
   assert.match(serialized, /klein-auth:cancel:request-1/u);
   assert.deepEqual(harness.attached, [

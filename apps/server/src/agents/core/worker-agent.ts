@@ -178,6 +178,10 @@ export function renderWorkerAuthSection(): string {
     "",
     "Use `auth_run` (when available) to run a command with a saved credential. It injects each field as `KLEIN_AUTH_<SERVICE>_<FIELD>` and redacts those values from the output. Do not echo a credential, do not put one in a file that stays in the workspace, and do not ask the user to paste a secret into the channel.",
     "",
+    "If a CLI expects a fixed environment variable, set `env` on the field when requesting it (for example `GH_TOKEN` for `gh`); `auth_run` injects both names. For a tool that reads a config file, write the value to a file under `/tmp` inside the command and remove it when the command ends; do not leave it in the linked user's home.",
+    "",
+    "Use `auth_delete` only when the user explicitly asks to remove or revoke a saved credential.",
+    "",
     "`auth_request` returns immediately. When the user submits or cancels, you receive a new message; continue the task then instead of waiting in the same turn.",
   ].join("\n");
 }

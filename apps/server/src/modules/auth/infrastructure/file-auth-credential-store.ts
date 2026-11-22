@@ -10,6 +10,7 @@ import { isFileNotFound, isRecord, parseJson } from "@shared/type-guards";
 import { ensureUserEnvironment, resolveUserEnvironment } from "@shared/user-environment";
 
 import {
+  AUTH_ENVIRONMENT_ALIAS_PATTERN,
   AUTH_FIELD_KEY_PATTERN,
   AUTH_SERVICE_PATTERN,
   normalizeAuthLabel,
@@ -31,6 +32,9 @@ const fieldSchema = Type.Object(
   {
     key: Type.String({ minLength: 1, maxLength: 32, pattern: AUTH_FIELD_KEY_PATTERN.source }),
     label: Type.String({ minLength: 1, maxLength: 45 }),
+    env: Type.Optional(
+      Type.String({ minLength: 1, maxLength: 64, pattern: AUTH_ENVIRONMENT_ALIAS_PATTERN.source }),
+    ),
   },
   { additionalProperties: false },
 );
@@ -91,6 +95,7 @@ export class FileAuthCredentialStore implements AuthCredentialStore {
     const fields = input.fields.map((field) => ({
       key: field.key,
       label: normalizeAuthLabel(field.label),
+      ...(field.env ? { env: field.env } : {}),
     }));
     const expectedKeys = fields.map((field) => field.key).toSorted();
     const actualKeys = Object.keys(input.values).toSorted();

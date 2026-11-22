@@ -15,7 +15,7 @@ const request: AuthRequest = {
   service: "github",
   label: "GitHub",
   reason: "Issueを確認するため",
-  fields: [{ key: "token", label: "トークン" }],
+  fields: [{ key: "token", label: "トークン", env: "GH_TOKEN" }],
   createdAt: "2026-11-22T00:00:00.000Z",
   expiresAt: "2026-11-22T00:15:00.000Z",
 };

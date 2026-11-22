@@ -335,7 +335,9 @@ function createRequestMessage(request: AuthRequest): DiscordContainerMessage {
     request.reason,
     "",
     "入力する項目:",
-    ...request.fields.map((field) => `- ${field.label}`),
+    ...request.fields.map(
+      (field) => `- ${field.label}${field.env ? `（環境変数: ${field.env}）` : ""}`,
+    ),
     "",
     "入力された内容は暗号化して保存され、会話には表示されません。",
     "心当たりのないリクエストには入力せず、キャンセルしてください。",

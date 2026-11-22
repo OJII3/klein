@@ -56,6 +56,7 @@ export interface AuthCredentialControl {
   cancel(requestId: string, userId: string): Promise<AuthSubmissionOutcome>;
   list(userId: string): Promise<readonly AuthCredentialSummary[]>;
   read(userId: string, service: string): Promise<AuthCredentialValues | undefined>;
+  delete(userId: string, service: string): Promise<boolean>;
 }
 
 export interface AuthCredentialServiceDependencies {
@@ -115,10 +116,14 @@ export class AuthCredentialService implements AuthCredentialControl {
       ...rest,
       label: normalizeAuthLabel(rest.label),
       reason: rest.reason.trim(),
-      fields: rest.fields.map((field) => ({
-        key: field.key,
-        label: normalizeAuthLabel(field.label),
-      })),
+      fields: rest.fields.map((field) => {
+        const normalizedField: { key: string; label: string; env?: string } = {
+          key: field.key,
+          label: normalizeAuthLabel(field.label),
+        };
+        if (field.env !== undefined) normalizedField.env = field.env;
+        return normalizedField;
+      }),
       createdAt: now.toISOString(),
       expiresAt: new Date(
         now.getTime() + (expiresInMinutes ?? AUTH_DEFAULT_REQUEST_TTL_MINUTES) * 60 * 1_000,
@@ -192,6 +197,10 @@ export class AuthCredentialService implements AuthCredentialControl {
 
   read(userId: string, service: string): Promise<AuthCredentialValues | undefined> {
     return this.dependencies.credentials.read(userId, service);
+  }
+
+  delete(userId: string, service: string): Promise<boolean> {
+    return this.dependencies.credentials.delete(userId, service);
   }
 
   private async notify(request: AuthRequest, outcome: "saved" | "cancelled"): Promise<void> {

@@ -20,7 +20,7 @@ test("encrypts every credential value and lists only metadata", async () => {
     label: "GitHub",
     fields: [
       { key: "username", label: "ユーザー名" },
-      { key: "token", label: "トークン" },
+      { key: "token", label: "トークン", env: "GH_TOKEN" },
     ],
     values: { username: "octocat", token: "ghp_very-secret-token" },
     updatedAt: "2026-11-22T00:00:00.000Z",
@@ -31,7 +31,7 @@ test("encrypts every credential value and lists only metadata", async () => {
     label: "GitHub",
     fields: [
       { key: "username", label: "ユーザー名" },
-      { key: "token", label: "トークン" },
+      { key: "token", label: "トークン", env: "GH_TOKEN" },
     ],
     updatedAt: "2026-11-22T00:00:00.000Z",
   });
@@ -50,7 +50,7 @@ test("encrypts every credential value and lists only metadata", async () => {
     label: "GitHub",
     fields: [
       { key: "username", label: "ユーザー名" },
-      { key: "token", label: "トークン" },
+      { key: "token", label: "トークン", env: "GH_TOKEN" },
     ],
     values: { username: "octocat", token: "ghp_very-secret-token" },
     updatedAt: "2026-11-22T00:00:00.000Z",
