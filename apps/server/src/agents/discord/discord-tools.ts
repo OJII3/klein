@@ -18,6 +18,11 @@ import { createPromiseGuard, type PromiseGuardMode } from "../tools/promise-guar
 import { createUserMemoryTools } from "../tools/user-memory";
 import { createWatchTools } from "../tools/watch";
 import { createDiscordAskTool } from "./tools/discord-ask";
+import {
+  createDiscordChannelHistoryContentTool,
+  createDiscordChannelHistoryTool,
+  DiscordChannelHistoryStore,
+} from "./tools/discord-channel-history";
 import { createDiscordImageAnalysis, createDiscordReadTool } from "./tools/discord-read";
 import { createDiscordSendTool } from "./tools/discord-send";
 import { createDiscordSpeakTool } from "./tools/discord-speak";
@@ -28,7 +33,7 @@ export interface DiscordAgentToolsOptions {
   readonly analyzeImage?: AgentImageAnalyzer;
   readonly channelApi: Pick<
     DiscordChannelApi,
-    "readMessage" | "sendMessage" | "sendChoices" | "sendTyping" | "sendAudio"
+    "readMessage" | "readMessages" | "sendMessage" | "sendChoices" | "sendTyping" | "sendAudio"
   >;
   readonly channelId: string;
   readonly requesterUserId?: () => string | undefined;
@@ -75,6 +80,7 @@ export function createDiscordAgentTools(
           logger: options.promiseGuard.logger,
         })
       : undefined;
+  const channelHistoryStore = new DiscordChannelHistoryStore();
   return [
     createDiscordReadTool(
       options.channelApi,
@@ -82,6 +88,13 @@ export function createDiscordAgentTools(
       createDiscordImageAnalysis(options.analyzeImage),
       ownerUserId !== undefined ? { userId: ownerUserId } : undefined,
     ),
+    createDiscordChannelHistoryTool(
+      options.channelApi,
+      options.channelId,
+      channelHistoryStore,
+      ownerUserId !== undefined ? { userId: ownerUserId } : undefined,
+    ),
+    createDiscordChannelHistoryContentTool(channelHistoryStore),
     ...(options.requesterUserId
       ? [createDiscordAskTool(options.channelApi, options.channelId, options.requesterUserId)]
       : []),

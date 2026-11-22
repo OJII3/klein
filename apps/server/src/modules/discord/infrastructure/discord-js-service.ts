@@ -19,7 +19,12 @@ import {
   DiscordOperatingState,
   type DiscordOperatingMode,
 } from "../domain/discord-operating-state";
-import { type DiscordMessage, type DiscordMessageLocator } from "../domain/discord-message";
+import {
+  type DiscordChannelHistoryMessage,
+  type DiscordChannelHistoryPageRequest,
+  type DiscordMessage,
+  type DiscordMessageLocator,
+} from "../domain/discord-message";
 import type {
   DiscordChannelApi,
   DiscordChannelLocation,
@@ -86,6 +91,21 @@ export interface DiscordServiceTextChannel {
 
 export interface DiscordServiceMessageChannel extends DiscordServiceTextChannel {
   readonly messages: { fetch(messageId: string): Promise<DiscordServiceMessage> };
+}
+
+export interface DiscordServiceMessagePageOptions {
+  readonly limit: number;
+  readonly before?: string;
+  readonly after?: string;
+}
+
+interface DiscordServiceMessagePageChannel extends DiscordServiceTextChannel {
+  readonly messages: {
+    fetch(messageId: string): Promise<DiscordServiceMessage>;
+    fetch(
+      options: DiscordServiceMessagePageOptions,
+    ): Promise<ReadonlyMap<string, DiscordServiceMessage>>;
+  };
 }
 
 export interface DiscordServiceChannel {
@@ -217,6 +237,13 @@ function isReadableChannel(
   channel: DiscordServiceChannel | null | undefined,
 ): channel is DiscordServiceMessageChannel {
   return isTextBasedChannel(channel) && channel.messages !== undefined;
+}
+
+function isMessagePageChannel(
+  channel: DiscordServiceMessageChannel,
+): channel is DiscordServiceMessagePageChannel {
+  // discord.js MessageManager.fetch also accepts { limit, before, after } page options.
+  return typeof channel.messages.fetch === "function";
 }
 
 function isButtonInteraction(
@@ -542,6 +569,25 @@ export class DiscordJsService
     };
   }
 
+  async readMessages(
+    request: DiscordChannelHistoryPageRequest,
+    requester?: DiscordMessageRequester,
+  ): Promise<readonly DiscordChannelHistoryMessage[]> {
+    const channel = await this.getReadableChannelForHistory(request.channelId, requester);
+    if (!isMessagePageChannel(channel)) {
+      throw new Error(`Discord channel cannot contain messages: ${request.channelId}`);
+    }
+    const messages = await channel.messages.fetch({
+      limit: request.limit,
+      ...(request.before ? { before: request.before } : {}),
+      ...(request.after ? { after: request.after } : {}),
+    });
+
+    return [...messages.values()].map((message) =>
+      this.messageAdapter.toDiscordChannelHistoryMessage(message),
+    );
+  }
+
   async readUserProfile(userId: string, guildId?: string): Promise<DiscordUserProfile | undefined> {
     if (!isValidDiscordUserId(userId)) return undefined;
 
@@ -587,6 +633,30 @@ export class DiscordJsService
     this.channels.clear();
     await this.voiceChatController?.stop();
     await this.client.destroy();
+  }
+
+  private async getReadableChannelForHistory(
+    channelId: string,
+    requester?: DiscordMessageRequester,
+  ): Promise<DiscordServiceMessageChannel> {
+    const channel = await this.client.channels.fetch(channelId);
+    if (!isReadableChannel(channel)) {
+      throw new Error(`Discord channel cannot contain messages: ${channelId}`);
+    }
+
+    const thread = channel.isThread() ? channel : undefined;
+    if (
+      !this.accessPolicy.canReceive({
+        guildId: "guildId" in channel ? (channel.guildId ?? undefined) : undefined,
+        channelId: thread?.parentId ?? channel.id,
+        threadId: thread?.id,
+        ...requester,
+      })
+    ) {
+      throw new Error(`Discord channel access denied: ${channelId}`);
+    }
+
+    return channel;
   }
 
   private async getChannel(channelId: string): Promise<SendableChannel> {

@@ -42,7 +42,31 @@ export interface DiscordMessageLocator {
   readonly messageId: string;
 }
 
+export interface DiscordChannelHistoryAttachment {
+  readonly filename: string;
+  readonly url: string;
+}
+
+export interface DiscordChannelHistoryMessage {
+  readonly id: string;
+  readonly channelId: string;
+  readonly occurredAt: string;
+  readonly author: DiscordUser;
+  readonly content: string;
+  readonly attachments: readonly DiscordChannelHistoryAttachment[];
+}
+
+export interface DiscordChannelHistoryPageRequest {
+  readonly channelId: string;
+  readonly limit: number;
+  readonly before?: string;
+  readonly after?: string;
+}
+
+export type DiscordChannelHistoryOrder = "newest" | "oldest";
+
 const DISCORD_REPLY_PREVIEW_LIMIT = 256;
+export const DISCORD_CHANNEL_HISTORY_CONTENT_LIMIT = 1_500;
 
 export function formatDiscordUser(user: DiscordUser): string {
   if (user.displayName === user.username) return user.displayName;
@@ -68,6 +92,28 @@ export function formatDiscordMessage(message: DiscordMessage): string {
       : "";
 
   return `${replyContext}${formatDiscordUser(message.author)}:\n${content}${imageContext}`;
+}
+
+export function formatDiscordChannelHistoryMessage(
+  message: DiscordChannelHistoryMessage,
+  contentLimit = DISCORD_CHANNEL_HISTORY_CONTENT_LIMIT,
+): string {
+  const characters = Array.from(message.content);
+  const content =
+    characters.length > contentLimit
+      ? `${characters.slice(0, contentLimit).join("")}… (truncated, ${characters.length} chars total)`
+      : message.content;
+  const attachmentContext =
+    message.attachments.length > 0
+      ? `\n[添付: ${message.attachments
+          .map((attachment) => `${attachment.filename} (${attachment.url})`)
+          .join(", ")}]`
+      : "";
+
+  return (
+    `[${message.id}] ${message.occurredAt} | ${formatDiscordUser(message.author)} | userId=${message.author.id}\n` +
+    `${content || "(本文なし)"}${attachmentContext}`
+  );
 }
 
 export function resolveDiscordMentions(

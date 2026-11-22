@@ -56,6 +56,9 @@ function createHarness(
     async readMessage() {
       throw new Error("Unexpected message read");
     },
+    async readMessages() {
+      throw new Error("Unexpected message list read");
+    },
     async getChannelLocation(channelId) {
       return { guildId: "guild", channelId };
     },

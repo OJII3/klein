@@ -158,10 +158,26 @@ test("inspects turns and raw context from a persisted session JSONL in turn-star
 
   const channelApi: Pick<
     DiscordChannelApi,
-    "readMessage" | "sendMessage" | "sendChoices" | "sendTyping" | "sendAudio"
+    "readMessage" | "readMessages" | "sendMessage" | "sendChoices" | "sendTyping" | "sendAudio"
   > = {
     async readMessage(target) {
       return createDiscordMessage({ id: target.messageId, content: "参照メッセージ内容" });
+    },
+    async readMessages(target) {
+      const historyMessage = createDiscordMessage({
+        channelId: target.channelId,
+        content: "参照メッセージ内容",
+      });
+      return [
+        {
+          id: historyMessage.id,
+          channelId: historyMessage.channelId,
+          occurredAt: historyMessage.occurredAt,
+          author: historyMessage.author,
+          content: historyMessage.content,
+          attachments: [],
+        },
+      ];
     },
     async sendMessage() {
       return ["sent-msg-1"];
@@ -330,10 +346,26 @@ test("records a 👎 feedback case, inspects original trace + raw context, and r
 
   const channelApi: Pick<
     DiscordChannelApi,
-    "readMessage" | "sendMessage" | "sendChoices" | "sendTyping" | "sendAudio"
+    "readMessage" | "readMessages" | "sendMessage" | "sendChoices" | "sendTyping" | "sendAudio"
   > = {
     async readMessage(target) {
       return createDiscordMessage({ id: target.messageId, content: "元の文脈メッセージ" });
+    },
+    async readMessages(target) {
+      const historyMessage = createDiscordMessage({
+        channelId: target.channelId,
+        content: "元の文脈メッセージ",
+      });
+      return [
+        {
+          id: historyMessage.id,
+          channelId: historyMessage.channelId,
+          occurredAt: historyMessage.occurredAt,
+          author: historyMessage.author,
+          content: historyMessage.content,
+          attachments: [],
+        },
+      ];
     },
     async sendMessage() {
       return ["discord-bad-1"];

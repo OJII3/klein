@@ -74,6 +74,9 @@ export function createStubDiscordChannelApi(
     async readMessage() {
       throw new Error("Unexpected readMessage call in test stub");
     },
+    async readMessages() {
+      throw new Error("Unexpected readMessages call in test stub");
+    },
     ...overrides,
   };
 }

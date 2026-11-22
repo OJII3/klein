@@ -125,6 +125,9 @@ function createHarness(
     async readMessage() {
       return message;
     },
+    async readMessages() {
+      throw new Error("Unexpected message list read");
+    },
     async getChannelLocation(channelId) {
       channelLocationCalls.push(channelId);
       return { guildId: "guild-123", channelId };

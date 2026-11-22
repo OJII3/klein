@@ -191,6 +191,19 @@ test("adds discord_ask only when a turn requester is available", () => {
   assert.ok(!withoutRequester.some((tool) => tool.name === "discord_ask"));
 });
 
+test("registers discord_channel_history with its stored-content reader", () => {
+  const tools = createToolsFor(
+    createStubDiscordChannelApi(),
+    "channel-123",
+  )({
+    requesterId: () => undefined,
+  });
+  const toolNames = new Set(tools.map((tool) => tool.name));
+
+  assert.ok(toolNames.has("discord_channel_history"));
+  assert.ok(toolNames.has("discord_channel_history_content"));
+});
+
 test("marks the Discord surface tools so the core layer can reject them", () => {
   const channelApi = createStubDiscordChannelApi();
   const withSpeak = createDiscordAgentTools({
