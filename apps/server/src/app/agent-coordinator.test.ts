@@ -1205,7 +1205,7 @@ test("uses the check time for the next interval run", async () => {
   }
 });
 
-test("records watch check failures without notifying the agent", async () => {
+test("delivers watch check failures to the agent as events", async () => {
   const runner: WatchCheckRunner = {
     async run() {
       throw new Error("check failed");
@@ -1228,7 +1228,10 @@ test("records watch check failures without notifying the agent", async () => {
     assert.equal(stored.lastStatus, "error");
     assert.match(stored.lastError ?? "", /check failed/u);
     assert.equal(stored.consecutiveFailures, 1);
-    assert.equal(harness.prompts.size, 0);
+    const turns = [...harness.prompts.values()].flat();
+    assert.equal(turns.length, 1);
+    assert.equal(turns[0]?.event.type, "watch.failed");
+    assert.match(eventText(turns[0]?.event), /check failed/u);
   } finally {
     await harness.agentCoordinator.dispose();
   }

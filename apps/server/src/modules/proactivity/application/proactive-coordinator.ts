@@ -355,7 +355,7 @@ export class ProactiveCoordinator {
       throw new Error("指定した追跡対象がこの会話に見つかりません。");
     }
     if (!resolvedWatcher.active) {
-      throw new Error("指定した監視は停止中です。");
+      throw new Error("指定した watch は停止中です。");
     }
 
     const existing = (
