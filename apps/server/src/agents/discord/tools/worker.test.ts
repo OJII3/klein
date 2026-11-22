@@ -52,6 +52,7 @@ test("adds the Discord user profile tool when profile dependencies are supplied"
     undefined,
     undefined,
     undefined,
+    undefined,
     {
       users: {
         resolve: (username) =>
@@ -107,7 +108,7 @@ test("registers a worker watch with the worker id", async () => {
   assert.equal(watch?.kind === "watch" ? watch.ownerWorkerId : undefined, "worker-1");
 });
 
-test("adds the T3 thread tools only when a runner is supplied", () => {
+test("adds the T3 project and thread tools only when they are supplied", () => {
   const store = new InMemoryScheduledTaskStore();
   const t3Runner = {
     async list() {
@@ -124,6 +125,11 @@ test("adds the T3 thread tools only when a runner is supplied", () => {
         thread: { id: "mcp:1", title: "T", status: "completed" },
         messages: [],
       };
+    },
+  };
+  const t3ProjectLister = {
+    async list() {
+      return [];
     },
   };
 
@@ -145,15 +151,16 @@ test("adds the T3 thread tools only when a runner is supplied", () => {
     undefined,
     undefined,
     t3Runner,
+    t3ProjectLister,
   );
 
   assert.equal(
-    withoutT3.some((tool) => tool.name.startsWith("t3_thread_")),
+    withoutT3.some((tool) => tool.name.startsWith("t3_")),
     false,
   );
   assert.deepEqual(
-    withT3.filter((tool) => tool.name.startsWith("t3_thread_")).map((tool) => tool.name),
-    ["t3_thread_start", "t3_thread_send", "t3_thread_show", "t3_thread_list"],
+    withT3.filter((tool) => tool.name.startsWith("t3_")).map((tool) => tool.name),
+    ["t3_project_list", "t3_thread_start", "t3_thread_send", "t3_thread_show", "t3_thread_list"],
   );
 });
 

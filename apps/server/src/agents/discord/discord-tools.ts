@@ -3,6 +3,7 @@ import type { Logger } from "pino";
 
 import type { AgentImageAnalyzer } from "@agents/core/agent-factory";
 import type { WorkerControl } from "@agents/core/worker-agent";
+import { createT3ProjectListTool, type T3ProjectLister } from "@agents/tools/t3-project";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
 import type { DiscordUserResolver } from "@modules/discord/ports/discord-user-resolver";
 import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
@@ -41,6 +42,8 @@ export interface DiscordAgentToolsOptions {
   readonly userMemoryStore?: UserMemoryStore;
   readonly discordUserDirectory?: DiscordUserResolver;
   readonly workers?: WorkerControl;
+  /** Lists T3 projects for an owner conversation. */
+  readonly t3ProjectLister?: T3ProjectLister;
   readonly proactive?: ProactiveToolCoordinator;
   readonly initiative?: InitiativeToolCoordinator;
   readonly promiseGuard?: { readonly mode: PromiseGuardMode; readonly logger: Logger };
@@ -106,6 +109,9 @@ export function createDiscordAgentTools(
           accessScope,
           ownerFeaturesAllowed,
         )
+      : []),
+    ...(ownerFeaturesAllowed && options.t3ProjectLister
+      ? [createT3ProjectListTool(options.t3ProjectLister)]
       : []),
     ...(options.userMemoryStore && options.discordUserDirectory
       ? createUserMemoryTools(options.userMemoryStore, options.discordUserDirectory)

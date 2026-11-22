@@ -28,6 +28,7 @@ import { PiStandaloneSessionRunner } from "@runtime/pi/pi-standalone-session-run
 import { createPiMinimalAgentFactory } from "@runtime/pi/pi-minimal-agent-factory";
 import { createPiUsageReporterFromEnv } from "@runtime/pi/pi-usage-reporter";
 import { createT3CliThreadRunner } from "@runtime/t3/t3-cli-thread-runner";
+import { createT3SqliteProjectLister } from "@runtime/t3/t3-sqlite-project-lister";
 import { createWatchFetchTool } from "@runtime/pi/watch-fetch-tool";
 import { PiSharedMemoryAgent } from "@runtime/pi/pi-shared-memory-agent";
 import { PiUserMemoryAgent } from "@runtime/pi/pi-user-memory-agent";
@@ -242,6 +243,7 @@ export async function bootstrapApplication(): Promise<void> {
   let agentCoordinator!: AgentCoordinator;
   let sharedMemoryCoordinator: SharedMemoryCoordinator | undefined;
   const t3ThreadRunner = createT3CliThreadRunner();
+  const t3ProjectLister = createT3SqliteProjectLister();
   const workerAgentCoordinator = new WorkerAgentCoordinator({
     factory: piAgentFactory,
     systemPrompt: WORKER_SYSTEM_PROMPT,
@@ -273,6 +275,7 @@ export async function bootstrapApplication(): Promise<void> {
         ownerRequester,
         toolContext.analyzeImage,
         ownerRequester ? t3ThreadRunner : undefined,
+        ownerRequester ? t3ProjectLister : undefined,
         { users: discordUserDirectory, profiles: discordService },
       );
     },
@@ -384,6 +387,7 @@ export async function bootstrapApplication(): Promise<void> {
           userMemoryStore,
           watchCheckRunner,
           workers: workerAgentCoordinator,
+          ...(ownerFeaturesAllowed ? { t3ProjectLister } : {}),
           promiseGuard: { mode: proactivityConfig.promiseGuard, logger },
           ...(proactiveCoordinator ? { proactive: proactiveCoordinator } : {}),
           ...(initiativeCoordinator ? { initiative: initiativeCoordinator } : {}),
