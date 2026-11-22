@@ -141,7 +141,7 @@ for (const restricted of [false, true]) {
       } else {
         assert.match(output, /Script completed/);
         assert.match(output, /\b2\b/);
-        assert.match(output, /"canSend":false/);
+        assert.match(output, /"canSend":true/);
         assert.match(output, /"canBash":false/);
       }
       assert.doesNotMatch(output, /Unfiltered research content/);
@@ -225,3 +225,88 @@ for (const restricted of [false, true]) {
     }
   });
 }
+
+test("codemode sends a Discord message", async () => {
+  await using temp = await createTempDir("klein-codemode-send-");
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  const provider = fauxProvider({ tokensPerSecond: 100_000 });
+  const model = provider.getModel();
+  const modelRuntime = await ModelRuntime.create({
+    credentials: new InMemoryCredentialStore(),
+    modelsPath: null,
+    refreshOnCreate: false,
+  });
+  modelRuntime.registerNativeProvider(provider.provider);
+  const factory = createPiAgentFactory({
+    agentDir: temp.path,
+    characterName: "クライン",
+    llm: { provider: model.provider, model: model.id },
+    logger: pino({ level: "silent" }),
+    modelRuntime,
+    sessionMode: "new",
+  });
+  const sent: string[] = [];
+  const sendTool = createDiscordSendTool(
+    {
+      async sendTyping() {},
+      async sendMessage(_channelId, content) {
+        sent.push(content);
+      },
+    },
+    "channel",
+  );
+  const runtime = await factory.create(
+    { systemPrompt: "You are クライン. Keep your usual tone." },
+    () => [sendTool],
+    { role: { kind: "conversation" }, sessionKey: "codemode-send-test" },
+  );
+
+  try {
+    provider.setResponses([
+      fauxAssistantMessage(
+        fauxToolCall("codemode", {
+          code: `await tools.discord_send({ content: "……確認したよ" }); text("sent");`,
+        }),
+      ),
+      fauxAssistantMessage("Finished"),
+    ]);
+    await runtime.prompt({
+      event: {
+        id: "send-from-codemode",
+        type: "message",
+        source: "test",
+        occurredAt: "2026-10-14T09:30:42.123Z",
+        content: [{ type: "text", text: "メッセージを送って" }],
+      },
+      context: {},
+    });
+    assert.deepEqual(sent, ["……確認したよ"]);
+
+    provider.setResponses([
+      (context) => {
+        assert.deepEqual(
+          context.messages
+            .filter((message) => message.role === "assistant")
+            .flatMap((message) => message.content.filter((block) => block.type === "text")),
+          [{ type: "text", text: "Sent a message to Discord." }],
+        );
+        return fauxAssistantMessage("No further reply needed");
+      },
+    ]);
+    await runtime.prompt({
+      event: {
+        id: "after-codemode-send",
+        type: "message",
+        source: "test",
+        occurredAt: "2026-10-14T09:30:43.123Z",
+        content: [{ type: "text", text: "ありがとう" }],
+      },
+      context: {},
+    });
+    assert.deepEqual(sent, ["……確認したよ"]);
+  } finally {
+    runtime.dispose();
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+  }
+});

@@ -642,12 +642,15 @@ export function normalizeCompletedAssistantText<TMessage extends AgentMessage>(
   const normalized: TMessage[] = [];
   const usedSurfaceTools = new Set<string>();
   for (const [index, message] of messages.entries()) {
-    if (
-      message.role === "toolResult" &&
-      surfaceToolNames.has(message.toolName) &&
-      !message.isError
-    ) {
-      usedSurfaceTools.add(message.toolName);
+    if (message.role === "toolResult" && !message.isError) {
+      if (surfaceToolNames.has(message.toolName)) {
+        usedSurfaceTools.add(message.toolName);
+      }
+      for (const call of message.nestedCalls?.calls ?? []) {
+        if (call.status === "ok" && surfaceToolNames.has(call.name)) {
+          usedSurfaceTools.add(call.name);
+        }
+      }
     }
     if (message.role !== "assistant" || index > completedTurnIndex) {
       normalized.push(message);
