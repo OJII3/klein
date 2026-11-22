@@ -264,8 +264,8 @@ export async function bootstrapApplication(): Promise<void> {
         },
         request.workerId,
         outcome === "saved"
-          ? `シークレット "${request.label}" (${request.service}) が保存されました。secret_list で確認し、secret_run で使えます。`
-          : `シークレット "${request.label}" (${request.service}) の入力はキャンセルされました。必要なら secret_request で再依頼できます。`,
+          ? `Secret "${request.label}" (${request.service}) was saved. Use secret_list to confirm it and secret_run to use it.`
+          : `Secret "${request.label}" (${request.service}) input was cancelled. Use secret_request to ask again if needed.`,
       );
       if (!sent) {
         logger.info(
