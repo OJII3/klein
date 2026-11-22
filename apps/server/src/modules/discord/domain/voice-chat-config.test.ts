@@ -46,7 +46,7 @@ test("defaults the language to Japanese", () => {
   });
 });
 
-test("keeps the configured language, model, and reactions", () => {
+test("keeps the configured language, model, and classifier", () => {
   const config = createConfig({
     features: {
       sharedMemory: { enabled: false },
@@ -56,10 +56,9 @@ test("keeps the configured language, model, and reactions", () => {
         asrServerUrl: "ws://asr.local",
         language: "en",
         llm: { provider: "google", model: "voice-model" },
-        reactions: {
+        classifier: {
           provider: "google",
           model: "classifier-model",
-          presetsFile: "reactions.json",
         },
       },
     },
@@ -69,10 +68,9 @@ test("keeps the configured language, model, and reactions", () => {
     asrServerUrl: "ws://asr.local",
     language: "en",
     llm: { provider: "google", model: "voice-model" },
-    reactions: {
+    classifier: {
       provider: "google",
       model: "classifier-model",
-      presetsFile: "reactions.json",
     },
   });
 });

@@ -848,19 +848,15 @@
               },
               "additionalProperties": false
             },
-            "reactions": {
+            "classifier": {
               "type": "object",
-              "required": ["provider", "model", "presetsFile"],
+              "required": ["provider", "model"],
               "properties": {
                 "provider": {
                   "type": "string",
                   "minLength": 1
                 },
                 "model": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "presetsFile": {
                   "type": "string",
                   "minLength": 1
                 }

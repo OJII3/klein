@@ -25,7 +25,6 @@
 
 - **音声チャット** — ローカルの Silero VAD (ONNX Runtime Web WASM) と WebSocket ASR を使う。詳細は [voice-chat-asr-protocol.md](voice-chat-asr-protocol.md) にある。
 - **TTS** — `features.tts.serverUrl` で外部の Style-Bert-VITS2 サーバーを使う。`discord_voice` ツールと音声チャットの出力を提供する。詳細は [sbv2-tts-protocol.md](sbv2-tts-protocol.md) にある。
-- **音声の相づち** — `features.voiceChat.reactions` は、回答を生成している間に短い相づちを再生する。プリセットは `bun apps/server/scripts/generate-voice-presets.ts [manifest-path]` で生成する。
 
 ## メモリ
 

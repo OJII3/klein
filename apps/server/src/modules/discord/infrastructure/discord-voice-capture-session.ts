@@ -81,7 +81,7 @@ interface ActiveAsrRequest {
 
 export interface DiscordVoiceCaptureSessionOptions extends Pick<
   DiscordVoicePlaybackOptions,
-  "audioPlayerFactory" | "audioResourceFactory" | "reactionPresets" | "tts"
+  "audioPlayerFactory" | "audioResourceFactory" | "tts"
 > {
   readonly adapterCreator: DiscordGatewayAdapterCreator;
   readonly asr: AsrClient;
@@ -113,7 +113,6 @@ export class DiscordVoiceCaptureSession {
   private transcriptQueue: Promise<void> = Promise.resolve();
   private speakingListener?: (userId: string) => void;
   private stopped = false;
-  private readonly speechStartListeners = new Set<() => void>();
 
   constructor(private readonly options: DiscordVoiceCaptureSessionOptions) {
     this.logger = options.logger?.child({
@@ -126,7 +125,6 @@ export class DiscordVoiceCaptureSession {
       audioPlayerFactory: options.audioPlayerFactory,
       audioResourceFactory: options.audioResourceFactory,
       logger: this.logger,
-      reactionPresets: options.reactionPresets,
       tts: options.tts,
     });
   }
@@ -179,7 +177,6 @@ export class DiscordVoiceCaptureSession {
   async stop(): Promise<void> {
     if (this.stopped) return;
     this.stopped = true;
-    this.speechStartListeners.clear();
     this.playback.stop();
     this.activeAsrRequest?.resolveTranscript("");
     this.activeAsrRequest = undefined;
@@ -367,8 +364,6 @@ export class DiscordVoiceCaptureSession {
   ): Promise<void> {
     for (const event of events) {
       if (event.type === "speech-start") {
-        this.playback.onSpeechStart();
-        for (const listener of this.speechStartListeners) listener();
         if (this.activeAsrRequest) continue;
         const requestId = randomUUID();
         try {
@@ -412,7 +407,6 @@ export class DiscordVoiceCaptureSession {
           this.finishAsrRequest();
         }
       } else {
-        this.playback.onSpeechEnd();
         this.finishAsrRequest();
       }
     }
@@ -469,15 +463,6 @@ export class DiscordVoiceCaptureSession {
     return this.playback.speakInBackground(text, toolCallId);
   }
 
-  playReaction(reaction: string, signal: AbortSignal): Promise<boolean> {
-    return this.playback.playReaction(reaction, signal);
-  }
-
-  subscribeSpeechStart(listener: () => void): () => void {
-    this.speechStartListeners.add(listener);
-    return () => this.speechStartListeners.delete(listener);
-  }
-
   async flushInput(): Promise<void> {
     await this.activeInput?.processing;
   }
@@ -485,10 +470,6 @@ export class DiscordVoiceCaptureSession {
   async flush(): Promise<void> {
     await this.flushInput();
     await this.transcriptQueue;
-  }
-
-  async waitForReactionsLoaded(): Promise<void> {
-    await this.playback.waitForReactionsLoaded();
   }
 
   private failVoiceCapture(error: unknown): void {
