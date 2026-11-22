@@ -15,7 +15,11 @@ export function createWorkerControlTools(
   };
   const workerCapabilities = [
     ...(accessScopeUserId(accessScope) !== undefined
-      ? ["real browser use (agent-browser)", "a sandboxed shell (bash)"]
+      ? [
+          "real browser use (agent-browser)",
+          "a sandboxed shell (bash)",
+          "credential requests by direct message (auth_request, auth_list, auth_run)",
+        ]
       : []),
     ...(ownerFeaturesAllowed
       ? ["T3 Code thread creation and follow-ups (t3_thread_start, t3_thread_send)"]

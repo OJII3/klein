@@ -10,6 +10,8 @@ import {
   type InteractionReplyOptions,
 } from "discord.js";
 
+import type { DiscordAuthCredentialRequester } from "../../auth/infrastructure/discord-auth-requester";
+
 import { buildAllowedDiscordChannelLines } from "../application/discord-channel-list";
 import {
   DiscordChannelRuleCommand,
@@ -191,6 +193,10 @@ export class DiscordJsInteractionHandler {
     channelRuleStore?: DiscordChannelRuleStore,
     private readonly accessRuleStore?: DiscordAccessRuleStore,
     private readonly channelLink?: DiscordChannelLinkCommand,
+    private readonly authCredentialRequester?: Pick<
+      DiscordAuthCredentialRequester,
+      "handleModalSubmit"
+    >,
   ) {
     this.channelRuleCommand = new DiscordChannelRuleCommand(channelRuleStore);
     this.commands = [
@@ -205,6 +211,12 @@ export class DiscordJsInteractionHandler {
 
   async handle(interaction: DiscordHandlerInteraction): Promise<void> {
     if (isModalSubmit(interaction)) {
+      if (
+        this.authCredentialRequester &&
+        (await this.authCredentialRequester.handleModalSubmit(interaction))
+      ) {
+        return;
+      }
       if (!interaction.customId.startsWith(`${CHANNEL_RULE_MODAL_ID}:`)) return;
       if (!(await this.canUseCommandsInChannel(interaction))) {
         await interaction.reply({

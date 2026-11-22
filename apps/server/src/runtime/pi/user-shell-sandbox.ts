@@ -1,11 +1,16 @@
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import {
   accessSync,
   chmodSync,
   constants,
   existsSync,
+  mkdirSync,
   readFileSync,
+  readdirSync,
   realpathSync,
+  statSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { constants as osConstants } from "node:os";
@@ -61,6 +66,14 @@ const MAX_DNS_HOSTS = 2;
 const DEFAULT_TIMEOUT_SECONDS = 600;
 const MAX_TIMEOUT_SECONDS = 3_600;
 const MAX_OUTPUT_BYTES = 64 * 1024 * 1024;
+
+/** The path in the sandbox where credential variables are sourced from. */
+const CREDENTIAL_ENVIRONMENT_TARGET = "/run/klein/credentials.env";
+const CREDENTIAL_ENVIRONMENT_DIRECTORY = "auth-runtime";
+const CREDENTIAL_ENVIRONMENT_FILE_MAX_AGE_MS = 60 * 60 * 1_000;
+
+/** A tool result should stay readable; the command may still produce more. */
+export const SANDBOXED_COMMAND_MAX_OUTPUT_BYTES = 32 * 1024;
 
 /**
  * Loose per-process limits set inside the sandbox. They are backstops against
@@ -151,6 +164,78 @@ export function createUserShellTool(environment: UserEnvironment): PiTool {
   });
 }
 
+export interface SandboxedCommandOptions {
+  readonly timeoutSeconds?: number;
+  readonly signal?: AbortSignal;
+  /** Values are exported only to this command, never written to the workspace. */
+  readonly credentialEnvironment?: Readonly<Record<string, string>>;
+}
+
+export interface SandboxedCommandResult {
+  readonly output: string;
+  readonly exitCode: number | null;
+  readonly truncated: boolean;
+}
+
+/**
+ * Runs a command for a worker and returns bounded output. Credential values
+ * are passed through an owner-only file that is bind-mounted readonly into the
+ * sandbox, so they never appear in process arguments or the workspace.
+ */
+export async function runSandboxedCommand(
+  environment: UserEnvironment,
+  command: string,
+  options: SandboxedCommandOptions = {},
+): Promise<SandboxedCommandResult> {
+  const chunks: Buffer[] = [];
+  let collectedBytes = 0;
+  let truncated = false;
+  const operations = createBubblewrapBashOperations(
+    environment,
+    {
+      defaultTimeoutSeconds: options.timeoutSeconds,
+      maxOutputBytes: SANDBOXED_COMMAND_MAX_OUTPUT_BYTES * 2,
+    },
+    options.credentialEnvironment,
+  );
+
+  try {
+    const { exitCode } = await operations.exec(command, environment.workspaceDirectory, {
+      onData(data) {
+        if (collectedBytes >= SANDBOXED_COMMAND_MAX_OUTPUT_BYTES) {
+          truncated = true;
+          return;
+        }
+        const remaining = SANDBOXED_COMMAND_MAX_OUTPUT_BYTES - collectedBytes;
+        if (data.byteLength > remaining) {
+          chunks.push(data.subarray(0, remaining));
+          collectedBytes = SANDBOXED_COMMAND_MAX_OUTPUT_BYTES;
+          truncated = true;
+          return;
+        }
+        chunks.push(data);
+        collectedBytes += data.byteLength;
+      },
+      ...(options.signal ? { signal: options.signal } : {}),
+      ...(options.timeoutSeconds !== undefined ? { timeout: options.timeoutSeconds } : {}),
+    });
+    return {
+      output: Buffer.concat(chunks).toString("utf8"),
+      exitCode,
+      truncated,
+    };
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("output limit exceeded")) {
+      return {
+        output: Buffer.concat(chunks).toString("utf8"),
+        exitCode: null,
+        truncated: true,
+      };
+    }
+    throw error;
+  }
+}
+
 export interface SandboxDns {
   /** Address written to the sandbox's resolv.conf and intercepted by pasta. */
   readonly forward: string;
@@ -237,6 +322,7 @@ export interface UserShellLimits {
 export function createBubblewrapBashOperations(
   environment: UserEnvironment,
   limits: UserShellLimits = {},
+  credentialEnvironment?: Readonly<Record<string, string>>,
 ): BashOperations {
   return {
     exec: async (command, _cwd, { onData, signal, timeout }) => {
@@ -258,73 +344,87 @@ export function createBubblewrapBashOperations(
       const dns = resolveSandboxDns();
       writeSandboxResolvConf(environment, dns);
       const maxOutputBytes = limits.maxOutputBytes ?? MAX_OUTPUT_BYTES;
-      const pastaArguments = buildPastaArguments(bubblewrap, environment, command, dns);
-      // Keep the sandbox tied to Klein's lifetime even though pasta sits between
-      // them; `--die-with-parent` alone only follows pasta.
-      const setpriv = resolveExecutable("setpriv");
-      const child = setpriv
-        ? spawn(setpriv, ["--pdeathsig", "SIGKILL", "--", pasta, ...pastaArguments], {
-            cwd: "/",
-            env: { PATH: "/usr/bin:/bin" },
-            detached: true,
-            stdio: ["ignore", "pipe", "pipe"],
-          })
-        : spawn(pasta, pastaArguments, {
-            cwd: "/",
-            env: { PATH: "/usr/bin:/bin" },
-            detached: true,
-            stdio: ["ignore", "pipe", "pipe"],
-          });
-
-      let outputBytes = 0;
-      let outputLimitExceeded = false;
-      let timedOut = false;
-      let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
-      const kill = () => {
-        if (child.pid) {
-          try {
-            process.kill(-child.pid, "SIGKILL");
-          } catch {
-            child.kill("SIGKILL");
-          }
-        }
-      };
-      const onAbort = () => kill();
-      const handleData = (data: Buffer) => {
-        if (outputLimitExceeded) return;
-        outputBytes += data.byteLength;
-        if (outputBytes > maxOutputBytes) {
-          outputLimitExceeded = true;
-          kill();
-          return;
-        }
-        onData(data);
-      };
+      const credentialFile = credentialEnvironment
+        ? writeCredentialEnvironmentFile(environment, credentialEnvironment)
+        : undefined;
 
       try {
-        timeoutHandle = setTimeout(() => {
-          timedOut = true;
-          kill();
-        }, timeoutMs);
-        child.stdout?.on("data", handleData);
-        child.stderr?.on("data", handleData);
-        if (signal) {
-          if (signal.aborted) onAbort();
-          else signal.addEventListener("abort", onAbort, { once: true });
-        }
+        const pastaArguments = buildPastaArguments(
+          bubblewrap,
+          environment,
+          command,
+          dns,
+          credentialFile,
+        );
+        // Keep the sandbox tied to Klein's lifetime even though pasta sits between
+        // them; `--die-with-parent` alone only follows pasta.
+        const setpriv = resolveExecutable("setpriv");
+        const child = setpriv
+          ? spawn(setpriv, ["--pdeathsig", "SIGKILL", "--", pasta, ...pastaArguments], {
+              cwd: "/",
+              env: { PATH: "/usr/bin:/bin" },
+              detached: true,
+              stdio: ["ignore", "pipe", "pipe"],
+            })
+          : spawn(pasta, pastaArguments, {
+              cwd: "/",
+              env: { PATH: "/usr/bin:/bin" },
+              detached: true,
+              stdio: ["ignore", "pipe", "pipe"],
+            });
 
-        const { exitCode, signalCode } = await waitForExit(child);
-        if (signal?.aborted) throw new Error("aborted");
-        if (outputLimitExceeded) {
-          throw new Error(`output limit exceeded: ${maxOutputBytes} bytes`);
+        let outputBytes = 0;
+        let outputLimitExceeded = false;
+        let timedOut = false;
+        let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+        const kill = () => {
+          if (child.pid) {
+            try {
+              process.kill(-child.pid, "SIGKILL");
+            } catch {
+              child.kill("SIGKILL");
+            }
+          }
+        };
+        const onAbort = () => kill();
+        const handleData = (data: Buffer) => {
+          if (outputLimitExceeded) return;
+          outputBytes += data.byteLength;
+          if (outputBytes > maxOutputBytes) {
+            outputLimitExceeded = true;
+            kill();
+            return;
+          }
+          onData(data);
+        };
+
+        try {
+          timeoutHandle = setTimeout(() => {
+            timedOut = true;
+            kill();
+          }, timeoutMs);
+          child.stdout?.on("data", handleData);
+          child.stderr?.on("data", handleData);
+          if (signal) {
+            if (signal.aborted) onAbort();
+            else signal.addEventListener("abort", onAbort, { once: true });
+          }
+
+          const { exitCode, signalCode } = await waitForExit(child);
+          if (signal?.aborted) throw new Error("aborted");
+          if (outputLimitExceeded) {
+            throw new Error(`output limit exceeded: ${maxOutputBytes} bytes`);
+          }
+          if (timedOut) throw new Error(`timeout:${effectiveTimeout}`);
+          const resolvedExitCode =
+            exitCode ?? (signalCode ? 128 + (osConstants.signals[signalCode] ?? 0) : 1);
+          return { exitCode: resolvedExitCode };
+        } finally {
+          if (timeoutHandle) clearTimeout(timeoutHandle);
+          signal?.removeEventListener("abort", onAbort);
         }
-        if (timedOut) throw new Error(`timeout:${effectiveTimeout}`);
-        const resolvedExitCode =
-          exitCode ?? (signalCode ? 128 + (osConstants.signals[signalCode] ?? 0) : 1);
-        return { exitCode: resolvedExitCode };
       } finally {
-        if (timeoutHandle) clearTimeout(timeoutHandle);
-        signal?.removeEventListener("abort", onAbort);
+        if (credentialFile) removeCredentialEnvironmentFile(credentialFile);
       }
     },
   };
@@ -335,6 +435,7 @@ export function buildPastaArguments(
   environment: UserEnvironment,
   command: string,
   dns: SandboxDns,
+  credentialEnvironmentFile?: string,
 ): string[] {
   return [
     "-q",
@@ -354,11 +455,15 @@ export function buildPastaArguments(
     dns.forward,
     "--",
     bubblewrap,
-    ...buildBubblewrapArguments(environment, command),
+    ...buildBubblewrapArguments(environment, command, credentialEnvironmentFile),
   ];
 }
 
-export function buildBubblewrapArguments(environment: UserEnvironment, command: string): string[] {
+export function buildBubblewrapArguments(
+  environment: UserEnvironment,
+  command: string,
+  credentialEnvironmentFile?: string,
+): string[] {
   const shell = SHELL_CANDIDATES.find((candidate) => existsSync(candidate)) ?? "/bin/sh";
   const variables = {
     ...userEnvironmentVariables(environment),
@@ -389,6 +494,17 @@ export function buildBubblewrapArguments(environment: UserEnvironment, command: 
     "/dev",
     "--tmpfs",
     "/tmp",
+    ...(credentialEnvironmentFile
+      ? [
+          "--dir",
+          "/run",
+          "--dir",
+          "/run/klein",
+          "--ro-bind",
+          credentialEnvironmentFile,
+          CREDENTIAL_ENVIRONMENT_TARGET,
+        ]
+      : []),
     // Credentials and every other directory in the environment stay unmounted.
     "--bind",
     environment.workspaceDirectory,
@@ -405,7 +521,9 @@ export function buildBubblewrapArguments(environment: UserEnvironment, command: 
     ...Object.entries(variables).flatMap(([name, value]) => ["--setenv", name, value]),
     shell,
     "-c",
-    `${SHELL_ULIMITS.join("\n")}\n${command}`,
+    `${SHELL_ULIMITS.join("\n")}\n${
+      credentialEnvironmentFile ? `set -a\n. ${CREDENTIAL_ENVIRONMENT_TARGET}\nset +a\n` : ""
+    }${command}`,
   ];
 }
 
@@ -413,6 +531,69 @@ function writeSandboxResolvConf(environment: UserEnvironment, dns: SandboxDns): 
   const path = resolve(environment.credentialsDirectory, SANDBOX_RESOLV_CONF_FILE);
   writeFileSync(path, `nameserver ${dns.forward}\n`, { mode: 0o600 });
   chmodSync(path, 0o600);
+}
+
+function writeCredentialEnvironmentFile(
+  environment: UserEnvironment,
+  variables: Readonly<Record<string, string>>,
+): string | undefined {
+  const entries = Object.entries(variables);
+  if (entries.length === 0) return undefined;
+  for (const [name, value] of entries) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/u.test(name)) {
+      throw new Error(`Invalid credential environment name: ${name}`);
+    }
+    if (value.includes("\u0000")) {
+      throw new Error(`Credential value for ${name} contains a NUL byte`);
+    }
+  }
+
+  // The file lives in the credentials directory, which is otherwise not
+  // mounted. Only this one file is bound into the command's namespace.
+  const directory = resolve(environment.credentialsDirectory, CREDENTIAL_ENVIRONMENT_DIRECTORY);
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  chmodSync(directory, 0o700);
+  sweepStaleCredentialEnvironmentFiles(directory);
+
+  const path = resolve(directory, `${randomUUID()}.env`);
+  const content = entries
+    .map(([name, value]) => `export ${name}=${quoteShellValue(value)}`)
+    .join("\n");
+  writeFileSync(path, `${content}\n`, { mode: 0o600 });
+  chmodSync(path, 0o600);
+  return path;
+}
+
+function removeCredentialEnvironmentFile(path: string): void {
+  try {
+    unlinkSync(path);
+  } catch {
+    // The file is owner-only and short-lived; a failed cleanup is not fatal.
+  }
+}
+
+function sweepStaleCredentialEnvironmentFiles(directory: string, now = Date.now()): void {
+  let entries;
+  try {
+    entries = readdirSync(directory, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith(".env")) continue;
+    const path = resolve(directory, entry.name);
+    try {
+      if (now - statSync(path).mtimeMs >= CREDENTIAL_ENVIRONMENT_FILE_MAX_AGE_MS) {
+        unlinkSync(path);
+      }
+    } catch {
+      // A concurrent run may have removed it already.
+    }
+  }
+}
+
+function quoteShellValue(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
 function networkConfigurationArguments(environment: UserEnvironment): string[] {

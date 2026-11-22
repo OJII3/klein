@@ -53,6 +53,8 @@ export interface WorkerDelegationPromptOptions {
   readonly t3ProjectAvailable: boolean;
   /** The linked user's sandboxed shell belongs to workers in this conversation. */
   readonly shellAvailable: boolean;
+  /** Workers can ask the linked user for credentials by direct message. */
+  readonly credentialsAvailable: boolean;
   readonly watchAvailable: boolean;
 }
 
@@ -78,6 +80,11 @@ export function renderWorkerDelegationSection(options: WorkerDelegationPromptOpt
       "- A sandboxed shell (`bash`): run commands in the linked user's private workspace, with other users' files and Klein's configuration hidden.",
     );
   }
+  if (options.credentialsAvailable) {
+    workerOnlyCapabilities.push(
+      "- Credential handling (`auth_request`, `auth_list`, `auth_run`): ask the linked user for a password or token by private direct message, then run commands with it without exposing the value in the conversation.",
+    );
+  }
 
   const unavailableCapabilities = [
     ...(options.browserAvailable ? [] : ["real browser use via `agent-browser`"]),
@@ -85,6 +92,7 @@ export function renderWorkerDelegationSection(options: WorkerDelegationPromptOpt
       ? []
       : ["T3 Code thread creation and follow-ups via `t3_thread_start`"]),
     ...(options.shellAvailable ? [] : ["a sandboxed shell"]),
+    ...(options.credentialsAvailable ? [] : ["asking the linked user for credentials"]),
   ];
 
   const lines = [
@@ -122,6 +130,11 @@ export function renderWorkerDelegationSection(options: WorkerDelegationPromptOpt
             : []),
         ]
       : []),
+    ...(options.credentialsAvailable
+      ? [
+          "Never ask the user to paste a password, token, or other secret in this conversation. Delegate credential collection to a worker, which asks the linked user by direct message.",
+        ]
+      : []),
     ...(unavailableCapabilities.length > 0
       ? [
           `This conversation does not have ${unavailableCapabilities.join(" or ")}. Do not start a worker for them or promise to use them.`,
@@ -150,5 +163,21 @@ export function renderWorkerT3ThreadSection(): string {
     "Threads are not limited to Klein's own repository. Pass a project id or a path inside any existing repository in `project` to work on that repository, including Klein's source code. Use `t3_project_list` when you need to find the right project. A thread runs directly on this machine, so it can also edit dotfiles and change machine settings.",
     "",
     "Continue the same thread with `t3_thread_send` for follow-ups, and check a long run with `t3_thread_show`. Report the thread's status, result, and link in your result.",
+  ].join("\n");
+}
+
+/**
+ * Guidance for a worker that can request credentials from the linked user.
+ * Values stay outside the model; `auth_run` injects them into the sandbox.
+ */
+export function renderWorkerAuthSection(): string {
+  return [
+    "## Credentials (`auth_*`)",
+    "",
+    "When a task needs a password, token, or other secret, use `auth_list` to check what is already saved and `auth_request` to ask the linked user by direct message. The user answers in a private modal; the values are encrypted and never enter this conversation or your result. If these tools are not active, load them with `tool_search`.",
+    "",
+    "Use `auth_run` (when available) to run a command with a saved credential. It injects each field as `KLEIN_AUTH_<SERVICE>_<FIELD>` and redacts those values from the output. Do not echo a credential, do not put one in a file that stays in the workspace, and do not ask the user to paste a secret into the channel.",
+    "",
+    "`auth_request` returns immediately. When the user submits or cancels, you receive a new message; continue the task then instead of waiting in the same turn.",
   ].join("\n");
 }

@@ -41,6 +41,7 @@ import type { AgentTurn, AgentTurnContext } from "@agents/core/agent-turn";
 import type { AgentPrompt, AgentRuntime } from "@agents/core/agent-runtime";
 import { toImageAnalysisFailure } from "@agents/core/image-analysis";
 import {
+  renderWorkerAuthSection,
   renderWorkerDelegationSection,
   renderWorkerT3ThreadSection,
 } from "@agents/core/worker-agent";
@@ -806,18 +807,24 @@ export function createPiAgentFactory({
         ...createTools(toolContext),
         ...(skillReadTool ? [skillReadTool] : []),
         ...(userShellTool ? [userShellTool] : []),
-      ].filter((tool) => authorization.allowsTool(tool.name));
+      ].filter(
+        (tool) =>
+          authorization.allowsTool(tool.name) &&
+          (tool.name !== "auth_run" || authorization.allowsTool("bash")),
+      );
       assertSurfaceToolsAllowed(options.role, customTools);
       const policy = resolveAgentPolicy(options.role);
       const surfaceTools = customTools.filter((tool) => tool.surface === true);
       const hasWatchAdd = customTools.some((tool) => tool.name === "watch_add");
       const hasWorkerStart = customTools.some((tool) => tool.name === "worker_start");
+      const hasAuthRequest = customTools.some((tool) => tool.name === "auth_request");
       const hasVoiceSpeak = surfaceTools.some((tool) => tool.name === "discord_speak");
       const workerBrowserAvailable =
         enablesAgentBrowser({ kind: "worker", workerId: "" }, linkedUserId) &&
         authorization.allowsServer(AGENT_BROWSER_MCP_SERVER_NAME);
       const workerT3Available =
         options.ownerFeaturesAllowed === true && authorization.allowsTool("t3_thread_start");
+      const workerCredentialsAvailable = linkedUserId !== undefined;
       const sessionBrowserAvailable =
         enablesAgentBrowser(options.role, linkedUserId) &&
         authorization.allowsServer(AGENT_BROWSER_MCP_SERVER_NAME);
@@ -836,13 +843,16 @@ export function createPiAgentFactory({
               t3Available: workerT3Available,
               t3ProjectAvailable: sessionT3ProjectAvailable,
               shellAvailable: workerShellAvailable,
+              credentialsAvailable: workerCredentialsAvailable,
               watchAvailable: hasWatchAdd,
             })
           : undefined;
+      const workerAuthSection = hasAuthRequest ? renderWorkerAuthSection() : undefined;
       const workerT3ThreadSection = sessionT3Available ? renderWorkerT3ThreadSection() : undefined;
       const systemPrompt = [
         definition.systemPrompt,
         ...(workerDelegationSection ? [workerDelegationSection] : []),
+        ...(workerAuthSection ? [workerAuthSection] : []),
         ...(workerT3ThreadSection ? [workerT3ThreadSection] : []),
         ...(hasWatchAdd && watchToolCatalog ? [renderWatchToolSection(watchToolCatalog)] : []),
       ]

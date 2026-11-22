@@ -18,6 +18,7 @@ import { VoiceChatCoordinator } from "./voice-chat-coordinator";
 import { DiscordAgent } from "@agents/discord/discord-agent";
 import { createDiscordAgentTools } from "@agents/discord/discord-tools";
 import { createWorkerTools } from "@agents/discord/tools/worker";
+import { createAuthTools } from "@agents/tools/auth";
 import {
   createPiAgentFactory,
   createPiModelRuntime,
@@ -30,6 +31,7 @@ import { createPiUsageReporterFromEnv } from "@runtime/pi/pi-usage-reporter";
 import { createT3CliThreadRunner } from "@runtime/t3/t3-cli-thread-runner";
 import { createT3SqliteProjectLister } from "@runtime/t3/t3-sqlite-project-lister";
 import { createWatchFetchTool } from "@runtime/pi/watch-fetch-tool";
+import { runSandboxedCommand } from "@runtime/pi/user-shell-sandbox";
 import { PiSharedMemoryAgent } from "@runtime/pi/pi-shared-memory-agent";
 import { PiUserMemoryAgent } from "@runtime/pi/pi-user-memory-agent";
 import { PiVoiceTranscriptQueueSelector } from "@runtime/pi/pi-voice-transcript-queue-selector";
@@ -80,9 +82,13 @@ import { Sbv2Tts } from "@modules/tts/infrastructure/sbv2-tts";
 import { WebSocketAsrClient } from "@modules/asr/infrastructure/websocket-asr-client";
 import { FileScheduledTaskStore } from "@modules/scheduling/infrastructure/file-scheduled-task-store";
 import { QuickJsWatchCheckRunner } from "@modules/scheduling/infrastructure/quickjs-watch-check-runner";
+import { AuthCredentialService } from "@modules/auth/application/auth-credential-service";
+import { FileAuthCredentialStore } from "@modules/auth/infrastructure/file-auth-credential-store";
+import { FileAuthRequestStore } from "@modules/auth/infrastructure/file-auth-request-store";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import type { DiscordReactionEvent } from "@modules/discord/domain/discord-reaction";
-import { isOwnerAccessScope, parseAccessScope } from "@shared/access";
+import { accessScopeUserId, isOwnerAccessScope, parseAccessScope } from "@shared/access";
+import { ensureUserEnvironment, resolveUserEnvironment } from "@shared/user-environment";
 
 const DISCORD_USAGE_STATUS_REFRESH_INTERVAL_MS = 60 * 60 * 1_000;
 const CHANNEL_CONTEXT_ROTATION_CHECK_INTERVAL_MS = 60 * 1_000;
@@ -244,7 +250,38 @@ export async function bootstrapApplication(): Promise<void> {
   let sharedMemoryCoordinator: SharedMemoryCoordinator | undefined;
   const t3ThreadRunner = createT3CliThreadRunner();
   const t3ProjectLister = createT3SqliteProjectLister();
-  const workerAgentCoordinator = new WorkerAgentCoordinator({
+  let workerAgentCoordinator!: WorkerAgentCoordinator;
+  const authCredentialService = new AuthCredentialService({
+    credentials: new FileAuthCredentialStore(agentDir, logger),
+    requests: new FileAuthRequestStore(resolve(agentDir, "auth-requests.json")),
+    onResolved: async (request, outcome) => {
+      const scope = parseAccessScope(request.accessScope);
+      if (!scope) return;
+      const sent = await workerAgentCoordinator.send(
+        {
+          conversationKey: { kind: "discord", channelId: request.channelId },
+          accessScope: scope,
+        },
+        request.workerId,
+        outcome === "saved"
+          ? `認証情報 "${request.label}" (${request.service}) が保存されました。auth_list で確認し、auth_run で使えます。`
+          : `認証情報 "${request.label}" (${request.service}) の入力はキャンセルされました。必要なら auth_request で再依頼できます。`,
+      );
+      if (!sent) {
+        logger.info(
+          {
+            event: "auth_request_worker_unavailable",
+            requestId: request.requestId,
+            workerId: request.workerId,
+          },
+          "The worker for an auth request is no longer available",
+        );
+      }
+    },
+    logger,
+  });
+  await authCredentialService.load();
+  workerAgentCoordinator = new WorkerAgentCoordinator({
     factory: piAgentFactory,
     systemPrompt: WORKER_SYSTEM_PROMPT,
     logger,
@@ -265,7 +302,7 @@ export async function bootstrapApplication(): Promise<void> {
         ownerUserId && isOwnerAccessScope(accessScope, ownerUserId)
           ? { userId: ownerUserId }
           : undefined;
-      return createWorkerTools(
+      const workerTools = createWorkerTools(
         discordService,
         conversationKey.channelId,
         accessScope,
@@ -278,6 +315,20 @@ export async function bootstrapApplication(): Promise<void> {
         ownerRequester ? t3ProjectLister : undefined,
         { users: discordUserDirectory, profiles: discordService },
       );
+      const workerUserId = accessScopeUserId(accessScope);
+      if (!workerUserId) return workerTools;
+      return [
+        ...workerTools,
+        ...createAuthTools({
+          credentials: authCredentialService,
+          userId: workerUserId,
+          channelId: conversationKey.channelId,
+          accessScope,
+          workerId,
+          environment: ensureUserEnvironment(resolveUserEnvironment(agentDir, workerUserId)),
+          runCommand: runSandboxedCommand,
+        }),
+      ];
     },
     onResult: (delivery) =>
       agentCoordinator.deliverWorkerResult(
@@ -465,6 +516,7 @@ export async function bootstrapApplication(): Promise<void> {
       enableReactions: true,
       channelLinkStore: discordChannelLinkStore,
       channelLinkRequestStore: discordChannelLinkRequestStore,
+      authCredentials: authCredentialService,
     },
   );
   const memorySessionId = `memory-${randomUUID()}`;
