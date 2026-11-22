@@ -13,7 +13,7 @@ export function createDiscordSendTool(
     {
       name: "discord_send",
       label: "Send Discord Message",
-      exposure: "model-only",
+      exposure: "direct",
       description: "Send a user-visible message to the current Discord conversation.",
       parameters: Type.Object({
         content: Type.String({ minLength: 1 }),
