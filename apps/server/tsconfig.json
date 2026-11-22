@@ -9,5 +9,11 @@
       "@shared/*": ["./src/shared/*"]
     }
   },
-  "include": ["src/**/*.ts", "scripts/build.ts"]
+  "include": [
+    "src/**/*.ts",
+    "scripts/build.ts",
+    "scripts/install-systemd-user-unit.ts",
+    "scripts/systemd-user-unit.ts",
+    "scripts/systemd-user-unit.test.ts"
+  ]
 }
