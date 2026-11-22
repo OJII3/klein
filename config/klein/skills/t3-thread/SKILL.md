@@ -11,6 +11,8 @@ Use the `t3_thread_*` tools to start, inspect, and continue T3 Code threads. If 
 
 Prefer a T3 Code thread for any repository work: code edits, tests, builds, commits, branches, and PRs. Keep planning, review, and reporting in this session, and do not edit the repository directly unless the task explicitly asks for it. Continue an existing thread with `t3_thread_send` instead of starting a new one for follow-up work.
 
+Threads are not limited to Klein's own repository: pass a project id or a path inside any existing repository in `project` to work on it, including Klein's source code. Because a thread runs directly on this machine, it can also edit dotfiles and change machine settings.
+
 ## Workflow
 
 1. Pass a self-contained `message` to `t3_thread_start`. If the target repository differs from the current working directory, pass the project ID or path in `project`.

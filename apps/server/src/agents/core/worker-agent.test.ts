@@ -16,6 +16,9 @@ test("renders browser, T3, and shell capabilities when enabled", () => {
   assert.match(section, /t3_thread_\*/);
   assert.match(section, /sandboxed shell/);
   assert.match(section, /watch_add/);
+  assert.match(section, /any repository on this machine/);
+  assert.match(section, /Klein's own code, dotfiles, and machine settings/);
+  assert.match(section, /can act on this machine through T3 Code/);
   assert.doesNotMatch(section, /not available in this conversation/);
 });
 
@@ -31,6 +34,7 @@ test("notes disabled capabilities without claiming owner permissions", () => {
   assert.match(section, /does not have/);
   assert.match(section, /sandboxed shell/);
   assert.doesNotMatch(section, /owner permissions/);
+  assert.doesNotMatch(section, /can act on this machine through T3 Code/);
   assert.doesNotMatch(section, /watch_add/);
 });
 
@@ -55,4 +59,7 @@ test("renders worker guidance for routing repository work to T3 threads", () => 
   assert.match(section, /t3_thread_send/);
   assert.match(section, /t3_thread_show/);
   assert.match(section, /PR creation/);
+  assert.match(section, /not limited to Klein's own repository/);
+  assert.match(section, /Klein's source code/);
+  assert.match(section, /edit dotfiles and change machine settings/);
 });

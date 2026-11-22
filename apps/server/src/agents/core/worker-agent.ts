@@ -68,7 +68,7 @@ export function renderWorkerDelegationSection(options: WorkerDelegationPromptOpt
   }
   if (options.t3Available) {
     workerOnlyCapabilities.push(
-      "- T3 Code threads (`t3_thread_*`): hand repository edits, coding, tests, and PR creation to a T3 Code agent.",
+      "- T3 Code threads (`t3_thread_*`): hand repository edits, coding, tests, and PR creation to a T3 Code agent, in any repository on this machine, including Klein's own code, dotfiles, and machine settings.",
     );
   }
   if (options.shellAvailable) {
@@ -105,6 +105,11 @@ export function renderWorkerDelegationSection(options: WorkerDelegationPromptOpt
           "Workers in this conversation also have capabilities you do NOT have directly:",
           ...workerOnlyCapabilities,
           "Whenever a request needs these capabilities, delegate with `worker_start` instead of declining or falling back to static `fetch_content`.",
+          ...(options.t3Available
+            ? [
+                "An owner worker can act on this machine through T3 Code, not just look things up: it can change any repository, dotfiles, or machine settings. Delegate such requests instead of treating them as out of scope.",
+              ]
+            : []),
         ]
       : []),
     ...(unavailableCapabilities.length > 0
@@ -121,13 +126,16 @@ export function renderWorkerDelegationSection(options: WorkerDelegationPromptOpt
 
 /**
  * Renders guidance for a worker that has the T3 Code thread tools. Repository
- * work stays in a thread instead of the worker's own session.
+ * work stays in a thread instead of the worker's own session, and a thread can
+ * reach any repository or machine setting rather than only Klein's checkout.
  */
 export function renderWorkerT3ThreadSection(): string {
   return [
     "## T3 Code threads (`t3_thread_*`)",
     "",
     "Repository work belongs in a T3 Code thread: hand code edits, tests, builds, commits, and PR creation to `t3_thread_start` instead of doing them in your own session.",
+    "",
+    "Threads are not limited to Klein's own repository. Pass a project id or a path inside any existing repository in `project` to work on that repository, including Klein's source code. A thread runs directly on this machine, so it can also edit dotfiles and change machine settings.",
     "",
     "Continue the same thread with `t3_thread_send` for follow-ups, and check a long run with `t3_thread_show`. Report the thread's status, result, and link in your result.",
   ].join("\n");
