@@ -1,5 +1,10 @@
 import type { DiscordChoiceRequest } from "../domain/discord-choice";
-import type { DiscordMessage, DiscordMessageLocator } from "../domain/discord-message";
+import type {
+  DiscordChannelHistoryMessage,
+  DiscordChannelHistoryPageRequest,
+  DiscordMessage,
+  DiscordMessageLocator,
+} from "../domain/discord-message";
 
 export interface DiscordMessageRequester {
   readonly userId: string;
@@ -27,4 +32,9 @@ export interface DiscordChannelApi {
     locator: DiscordMessageLocator,
     requester?: DiscordMessageRequester,
   ): Promise<DiscordMessage>;
+  /** Reads recent messages newest first. limit must be between 1 and 100. */
+  readMessages(
+    request: DiscordChannelHistoryPageRequest,
+    requester?: DiscordMessageRequester,
+  ): Promise<readonly DiscordChannelHistoryMessage[]>;
 }

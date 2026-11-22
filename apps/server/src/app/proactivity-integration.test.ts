@@ -103,6 +103,9 @@ async function withIntegration(
     async readMessage() {
       throw new Error("Unexpected read");
     },
+    async readMessages() {
+      throw new Error("Unexpected message list read");
+    },
     async getChannelLocation(channelId) {
       return { channelId };
     },

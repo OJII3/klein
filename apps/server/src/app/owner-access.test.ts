@@ -67,6 +67,9 @@ function createHarness(
     async readMessage() {
       return message;
     },
+    async readMessages() {
+      throw new Error("Unexpected message list read");
+    },
   };
   const coordinator = new AgentCoordinator({
     accessPolicy: createDiscordAccessPolicy(

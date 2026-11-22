@@ -29,6 +29,7 @@ import {
   type DiscordServiceChannel,
   type DiscordServiceClient,
   type DiscordServiceMessage,
+  type DiscordServiceMessagePageOptions,
   type DiscordServiceSendableUser,
 } from "./discord-js-service";
 import type { DiscordServiceProfileGuild } from "./discord-js-user-profile";
@@ -175,6 +176,28 @@ function createImageAttachment(): DiscordAdapterAttachment {
     size: 68,
     url: "https://cdn.discordapp.com/attachments/sample.png",
   };
+}
+
+interface HistoryMessageFetch {
+  (messageId: string): Promise<DiscordServiceMessage>;
+  (options: DiscordServiceMessagePageOptions): Promise<ReadonlyMap<string, DiscordServiceMessage>>;
+}
+
+function createHistoryMessageFetch(
+  loadPage: (
+    options: DiscordServiceMessagePageOptions,
+  ) => ReadonlyMap<string, DiscordServiceMessage>,
+): HistoryMessageFetch {
+  function fetch(messageId: string): Promise<DiscordServiceMessage>;
+  function fetch(
+    options: DiscordServiceMessagePageOptions,
+  ): Promise<ReadonlyMap<string, DiscordServiceMessage>>;
+  async function fetch(
+    target: string | DiscordServiceMessagePageOptions,
+  ): Promise<DiscordServiceMessage | ReadonlyMap<string, DiscordServiceMessage>> {
+    return typeof target === "string" ? createMessage() : loadPage(target);
+  }
+  return fetch;
 }
 
 function extractFirstTextContent(response: InteractionReplyOptions): string | undefined {
@@ -952,6 +975,138 @@ test("message reads enforce inherited access and trusted requester identity", as
     assert.equal((await service.readMessage(locator, { userId: "user-123" })).id, "message-123");
     await service.readMessage({ ...locator, channelId: "public" });
     assert.equal(reads, 2);
+  } finally {
+    await service.stop();
+  }
+});
+
+test("reads channel history with pagination options", async () => {
+  const fakeClient = new FakeDiscordClient();
+  const pageRequests: unknown[] = [];
+  fakeClient.channels.fetch = async (id) => ({
+    id,
+    guildId: "guild-123",
+    isTextBased: () => true,
+    isThread: () => false,
+    messages: {
+      fetch: createHistoryMessageFetch((options) => {
+        pageRequests.push(options);
+        return new Map<string, DiscordServiceMessage>([
+          [
+            "message-2",
+            {
+              ...createMessage({
+                attachments: new Map([["attachment-1", createImageAttachment()]]),
+                author: { bot: true, id: "bot-123" },
+                content: "新しい本文",
+              }),
+              id: "message-2",
+            },
+          ],
+          ["message-1", { ...createMessage({ content: "古い本文" }), id: "message-1" }],
+        ]);
+      }),
+    },
+  });
+  const service = new DiscordJsService(
+    "token",
+    createDiscordAccessPolicy({ default: "allow", directMessages: "allow" }),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    { createClient: () => fakeClient },
+  );
+
+  try {
+    const messages = await service.readMessages({
+      before: "message-3",
+      channelId: "channel-123",
+      limit: 2,
+    });
+
+    assert.deepEqual(pageRequests, [{ before: "message-3", limit: 2 }]);
+    assert.deepEqual(
+      messages.map((message) => ({
+        attachments: message.attachments,
+        authorBot: message.author.bot,
+        content: message.content,
+        id: message.id,
+      })),
+      [
+        {
+          attachments: [
+            {
+              filename: "sample.png",
+              url: "https://cdn.discordapp.com/attachments/sample.png",
+            },
+          ],
+          authorBot: true,
+          content: "新しい本文",
+          id: "message-2",
+        },
+        { attachments: [], authorBot: false, content: "古い本文", id: "message-1" },
+      ],
+    );
+  } finally {
+    await service.stop();
+  }
+});
+
+test("channel history reads enforce inherited access", async () => {
+  const fakeClient = new FakeDiscordClient();
+  let reads = 0;
+  fakeClient.channels.fetch = async (id) => ({
+    id,
+    guildId: "guild-123",
+    isTextBased: () => true,
+    isThread: () => id === "private-thread",
+    parentId: "private",
+    messages: {
+      fetch: createHistoryMessageFetch(() => {
+        reads += 1;
+        return new Map<string, DiscordServiceMessage>();
+      }),
+    },
+  });
+  const service = new DiscordJsService(
+    "token",
+    createDiscordAccessPolicy(
+      { default: "deny", directMessages: "deny" },
+      "user-123",
+      {
+        getGuildRule: (guildId) =>
+          guildId === "guild-123"
+            ? {
+                channels: {
+                  private: { access: "allow", threads: { public: { access: "allow" } } },
+                },
+              }
+            : undefined,
+      },
+      (target) => (target.threadId === "private-thread" ? "user-123" : undefined),
+    ),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    { createClient: () => fakeClient },
+  );
+
+  try {
+    await assert.rejects(
+      service.readMessages({ channelId: "private-thread", limit: 10 }),
+      /access denied/,
+    );
+    assert.equal(reads, 0);
+    await service.readMessages({ channelId: "private-thread", limit: 10 }, { userId: "user-123" });
+    assert.equal(reads, 1);
   } finally {
     await service.stop();
   }

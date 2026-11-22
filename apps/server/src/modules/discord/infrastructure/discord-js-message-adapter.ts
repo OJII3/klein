@@ -3,6 +3,7 @@ import type { Logger } from "pino";
 
 import {
   resolveDiscordMentions,
+  type DiscordChannelHistoryMessage,
   type DiscordImageAttachment,
   type DiscordMessage,
   type DiscordReplyReference,
@@ -106,6 +107,20 @@ export class DiscordJsMessageAdapter implements DiscordGatewayMessageReader {
       images: [],
       parentChannelId: thread?.parentId ?? undefined,
       threadId: thread?.id,
+    };
+  }
+
+  toDiscordChannelHistoryMessage(message: DiscordAdapterMessage): DiscordChannelHistoryMessage {
+    return {
+      occurredAt: message.createdAt.toISOString(),
+      author: toDiscordUser(message),
+      channelId: message.channelId,
+      content: this.normalizeMessageContent(message),
+      id: message.id,
+      attachments: [...message.attachments.values()].map((attachment) => ({
+        filename: attachment.name,
+        url: attachment.url,
+      })),
     };
   }
 

@@ -1345,10 +1345,23 @@ async function executeSessionSlice(
     const sentMessages: string[] = [];
     const channelApi: Pick<
       DiscordChannelApi,
-      "readMessage" | "sendMessage" | "sendChoices" | "sendTyping" | "sendAudio"
+      "readMessage" | "readMessages" | "sendMessage" | "sendChoices" | "sendTyping" | "sendAudio"
     > = {
       async readMessage(target) {
         return createFallbackSampleDiscordMessage(target.channelId, target.messageId);
+      },
+      async readMessages(target) {
+        const message = createFallbackSampleDiscordMessage(target.channelId, "replay-message");
+        return [
+          {
+            id: message.id,
+            channelId: message.channelId,
+            occurredAt: message.occurredAt,
+            author: message.author,
+            content: message.content,
+            attachments: [],
+          },
+        ];
       },
       async sendMessage(_channelId, content) {
         sentMessages.push(content);

@@ -2,10 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  formatDiscordChannelHistoryMessage,
   formatDiscordMessage,
   formatDiscordReply,
   formatDiscordUser,
   resolveDiscordMentions,
+  type DiscordChannelHistoryMessage,
   type DiscordRole,
   type DiscordUser,
 } from "./discord-message";
@@ -27,6 +29,15 @@ const bot: DiscordUser = {
 const role: DiscordRole = {
   id: "111111111111111111",
   name: "開発チーム",
+};
+
+const historyMessage: DiscordChannelHistoryMessage = {
+  attachments: [],
+  author: user,
+  channelId: "channel-123",
+  content: "本文です",
+  id: "message-456",
+  occurredAt: "2026-10-14T09:30:42.123Z",
 };
 
 test("formats a Discord user with display name and username", () => {
@@ -115,6 +126,44 @@ test("formats an image-only message", () => {
       ],
     }),
     "さつき (@satsuki):\n(画像のみ)\n[添付画像: sample.png]",
+  );
+});
+
+test("formats a history message with its id, author, user id, and timestamp", () => {
+  assert.equal(
+    formatDiscordChannelHistoryMessage(historyMessage),
+    "[message-456] 2026-10-14T09:30:42.123Z | さつき (@satsuki) | userId=123456789012345678\n本文です",
+  );
+});
+
+test("formats history attachments with filenames and URLs", () => {
+  assert.equal(
+    formatDiscordChannelHistoryMessage({
+      ...historyMessage,
+      attachments: [
+        { filename: "sample.png", url: "https://cdn.discordapp.com/attachments/sample.png" },
+      ],
+      content: "",
+    }),
+    "[message-456] 2026-10-14T09:30:42.123Z | さつき (@satsuki) | userId=123456789012345678\n" +
+      "(本文なし)\n[添付: sample.png (https://cdn.discordapp.com/attachments/sample.png)]",
+  );
+});
+
+test("truncates a long history body at 1500 characters by code point", () => {
+  const text = formatDiscordChannelHistoryMessage({
+    ...historyMessage,
+    content: "あ".repeat(1_501),
+  });
+
+  assert.ok(text.endsWith(`${"あ".repeat(1_500)}… (truncated, 1501 chars total)`));
+});
+
+test("keeps a history body that is exactly at the limit intact", () => {
+  const content = "あ".repeat(1_500);
+
+  assert.ok(
+    formatDiscordChannelHistoryMessage({ ...historyMessage, content }).endsWith(`\n${content}`),
   );
 });
 

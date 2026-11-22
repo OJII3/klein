@@ -77,3 +77,46 @@ test("preserves the original Discord message timestamp including milliseconds", 
   assert.equal(event.channelName, "general");
   assert.equal(event.occurredAt, "2026-10-14T09:30:42.123Z");
 });
+
+test("maps history messages with attachment names and URLs", () => {
+  const adapter = new DiscordJsMessageAdapter();
+  const message = createMessageStub({
+    author: {
+      bot: true,
+      id: "bot-123",
+      username: "klein",
+      displayName: "クライン",
+    },
+    attachments: new Map([
+      [
+        "attachment-123",
+        {
+          contentType: "image/png",
+          id: "attachment-123",
+          name: "sample.png",
+          size: 68,
+          url: "https://cdn.discordapp.com/attachments/sample.png",
+        },
+      ],
+    ]),
+    mentions: {
+      users: new Map([["456", { bot: false, id: "456", username: "alice", displayName: "Alice" }]]),
+      roles: new Map(),
+    },
+    content: "<@456> こんにちは",
+  });
+
+  assert.deepEqual(adapter.toDiscordChannelHistoryMessage(message), {
+    attachments: [
+      {
+        filename: "sample.png",
+        url: "https://cdn.discordapp.com/attachments/sample.png",
+      },
+    ],
+    author: { bot: true, displayName: "クライン", id: "bot-123", username: "klein" },
+    channelId: "public",
+    content: "@Alice (@alice) こんにちは",
+    id: "reference-123",
+    occurredAt: "2026-10-14T09:30:42.123Z",
+  });
+});
