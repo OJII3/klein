@@ -20,6 +20,7 @@
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
     "start": "bun run build && bun dist/klein",
+    "systemd:install": "bun apps/server/scripts/install-systemd-user-unit.ts",
     "test": "bun test",
     "typecheck": "bun run --filter '*' typecheck"
   },
