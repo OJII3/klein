@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { access, writeFile } from "node:fs/promises";
+import { access, readdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { join } from "node:path";
 import test from "node:test";
@@ -17,6 +17,7 @@ import {
   parseNameservers,
   resolveBubblewrapBinary,
   resolvePastaBinary,
+  runSandboxedCommand,
   sandboxPathEntries,
 } from "./user-shell-sandbox";
 
@@ -161,6 +162,36 @@ test("runs commands inside the user's environment", { skip: sandboxSkip }, async
     hostServer.close();
   }
 });
+
+test("mounts a secret file read-only and sources it before the command", () => {
+  const environment = resolveUserEnvironment("/tmp/agent", "123");
+  const args = buildBubblewrapArguments(environment, "echo ok", "/tmp/secret-file.env");
+
+  assert.ok(args.includes("/tmp/secret-file.env"));
+  assert.ok(args.includes("/run/klein/secrets.env"));
+  assert.match(args.at(-1) ?? "", /\. \/run\/klein\/secrets\.env/u);
+  assert.ok(!args.some((argument) => argument.includes("secret-value")));
+});
+
+test(
+  "injects secret variables only into the command and removes the file",
+  { skip: sandboxSkip },
+  async () => {
+    await using temp = await createTempDir("klein-user-shell-secret-");
+    const environment = ensureUserEnvironment(resolveUserEnvironment(temp.path, "123"));
+    const value = "secret'value\nsecond-line";
+
+    const result = await runSandboxedCommand(
+      environment,
+      'printf "%s" "$KLEIN_SECRET_EXAMPLE_TOKEN"',
+      { secretEnvironment: { KLEIN_SECRET_EXAMPLE_TOKEN: value } },
+    );
+
+    assert.equal(result.exitCode, 0);
+    assert.equal(result.output, value);
+    assert.deepEqual(await readdir(join(environment.credentialsDirectory, "secret-runtime")), []);
+  },
+);
 
 test("stops a command when the timeout expires", { skip: sandboxSkip }, async () => {
   await using temp = await createTempDir("klein-user-shell-timeout-");

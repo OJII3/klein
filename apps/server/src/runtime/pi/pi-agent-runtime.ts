@@ -41,6 +41,7 @@ import type { AgentTurn, AgentTurnContext } from "@agents/core/agent-turn";
 import type { AgentPrompt, AgentRuntime } from "@agents/core/agent-runtime";
 import { toImageAnalysisFailure } from "@agents/core/image-analysis";
 import {
+  renderWorkerSecretsSection,
   renderWorkerDelegationSection,
   renderWorkerT3ThreadSection,
 } from "@agents/core/worker-agent";
@@ -730,7 +731,7 @@ export function createPiAgentFactory({
     throw new Error("characterName is required");
   }
 
-  // Pi's MCP extension resolves config, credentials, and logs through this environment variable.
+  // Pi's MCP extension resolves config, secrets, and logs through this environment variable.
   process.env.PI_CODING_AGENT_DIR = resolve(agentDir);
 
   const imageModel = llm.image
@@ -806,18 +807,24 @@ export function createPiAgentFactory({
         ...createTools(toolContext),
         ...(skillReadTool ? [skillReadTool] : []),
         ...(userShellTool ? [userShellTool] : []),
-      ].filter((tool) => authorization.allowsTool(tool.name));
+      ].filter(
+        (tool) =>
+          authorization.allowsTool(tool.name) &&
+          (tool.name !== "secret_run" || authorization.allowsTool("bash")),
+      );
       assertSurfaceToolsAllowed(options.role, customTools);
       const policy = resolveAgentPolicy(options.role);
       const surfaceTools = customTools.filter((tool) => tool.surface === true);
       const hasWatchAdd = customTools.some((tool) => tool.name === "watch_add");
       const hasWorkerStart = customTools.some((tool) => tool.name === "worker_start");
+      const hasSecretRequest = customTools.some((tool) => tool.name === "secret_request");
       const hasVoiceSpeak = surfaceTools.some((tool) => tool.name === "discord_speak");
       const workerBrowserAvailable =
         enablesAgentBrowser({ kind: "worker", workerId: "" }, linkedUserId) &&
         authorization.allowsServer(AGENT_BROWSER_MCP_SERVER_NAME);
       const workerT3Available =
         options.ownerFeaturesAllowed === true && authorization.allowsTool("t3_thread_start");
+      const workerSecretsAvailable = linkedUserId !== undefined;
       const sessionBrowserAvailable =
         enablesAgentBrowser(options.role, linkedUserId) &&
         authorization.allowsServer(AGENT_BROWSER_MCP_SERVER_NAME);
@@ -836,13 +843,16 @@ export function createPiAgentFactory({
               t3Available: workerT3Available,
               t3ProjectAvailable: sessionT3ProjectAvailable,
               shellAvailable: workerShellAvailable,
+              secretsAvailable: workerSecretsAvailable,
               watchAvailable: hasWatchAdd,
             })
           : undefined;
+      const workerSecretsSection = hasSecretRequest ? renderWorkerSecretsSection() : undefined;
       const workerT3ThreadSection = sessionT3Available ? renderWorkerT3ThreadSection() : undefined;
       const systemPrompt = [
         definition.systemPrompt,
         ...(workerDelegationSection ? [workerDelegationSection] : []),
+        ...(workerSecretsSection ? [workerSecretsSection] : []),
         ...(workerT3ThreadSection ? [workerT3ThreadSection] : []),
         ...(hasWatchAdd && watchToolCatalog ? [renderWatchToolSection(watchToolCatalog)] : []),
       ]

@@ -53,6 +53,8 @@ export interface WorkerDelegationPromptOptions {
   readonly t3ProjectAvailable: boolean;
   /** The linked user's sandboxed shell belongs to workers in this conversation. */
   readonly shellAvailable: boolean;
+  /** Workers can ask the linked user for secrets by direct message. */
+  readonly secretsAvailable: boolean;
   readonly watchAvailable: boolean;
 }
 
@@ -78,6 +80,11 @@ export function renderWorkerDelegationSection(options: WorkerDelegationPromptOpt
       "- A sandboxed shell (`bash`): run commands in the linked user's private workspace, with other users' files and Klein's configuration hidden.",
     );
   }
+  if (options.secretsAvailable) {
+    workerOnlyCapabilities.push(
+      "- Secret handling (`secret_request`, `secret_list`, `secret_run`, `secret_delete`): ask the linked user for a password or token by private direct message, then run commands with it without exposing the value in the conversation.",
+    );
+  }
 
   const unavailableCapabilities = [
     ...(options.browserAvailable ? [] : ["real browser use via `agent-browser`"]),
@@ -85,6 +92,7 @@ export function renderWorkerDelegationSection(options: WorkerDelegationPromptOpt
       ? []
       : ["T3 Code thread creation and follow-ups via `t3_thread_start`"]),
     ...(options.shellAvailable ? [] : ["a sandboxed shell"]),
+    ...(options.secretsAvailable ? [] : ["asking the linked user for secrets"]),
   ];
 
   const lines = [
@@ -122,6 +130,11 @@ export function renderWorkerDelegationSection(options: WorkerDelegationPromptOpt
             : []),
         ]
       : []),
+    ...(options.secretsAvailable
+      ? [
+          "Never ask the user to paste a password, token, or other secret in this conversation. Delegate secret collection to a worker, which asks the linked user by direct message.",
+        ]
+      : []),
     ...(unavailableCapabilities.length > 0
       ? [
           `This conversation does not have ${unavailableCapabilities.join(" or ")}. Do not start a worker for them or promise to use them.`,
@@ -150,5 +163,27 @@ export function renderWorkerT3ThreadSection(): string {
     "Threads are not limited to Klein's own repository. Pass a project id or a path inside any existing repository in `project` to work on that repository, including Klein's source code. Use `t3_project_list` when you need to find the right project. A thread runs directly on this machine, so it can also edit dotfiles and change machine settings.",
     "",
     "Continue the same thread with `t3_thread_send` for follow-ups, and check a long run with `t3_thread_show`. Report the thread's status, result, and link in your result.",
+  ].join("\n");
+}
+
+/**
+ * Guidance for a worker that can request secrets from the linked user.
+ * Values stay outside the model; `secret_run` injects them into the sandbox.
+ */
+export function renderWorkerSecretsSection(): string {
+  return [
+    "## Secrets (`secret_*`)",
+    "",
+    "When a task needs a password, token, or other secret, use `secret_list` to check what is already saved and `secret_request` to ask the linked user by direct message. The user answers in a private modal; the values are encrypted and never enter this conversation or your result. If these tools are not active, load them with `tool_search`.",
+    "",
+    "Use `secret_run` (when available) to run a command with a saved secret. It injects each field as `KLEIN_SECRET_<SERVICE>_<FIELD>` and redacts those values from the output. Do not echo a secret, do not put one in a file that stays in the workspace, and do not ask the user to paste a secret into the channel.",
+    "",
+    "If a CLI expects a fixed environment variable, set `env` on the field when requesting it (for example `SERVICE_TOKEN`); `secret_run` injects both names. For a tool that reads a config file, write the value to a file under `/tmp` inside the command and remove it when the command ends; do not leave it in the linked user's home.",
+    "",
+    "Device-code logins that only ask the user for a one-time code are fine. The risk is the long-lived state the CLI writes after login: if it is stored in the sandbox, you can read it. Use the CLI's own login/logout only when the user accepts that, and prefer a hidden browser profile or a host-side adapter when the token must stay unreadable.",
+    "",
+    "Use `secret_delete` only when the user explicitly asks to remove or revoke a saved secret.",
+    "",
+    "`secret_request` returns immediately. When the user submits or cancels, you receive a new message; continue the task then instead of waiting in the same turn.",
   ].join("\n");
 }
