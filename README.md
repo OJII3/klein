@@ -22,16 +22,6 @@ bun run start
 
 `bun run start` builds the web UI and server, then runs the bot. It resumes the latest session for each Discord channel by default; pass `-- --new` to start fresh or `-- --resume` to be explicit.
 
-## systemd user service
-
-On a Linux host with systemd, install and start Klein as a user service:
-
-```sh
-bun run systemd:install
-```
-
-This builds the web UI and server, writes `~/.config/systemd/user/klein.service`, and starts it. The unit runs through the flake devShell when Nix is available, so `bwrap`, `pasta`, and `cloudflared` stay on `PATH`. See [docs/systemd.md](docs/systemd.md) for logs, updates, and linger.
-
 ## Profiles
 
 Profiles live in `config/<profile>/` and define the agent's personality and skills:
@@ -46,7 +36,6 @@ Select one with `"profile"` in `config/config.jsonc` (default: `klein`). The bun
 ## Documentation
 
 - [docs/features.md](docs/features.md) — Discord, providers, voice, memory, schedules, MCP, Web UI
-- [docs/systemd.md](docs/systemd.md) — running as a systemd user service
 - [docs/voice-chat-asr-protocol.md](docs/voice-chat-asr-protocol.md) — ASR WebSocket protocol
 - [docs/sbv2-tts-protocol.md](docs/sbv2-tts-protocol.md) — SBV2 HTTP protocol
 
