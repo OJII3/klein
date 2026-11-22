@@ -263,6 +263,127 @@ test("updates a watch and can disable and re-enable it", async () => {
   assert.equal(missingResult.details.updated, false);
 });
 
+test("clears the failure state when the script changes", async () => {
+  const { store, getStored } = createSingleWatchStore();
+  const { runner } = createRunner();
+  const tools = createWatchTools(store, "channel-a", "public", runner);
+  const { updateTool } = unpackWatchTools(tools);
+  const ctx = await createStubExtensionToolContext();
+
+  await addWatch(tools);
+  const created = getStored();
+  if (!created) {
+    assert.fail("expected watch to be created");
+  }
+  await store.update({
+    ...created,
+    consecutiveFailures: 3,
+    lastStatus: "error",
+    lastError: "boom",
+  });
+
+  await updateTool.execute(
+    "tool-call",
+    { id: created.id, script: "text('fixed'); silent();" },
+    undefined,
+    undefined,
+    ctx,
+  );
+
+  const stored = getStored();
+  assert.equal(stored?.script, "text('fixed'); silent();");
+  assert.equal(stored?.consecutiveFailures, 0);
+  assert.equal(stored?.lastStatus, undefined);
+  assert.equal(stored?.lastError, undefined);
+});
+
+test("clears the failure state when a disabled watch is re-enabled", async () => {
+  const { store, getStored } = createSingleWatchStore();
+  const { runner } = createRunner();
+  const tools = createWatchTools(store, "channel-a", "public", runner);
+  const { updateTool } = unpackWatchTools(tools);
+  const ctx = await createStubExtensionToolContext();
+
+  await addWatch(tools);
+  const created = getStored();
+  if (!created) {
+    assert.fail("expected watch to be created");
+  }
+  await updateTool.execute(
+    "tool-call",
+    { id: created.id, enabled: false },
+    undefined,
+    undefined,
+    ctx,
+  );
+  const disabled = getStored();
+  if (!disabled) {
+    assert.fail("expected watch to remain stored");
+  }
+  await store.update({
+    ...disabled,
+    consecutiveFailures: 3,
+    lastStatus: "error",
+    lastError: "boom",
+  });
+
+  await updateTool.execute(
+    "tool-call",
+    { id: created.id, enabled: true },
+    undefined,
+    undefined,
+    ctx,
+  );
+
+  const stored = getStored();
+  assert.equal(stored?.enabled, true);
+  assert.equal(stored?.consecutiveFailures, 0);
+  assert.equal(stored?.lastStatus, undefined);
+  assert.equal(stored?.lastError, undefined);
+});
+
+test("keeps the failure state when the script does not change", async () => {
+  const { store, getStored } = createSingleWatchStore();
+  const { runner } = createRunner();
+  const tools = createWatchTools(store, "channel-a", "public", runner);
+  const { updateTool } = unpackWatchTools(tools);
+  const ctx = await createStubExtensionToolContext();
+
+  await addWatch(tools);
+  const created = getStored();
+  if (!created) {
+    assert.fail("expected watch to be created");
+  }
+  await store.update({
+    ...created,
+    consecutiveFailures: 3,
+    lastStatus: "error",
+    lastError: "boom",
+  });
+
+  await updateTool.execute(
+    "tool-call",
+    { id: created.id, message: "在庫を確認しました。" },
+    undefined,
+    undefined,
+    ctx,
+  );
+  assert.equal(getStored()?.consecutiveFailures, 3);
+  assert.equal(getStored()?.lastStatus, "error");
+  assert.equal(getStored()?.lastError, "boom");
+
+  await updateTool.execute(
+    "tool-call",
+    { id: created.id, script: created.script },
+    undefined,
+    undefined,
+    ctx,
+  );
+  assert.equal(getStored()?.consecutiveFailures, 3);
+  assert.equal(getStored()?.lastStatus, "error");
+  assert.equal(getStored()?.lastError, "boom");
+});
+
 test("does not register a watch when the dry run fails", async () => {
   const { store, getStored } = createSingleWatchStore();
   const { runner, fail } = createRunner();

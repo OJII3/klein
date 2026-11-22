@@ -134,6 +134,7 @@ export function createWatchTools(
         'Set `priority` to "urgent" only for watches whose wake should reach the user immediately. Leaving it out keeps the current priority. ' +
         "Changing the schedule or enabling a disabled watch schedules the next check from now. " +
         "Enabling a disabled watch runs the script once first; if that run fails, the watch stays disabled. " +
+        "Changing the script or enabling a disabled watch also clears the consecutive failure count and the last error, so the next failure is notified again. " +
         "Use watch_list to find the ID.",
       parameters: Type.Object({
         id: Type.String({ minLength: 1 }),
@@ -167,16 +168,18 @@ export function createWatchTools(
           ? resolveSchedule(params.schedule as ScheduleInput, now)
           : undefined;
         const enabled = params.enabled ?? current.enabled;
+        const script = params.script?.trim() ?? current.script;
+        const resetsFailureState = script !== current.script || (enabled && !current.enabled);
         const nextRunAt = resolvedSchedule
           ? resolvedSchedule.nextRunAt
           : enabled && !current.enabled
             ? requireNextRunAt(current.schedule, now)
             : current.nextRunAt;
         const updated: WatchTask = {
-          ...current,
+          ...(resetsFailureState ? resetWatchFailureState(current) : current),
           name: params.name?.trim() ?? current.name,
           schedule: resolvedSchedule?.schedule ?? current.schedule,
-          script: params.script?.trim() ?? current.script,
+          script,
           args: params.args ?? current.args,
           message: params.message?.trim() ?? current.message,
           ...(params.priority !== undefined ? { priority: params.priority } : {}),
@@ -377,6 +380,15 @@ function requireNextRunAt(schedule: StoredSchedule, now: number): string {
   const nextRunAt = getNextRunAt(schedule, now);
   if (!nextRunAt) throw new Error("Could not compute the next run time for the watch.");
   return nextRunAt;
+}
+
+/**
+ * A changed script or a re-enabled watch starts a new failure streak, so the
+ * next failure is notified instead of silently continuing the old count.
+ */
+function resetWatchFailureState(watch: WatchTask): WatchTask {
+  const { lastStatus: _lastStatus, lastError: _lastError, ...rest } = watch;
+  return { ...rest, consecutiveFailures: 0 };
 }
 
 /**
