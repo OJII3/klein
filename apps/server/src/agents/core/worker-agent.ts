@@ -180,6 +180,8 @@ export function renderWorkerAuthSection(): string {
     "",
     "If a CLI expects a fixed environment variable, set `env` on the field when requesting it (for example `GH_TOKEN` for `gh`); `auth_run` injects both names. For a tool that reads a config file, write the value to a file under `/tmp` inside the command and remove it when the command ends; do not leave it in the linked user's home.",
     "",
+    "Do not run a CLI OAuth login (for example `gh auth login`) in the sandbox: the config folder it writes is readable by you. Browser OAuth belongs in the hidden browser profile; for CLI OAuth, report that a host-side adapter is needed.",
+    "",
     "Use `auth_delete` only when the user explicitly asks to remove or revoke a saved credential.",
     "",
     "`auth_request` returns immediately. When the user submits or cancels, you receive a new message; continue the task then instead of waiting in the same turn.",

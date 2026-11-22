@@ -184,6 +184,7 @@ export function createAuthTools(dependencies: AuthToolDependencies): readonly To
       description:
         "Run a command in the linked user's sandbox with a saved credential injected as environment variables named KLEIN_AUTH_<SERVICE>_<FIELD> (uppercase). " +
         "The values never appear in the tool result; printed secrets are redacted. Use auth_list first to see which services exist and the exact variable names. " +
+        "This is for API tokens and already-issued access tokens. Do not use it to create long-lived OAuth state in the sandbox; OAuth config folders written there are readable by the worker. " +
         "The command runs with the same sandbox and timeout rules as bash, and its output is limited to 32 KiB.",
       parameters: Type.Object({
         service: Type.String({
