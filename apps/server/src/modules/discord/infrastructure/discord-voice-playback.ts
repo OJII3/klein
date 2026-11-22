@@ -1,6 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
-import { resolve as resolvePath } from "node:path";
 import {
   AudioPlayer,
   AudioPlayerStatus,
@@ -12,7 +10,6 @@ import {
 } from "@discordjs/voice";
 import { Readable } from "node:stream";
 
-import type { VoiceReactionPreset } from "@modules/discord/ports/voice-reaction-selector";
 import type { TextToSpeech } from "@modules/tts/ports/text-to-speech";
 
 export interface VoiceLogger {
@@ -43,7 +40,6 @@ export interface DiscordVoicePlaybackOptions {
   readonly audioPlayerFactory?: () => VoiceAudioPlayer;
   readonly audioResourceFactory?: (audio: Uint8Array) => AudioResource;
   readonly logger?: VoiceLogger;
-  readonly reactionPresets?: readonly VoiceReactionPreset[];
   readonly tts: TextToSpeech;
 }
 
@@ -58,11 +54,7 @@ export class DiscordVoicePlayback {
     readonly resolve: () => void;
     readonly reject: (error: unknown) => void;
   };
-  private userSpeechActive = false;
-  private readonly reactionAudio = new Map<string, Uint8Array>();
-  private reactionLoadPromise: Promise<void> = Promise.resolve();
   private currentPlayback?: {
-    kind: "reply" | "reaction";
     finish: (played: boolean, error?: Error) => void;
   };
 
@@ -104,11 +96,6 @@ export class DiscordVoicePlayback {
     } else if (player instanceof AudioPlayer) {
       connection.subscribe(player);
     }
-    this.reactionLoadPromise = this.loadReactionAudio();
-  }
-
-  async waitForReactionsLoaded(): Promise<void> {
-    await this.reactionLoadPromise;
   }
 
   stop(): void {
@@ -116,8 +103,6 @@ export class DiscordVoicePlayback {
     this.stopped = true;
     this.pendingReply?.resolve();
     this.pendingReply = undefined;
-    this.reactionAudio.clear();
-    this.stopReaction();
     const playback = this.currentPlayback;
     this.currentPlayback = undefined;
     playback?.finish(false);
@@ -125,16 +110,7 @@ export class DiscordVoicePlayback {
     this.audioPlayer = undefined;
   }
 
-  onSpeechStart(): void {
-    this.userSpeechActive = true;
-    this.stopReaction();
-  }
-
-  onSpeechEnd(): void {
-    this.userSpeechActive = false;
-  }
-
-  async speak(text: string, toolCallId?: string): Promise<void> {
+  speak(text: string, toolCallId?: string): Promise<void> {
     if (this.replyActive && !this.stopped) {
       return new Promise<void>((resolve, reject) => {
         this.pendingReply?.resolve();
@@ -154,19 +130,6 @@ export class DiscordVoicePlayback {
       );
     });
     return Promise.resolve();
-  }
-
-  async playReaction(reaction: string, signal: AbortSignal): Promise<boolean> {
-    const audio = this.reactionAudio.get(reaction);
-    if (
-      !audio ||
-      signal.aborted ||
-      this.stopped ||
-      this.userSpeechActive ||
-      this.currentPlayback?.kind === "reply"
-    )
-      return false;
-    return this.play(audio, "reaction", signal);
   }
 
   private async playReplyAndDrain(text: string, toolCallId?: string): Promise<void> {
@@ -197,7 +160,6 @@ export class DiscordVoicePlayback {
       );
       return;
     }
-    this.stopReaction();
     const startedAt = performance.now();
     this.logger?.info(
       { event: "discord_voice_tts_started", speakId, toolCallId, textLength: text.length },
@@ -232,12 +194,11 @@ export class DiscordVoicePlayback {
     let failed = false;
     try {
       if (this.stopped) return;
-      this.stopReaction();
       this.logger?.info(
         { event: "discord_voice_speak_playback_started", speakId, toolCallId },
         "Starting playback of the synthesized voice reply",
       );
-      played = await this.play(audio, "reply");
+      played = await this.play(audio);
     } catch (error) {
       failed = true;
       this.logger?.warn(
@@ -263,34 +224,9 @@ export class DiscordVoicePlayback {
     }
   }
 
-  private async loadReactionAudio(): Promise<void> {
-    await Promise.all(
-      (this.options.reactionPresets ?? []).map(async (preset) => {
-        try {
-          const audio = await readFile(resolvePath(preset.audioFile));
-          if (!this.stopped) this.reactionAudio.set(preset.id, audio);
-        } catch (error) {
-          this.logger?.warn(
-            {
-              err: error,
-              event: "discord_voice_reaction_preset_load_failed",
-              reaction: preset.id,
-              audioFile: preset.audioFile,
-            },
-            "Failed to load a voice reaction preset audio file",
-          );
-        }
-      }),
-    );
-  }
-
-  private play(
-    audio: Uint8Array,
-    kind: "reply" | "reaction",
-    signal?: AbortSignal,
-  ): Promise<boolean> {
+  private play(audio: Uint8Array): Promise<boolean> {
     const player = this.audioPlayer;
-    if (!player || this.stopped || signal?.aborted) return Promise.resolve(false);
+    if (!player || this.stopped) return Promise.resolve(false);
     this.replacePlayback(false);
     return new Promise<boolean>((resolve, reject) => {
       let settled = false;
@@ -298,7 +234,6 @@ export class DiscordVoicePlayback {
         if (settled) return;
         settled = true;
         clearTimeout(timeout);
-        signal?.removeEventListener("abort", onAbort);
         if (this.currentPlayback?.finish === finish) this.currentPlayback = undefined;
         if (error) reject(error);
         else resolve(played);
@@ -309,14 +244,7 @@ export class DiscordVoicePlayback {
         player.stop(true);
         finish(false, new Error("Voice playback timed out"));
       }, 5 * 60_000);
-      const onAbort = (): void => {
-        if (this.currentPlayback?.finish !== finish) return;
-        this.currentPlayback = undefined;
-        player.stop(true);
-        finish(false);
-      };
-      this.currentPlayback = { kind, finish };
-      signal?.addEventListener("abort", onAbort, { once: true });
+      this.currentPlayback = { finish };
       try {
         player.play(
           this.options.audioResourceFactory?.(audio) ??
@@ -336,9 +264,5 @@ export class DiscordVoicePlayback {
     this.currentPlayback = undefined;
     playback.finish(played);
     this.audioPlayer?.stop(true);
-  }
-
-  private stopReaction(): void {
-    if (this.currentPlayback?.kind === "reaction") this.replacePlayback(false);
   }
 }

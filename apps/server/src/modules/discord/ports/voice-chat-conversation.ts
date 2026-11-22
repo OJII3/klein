@@ -8,8 +8,6 @@ export interface VoiceChatConversationContext {
   readonly user: DiscordUser;
   readonly voiceChannelId: string;
   readonly speak: (text: string, toolCallId?: string) => Promise<void>;
-  readonly playReaction?: (reaction: string, signal: AbortSignal) => Promise<boolean>;
-  readonly onSpeechStart?: (listener: () => void) => () => void;
 }
 
 export interface VoiceChatConversation {

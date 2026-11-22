@@ -186,12 +186,11 @@ const VoiceChatConfigurationSchema = Type.Object(
     asrServerUrl: Type.String({ minLength: 1, format: "uri" }),
     language: Type.Optional(Type.String({ minLength: 1 })),
     llm: Type.Optional(LlmModelConfigurationSchema),
-    reactions: Type.Optional(
+    classifier: Type.Optional(
       Type.Object(
         {
           provider: Type.String({ minLength: 1 }),
           model: Type.String({ minLength: 1 }),
-          presetsFile: Type.String({ minLength: 1 }),
         },
         { additionalProperties: false },
       ),

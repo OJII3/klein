@@ -3,7 +3,6 @@ import { SlashCommandBuilder } from "discord.js";
 import type { DiscordGatewayAdapterCreator } from "@discordjs/voice";
 import type { AsrClient } from "@modules/asr/ports/asr-client";
 import type { TextToSpeech } from "@modules/tts/ports/text-to-speech";
-import type { VoiceReactionPreset } from "@modules/discord/ports/voice-reaction-selector";
 
 import type { DiscordAccessPolicy } from "../domain/discord-access-policy";
 import type {
@@ -31,8 +30,6 @@ export interface VoiceCaptureSession {
   start(): Promise<void>;
   stop(): Promise<void>;
   speakInBackground(text: string, toolCallId?: string): Promise<void>;
-  playReaction(reaction: string, signal: AbortSignal): Promise<boolean>;
-  subscribeSpeechStart(listener: () => void): () => void;
 }
 
 export interface VoiceChatCommandInteraction {
@@ -65,7 +62,6 @@ export interface DiscordVoiceChatControllerOptions {
   readonly asr: AsrClient;
   readonly characterName: string;
   readonly language: string;
-  readonly reactionPresets?: readonly VoiceReactionPreset[];
   readonly conversationFactory: VoiceChatConversationFactory;
   readonly createSession?: (options: DiscordVoiceCaptureSessionOptions) => VoiceCaptureSession;
   readonly tts?: TextToSpeech;
@@ -196,7 +192,6 @@ export class DiscordVoiceChatController {
         logger: this.logger,
         onTranscript: (text, requestId) =>
           conversation?.handleTranscript(text, requestId) ?? Promise.resolve(),
-        reactionPresets: this.options.reactionPresets,
         onError: (error) => {
           if (this.sessions.get(guildId)?.session !== session) return;
           this.sessions.delete(guildId);
@@ -217,9 +212,6 @@ export class DiscordVoiceChatController {
         parentChannelId: textThread?.parentId ?? undefined,
         speak: (text, toolCallId) =>
           session?.speakInBackground(text, toolCallId) ?? Promise.resolve(),
-        playReaction: (reaction, signal) =>
-          session?.playReaction(reaction, signal) ?? Promise.resolve(false),
-        onSpeechStart: (listener) => session?.subscribeSpeechStart(listener) ?? (() => undefined),
         threadId: textThread?.id,
         user: {
           bot: interaction.user.bot,

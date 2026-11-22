@@ -9,7 +9,6 @@ import type {
   VoiceChatConversationContext,
   VoiceChatConversationFactory,
 } from "@modules/discord/ports/voice-chat-conversation";
-import type { VoiceReactionSelector } from "@modules/discord/ports/voice-reaction-selector";
 import type { VoiceTranscriptQueueSelector } from "@modules/discord/ports/voice-transcript-queue-selector";
 import type { UserMemoryCoordinator } from "@modules/user-memory/application/user-memory-coordinator";
 import { VoiceTranscriptQueue } from "./voice-transcript-queue";
@@ -22,7 +21,6 @@ export interface VoiceChatCoordinatorDependencies {
   ) => Promise<DiscordConversationAgent>;
   readonly logger: Logger;
   readonly discordUserDirectory?: DiscordUserDirectory;
-  readonly reactionSelector?: VoiceReactionSelector;
   readonly transcriptQueueSelector?: VoiceTranscriptQueueSelector;
   readonly userMemoryCoordinator?: UserMemoryCoordinator;
 }
@@ -64,49 +62,8 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
     const pendingSteers = new Set<Promise<void>>();
     let currentTranscript: DiscordMessage | undefined;
     let transcriptQueue: VoiceTranscriptQueue | undefined;
-    let activeReaction: AbortController | undefined;
-    let lastReaction: string | undefined;
-    const recentTranscripts: string[] = [];
-    const playReaction = context.playReaction;
-    const unsubscribeSpeechStart = context.onSpeechStart?.(() => activeReaction?.abort());
 
-    const startReaction = (text: string, messageId: string): AbortController => {
-      activeReaction?.abort();
-      const reactionController = new AbortController();
-      activeReaction = reactionController;
-      const history = recentTranscripts.slice(-3);
-      recentTranscripts.push(text);
-      if (recentTranscripts.length > 3) recentTranscripts.shift();
-      const reactionSelector = this.dependencies.reactionSelector;
-      if (!reactionSelector || !playReaction) return reactionController;
-
-      void (async () => {
-        const selectionSignal = AbortSignal.any([
-          reactionController.signal,
-          AbortSignal.timeout(600),
-        ]);
-        try {
-          const reaction = await reactionSelector.select(
-            { text, recentTranscripts: history, lastReaction },
-            selectionSignal,
-          );
-          if (reactionController.signal.aborted || reaction === undefined) return;
-          const played = await playReaction(reaction, reactionController.signal);
-          if (played && !reactionController.signal.aborted) lastReaction = reaction;
-        } catch (error) {
-          logger.warn(
-            { err: error, event: "voice_chat_reaction_failed", messageId },
-            "Failed to select or play a voice reaction",
-          );
-        }
-      })();
-      return reactionController;
-    };
-
-    const processTranscript = async (
-      message: DiscordMessage,
-      reactionController: AbortController,
-    ): Promise<void> => {
+    const processTranscript = async (message: DiscordMessage): Promise<void> => {
       currentTranscript = message;
       const startedAt = performance.now();
       const previousSpeakCallCount = speakCallCount;
@@ -150,9 +107,6 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
         }
       } finally {
         currentTranscript = undefined;
-        reactionController.abort();
-        if (activeReaction !== reactionController) activeReaction?.abort();
-        activeReaction = undefined;
         transcriptQueue?.scheduleDecision();
       }
     };
@@ -189,7 +143,7 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
       if (stopped || processing || !queue?.hasPending) return;
       const message = queue.takeNext();
       if (!message) return;
-      const next = processTranscript(message, startReaction(message.content, message.id));
+      const next = processTranscript(message);
       trackBackgroundProcessing(next);
       if (queue.hasPending) queue.scheduleDecision();
     };
@@ -197,7 +151,6 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
     const performSteer = async (message: DiscordMessage): Promise<void> => {
       const steerMessage = agent.steerMessage?.bind(agent);
       if (!steerMessage) return;
-      const reactionController = startReaction(message.content, message.id);
       logger.info(
         {
           event: "voice_chat_transcript_steer_started",
@@ -234,8 +187,6 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
             },
             "Failed to steer the active voice response",
           );
-          reactionController.abort();
-          activeReaction?.abort();
         }
       })();
       pendingSteers.add(steer);
@@ -295,8 +246,7 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
             return;
           }
 
-          const reactionController = startReaction(text, message.id);
-          const next = processTranscript(message, reactionController);
+          const next = processTranscript(message);
           if (typeof agent.steerMessage === "function") {
             trackBackgroundProcessing(next);
             return;
@@ -305,13 +255,10 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
         }
 
         if (processing && typeof agent.steerMessage !== "function") {
-          const next = processing.then(() =>
-            processTranscript(message, startReaction(text, message.id)),
-          );
+          const next = processing.then(() => processTranscript(message));
           return trackProcessing(next);
         }
 
-        const reactionController = startReaction(text, message.id);
         const steerMessage = agent.steerMessage?.bind(agent);
         if (processing && steerMessage) {
           logger.info(
@@ -344,7 +291,6 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
                 },
                 "Failed to steer the active voice response",
               );
-              activeReaction?.abort();
             }
           })();
           pendingSteers.add(steer);
@@ -352,7 +298,7 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
           return steer;
         }
 
-        const next = processTranscript(message, reactionController);
+        const next = processTranscript(message);
         if (steerMessage) {
           trackBackgroundProcessing(next);
           return;
@@ -363,8 +309,6 @@ export class VoiceChatCoordinator implements VoiceChatConversationFactory {
         if (stopPromise) return stopPromise;
         stopped = true;
         transcriptQueue?.stop();
-        activeReaction?.abort();
-        unsubscribeSpeechStart?.();
         stopPromise = (async () => {
           try {
             await agent.abort?.();

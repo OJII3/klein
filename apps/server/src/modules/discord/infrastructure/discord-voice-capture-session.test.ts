@@ -1,12 +1,9 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import { PassThrough, Readable } from "node:stream";
 import test from "node:test";
 import { setImmediate as waitImmediate } from "node:timers/promises";
 import {
-  AudioPlayerStatus,
   createAudioResource,
   StreamType,
   type AudioResource,
@@ -14,9 +11,7 @@ import {
 } from "@discordjs/voice";
 
 import type { AsrConnection, AsrRequest } from "@modules/asr/ports/asr-client";
-import type { VoiceReactionPreset } from "@modules/discord/ports/voice-reaction-selector";
 import type { VadEvent } from "@modules/vad/application/vad-stream";
-import { createTempDir } from "../../../testing/temp-dir";
 import {
   DiscordVoiceCaptureSession,
   type VoiceActivityDetector,
@@ -74,7 +69,6 @@ class FakeAudioPlayer extends EventEmitter implements VoiceAudioPlayer {
 }
 
 interface CreateCaptureOptions {
-  readonly reactionPresets?: readonly VoiceReactionPreset[];
   readonly synthesize?: (text: string) => Promise<Uint8Array>;
   readonly audioResourceFactory?: (audio: Uint8Array) => AudioResource;
   readonly onPlay?: (resource: AudioResource) => void;
@@ -159,7 +153,6 @@ function createCapture(testOptions: CreateCaptureOptions = {}) {
       transcripts.push(text);
       deliveredRequestIds.push(requestId);
     },
-    reactionPresets: testOptions.reactionPresets,
     tts: {
       synthesize: testOptions.synthesize ?? (async () => new Uint8Array()),
     },
@@ -197,16 +190,6 @@ function createCapture(testOptions: CreateCaptureOptions = {}) {
     startInput,
     transcripts,
   };
-}
-
-async function createPreset(
-  directory: string,
-  id: string,
-  audio: Uint8Array = new Uint8Array([1]),
-): Promise<VoiceReactionPreset> {
-  const audioFile = join(directory, `${id}.pcm`);
-  await writeFile(audioFile, audio);
-  return { id, text: id, description: id, audioFile };
 }
 
 test("delivers ASR results in utterance order when inference completes out of order", async () => {
@@ -247,137 +230,6 @@ test("does not deliver queued transcripts after capture stops", async () => {
   results[0]?.resolve({ text: "too late" });
   await capture.flush();
   assert.deepEqual(transcripts, []);
-});
-
-test("aborting a preset reaction stops only that playback", async () => {
-  await using temp = await createTempDir("klein-reaction-");
-  const { audioPlayer, capture } = createCapture({
-    reactionPresets: [await createPreset(temp.path, "neutral")],
-  });
-  await capture.start();
-  await capture.waitForReactionsLoaded();
-  const controller = new AbortController();
-  const playback = capture.playReaction("neutral", controller.signal);
-  assert.equal(audioPlayer.played.length, 1);
-  controller.abort();
-  assert.equal(await playback, false);
-  assert.equal(audioPlayer.stopCalls, 1);
-  await capture.stop();
-});
-
-test("a ready reply preempts a reaction without allowing its stale completion to stop the reply", async () => {
-  await using temp = await createTempDir("klein-reaction-");
-  const synthesis = Promise.withResolvers<Uint8Array>();
-  const { audioPlayer, capture } = createCapture({
-    reactionPresets: [await createPreset(temp.path, "thinking")],
-    synthesize: () => synthesis.promise,
-  });
-  await capture.start();
-  await capture.waitForReactionsLoaded();
-  const reactionController = new AbortController();
-  const reaction = capture.playReaction("thinking", reactionController.signal);
-  const reply = capture.speak("回答");
-  synthesis.resolve(new Uint8Array([2]));
-  await waitImmediate();
-  assert.equal(await reaction, false);
-  assert.equal(audioPlayer.played.length, 2);
-  assert.equal(audioPlayer.stopCalls, 1);
-  audioPlayer.emit(
-    "stateChange",
-    { status: AudioPlayerStatus.Playing },
-    { status: AudioPlayerStatus.Idle },
-  );
-  reactionController.abort();
-  await reply;
-  assert.equal(audioPlayer.stopCalls, 1);
-  await capture.stop();
-});
-
-test("speech start cancels a playing reaction and suppresses reactions during speech", async () => {
-  await using temp = await createTempDir("klein-reaction-");
-  const { audioPlayer, capture, emitVadEvents, startInput } = createCapture({
-    reactionPresets: [await createPreset(temp.path, "neutral")],
-  });
-  await capture.start();
-  await capture.waitForReactionsLoaded();
-  startInput();
-  const reaction = capture.playReaction("neutral", new AbortController().signal);
-  await emitVadEvents([{ type: "speech-start", pcm: new Uint8Array([1]) }]);
-  assert.equal(await reaction, false);
-  assert.equal(audioPlayer.stopCalls, 1);
-  assert.equal(await capture.playReaction("neutral", new AbortController().signal), false);
-  await capture.stop();
-});
-
-test("resource creation failure clears playback state for a later reaction", async () => {
-  await using temp = await createTempDir("klein-reaction-");
-  let shouldFailResource = true;
-  const { audioPlayer, capture } = createCapture({
-    reactionPresets: [await createPreset(temp.path, "neutral")],
-    audioResourceFactory: () => {
-      if (shouldFailResource) {
-        throw new Error("resource creation failed");
-      }
-      return createStubAudioResource();
-    },
-  });
-  await capture.start();
-  await capture.waitForReactionsLoaded();
-  await assert.rejects(
-    capture.playReaction("neutral", new AbortController().signal),
-    /resource creation failed/,
-  );
-  assert.equal(audioPlayer.played.length, 0);
-  shouldFailResource = false;
-  const controller = new AbortController();
-  const playback = capture.playReaction("neutral", controller.signal);
-  assert.equal(audioPlayer.played.length, 1);
-  controller.abort();
-  assert.equal(await playback, false);
-  await capture.stop();
-});
-
-test("loads saved reaction audio without synthesizing it", async () => {
-  await using temp = await createTempDir("klein-reaction-");
-  const directory = temp.path;
-  const expectedAudio = new Uint8Array([4, 5, 6]);
-  const neutralPreset = await createPreset(directory, "neutral", expectedAudio);
-  let synthesizeCalls = 0;
-  let resourceAudio: Uint8Array | undefined;
-  const { capture } = createCapture({
-    reactionPresets: [
-      neutralPreset,
-      {
-        id: "missing",
-        text: "missing",
-        description: "missing file",
-        audioFile: join(directory, "missing.pcm"),
-      },
-    ],
-    synthesize: async () => {
-      synthesizeCalls += 1;
-      return new Uint8Array();
-    },
-    audioResourceFactory: (audio) => {
-      resourceAudio = audio;
-      return createStubAudioResource();
-    },
-  });
-
-  try {
-    await capture.start();
-    await capture.waitForReactionsLoaded();
-    const controller = new AbortController();
-    const playback = capture.playReaction("neutral", controller.signal);
-    assert.deepEqual(Array.from(resourceAudio ?? []), Array.from(expectedAudio));
-    assert.equal(synthesizeCalls, 0);
-    controller.abort();
-    assert.equal(await playback, false);
-    assert.equal(await capture.playReaction("missing", new AbortController().signal), false);
-    assert.equal(synthesizeCalls, 0);
-  } finally {
-    await capture.stop();
-  }
 });
 
 test("traces out-of-order ASR results through ordered transcript delivery without logging text", async () => {

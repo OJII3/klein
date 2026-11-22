@@ -6,10 +6,9 @@ export interface VoiceChatConfig {
   readonly asrServerUrl: string;
   readonly language: string;
   readonly llm?: Pick<AppConfig["llm"], "provider" | "model" | "thinkingLevel">;
-  readonly reactions?: {
+  readonly classifier?: {
     readonly provider: string;
     readonly model: string;
-    readonly presetsFile: string;
   };
 }
 
@@ -23,6 +22,6 @@ export function resolveVoiceChatConfig(config: AppConfig): VoiceChatConfig | und
     asrServerUrl: voiceChat.asrServerUrl,
     language: voiceChat.language ?? DEFAULT_VOICE_CHAT_LANGUAGE,
     ...(voiceChat.llm ? { llm: voiceChat.llm } : {}),
-    ...(voiceChat.reactions ? { reactions: voiceChat.reactions } : {}),
+    ...(voiceChat.classifier ? { classifier: voiceChat.classifier } : {}),
   };
 }

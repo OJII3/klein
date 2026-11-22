@@ -77,8 +77,6 @@ function createSessionStub(): VoiceCaptureSession {
     start: async () => undefined,
     stop: async () => undefined,
     speakInBackground: async () => undefined,
-    playReaction: async () => false,
-    subscribeSpeechStart: () => () => undefined,
   };
 }
 
@@ -138,10 +136,8 @@ test("sends final voice transcripts to the dedicated conversation", async () => 
 
     const [context] = contexts;
     assert.ok(context);
-    const { speak, playReaction, onSpeechStart, ...contextWithoutSpeak } = context;
+    const { speak, ...contextWithoutSpeak } = context;
     assert.equal(typeof speak, "function");
-    assert.equal(typeof playReaction, "function");
-    assert.equal(typeof onSpeechStart, "function");
     assert.deepEqual(contextWithoutSpeak, {
       channelId: "thread-123",
       guildId: "guild-123",

@@ -31,7 +31,6 @@ import { createT3CliThreadRunner } from "@runtime/t3/t3-cli-thread-runner";
 import { createWatchFetchTool } from "@runtime/pi/watch-fetch-tool";
 import { PiSharedMemoryAgent } from "@runtime/pi/pi-shared-memory-agent";
 import { PiUserMemoryAgent } from "@runtime/pi/pi-user-memory-agent";
-import { PiVoiceReactionSelector } from "@runtime/pi/pi-voice-reaction-selector";
 import { PiVoiceTranscriptQueueSelector } from "@runtime/pi/pi-voice-transcript-queue-selector";
 import { createEvalFeedbackObserver } from "@runtime/pi/session-eval-store";
 import { createDiscordAccessPolicy } from "@modules/discord/domain/discord-access-policy";
@@ -39,7 +38,6 @@ import { DiscordOperatingState } from "@modules/discord/domain/discord-operating
 import { DiscordUserDirectory } from "@modules/discord/application/discord-user-directory";
 import { resolveVoiceChatConfig } from "@modules/discord/domain/voice-chat-config";
 import { DiscordJsService } from "@modules/discord/infrastructure/discord-js-service";
-import { loadVoiceReactionPresets } from "@modules/discord/infrastructure/voice-reaction-presets";
 import { FileDiscordAccessRuleStore } from "@modules/discord/infrastructure/file-discord-access-rule-store";
 import { FileDiscordAccessRequestStore } from "@modules/discord/infrastructure/file-discord-access-request-store";
 import { FileDiscordChannelLinkStore } from "@modules/discord/infrastructure/file-discord-channel-link-store";
@@ -188,27 +186,21 @@ export async function bootstrapApplication(): Promise<void> {
     modelRuntime,
     usageReporter: piUsageReporter,
   });
-  const reactionConfiguration = voiceChatConfig?.reactions;
-  const reactionPresets = reactionConfiguration
-    ? await loadVoiceReactionPresets(reactionConfiguration.presetsFile)
-    : undefined;
-  const reactionClassifierModel = reactionConfiguration
+  const classifierConfiguration = voiceChatConfig?.classifier;
+  const classifierModel = classifierConfiguration
     ? modelRuntime.getModelOfType(
         "classifier",
-        reactionConfiguration.provider,
-        reactionConfiguration.model,
+        classifierConfiguration.provider,
+        classifierConfiguration.model,
       )
     : undefined;
-  if (reactionConfiguration && !reactionClassifierModel) {
+  if (classifierConfiguration && !classifierModel) {
     throw new Error(
-      `Voice chat classifier model was not found: ${reactionConfiguration.provider}/${reactionConfiguration.model}`,
+      `Voice chat classifier model was not found: ${classifierConfiguration.provider}/${classifierConfiguration.model}`,
     );
   }
-  const reactionSelector = reactionClassifierModel
-    ? new PiVoiceReactionSelector(modelRuntime, reactionClassifierModel, reactionPresets ?? [])
-    : undefined;
-  const transcriptQueueSelector = reactionClassifierModel
-    ? new PiVoiceTranscriptQueueSelector(modelRuntime, reactionClassifierModel)
+  const transcriptQueueSelector = classifierModel
+    ? new PiVoiceTranscriptQueueSelector(modelRuntime, classifierModel)
     : undefined;
   const evalFeedbackObserver = createEvalFeedbackObserver({
     agentDir,
@@ -444,7 +436,6 @@ export async function bootstrapApplication(): Promise<void> {
             }),
           logger,
           discordUserDirectory,
-          reactionSelector,
           transcriptQueueSelector,
           userMemoryCoordinator,
         });
@@ -460,7 +451,6 @@ export async function bootstrapApplication(): Promise<void> {
           conversationFactory: voiceChatCoordinator,
           language: voiceChatConfig.language,
           tts,
-          ...(reactionPresets ? { reactionPresets } : {}),
         }
       : undefined,
     channelRuleStore,
