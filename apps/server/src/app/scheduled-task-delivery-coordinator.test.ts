@@ -76,6 +76,7 @@ interface HarnessOptions {
   readonly promptFails?: boolean;
   readonly workerSendResult?: boolean;
   readonly tasks?: readonly (WatchTask | ReminderTask)[];
+  readonly runner?: WatchCheckRunner;
 }
 
 function createHarness(options: HarnessOptions = {}) {
@@ -157,7 +158,7 @@ function createHarness(options: HarnessOptions = {}) {
     scheduledTaskStore: store,
     sessionManager,
     taskCoordinator: new TaskCoordinator(),
-    watchCheckRunner: createRunner(),
+    watchCheckRunner: options.runner ?? createRunner(),
     proactive,
   });
 
@@ -181,6 +182,14 @@ function createRunner(decision: "wake" | "silent" = "wake"): WatchCheckRunner {
   return {
     async run() {
       return { output: "changed", decision, exitCode: 0, durationMs: 1, state: { runs: 1 } };
+    },
+  };
+}
+
+function createFailingRunner(message = "check failed"): WatchCheckRunner {
+  return {
+    async run() {
+      throw new Error(message);
     },
   };
 }
@@ -234,6 +243,90 @@ test("keeps the signal queued when an interrupt delivery fails", async () => {
   assert.equal(stored?.lastStatus, "error");
   assert.match(stored?.lastError ?? "", /prompt failed/u);
   assert.equal(stored?.consecutiveFailures, 1);
+});
+
+test("delivers the first watch check failure as an event", async () => {
+  const harness = createHarness({ runner: createFailingRunner() });
+
+  await harness.coordinator.deliverDueTasks(DUE_AT);
+
+  assert.equal(harness.events.length, 1);
+  assert.equal(harness.events[0]?.type, "watch.failed");
+  assert.match(eventText(harness.events[0]), /check failed/u);
+  assert.deepEqual(harness.ingestCalls, []);
+  const stored = harness.storedWatch();
+  assert.equal(stored?.lastStatus, "error");
+  assert.equal(stored?.lastError, "check failed");
+  assert.equal(stored?.consecutiveFailures, 1);
+  assert.equal(stored?.lastTriggeredAt, undefined);
+});
+
+test("does not deliver the second consecutive watch check failure", async () => {
+  const harness = createHarness({
+    tasks: [{ ...watch, lastStatus: "error", lastError: "check failed", consecutiveFailures: 1 }],
+    runner: createFailingRunner(),
+  });
+
+  await harness.coordinator.deliverDueTasks(DUE_AT);
+
+  assert.deepEqual(harness.events, []);
+  assert.equal(harness.storedWatch()?.consecutiveFailures, 2);
+});
+
+test("reminds the agent on the third consecutive watch check failure", async () => {
+  const harness = createHarness({
+    tasks: [{ ...watch, lastStatus: "error", lastError: "check failed", consecutiveFailures: 2 }],
+    runner: createFailingRunner(),
+  });
+
+  await harness.coordinator.deliverDueTasks(DUE_AT);
+
+  assert.equal(harness.events.length, 1);
+  assert.equal(harness.events[0]?.type, "watch.failed");
+  assert.match(eventText(harness.events[0]), /3回連続/u);
+  assert.match(eventText(harness.events[0]), /これ以降/u);
+});
+
+test("stays silent after the reminder until the watch recovers", async () => {
+  const harness = createHarness({
+    tasks: [{ ...watch, lastStatus: "error", lastError: "check failed", consecutiveFailures: 3 }],
+    runner: createFailingRunner(),
+  });
+
+  await harness.coordinator.deliverDueTasks(DUE_AT);
+
+  assert.deepEqual(harness.events, []);
+  assert.equal(harness.storedWatch()?.consecutiveFailures, 4);
+});
+
+test("delivers a watch check failure to its worker", async () => {
+  const workerWatch: WatchTask = { ...watch, ownerWorkerId: "worker-1" };
+  const harness = createHarness({ tasks: [workerWatch], runner: createFailingRunner() });
+
+  await harness.coordinator.deliverDueTasks(DUE_AT);
+
+  assert.equal(harness.workerSends.length, 1);
+  assert.equal(harness.workerSends[0]?.workerId, "worker-1");
+  assert.match(harness.workerSends[0]?.message ?? "", /check failed/u);
+  assert.deepEqual(harness.events, []);
+  const stored = harness.storedWatch();
+  assert.equal(stored?.lastStatus, "error");
+  assert.equal(stored?.lastError, "check failed");
+  assert.equal(stored?.lastTriggeredAt, undefined);
+});
+
+test("clears the failure count after a successful check", async () => {
+  const harness = createHarness({
+    tasks: [{ ...watch, lastStatus: "error", lastError: "check failed", consecutiveFailures: 2 }],
+    runner: createRunner("silent"),
+  });
+
+  await harness.coordinator.deliverDueTasks(DUE_AT);
+
+  const stored = harness.storedWatch();
+  assert.equal(stored?.lastStatus, "ok");
+  assert.equal(stored?.consecutiveFailures, 0);
+  assert.equal(stored?.lastError, undefined);
 });
 
 test("falls back to direct delivery when signal ingestion fails", async () => {

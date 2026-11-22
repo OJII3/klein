@@ -107,19 +107,19 @@ export function createWatchTools(
           nextRunAt: resolved.nextRunAt,
         };
         if (!watch.name || !watch.script || !watch.message) {
-          throw new Error("監視名・スクリプト・通知内容を入力してください。");
+          throw new Error("A watch needs a name, a script, and a message.");
         }
         await requireSuccessfulDryRun(
           watchCheckRunner,
           watch,
-          "監視スクリプトの確認実行に失敗したため、監視を登録しませんでした。",
+          "The watch was not registered because its script failed the dry run:",
         );
         await store.create(watch);
         return {
           content: [
             {
               type: "text",
-              text: `監視を登録しました。ID: ${watch.id} / ${formatSchedule(watch.schedule)}`,
+              text: `watch を登録しました。ID: ${watch.id} / ${formatSchedule(watch.schedule)}`,
             },
           ],
           details: { id: watch.id, nextRunAt: watch.nextRunAt },
@@ -155,7 +155,7 @@ export function createWatchTools(
             content: [
               {
                 type: "text",
-                text: `この会話にID ${params.id} の監視はありません。`,
+                text: `この会話にID ${params.id} の watch はありません。`,
               },
             ],
             details,
@@ -184,13 +184,13 @@ export function createWatchTools(
           nextRunAt,
         };
         if (!updated.name || !updated.script || !updated.message) {
-          throw new Error("監視名・スクリプト・通知内容を入力してください。");
+          throw new Error("A watch needs a name, a script, and a message.");
         }
         if (updated.enabled && !current.enabled) {
           await requireSuccessfulDryRun(
             watchCheckRunner,
             updated,
-            "監視スクリプトの確認実行に失敗したため、監視を有効にしませんでした。",
+            "The watch was not enabled because its script failed the dry run:",
           );
         }
         await store.update(updated);
@@ -204,7 +204,7 @@ export function createWatchTools(
           content: [
             {
               type: "text",
-              text: `監視を更新しました。\n${formatWatch(updated)}`,
+              text: `watch を更新しました。\n${formatWatch(updated)}`,
             },
           ],
           details,
@@ -228,7 +228,7 @@ export function createWatchTools(
               type: "text",
               text:
                 watches.length === 0
-                  ? "この会話に監視はありません。"
+                  ? "この会話に watch はありません。"
                   : watches.map((watch) => formatWatch(watch)).join("\n"),
             },
           ],
@@ -256,7 +256,7 @@ export function createWatchTools(
             content: [
               {
                 type: "text",
-                text: `この会話にID ${params.id} の監視はありません。`,
+                text: `この会話にID ${params.id} の watch はありません。`,
               },
             ],
             details,
@@ -293,8 +293,8 @@ export function createWatchTools(
             {
               type: "text",
               text: deleted
-                ? `監視 ${params.id} を削除しました。`
-                : `この会話にID ${params.id} の監視はありません。`,
+                ? `watch ${params.id} を削除しました。`
+                : `この会話にID ${params.id} の watch はありません。`,
             },
           ],
           details: { id: params.id, deleted },
@@ -375,7 +375,7 @@ function formatWatchDetails(watch: WatchTask): string {
 
 function requireNextRunAt(schedule: StoredSchedule, now: number): string {
   const nextRunAt = getNextRunAt(schedule, now);
-  if (!nextRunAt) throw new Error("監視の次回実行時刻を計算できませんでした。");
+  if (!nextRunAt) throw new Error("Could not compute the next run time for the watch.");
   return nextRunAt;
 }
 

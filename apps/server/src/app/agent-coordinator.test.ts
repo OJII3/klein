@@ -18,6 +18,8 @@ import { DiscordOperatingState } from "@modules/discord/domain/discord-operating
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
 import type { ProactiveDigestBatch } from "@modules/proactivity/application/proactive-coordinator";
 import type { ProactiveSignal } from "@modules/proactivity/domain/proactive-signal";
+import type { InitiativeGoalResult } from "@modules/initiative/application/initiative-coordinator";
+import type { InitiativeGoal } from "@modules/initiative/domain/initiative-goal";
 import type { UserMemory } from "@modules/user-memory/domain/user-memory";
 
 import type {
@@ -59,6 +61,7 @@ function createHarness(
     | "userMemoryCoordinator"
     | "userMemoryStore"
     | "proactive"
+    | "initiative"
   > = {},
   watchCheckRunner?: WatchCheckRunner,
   workerSendResult = false,
@@ -1202,7 +1205,7 @@ test("uses the check time for the next interval run", async () => {
   }
 });
 
-test("records watch check failures without notifying the agent", async () => {
+test("delivers watch check failures to the agent as events", async () => {
   const runner: WatchCheckRunner = {
     async run() {
       throw new Error("check failed");
@@ -1225,7 +1228,10 @@ test("records watch check failures without notifying the agent", async () => {
     assert.equal(stored.lastStatus, "error");
     assert.match(stored.lastError ?? "", /check failed/u);
     assert.equal(stored.consecutiveFailures, 1);
-    assert.equal(harness.prompts.size, 0);
+    const turns = [...harness.prompts.values()].flat();
+    assert.equal(turns.length, 1);
+    assert.equal(turns[0]?.event.type, "watch.failed");
+    assert.match(eventText(turns[0]?.event), /check failed/u);
   } finally {
     await harness.agentCoordinator.dispose();
   }
@@ -1251,6 +1257,89 @@ test("delivers a worker result to the conversation agent", async () => {
     await harness.agentCoordinator.dispose();
   }
 });
+
+test("delivers an initiative result as an interrupt event", async () => {
+  const delivered: string[] = [];
+  const initiativeResult = createInitiativeResult();
+  const harness = createHarness(undefined, undefined, {
+    initiative: {
+      async handleWorkerResult() {
+        return initiativeResult;
+      },
+      async markResultDelivered(goalId) {
+        delivered.push(goalId);
+      },
+    },
+  });
+
+  try {
+    await harness.agentCoordinator.handleDiscordMessage(
+      createMessage("test-channel", "m-1", "hello"),
+    );
+    await harness.agentCoordinator.deliverWorkerResult(
+      { kind: "discord", channelId: "test-channel" },
+      "public",
+      { workerId: "worker-1", status: "completed", text: "ignored" },
+    );
+
+    const turns = harness.prompts.get("test-channel") ?? [];
+    assert.equal(turns.length, 2);
+    assert.equal(turns[1]?.event.type, "initiative.result");
+    assert.match(eventText(turns[1]?.event), /店を3軒見つけた/u);
+    assert.deepEqual(delivered, ["goal-1"]);
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+function createInitiativeResult(): InitiativeGoalResult {
+  return {
+    goal: makeInitiativeGoal(),
+    decision: { mode: "interrupt", reason: "test" },
+    signal: makeInitiativeSignal(),
+    resultText: "店を3軒見つけた",
+    failed: false,
+  };
+}
+
+function makeInitiativeGoal(): InitiativeGoal {
+  return {
+    version: 1,
+    id: "goal-1",
+    channelId: "test-channel",
+    accessScope: "public",
+    title: "店を調べる",
+    rationale: "店の話をしていた",
+    source: { kind: "conversation", messageIds: ["m1"] },
+    plan: "好みに合う店を3軒調べる",
+    dueAt: "2026-11-22T12:00:00+09:00",
+    expiresAt: "2026-11-23T12:00:00+09:00",
+    risk: "low",
+    status: "ready",
+    dedupeKey: "goal-dedupe",
+    createdBy: "planner",
+    createdAt: "2026-11-21T12:00:00+09:00",
+    updatedAt: "2026-11-21T12:00:00+09:00",
+  };
+}
+
+function makeInitiativeSignal(): ProactiveSignal {
+  return {
+    version: 1,
+    id: "signal-1",
+    channelId: "test-channel",
+    accessScope: "public",
+    audience: "public",
+    source: { kind: "goal", ref: "goal-1" },
+    topic: "店を調べる",
+    summary: "店を3軒見つけた",
+    urgency: "now",
+    dedupeKey: "signal-dedupe",
+    observedAt: "2026-11-21T12:00:00.000Z",
+    status: "queued",
+    delivery: { mode: "interrupt" },
+  };
+}
 
 function eventText(event: AgentEvent | undefined): string {
   return (

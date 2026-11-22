@@ -55,6 +55,12 @@ import { resolveProactivityConfig } from "@modules/proactivity/application/proac
 import { FileFollowUpStore } from "@modules/proactivity/infrastructure/file-follow-up-store";
 import { FileProactivePreferenceStore } from "@modules/proactivity/infrastructure/file-proactive-preference-store";
 import { FileProactiveSignalStore } from "@modules/proactivity/infrastructure/file-proactive-signal-store";
+import { InitiativeCoordinator } from "@modules/initiative/application/initiative-coordinator";
+import { resolveInitiativeConfig } from "@modules/initiative/application/initiative-config";
+import { FileInitiativeGoalStore } from "@modules/initiative/infrastructure/file-initiative-goal-store";
+import { FilePlannerStateStore } from "@modules/initiative/infrastructure/file-planner-state-store";
+import { PiConversationTranscriptReader } from "@modules/initiative/infrastructure/pi-conversation-transcript-reader";
+import { PiInitiativePlanner } from "@modules/initiative/infrastructure/pi-initiative-planner";
 import { MarkdownUserMemoryStore } from "@modules/user-memory/infrastructure/markdown-user-memory-store";
 import { UserMemoryCoordinator } from "@modules/user-memory/application/user-memory-coordinator";
 import { resolveUserMemoryConfig } from "@modules/user-memory/application/user-memory-config";
@@ -83,6 +89,7 @@ const DISCORD_USAGE_STATUS_REFRESH_INTERVAL_MS = 60 * 60 * 1_000;
 const CHANNEL_CONTEXT_ROTATION_CHECK_INTERVAL_MS = 60 * 1_000;
 const WORKER_IDLE_CHECK_INTERVAL_MS = 60 * 1_000;
 const SCHEDULED_TASK_CHECK_INTERVAL_MS = 10 * 1_000;
+const INITIATIVE_PLAN_CHECK_INTERVAL_MS = 60 * 1_000;
 const SHUTDOWN_TIMEOUT_MS = 20 * 1_000;
 
 export async function bootstrapApplication(): Promise<void> {
@@ -96,6 +103,7 @@ export async function bootstrapApplication(): Promise<void> {
 
   const agentDir = resolve(config.runtime.agentDir);
   const proactivityConfig = resolveProactivityConfig(config, agentDir);
+  const initiativeConfig = resolveInitiativeConfig(config, agentDir, proactivityConfig.enabled);
   const systemPrompt = await loadConversationSystemPrompt({
     systemPromptFile: profile.systemPromptFile,
     ...(proactivityConfig.enabled ? { proactivityPromptFile: PROACTIVITY_PROMPT_PATH } : {}),
@@ -164,6 +172,16 @@ export async function bootstrapApplication(): Promise<void> {
     throw new Error("GEMINI_API_KEY is required");
   }
   await ensureConfiguredModels(modelRuntime, modelsInUse);
+  const initiativeModel = initiativeConfig.enabled
+    ? resolveConfiguredModel(
+        initiativeConfig.llm.provider,
+        initiativeConfig.llm.model,
+        modelRuntime,
+      )
+    : undefined;
+  const initiativePlanner = initiativeModel
+    ? new PiInitiativePlanner(modelRuntime, initiativeModel, initiativeConfig.llm.thinkingLevel)
+    : undefined;
   const sessionRunner = new PiStandaloneSessionRunner({
     agentDir,
     logger,
@@ -230,6 +248,7 @@ export async function bootstrapApplication(): Promise<void> {
     : piAgentFactory;
   let discordService!: DiscordJsService;
   let agentCoordinator!: AgentCoordinator;
+  let sharedMemoryCoordinator: SharedMemoryCoordinator | undefined;
   const t3ThreadRunner = createT3CliThreadRunner();
   const workerAgentCoordinator = new WorkerAgentCoordinator({
     factory: piAgentFactory,
@@ -291,6 +310,7 @@ export async function bootstrapApplication(): Promise<void> {
   );
   const proactiveFollowUpStore = new FileFollowUpStore(proactivityConfig.followUpDirectory);
   const proactiveSignalStore = new FileProactiveSignalStore(proactivityConfig.signalDirectory);
+  let initiativeCoordinator: InitiativeCoordinator | undefined;
   const proactiveCoordinator = proactivityConfig.enabled
     ? new ProactiveCoordinator({
         preferenceStore: proactivePreferenceStore,
@@ -299,9 +319,50 @@ export async function bootstrapApplication(): Promise<void> {
         scheduledTaskStore,
         workers: workerAgentCoordinator,
         defaults: proactivityConfig.defaults,
+        onSignalSurfaced: async (signal, _mode, now) => {
+          if (signal.source.kind !== "goal" || signal.source.ref === undefined) return;
+          await initiativeCoordinator?.markResultDelivered(signal.source.ref, now);
+        },
         logger,
       })
     : undefined;
+  const initiativeGoalStore = initiativeConfig.enabled
+    ? new FileInitiativeGoalStore(initiativeConfig.goalsDirectory)
+    : undefined;
+  const initiativePlannerStateStore = initiativeConfig.enabled
+    ? new FilePlannerStateStore(initiativeConfig.plannerStateDirectory)
+    : undefined;
+  initiativeCoordinator =
+    initiativeConfig.enabled &&
+    initiativePlanner &&
+    initiativeGoalStore &&
+    initiativePlannerStateStore &&
+    proactiveCoordinator
+      ? new InitiativeCoordinator({
+          config: initiativeConfig,
+          goalStore: initiativeGoalStore,
+          plannerStateStore: initiativePlannerStateStore,
+          channelStateStore: channelSessionStateStore,
+          transcriptReader: new PiConversationTranscriptReader(agentDir),
+          preferenceStore: proactivePreferenceStore,
+          planner: initiativePlanner,
+          proactive: proactiveCoordinator,
+          workers: workerAgentCoordinator,
+          operatingState: discordOperatingState,
+          ...(userMemoryStore ? { userMemoryStore } : {}),
+          getChannelLocation: (channelId) => discordService.getChannelLocation(channelId),
+          getSharedMemory: (location) =>
+            sharedMemoryCoordinator?.getContext(location) ?? Promise.resolve(undefined),
+          ...(ownerUserId ? { ownerUserId } : {}),
+          logger,
+        })
+      : undefined;
+  if (initiativeConfig.enabled && !initiativeCoordinator) {
+    logger.warn(
+      { event: "initiative_disabled_missing_dependencies" },
+      "Initiative is enabled but its dependencies are unavailable",
+    );
+  }
   const createDiscordAgent = (
     channelId: string,
     sessionKey: string,
@@ -333,6 +394,7 @@ export async function bootstrapApplication(): Promise<void> {
           workers: workerAgentCoordinator,
           promiseGuard: { mode: proactivityConfig.promiseGuard, logger },
           ...(proactiveCoordinator ? { proactive: proactiveCoordinator } : {}),
+          ...(initiativeCoordinator ? { initiative: initiativeCoordinator } : {}),
         }),
     });
   };
@@ -412,7 +474,7 @@ export async function bootstrapApplication(): Promise<void> {
     },
   );
   const memorySessionId = `memory-${randomUUID()}`;
-  const sharedMemoryCoordinator = sharedMemoryConfig.enabled
+  sharedMemoryCoordinator = sharedMemoryConfig.enabled
     ? new SharedMemoryCoordinator({
         store: new MarkdownSharedMemoryStore(sharedMemoryConfig.directory),
         idleSeconds: sharedMemoryConfig.idleSeconds,
@@ -452,6 +514,7 @@ export async function bootstrapApplication(): Promise<void> {
     sharedMemoryCoordinator,
     operatingState: discordOperatingState,
     ...(proactiveCoordinator ? { proactive: proactiveCoordinator } : {}),
+    ...(initiativeCoordinator ? { initiative: initiativeCoordinator } : {}),
     scheduledTaskStore,
     userMemoryCoordinator,
     userMemoryStore,
@@ -507,6 +570,7 @@ export async function bootstrapApplication(): Promise<void> {
                 preferenceStore: proactivePreferenceStore,
                 followUpStore: proactiveFollowUpStore,
                 signalStore: proactiveSignalStore,
+                ...(initiativeGoalStore ? { goalStore: initiativeGoalStore } : {}),
               }),
             }
           : {}),
@@ -521,6 +585,7 @@ export async function bootstrapApplication(): Promise<void> {
   let contextRotationInterval: ReturnType<typeof setInterval> | undefined;
   let workerCleanupInterval: ReturnType<typeof setInterval> | undefined;
   let scheduledTaskCheckInterval: ReturnType<typeof setInterval> | undefined;
+  let initiativePlanInterval: ReturnType<typeof setInterval> | undefined;
   const shutdown = async (signal: string): Promise<void> => {
     logger.info({ event: "shutdown_started", signal }, "Shutting down");
 
@@ -539,6 +604,10 @@ export async function bootstrapApplication(): Promise<void> {
     if (scheduledTaskCheckInterval) {
       clearInterval(scheduledTaskCheckInterval);
       scheduledTaskCheckInterval = undefined;
+    }
+    if (initiativePlanInterval) {
+      clearInterval(initiativePlanInterval);
+      initiativePlanInterval = undefined;
     }
     await webUi?.stop();
     discordService.stopAccepting();
@@ -645,12 +714,38 @@ export async function bootstrapApplication(): Promise<void> {
   };
   runWorkerIdleCleanup();
   workerCleanupInterval = setInterval(runWorkerIdleCleanup, WORKER_IDLE_CHECK_INTERVAL_MS);
+  const runInitiativePlan = (): void => {
+    if (!initiativeCoordinator) return;
+    void taskCoordinator
+      .run(() => initiativeCoordinator.planDueChannels())
+      .catch((error: unknown) => {
+        logger.warn(
+          { err: error, event: "initiative_plan_check_failed" },
+          "Failed to check initiative planning",
+        );
+      });
+  };
+  const runInitiativeGoalDelivery = (): void => {
+    if (!initiativeCoordinator) return;
+    void taskCoordinator
+      .run(() => initiativeCoordinator.deliverDueGoals())
+      .catch((error: unknown) => {
+        logger.warn(
+          { err: error, event: "initiative_goal_check_failed" },
+          "Failed to check due initiative goals",
+        );
+      });
+  };
   void agentCoordinator.deliverDueTasks();
   void agentCoordinator.deliverDueDigests();
+  runInitiativeGoalDelivery();
+  runInitiativePlan();
   scheduledTaskCheckInterval = setInterval(() => {
     void agentCoordinator.deliverDueTasks();
     void agentCoordinator.deliverDueDigests();
+    runInitiativeGoalDelivery();
   }, SCHEDULED_TASK_CHECK_INTERVAL_MS);
+  initiativePlanInterval = setInterval(runInitiativePlan, INITIATIVE_PLAN_CHECK_INTERVAL_MS);
   await updateDiscordUsageStatus();
   usageStatusInterval = setInterval(() => {
     void updateDiscordUsageStatus();

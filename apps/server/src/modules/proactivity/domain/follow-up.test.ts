@@ -118,7 +118,7 @@ test("formats a follow-up as one line with its status", () => {
   );
   assert.equal(
     formatFollowUp({ ...followUp, status: "orphaned" }),
-    "牛乳の買い置きを確認する（5分ごと / 監視なし）",
+    "牛乳の買い置きを確認する（5分ごと / 追跡先なし）",
   );
   assert.equal(
     formatFollowUp({ ...followUp, status: "dismissed" }),

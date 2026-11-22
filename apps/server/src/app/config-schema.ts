@@ -108,12 +108,33 @@ const ProactiveDeliveryModeSchema = Type.Union([
   Type.Literal("silent"),
 ]);
 
+const InitiativeConfigurationSchema = Type.Object(
+  {
+    enabled: Type.Boolean(),
+    goalsDirectory: Type.Optional(Type.String({ minLength: 1 })),
+    plannerStateDirectory: Type.Optional(Type.String({ minLength: 1 })),
+    llm: Type.Optional(MemoryModelConfigurationSchema),
+    planAfterIdleMinutes: Type.Optional(Type.Integer({ minimum: 1, maximum: 1_440 })),
+    planWithinHours: Type.Optional(Type.Integer({ minimum: 1, maximum: 720 })),
+    maxMessages: Type.Optional(Type.Integer({ minimum: 1, maximum: 500 })),
+    maxPlansPerDay: Type.Optional(Type.Integer({ minimum: 0, maximum: 100 })),
+    maxGoalsPerDay: Type.Optional(Type.Integer({ minimum: 0, maximum: 100 })),
+    maxActiveGoals: Type.Optional(Type.Integer({ minimum: 0, maximum: 100 })),
+    maxGoalsPerPlan: Type.Optional(Type.Integer({ minimum: 0, maximum: 10 })),
+    approval: Type.Optional(
+      Type.Union([Type.Literal("auto"), Type.Literal("propose"), Type.Literal("off")]),
+    ),
+  },
+  { additionalProperties: false },
+);
+
 const ProactivityConfigurationSchema = Type.Object(
   {
     enabled: Type.Boolean(),
     preferencesDirectory: Type.Optional(Type.String({ minLength: 1 })),
     followUpDirectory: Type.Optional(Type.String({ minLength: 1 })),
     signalDirectory: Type.Optional(Type.String({ minLength: 1 })),
+    initiative: Type.Optional(InitiativeConfigurationSchema),
     defaultMode: Type.Optional(ProactiveDeliveryModeSchema),
     quietHours: Type.Optional(
       Type.Object(

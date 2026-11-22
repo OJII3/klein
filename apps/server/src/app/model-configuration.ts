@@ -9,12 +9,18 @@ export function collectModelsInUse(config: AppConfig): ConfiguredModel[] {
   const memory = resolveSharedMemoryConfig(config);
   const userMemory = resolveUserMemoryConfig(config);
   const voiceChat = resolveVoiceChatConfig(config);
+  const proactivity = config.features.proactivity;
+  const initiative =
+    proactivity?.enabled && proactivity.initiative?.enabled
+      ? (proactivity.initiative.llm ?? config.llm)
+      : undefined;
   const models: (ConfiguredModel | undefined)[] = [
     config.llm,
     config.llm.image,
     voiceChat?.llm,
     memory.enabled ? memory.llm : undefined,
     userMemory?.enabled ? userMemory.llm : undefined,
+    initiative,
   ];
 
   return models.filter((model): model is ConfiguredModel => model !== undefined);
