@@ -31,7 +31,6 @@ export interface ChannelSessionState {
   readonly channelName?: string;
   readonly sessionKey: string;
   readonly lastActivityAt: number | null;
-  /** Last rotation bucket the session was rotated into. Persisted under the legacy `lastRotationDate` key. */
   readonly lastRotationDate: string;
   readonly hasActivitySinceRotation: boolean;
   readonly handoffContext?: string;

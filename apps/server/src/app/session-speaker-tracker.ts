@@ -1,7 +1,3 @@
-/**
- * Remembers which users have spoken in the current Pi session of each conversation. A rotated
- * conversation starts a new session key, so its speakers are forgotten with the old session.
- */
 export class SessionSpeakerTracker {
   private readonly speakers = new Map<string, { sessionKey: string; userIds: Set<string> }>();
 

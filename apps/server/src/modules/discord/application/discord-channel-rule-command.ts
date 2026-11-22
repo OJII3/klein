@@ -30,10 +30,6 @@ type TargetRejection = {
   readonly reason: DiscordChannelRuleCommandRejection;
 };
 
-/**
- * Decides whether the `/rule` command may open its editor or save the submitted
- * text. Rendering the modal and the result notice stays with the caller.
- */
 export class DiscordChannelRuleCommand {
   constructor(private readonly store?: Pick<DiscordChannelRuleStore, "get" | "set">) {}
 

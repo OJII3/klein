@@ -10,7 +10,6 @@ export interface T3Project {
   readonly workspaceRoot: string;
 }
 
-/** Lists the projects registered in T3 Code. */
 export interface T3ProjectLister {
   list(signal?: AbortSignal): Promise<readonly T3Project[]>;
 }

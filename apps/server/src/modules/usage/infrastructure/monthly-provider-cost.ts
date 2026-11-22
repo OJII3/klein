@@ -30,11 +30,6 @@ export async function sumMonthlyProviderCost(
   return cost;
 }
 
-/**
- * Finds every directory that holds session files. The session root groups
- * sessions by role, and each role directory holds one directory per session,
- * so the walk stops at the first directory that contains `.jsonl` files.
- */
 async function listSessionDirectories(root: string): Promise<string[]> {
   let entries;
   try {

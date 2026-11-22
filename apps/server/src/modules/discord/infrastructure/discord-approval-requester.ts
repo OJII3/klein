@@ -122,10 +122,6 @@ export interface DiscordApprovalRequesterDependencies<R extends DiscordApprovalR
   readonly logger?: Logger;
 }
 
-/**
- * Owner-facing presentation for approval requests: posts a pending notice,
- * sends the owner buttons, and turns a button press into a decision.
- */
 export class DiscordApprovalRequester<
   R extends DiscordApprovalRequest,
 > implements DiscordApprovalPresentation<R> {

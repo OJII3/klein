@@ -64,14 +64,11 @@ async function findExecutable(name: string): Promise<string | undefined> {
     try {
       await access(candidate, constants.X_OK);
       return candidate;
-    } catch {
-      // Try the next PATH entry.
-    }
+    } catch {}
   }
   return undefined;
 }
 
-/** Finds processes started from this checkout by a person or a terminal, not by this unit. */
 async function findRunningInstances(): Promise<readonly RunningInstance[]> {
   const instances: RunningInstance[] = [];
   for (const entry of await readdir("/proc")) {

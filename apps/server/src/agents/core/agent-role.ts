@@ -1,15 +1,5 @@
 import type { AgentTool } from "./agent-tool";
 
-/**
- * How an agent relates to a conversation.
- *
- * The role decides whether the agent may write to the conversation surface, how
- * long its session lives, and where a completed turn's assistant text goes.
- *
- * - conversation: belongs to one conversation and owns its surface.
- * - worker: belongs to one conversation but returns results to the conversation agent.
- * - standalone: belongs to no conversation; the caller owns its result.
- */
 export type ConversationAgentRole = { readonly kind: "conversation" };
 export type WorkerAgentRole = { readonly kind: "worker"; readonly workerId: string };
 export type StandaloneAgentRole = { readonly kind: "standalone" };

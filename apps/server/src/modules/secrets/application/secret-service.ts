@@ -39,10 +39,6 @@ export type SecretSubmissionOutcome =
   | { readonly kind: "forbidden" }
   | { readonly kind: "invalid"; readonly message: string };
 
-/**
- * The worker-facing surface. Discord presents the request, the service owns
- * request lifetime and encrypted storage.
- */
 export interface SecretControl {
   request(draft: SecretRequestDraft): Promise<SecretRequestOutcome>;
   lookupPending(requestId: string): Promise<SecretPendingLookup>;
@@ -62,7 +58,6 @@ export interface SecretControl {
 export interface SecretServiceDependencies {
   readonly secrets: SecretStore;
   readonly requests: SecretRequestStore;
-  /** Tells the worker that its request was resolved. */
   readonly onResolved?: (request: SecretRequest, outcome: "saved" | "cancelled") => Promise<void>;
   readonly now?: () => Date;
   readonly logger?: Logger;

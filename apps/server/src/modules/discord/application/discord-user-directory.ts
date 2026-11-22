@@ -14,9 +14,6 @@ import type {
 
 export type { KnownDiscordUser } from "../ports/discord-user-resolver";
 
-/**
- * Shared username to numeric user ID index for the users Klein has seen in messages.
- */
 export class DiscordUserDirectory implements DiscordUserResolver {
   private readonly store: DiscordUserStore;
   private readonly logger?: Pick<Logger, "warn">;

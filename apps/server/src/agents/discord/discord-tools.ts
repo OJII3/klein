@@ -47,17 +47,13 @@ export interface DiscordAgentToolsOptions {
   readonly userMemoryStore?: UserMemoryStore;
   readonly discordUserDirectory?: DiscordUserResolver;
   readonly workers?: WorkerControl;
-  /** Lists T3 projects for an owner conversation. */
   readonly t3ProjectLister?: T3ProjectLister;
   readonly proactive?: ProactiveToolCoordinator;
   readonly initiative?: InitiativeToolCoordinator;
   readonly promiseGuard?: { readonly mode: PromiseGuardMode; readonly logger: Logger };
 }
 
-/**
- * Discord チャンネル用エージェントのツール一式を組み立てる。
- * エージェント本体ではなく composition root から呼ぶ。
- */
+/** エージェント本体ではなく composition root から呼ぶ。 */
 export function createDiscordAgentTools(
   options: DiscordAgentToolsOptions,
 ): readonly ToolDefinition[] {

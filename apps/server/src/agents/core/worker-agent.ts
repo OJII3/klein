@@ -29,7 +29,6 @@ export interface WorkerScope {
 }
 
 export interface WorkerStartInput extends WorkerScope {
-  /** Optional pre-generated worker id. The coordinator creates one when omitted. */
   readonly id?: string;
   readonly ownerFeaturesAllowed: boolean;
   readonly prompt: string;
@@ -49,20 +48,12 @@ export interface WorkerControl {
 export interface WorkerDelegationPromptOptions {
   readonly browserAvailable: boolean;
   readonly t3Available: boolean;
-  /** The conversation can list T3 projects with `t3_project_list`. */
   readonly t3ProjectAvailable: boolean;
-  /** The linked user's sandboxed shell belongs to workers in this conversation. */
   readonly shellAvailable: boolean;
-  /** Workers can ask the linked user for secrets by direct message. */
   readonly secretsAvailable: boolean;
   readonly watchAvailable: boolean;
 }
 
-/**
- * Renders system prompt guidance telling a conversation agent when to delegate
- * work to workers (`worker_start`) and which capabilities belong only
- * to workers in the current session.
- */
 export function renderWorkerDelegationSection(options: WorkerDelegationPromptOptions): string {
   const workerOnlyCapabilities: string[] = [];
   if (options.browserAvailable) {
@@ -149,11 +140,6 @@ export function renderWorkerDelegationSection(options: WorkerDelegationPromptOpt
   return lines.join("\n");
 }
 
-/**
- * Renders guidance for a worker that has the T3 Code thread tools. Repository
- * work stays in a thread instead of the worker's own session, and a thread can
- * reach any repository or machine setting rather than only Klein's checkout.
- */
 export function renderWorkerT3ThreadSection(): string {
   return [
     "## T3 Code threads (`t3_thread_*`)",
@@ -166,10 +152,6 @@ export function renderWorkerT3ThreadSection(): string {
   ].join("\n");
 }
 
-/**
- * Guidance for a worker that can request secrets from the linked user.
- * Values stay outside the model; `secret_run` injects them into the sandbox.
- */
 export function renderWorkerSecretsSection(): string {
   return [
     "## Secrets (`secret_*`)",

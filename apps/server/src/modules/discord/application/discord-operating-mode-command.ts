@@ -13,11 +13,6 @@ export interface DiscordOperatingModeCommandInput {
   readonly canManageGuild: boolean;
 }
 
-/**
- * Decides the effect of the `/status` subcommands. The caller reports whether
- * the interaction happened in a guild and whether its member may manage the
- * guild.
- */
 export function decideDiscordOperatingModeCommand(
   input: DiscordOperatingModeCommandInput,
 ): DiscordOperatingModeCommandResult {

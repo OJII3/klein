@@ -14,13 +14,6 @@ import {
   type DiscordUserProfileToolDependencies,
 } from "./discord-user-profile";
 
-/**
- * Tools for a worker. The worker reads the conversation it
- * belongs to but never writes to the surface. A watch it registers belongs to
- * the worker, so its wake resumes this worker session instead of the
- * conversation session. An owner-scoped worker also receives the T3 Code
- * project and thread tools, which let it hand coding work to a T3 Code agent.
- */
 export function createWorkerTools(
   channelApi: Pick<DiscordChannelApi, "readMessage" | "getChannelLocation">,
   channelId: string,

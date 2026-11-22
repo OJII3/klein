@@ -89,9 +89,6 @@ function noticeFor(outcome: DiscordApprovalNoticeOutcome): {
   return notices[outcome];
 }
 
-/**
- * Asks the owner whether a channel that the bot was mentioned in may be allowed.
- */
 export class DiscordChannelAccessRequester {
   private readonly approval: DiscordApprovalRequester<PendingDiscordAccessRequest>;
 

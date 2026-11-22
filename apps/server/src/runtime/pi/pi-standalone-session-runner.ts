@@ -147,11 +147,6 @@ export class PiStandaloneSessionRunner {
   }
 }
 
-/**
- * Directory holding the session files of one standalone session id. Each
- * `createSession` call writes a new file under it, so the transcript of every
- * run survives the process.
- */
 export function standaloneSessionDir(agentDir: string, sessionId: string): string {
   return resolve(agentDir, "sessions", "standalone", encodeURIComponent(sessionId));
 }

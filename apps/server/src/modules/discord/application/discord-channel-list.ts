@@ -37,10 +37,6 @@ export interface DiscordAllowedChannelListInput {
   readonly userIsBot?: boolean;
 }
 
-/**
- * Builds the body of the `/channels` command. Only channels and threads whose
- * resolved access is not `deny` are listed.
- */
 export async function buildAllowedDiscordChannelLines(
   input: DiscordAllowedChannelListInput,
   dependencies: DiscordAllowedChannelListDependencies,

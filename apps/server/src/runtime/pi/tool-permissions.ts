@@ -12,7 +12,6 @@ const MCP_RESOURCE_TOOLS = new Set([
   "read_mcp_resource",
 ]);
 
-/** Public conversations, linked-user conversations, and owner conversations. */
 export type ToolSessionAccess = "public" | "user" | "owner";
 
 /** Permission level for a tool or MCP server. `user` includes the owner. */

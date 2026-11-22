@@ -4,7 +4,6 @@ import { getMeta } from "../api";
 
 const DEFAULT_DISPLAY_NAME = "Klein";
 
-/** Loads the running profile's display name and keeps the document title in sync. */
 export function useDisplayName(): string {
   const [displayName, setDisplayName] = useState(DEFAULT_DISPLAY_NAME);
 

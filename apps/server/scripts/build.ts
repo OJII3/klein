@@ -75,7 +75,6 @@ function replaceOnce(
   return source.replace(search, replacement);
 }
 
-// Clean previous server bundle artifacts while keeping dist/web from build:web.
 await mkdir(outdir, { recursive: true });
 for (const entry of await readdir(outdir)) {
   if (entry === "web") continue;
@@ -171,7 +170,6 @@ await Bun.build({
   throw: true,
 });
 
-// Copy WASM and Pi package metadata assets required at runtime next to the bundle.
 const onnxRuntimeDist = resolve(dirname(require.resolve("onnxruntime-web/package.json")), "dist");
 for (const asset of ["ort-wasm-simd-threaded.mjs", "ort-wasm-simd-threaded.wasm"]) {
   await copyFile(resolve(onnxRuntimeDist, asset), resolve(outdir, asset));
