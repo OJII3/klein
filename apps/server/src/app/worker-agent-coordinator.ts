@@ -80,16 +80,6 @@ interface Worker {
   closed: boolean;
 }
 
-/**
- * Owns workers. Each worker has its own rich Pi session and a queue of
- * prompts. The worker never writes to the conversation surface; every completed
- * or failed prompt is delivered to the conversation agent as a result.
- *
- * The worker metadata is persisted, so a restart restores the worker list. A
- * restored worker resumes its Pi session when the conversation sends the next
- * prompt. A prompt that was running at shutdown is marked `interrupted` and is
- * not re-run automatically.
- */
 export class WorkerAgentCoordinator implements WorkerControl {
   private readonly workers = new Map<string, Worker>();
   private readonly logger: Logger;

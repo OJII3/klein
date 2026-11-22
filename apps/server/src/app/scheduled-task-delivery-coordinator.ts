@@ -404,11 +404,6 @@ export class ScheduledTaskDeliveryCoordinator {
     return this.deliverEvent(conversationKey, delivery.watch, delivery.event, complete);
   }
 
-  /**
-   * Resumes the worker that registered the watch. The worker's result returns
-   * to the conversation through the worker result event, so the
-   * conversation still decides whether to speak.
-   */
   private async deliverWatchToWorker(
     delivery: TriggeredWatch | FailedWatch,
     ownerWorkerId: string,

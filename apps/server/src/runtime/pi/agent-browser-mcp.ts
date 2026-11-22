@@ -50,16 +50,6 @@ export function migrateLegacyAgentBrowserProfile(
   return profileDirectory;
 }
 
-/**
- * Vercel's agent-browser as an MCP server. The core profile covers navigation,
- * snapshots, interaction, waits, screenshots, and page evaluation; account,
- * cookie, storage, network, and file tools stay unavailable.
- *
- * One browser session and profile belong to one Discord user, so every channel
- * that user linked shares tabs and login state. Chrome allows only one instance
- * per profile directory, which is why the session is per user rather than per
- * worker.
- */
 export function createAgentBrowserMcpConfig(userId: string, profileDirectory: string) {
   return {
     command: "agent-browser",

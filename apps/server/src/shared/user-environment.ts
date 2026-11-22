@@ -2,10 +2,6 @@ import { createHash } from "node:crypto";
 import { chmodSync, lstatSync, mkdirSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 
-/**
- * Files and credentials that belong to one linked Discord user. Worker sessions
- * run in the workspace, and the shell sees only this directory tree.
- */
 export interface UserEnvironment {
   readonly userId: string;
   readonly rootDirectory: string;
@@ -86,7 +82,6 @@ function isWithinDirectory(root: string, path: string): boolean {
   );
 }
 
-/** Environment variables that keep a user's tools inside their own environment. */
 export function userEnvironmentVariables(
   environment: UserEnvironment,
 ): Readonly<Record<string, string>> {

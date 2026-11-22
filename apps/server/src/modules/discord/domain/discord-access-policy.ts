@@ -4,7 +4,6 @@ import type { DiscordChannelLinkTarget } from "./discord-channel-link";
 
 export type DiscordAccess = AccessLevel;
 
-/** Access levels that can be written to a guild, channel, or thread rule. */
 export type DiscordAccessRuleLevel = "allow" | "deny";
 
 export interface DiscordThreadAccessRule {
@@ -30,7 +29,6 @@ export interface DiscordAccessRules {
   getGuildRule(guildId: string): DiscordGuildAccessRule | undefined;
 }
 
-/** Resolves the user that owns a linked guild channel or thread. */
 export type DiscordChannelOwnerResolver = (target: DiscordChannelLinkTarget) => string | undefined;
 
 export interface DiscordAccessTarget {
@@ -46,7 +44,6 @@ export interface DiscordAccessPolicy {
   canReceive(target: DiscordAccessTarget): boolean;
   resolveAccess(target: DiscordAccessTarget): DiscordAccess;
   canUseOwnerFeatures(target: DiscordAccessTarget): boolean;
-  /** The linked user whose private session this message belongs to, if any. */
   resolveLinkedUser(target: DiscordAccessTarget): string | undefined;
 }
 

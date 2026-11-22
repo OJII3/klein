@@ -106,11 +106,6 @@ function toChoiceButton(interaction: DiscordChoiceButtonInteraction): DiscordCho
   };
 }
 
-/**
- * Posts a question with buttons and turns the pressed button into a message
- * from the user who answered. The answer enters the conversation through the
- * same handler as a typed message, so access checks and session routing apply.
- */
 export class DiscordChoiceRequester {
   private readonly service: DiscordChoiceService;
 

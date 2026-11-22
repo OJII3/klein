@@ -121,12 +121,10 @@ function resolveExecutable(name: string): string | undefined {
   return undefined;
 }
 
-/** The bubblewrap binary the sandbox spawns, when it is installed. */
 export function resolveBubblewrapBinary(): string | undefined {
   return resolveExecutable("bwrap");
 }
 
-/** The pasta binary that provides the outbound network namespace. */
 export function resolvePastaBinary(): string | undefined {
   return resolveExecutable("pasta");
 }
@@ -288,7 +286,6 @@ function isRoutableNameserver(address: string): boolean {
   );
 }
 
-/** Reads the IPv4 default gateway from /proc/net/route. */
 export function parseDefaultIpv4Gateway(content: string): string | undefined {
   for (const line of content.split("\n").slice(1)) {
     const columns = line.trim().split(/\s+/u);

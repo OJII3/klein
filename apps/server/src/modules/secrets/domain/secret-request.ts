@@ -2,7 +2,6 @@ import type { AccessScope } from "@shared/access";
 
 import type { SecretField } from "./secret";
 
-/** A pending request to the linked user for secrets. */
 export interface SecretRequest {
   readonly requestId: string;
   readonly userId: string;

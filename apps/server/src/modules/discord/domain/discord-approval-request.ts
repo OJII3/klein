@@ -1,11 +1,9 @@
-/** A guild channel or thread that an owner approval request refers to. */
 export interface DiscordApprovalLocation {
   readonly guildId: string;
   readonly channelId: string;
   readonly threadId?: string;
 }
 
-/** Common fields of a request that the bot owner approves with buttons. */
 export interface DiscordApprovalRequest extends DiscordApprovalLocation {
   readonly requestId: string;
   readonly pendingChannelId: string;

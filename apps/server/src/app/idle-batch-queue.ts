@@ -24,12 +24,6 @@ interface Batch<TItem> {
   maxAgeTimer?: ReturnType<typeof setTimeout>;
 }
 
-/**
- * Batches items per key and runs one batch after the key goes idle. A batch is also
- * flushed when it reaches the maximum size or its oldest item reaches the maximum age.
- * Failed batches are put back at the front of the queue and retried after the same
- * idle or maximum-age delay.
- */
 export class IdleBatchQueue<TKey, TItem> {
   private readonly batches = new Map<TKey, Batch<TItem>>();
   private disposed = false;
@@ -73,10 +67,6 @@ export class IdleBatchQueue<TKey, TItem> {
     this.batches.clear();
   }
 
-  /**
-   * Processes every pending batch now and waits for the work to finish. A batch that
-   * fails during the flush is not put back, so shutdown does not wait for a retry.
-   */
   async flush(): Promise<void> {
     if (this.disposed) return;
 

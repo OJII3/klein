@@ -25,10 +25,6 @@ export interface UserMemoryCoordinatorOptions {
   readonly maxBatchMessages?: number;
 }
 
-/**
- * Creates a user memory as soon as Klein handles a message from that user, then lets a
- * background model fold the batch into the memory after the conversation goes idle.
- */
 export class UserMemoryCoordinator {
   private readonly logger: Logger;
   private readonly queue: IdleBatchQueue<string, DiscordMessage>;

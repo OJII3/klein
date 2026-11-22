@@ -1,7 +1,5 @@
 export interface SystemdUserUnitOptions {
-  /** Absolute path to the repository; the unit runs from here. */
   readonly repositoryRoot: string;
-  /** Absolute path to the Bun executable used when Nix is unavailable. */
   readonly bunBinary: string;
   /** Absolute path to Nix. When set, the unit starts Bun inside the flake devShell. */
   readonly nixBinary?: string;

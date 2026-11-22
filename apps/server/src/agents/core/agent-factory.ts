@@ -7,9 +7,7 @@ import type { AgentTool } from "./agent-tool";
 export type AgentImageAnalyzer = (prompt: AgentPrompt) => Promise<string>;
 
 export interface AgentToolContext {
-  /** Analyzes images via the configured image model, when available. */
   readonly analyzeImage?: AgentImageAnalyzer;
-  /** Returns the requester id for the currently executing turn, if any. */
   readonly requesterId: () => string | undefined;
 }
 
@@ -24,14 +22,9 @@ export interface AgentCreationOptions {
   /** Private scope of the conversation, which also names the browser profile. */
   readonly accessScope?: AccessScope;
   readonly initialContext?: string;
-  /** Continue the most recent session in the session directory instead of starting a new one. */
   readonly resumeSession?: boolean;
 }
 
-/**
- * Creates an agent runtime. The factory passes runtime capabilities and
- * turn-scoped state via {@link AgentToolContext} when building tools.
- */
 export interface AgentFactory<TTool extends AgentTool = AgentTool> {
   create(
     definition: AgentDefinition,

@@ -53,7 +53,6 @@ export interface StoredDiscordChannelHistory {
   readonly messages: readonly DiscordChannelHistoryMessage[];
 }
 
-/** Keeps fetched history in memory so the model can read untruncated text by responseId. */
 export class DiscordChannelHistoryStore {
   private readonly entries = new Map<string, StoredDiscordChannelHistory>();
 

@@ -165,11 +165,6 @@ export class AgentCoordinator {
     }
   }
 
-  /**
-   * Delivers a worker's result to the conversation agent that started
-   * it. The worker never writes to the surface, so the conversation
-   * agent decides whether to speak.
-   */
   async deliverWorkerResult(
     conversationKey: ConversationKey,
     accessScope: AccessScope,

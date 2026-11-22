@@ -7,10 +7,6 @@ import { Check, Errors } from "typebox/value";
 import type { DiscordApprovalRequest } from "../domain/discord-approval-request";
 import type { DiscordApprovalRequestStore } from "../ports/discord-approval-request-store";
 
-/**
- * File-backed pending approval requests. The request kind supplies the schema
- * that validates its extra fields.
- */
 export class FileDiscordApprovalRequestStore<
   R extends DiscordApprovalRequest,
 > implements DiscordApprovalRequestStore<R> {

@@ -8,13 +8,6 @@ Klein が自分で目標を定め、数時間後や翌日に実行する仕組�
 
 Klein はチャンネルのメッセージに反応するだけではなく、watch やワーカーの結果から得た出来事を、文脈に合うときに自分から発言する。ただし、通知の量とタイミングはユーザーの好みで制御でき、約束した追跡は必ず実体を持つ。
 
-この機能は次の4つに分ける。
-
-1. 好みの台帳
-2. 約束の台帳
-3. 配信ゲート
-4. 候補のキュー
-
 好みは「何を、いつ、どう聞きたいか」を保持する。約束は「あとで知らせる」と発言したことだけを保持し、watch の実体を必須にする。配信ゲートは好みと現在時刻から、すぐ話すか、次の発言に混ぜるか、まとめるか、黙るかを決める。候補のキューは、すぐに話さない出来事を届くまで保持する。
 
 ## 対象範囲
@@ -73,28 +66,12 @@ Klein はチャンネルのメッセージに反応するだけではなく、wa
 
 `<runtime.agentDir>/proactive/follow-ups/<id>.json` に1件1ファイルで保存する。スケジュールやワーカーの保存形式に合わせ、書き込みは一時ファイルと rename を使う。
 
-```ts
-type FollowUpStatus = "active" | "notified" | "done" | "orphaned" | "expired" | "dismissed";
+形式は `FollowUp` 型にある。状態は次の意味を持つ。
 
-type FollowUpWatcher =
-  { kind: "watch"; id: string } | { kind: "reminder"; id: string } | { kind: "worker"; id: string };
-
-interface FollowUp {
-  version: 1;
-  id: string;
-  channelId: string;
-  accessScope: AccessScope;
-  subject: string;
-  watcher: FollowUpWatcher;
-  cadenceLabel: string;
-  status: FollowUpStatus;
-  createdAt: string;
-  updatedAt: string;
-  expiresAt?: string;
-  lastNotifiedAt?: string;
-  originMessageId?: string;
-}
-```
+- `active` は追跡中、`notified` は通知済みである。
+- `done` は追跡が完了し、`dismissed` は取り下げられた。
+- `orphaned` は追跡先の watch が削除された。
+- `expired` は期限を過ぎた。
 
 `follow_up_create` は watcher を必須にする。watcher が同じチャンネルとアクセススコープに存在しない場合は失敗する。成功時は `formatSchedule` の結果を `cadenceLabel` として返す。ワーカーの場合は「ワーカーの完了時」とする。
 
@@ -102,34 +79,7 @@ watch が削除された約束は `orphaned` にする。コンテキストを�
 
 ### 候補のキュー
 
-`<runtime.agentDir>/proactive/signals/<id>.json` に保存する。
-
-```ts
-type ProactiveUrgency = "now" | "today" | "digest" | "silent";
-type ProactiveSignalStatus = "queued" | "surfaced" | "dismissed" | "expired";
-
-interface ProactiveSignal {
-  version: 1;
-  id: string;
-  channelId: string;
-  accessScope: AccessScope;
-  audience: "owner" | "public";
-  source: { kind: "watch" | "worker" | "memory" | "connector"; ref?: string };
-  topic: string;
-  summary: string;
-  evidence?: { url?: string; text?: string };
-  urgency: ProactiveUrgency;
-  dedupeKey: string;
-  observedAt: string;
-  expiresAt?: string;
-  status: ProactiveSignalStatus;
-  delivery?: {
-    mode: "interrupt" | "attach" | "digest" | "silent";
-    surfacedAt?: string;
-    messageIds?: readonly string[];
-  };
-}
-```
+`<runtime.agentDir>/proactive/signals/<id>.json` に保存する。形式は `ProactiveSignal` 型にある。由来は watch、worker、memory、外部コネクタ、Goal を持てるが、現在候補を作るのは watch と Goal である。状態は `queued`、`surfaced`、`dismissed`、`expired` のいずれかである。
 
 同じ `dedupeKey` の候補が `surfaced` または `dismissed` で存在する場合、新しい候補は作らない。`expiresAt` を過ぎた候補は `expired` にする。
 
@@ -165,8 +115,8 @@ watch の wake とワーカーの結果を届けるときも同じブロック�
 
 すべて `features.proactivity.enabled` が真のときだけ会話エージェントに渡す。
 
-- `proactive_preference_update` は好みを更新する。`set_delivery`、`set_topic`、`remove_topic`、`add_note` を受ける。`set_topic` で `until` を省略した `mute` は、恒久を意図する場合に限り `permanent: true` を必要とする。ユーザー単位のスコープではそのユーザー本人、公開チャンネルでは所有者だけが呼べる。
-- `follow_up_create` は watch、リマインダー、ワーカーを指定して約束を作る。watcher が見つからなければ失敗する。
+- `proactive_preference_update` は好みを更新する。`set_delivery`、`set_topic`、`remove_topic`、`add_note` を受ける。ユーザー単位のスコープではそのユーザー本人、公開チャンネルでは所有者だけが呼べる。
+- `follow_up_create` は watch、リマインダー、ワーカーを指定して約束を作る。
 - `follow_up_list` はこのチャンネルの有効な約束を返す。
 - `follow_up_close` は約束を `done` または `dismissed` にする。
 - `proactive_signal_list` はこの会話のキューにある期限切れでない候補を返す。
@@ -209,25 +159,6 @@ Web UI の「自発」画面は `GET /api/proactivity` を読み、保留中の�
 
 `preferencesDirectory`、`followUpDirectory`、`signalDirectory` を省略した場合は `<runtime.agentDir>` の下の既定値を使う。`quietHours` と `digestAt` は設定の既定値であり、好みのファイルに値があればそちらを優先する。`promiseGuard` を省略した場合は `log` になる。
 
-## 実装済みの範囲
+## 扱わない範囲
 
-- 好み、約束、候補のドメインとファイル保存
-- 設定、`ProactiveCoordinator`、`proactive_preference_update`、ターンコンテキストへの好み、`<waiting-on>`、`<pending-signals>` の描画
-- ユーザー単位とチャンネル単位の好み、リンク済みユーザーによる自分の好みの変更、公開チャンネルでの所有者だけの変更
-- `follow_up_create`、`follow_up_list`、`follow_up_close` と、watch の削除、一回だけのリマインダーの配信、ワーカーの結果配送を `done` に反映する処理
-- watch の wake の候補化、配信ゲート、`attach` と `digest` のキュー、当日の配信数、重複排除
-- `AgentCoordinator.deliverDueDigests` によるダイジェスト配信と、スケジュール確認と同じ間隔での起動
-- `discord_send` の約束監査 (`off`、`log`、`block`)
-- `proactive_signal_list` と `proactive_signal_dismiss`、期限切れの除外、恒久 mute に必要な `permanent: true`
-- Web UI の「自発」画面と `GET /api/proactivity` による候補、約束、好みの閲覧
-- `config/PROACTIVITY.md` と `docs/features.md` の更新
-
-確認は `bun fmt`、`bun lint:fix`、`bun test`、`bun run typecheck`、`bun run build` で行う。
-
-## 対象外
-
-- Web UI からの好みの編集
-- 外部サービスやデバイスのコネクタ
-- 目標管理
-
-これらは、候補のキューと好みの台帳が動いてから別に設計する。
+Web UI からの好みの編集と、外部サービスやデバイスのコネクタは扱わない。長期的な目標は [initiative.md](initiative.md) が扱う。

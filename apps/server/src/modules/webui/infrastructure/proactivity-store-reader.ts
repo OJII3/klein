@@ -28,7 +28,6 @@ export interface ProactivityStoreReaderOptions {
   readonly signalLimit?: number;
 }
 
-/** Reads the proactivity ledger through its stores for the Web UI. */
 export class ProactivityStoreReader implements ProactivityReader {
   private readonly signalLimit: number;
 

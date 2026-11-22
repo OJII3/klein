@@ -13,7 +13,6 @@ export interface AgentContextBlock {
 export interface AgentTurnContext {
   readonly userMemory?: string;
   readonly blocks?: readonly AgentContextBlock[];
-  /** The user who started this turn, when a user started it. */
   readonly requesterId?: string;
 }
 

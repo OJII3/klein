@@ -1,6 +1,5 @@
 import { accessScopeUserId, type AccessScope } from "@shared/access";
 
-/** The conversation whose preferences are read or written. */
 export interface ProactivePreferenceTarget {
   readonly channelId: string;
   readonly accessScope: AccessScope;

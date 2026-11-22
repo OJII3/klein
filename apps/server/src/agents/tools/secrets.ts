@@ -24,7 +24,6 @@ export interface SecretCommandResult {
   readonly truncated: boolean;
 }
 
-/** Runs a command inside the linked user's sandbox. */
 export type SecretCommandRunner = (
   environment: UserEnvironment,
   command: string,
@@ -46,11 +45,6 @@ interface SecretRequestToolDetails {
   readonly requestId?: string;
 }
 
-/**
- * Worker tools for the linked user's secret vault. The requester never
- * sees a typed secret: only `secret_run` receives the decrypted values, and it
- * passes them to the sandbox environment rather than the model.
- */
 export function createSecretTools(dependencies: SecretToolDependencies): readonly ToolDefinition[] {
   return [
     defineTool({

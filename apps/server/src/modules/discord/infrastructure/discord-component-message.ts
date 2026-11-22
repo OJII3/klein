@@ -28,10 +28,6 @@ export interface DiscordEphemeralContainerMessage {
   readonly flags: NonNullable<InteractionReplyOptions["flags"]>;
 }
 
-/**
- * Builds a container whose body is a single text display. Without a tone the
- * container keeps the default accent color.
- */
 export function createTextContainer(text: string, tone?: DiscordMessageTone): ContainerBuilder {
   const container = new ContainerBuilder().addTextDisplayComponents(
     new TextDisplayBuilder().setContent(text),

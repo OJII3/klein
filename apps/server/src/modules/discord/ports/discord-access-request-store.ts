@@ -3,5 +3,4 @@ import type { DiscordApprovalRequestStore } from "./discord-approval-request-sto
 
 export type { PendingDiscordAccessRequest } from "../domain/discord-access-request";
 
-/** Persists owner approval requests for channel access. */
 export type DiscordAccessRequestStore = DiscordApprovalRequestStore<PendingDiscordAccessRequest>;

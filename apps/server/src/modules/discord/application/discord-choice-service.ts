@@ -39,10 +39,6 @@ export type DiscordChoiceButtonResult =
       readonly answer: DiscordMessage;
     };
 
-/**
- * Keeps the pending questions and decides whether a pressed button is a valid
- * answer. Rendering the question and the answer stays with the caller.
- */
 export class DiscordChoiceService {
   private readonly pending = new Map<string, PendingDiscordChoice>();
 

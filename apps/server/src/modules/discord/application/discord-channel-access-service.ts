@@ -29,10 +29,6 @@ export interface DiscordChannelAccessServiceDependencies {
   readonly logger?: Logger;
 }
 
-/**
- * Applies access rules after the owner approves a request from a channel that
- * the bot was mentioned in.
- */
 export class DiscordChannelAccessService {
   private readonly approval: DiscordApprovalService<PendingDiscordAccessRequest>;
 

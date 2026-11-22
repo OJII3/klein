@@ -1,4 +1,3 @@
-/** A channel or thread that a Discord user owns in a guild. */
 export interface DiscordChannelLink {
   readonly guildId: string;
   readonly channelId: string;

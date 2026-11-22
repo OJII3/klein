@@ -29,7 +29,6 @@ export interface ViewerSessionReader {
   get(sessionId: string, query?: ViewerSessionQuery): Promise<ViewerSessionDetail | undefined>;
 }
 
-/** Discord の snowflake ID から表示名への対応表。 */
 export interface DiscordNameReader {
   read(): Promise<ReadonlyMap<string, string>>;
 }

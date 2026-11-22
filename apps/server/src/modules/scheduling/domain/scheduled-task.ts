@@ -38,7 +38,6 @@ export interface WatchTask extends ScheduledTaskBase {
    */
   readonly ownerWorkerId?: string;
   readonly enabled: boolean;
-  /** Values the script kept with `store()`. */
   readonly state?: Readonly<Record<string, unknown>>;
   readonly lastCheckedAt?: string;
   readonly lastTriggeredAt?: string;
