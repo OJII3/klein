@@ -79,7 +79,7 @@ test("reports script errors as check failures", async () => {
 
 test("kills JS watches that exceed their timeout", async () => {
   const runner = new QuickJsWatchCheckRunner({ tools: [], timeoutMs: 100 });
-  await assert.rejects(runner.run({ script: "while (true) {}", args: [] }), /タイムアウト/u);
+  await assert.rejects(runner.run({ script: "while (true) {}", args: [] }), /timed out/u);
 });
 
 test("limits the memory a watch script may allocate", async () => {
@@ -118,5 +118,8 @@ test("deletes state keys stored as undefined", async () => {
 
 test("rejects output over the byte limit", async () => {
   const runner = new QuickJsWatchCheckRunner({ tools: [], timeoutMs: 5_000, maxOutputBytes: 10 });
-  await assert.rejects(runner.run({ script: 'text("01234567890"); wake();', args: [] }), /上限/u);
+  await assert.rejects(
+    runner.run({ script: 'text("01234567890"); wake();', args: [] }),
+    /exceeded the .* byte limit/u,
+  );
 });

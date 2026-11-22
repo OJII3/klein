@@ -79,7 +79,7 @@ const FOLLOW_UP_STATUS_LABELS: Readonly<Record<FollowUpStatus, string>> = {
   active: "追跡中",
   notified: "通知済み",
   done: "完了",
-  orphaned: "監視なし",
+  orphaned: "追跡先なし",
   expired: "期限切れ",
   dismissed: "取り下げ",
 };
@@ -94,7 +94,7 @@ const FOLLOW_UP_STATUS_TONES: Readonly<Record<FollowUpStatus, string>> = {
 };
 
 const WATCHER_LABELS: Readonly<Record<FollowUpWatcherKind, string>> = {
-  watch: "監視",
+  watch: "watch",
   reminder: "リマインダー",
   worker: "ワーカー",
 };

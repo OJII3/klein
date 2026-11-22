@@ -63,7 +63,7 @@ export class QuickJsWatchCheckRunner implements WatchCheckRunner {
           "await (async () => {",
           watch.script,
           "})();",
-          'if (__watchDecision === null) throw new Error("監視スクリプトは最後に wake() か silent() を呼んでください。");',
+          'if (__watchDecision === null) throw new Error("watch script must end by calling wake() or silent()");',
           "return __watchDecision;",
         ].join("\n"),
         { store: state },
@@ -71,18 +71,18 @@ export class QuickJsWatchCheckRunner implements WatchCheckRunner {
       if (!result.ok) {
         throw new WatchCheckError(
           result.error.kind === "timeout"
-            ? `監視スクリプトが${this.timeoutMs}msでタイムアウトしました。`
-            : `監視スクリプトが失敗しました: ${result.error.message}`,
+            ? `watch script timed out after ${this.timeoutMs}ms`
+            : `watch script failed: ${result.error.message}`,
         );
       }
       const decision = result.value;
       if (decision !== "wake" && decision !== "silent") {
-        throw new WatchCheckError("監視スクリプトの判断を読み取れませんでした。");
+        throw new WatchCheckError("watch script returned an invalid decision");
       }
       const output = collectOutput(result.output);
       if (Buffer.byteLength(output, "utf8") > this.maxOutputBytes) {
         throw new WatchCheckError(
-          `監視スクリプトの出力が上限（${this.maxOutputBytes}バイト）を超えました。`,
+          `watch script output exceeded the ${this.maxOutputBytes} byte limit`,
         );
       }
       for (const key of result.storeWrites.delete) delete state[key];

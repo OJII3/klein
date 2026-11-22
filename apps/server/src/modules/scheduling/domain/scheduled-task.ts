@@ -137,7 +137,7 @@ export function parseScheduledTask(value: unknown): ScheduledTask {
       !Number.isInteger(consecutiveFailures) ||
       consecutiveFailures < 0
     ) {
-      throw new Error("監視設定の保存内容が不正です。");
+      throw new Error("watch 設定の保存内容が不正です。");
     }
     return {
       kind: "watch",

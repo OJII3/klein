@@ -231,7 +231,7 @@ test("marks follow-ups orphaned when their watch or worker disappears", async ()
       assert.equal(context.waitingOn?.split("\n").length, 2);
       assert.match(context.waitingOn ?? "", /消えた監視/u);
       assert.match(context.waitingOn ?? "", /失敗したワーカー/u);
-      assert.match(context.waitingOn ?? "", /監視なし/u);
+      assert.match(context.waitingOn ?? "", /追跡先なし/u);
     },
     { workerInfos: [workerInfo("worker-1", "failed")] },
   );

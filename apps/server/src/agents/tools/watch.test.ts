@@ -266,10 +266,10 @@ test("updates a watch and can disable and re-enable it", async () => {
 test("does not register a watch when the dry run fails", async () => {
   const { store, getStored } = createSingleWatchStore();
   const { runner, fail } = createRunner();
-  fail("監視スクリプトが失敗しました: boom");
+  fail("watch script failed: boom");
   const tools = createWatchTools(store, "channel-a", "public", runner);
 
-  await assert.rejects(addWatch(tools), /監視を登録しませんでした。.*boom/u);
+  await assert.rejects(addWatch(tools), /not registered.*boom/u);
   assert.equal(getStored(), undefined);
 });
 
@@ -288,10 +288,10 @@ test("keeps a watch disabled when the dry run fails on re-enable", async () => {
   const id = created.id;
   await updateTool.execute("tool-call", { id, enabled: false }, undefined, undefined, ctx);
 
-  fail("監視スクリプトが失敗しました: boom");
+  fail("watch script failed: boom");
   await assert.rejects(
     updateTool.execute("tool-call", { id, enabled: true }, undefined, undefined, ctx),
-    /監視を有効にしませんでした。.*boom/u,
+    /not enabled.*boom/u,
   );
   const stored = getStored();
   assert.equal(stored?.enabled, false);
