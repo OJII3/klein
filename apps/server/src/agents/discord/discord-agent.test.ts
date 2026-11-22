@@ -10,6 +10,7 @@ import {
   createStubExtensionToolContext,
   createStubTextToSpeech,
 } from "@agents/testing/test-stubs";
+import type { T3ThreadRunner } from "@agents/tools/t3-thread";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
 import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
@@ -60,6 +61,7 @@ function createToolsFor(
     readonly accessScope?: AccessScope;
     readonly scheduledTaskStore?: ScheduledTaskStore;
     readonly speak?: (text: string, toolCallId?: string) => Promise<void>;
+    readonly t3ThreadRunner?: T3ThreadRunner;
   } = {},
 ) {
   return (toolContext: AgentToolContext) =>
@@ -73,6 +75,7 @@ function createToolsFor(
       requesterUserId: toolContext.requesterId,
       scheduledTaskStore: options.scheduledTaskStore,
       speak: options.speak,
+      t3ThreadRunner: options.t3ThreadRunner,
       watchCheckRunner: silentWatchCheckRunner,
     });
 }
@@ -106,6 +109,10 @@ function requireStringField(details: unknown, key: string): string {
     assert.fail(`Expected string field '${key}' in tool result details`);
   }
   return value;
+}
+
+function t3ToolNames(tools: readonly ToolDefinition[]): string[] {
+  return tools.map((tool) => tool.name).filter((name) => name.startsWith("t3_thread_"));
 }
 
 test("routes voice replies through discord_speak using the existing runtime prompt", async () => {
@@ -608,4 +615,34 @@ test("exposes watch tools in every session with the session scope", async () => 
     await createStubExtensionToolContext(),
   );
   assert.equal(store.created.at(-1)?.accessScope, "public");
+});
+
+test("exposes only read-only T3 thread tools to the owner conversation", () => {
+  const runner: T3ThreadRunner = {
+    async list() {
+      return [];
+    },
+    async start() {
+      throw new Error("not used");
+    },
+    async send() {
+      throw new Error("not used");
+    },
+    async show() {
+      throw new Error("not used");
+    },
+  };
+  const ownerTools = createToolsFor(createStubDiscordChannelApi(), "channel-a", {
+    ownerFeaturesAllowed: true,
+    ownerUserId: "123",
+    t3ThreadRunner: runner,
+  })(createStubAgentToolContext());
+  const publicTools = createToolsFor(createStubDiscordChannelApi(), "channel-a", {
+    ownerFeaturesAllowed: false,
+    ownerUserId: "123",
+    t3ThreadRunner: runner,
+  })(createStubAgentToolContext());
+
+  assert.deepEqual(t3ToolNames(ownerTools), ["t3_thread_show", "t3_thread_list"]);
+  assert.deepEqual(t3ToolNames(publicTools), []);
 });

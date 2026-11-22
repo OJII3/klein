@@ -384,6 +384,7 @@ export async function bootstrapApplication(): Promise<void> {
           userMemoryStore,
           watchCheckRunner,
           workers: workerAgentCoordinator,
+          ...(ownerFeaturesAllowed ? { t3ThreadRunner } : {}),
           promiseGuard: { mode: proactivityConfig.promiseGuard, logger },
           ...(proactiveCoordinator ? { proactive: proactiveCoordinator } : {}),
           ...(initiativeCoordinator ? { initiative: initiativeCoordinator } : {}),

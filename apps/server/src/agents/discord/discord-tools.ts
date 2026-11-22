@@ -3,6 +3,7 @@ import type { Logger } from "pino";
 
 import type { AgentImageAnalyzer } from "@agents/core/agent-factory";
 import type { WorkerControl } from "@agents/core/worker-agent";
+import { createT3ThreadReadTools, type T3ThreadRunner } from "@agents/tools/t3-thread";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
 import type { DiscordUserResolver } from "@modules/discord/ports/discord-user-resolver";
 import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
@@ -41,6 +42,8 @@ export interface DiscordAgentToolsOptions {
   readonly userMemoryStore?: UserMemoryStore;
   readonly discordUserDirectory?: DiscordUserResolver;
   readonly workers?: WorkerControl;
+  /** Read-only T3 thread tools for an owner conversation. */
+  readonly t3ThreadRunner?: T3ThreadRunner;
   readonly proactive?: ProactiveToolCoordinator;
   readonly initiative?: InitiativeToolCoordinator;
   readonly promiseGuard?: { readonly mode: PromiseGuardMode; readonly logger: Logger };
@@ -106,6 +109,9 @@ export function createDiscordAgentTools(
           accessScope,
           ownerFeaturesAllowed,
         )
+      : []),
+    ...(ownerFeaturesAllowed && options.t3ThreadRunner
+      ? createT3ThreadReadTools(options.t3ThreadRunner)
       : []),
     ...(options.userMemoryStore && options.discordUserDirectory
       ? createUserMemoryTools(options.userMemoryStore, options.discordUserDirectory)

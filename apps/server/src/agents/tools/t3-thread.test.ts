@@ -4,6 +4,7 @@ import test from "node:test";
 import { createStubExtensionToolContext } from "@agents/testing/test-stubs";
 import { isRecord } from "@shared/type-guards";
 import {
+  createT3ThreadReadTools,
   createT3ThreadTools,
   type T3ThreadRunner,
   type T3ThreadStartInput,
@@ -70,6 +71,16 @@ test("registers the T3 thread tools", () => {
   assert.deepEqual(
     tools.map((tool) => tool.name),
     ["t3_thread_start", "t3_thread_send", "t3_thread_show", "t3_thread_list"],
+  );
+});
+
+test("registers only the read-only T3 thread tools", () => {
+  const { runner } = createStubRunner();
+  const tools = createT3ThreadReadTools(runner);
+
+  assert.deepEqual(
+    tools.map((tool) => tool.name),
+    ["t3_thread_show", "t3_thread_list"],
   );
 });
 

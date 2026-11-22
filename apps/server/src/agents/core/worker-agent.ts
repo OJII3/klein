@@ -49,6 +49,8 @@ export interface WorkerControl {
 export interface WorkerDelegationPromptOptions {
   readonly browserAvailable: boolean;
   readonly t3Available: boolean;
+  /** The conversation can inspect existing T3 threads with `t3_thread_show` and `t3_thread_list`. */
+  readonly t3ReadAvailable: boolean;
   /** The linked user's sandboxed shell belongs to workers in this conversation. */
   readonly shellAvailable: boolean;
   readonly watchAvailable: boolean;
@@ -68,7 +70,7 @@ export function renderWorkerDelegationSection(options: WorkerDelegationPromptOpt
   }
   if (options.t3Available) {
     workerOnlyCapabilities.push(
-      "- T3 Code threads (`t3_thread_*`): hand repository edits, coding, tests, and PR creation to a T3 Code agent, in any repository on this machine, including Klein's own code, dotfiles, and machine settings.",
+      "- T3 Code threads (`t3_thread_start`, `t3_thread_send`): hand repository edits, coding, tests, and PR creation to a T3 Code agent, in any repository on this machine, including Klein's own code, dotfiles, and machine settings.",
     );
   }
   if (options.shellAvailable) {
@@ -79,7 +81,9 @@ export function renderWorkerDelegationSection(options: WorkerDelegationPromptOpt
 
   const unavailableCapabilities = [
     ...(options.browserAvailable ? [] : ["real browser use via `agent-browser`"]),
-    ...(options.t3Available ? [] : ["T3 Code threads via `t3_thread_*`"]),
+    ...(options.t3Available
+      ? []
+      : ["T3 Code thread creation and follow-ups via `t3_thread_start`"]),
     ...(options.shellAvailable ? [] : ["a sandboxed shell"]),
   ];
 
@@ -100,6 +104,12 @@ export function renderWorkerDelegationSection(options: WorkerDelegationPromptOpt
     "",
     "Keep only trivial single-step checks (such as one quick `web_search`, `fetch_content`, or `discord_read`) inline.",
     "",
+    ...(options.t3ReadAvailable
+      ? [
+          "You can inspect existing T3 Code threads directly with `t3_thread_show` and `t3_thread_list`; start or continue a thread through a worker.",
+          "",
+        ]
+      : []),
     ...(workerOnlyCapabilities.length > 0
       ? [
           "Workers in this conversation also have capabilities you do NOT have directly:",

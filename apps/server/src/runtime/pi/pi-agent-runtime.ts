@@ -821,6 +821,7 @@ export function createPiAgentFactory({
       const sessionT3Available =
         options.role.kind === "worker" &&
         customTools.some((tool) => tool.name === "t3_thread_start");
+      const sessionT3ReadAvailable = customTools.some((tool) => tool.name === "t3_thread_show");
       const excludedSkillNames = new Set<string>([
         ...(sessionBrowserAvailable ? [] : ["browser-use"]),
         ...(sessionT3Available ? [] : ["t3-thread"]),
@@ -830,6 +831,7 @@ export function createPiAgentFactory({
           ? renderWorkerDelegationSection({
               browserAvailable: workerBrowserAvailable,
               t3Available: workerT3Available,
+              t3ReadAvailable: sessionT3ReadAvailable,
               shellAvailable: workerShellAvailable,
               watchAvailable: hasWatchAdd,
             })
