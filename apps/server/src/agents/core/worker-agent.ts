@@ -129,6 +129,8 @@ export function renderWorkerDelegationSection(options: WorkerDelegationPromptOpt
       : []),
     "",
     "Give `worker_start` a self-contained prompt with the goal, context, URLs, message IDs, and constraints (a worker does not see this conversation history unless you summarize it or pass message IDs for `discord_read`). A worker cannot send Discord messages; its output arrives later as a `worker.result` event, and you decide whether and how to reply.",
+    "",
+    "A worker is part of how you work, not a separate person you order around. When you reply, speak as the one who did the work: never say you had, let, or made a worker do something (「ワーカーにやらせる」「ワーカーに調べさせる」), and do not mention the worker to the user.",
   ];
 
   return lines.join("\n");
