@@ -1,11 +1,14 @@
 import type {
   FollowUpView,
+  InitiativeGoalView,
   ProactivePreferenceView,
   ProactiveSignalView,
   ProactivityReader,
   ProactivitySnapshot,
 } from "@klein/webui-api";
 
+import type { InitiativeGoal } from "@modules/initiative/domain/initiative-goal";
+import type { InitiativeGoalStore } from "@modules/initiative/ports/initiative-goal-store";
 import type { FollowUp } from "@modules/proactivity/domain/follow-up";
 import type { ProactiveSignal } from "@modules/proactivity/domain/proactive-signal";
 import type { FollowUpStore } from "@modules/proactivity/ports/follow-up-store";
@@ -21,6 +24,7 @@ export interface ProactivityStoreReaderOptions {
   readonly preferenceStore: ProactivePreferenceStore;
   readonly followUpStore: FollowUpStore;
   readonly signalStore: ProactiveSignalStore;
+  readonly goalStore?: Pick<InitiativeGoalStore, "listAll">;
   readonly signalLimit?: number;
 }
 
@@ -33,9 +37,10 @@ export class ProactivityStoreReader implements ProactivityReader {
   }
 
   async read(): Promise<ProactivitySnapshot> {
-    const [signals, followUps, preferences] = await Promise.all([
+    const [signals, followUps, goals, preferences] = await Promise.all([
       this.options.signalStore.listAll(),
       this.options.followUpStore.listAll(),
+      this.options.goalStore?.listAll() ?? [],
       this.options.preferenceStore.list(),
     ]);
     const sortedSignals = signals.toSorted(compareSignalsNewestFirst);
@@ -46,6 +51,7 @@ export class ProactivityStoreReader implements ProactivityReader {
       followUps: followUps
         .toSorted(compareFollowUpsNewestFirst)
         .map((followUp) => toFollowUpView(followUp)),
+      goals: goals.toSorted(compareGoalsNewestFirst).map((goal) => toGoalView(goal)),
       preferences: preferences
         .flatMap((stored) => {
           const view = toPreferenceView(stored);
@@ -93,6 +99,28 @@ function toFollowUpView(followUp: FollowUp): FollowUpView {
   };
 }
 
+function toGoalView(goal: InitiativeGoal): InitiativeGoalView {
+  return {
+    id: goal.id,
+    channelId: goal.channelId,
+    accessScope: goal.accessScope,
+    title: goal.title,
+    rationale: goal.rationale,
+    plan: goal.plan,
+    dueAt: goal.dueAt,
+    expiresAt: goal.expiresAt,
+    risk: goal.risk,
+    ...(goal.delivery !== undefined ? { deliveryMode: goal.delivery } : {}),
+    status: goal.status,
+    createdBy: goal.createdBy,
+    createdAt: goal.createdAt,
+    updatedAt: goal.updatedAt,
+    ...(goal.workerId !== undefined ? { workerId: goal.workerId } : {}),
+    ...(goal.signalId !== undefined ? { signalId: goal.signalId } : {}),
+    ...(goal.lastError !== undefined ? { lastError: goal.lastError } : {}),
+  };
+}
+
 function toPreferenceView(stored: StoredProactivePreferences): ProactivePreferenceView | undefined {
   const preferences = {
     delivery: stored.preferences.delivery,
@@ -131,5 +159,9 @@ function compareSignalsNewestFirst(left: ProactiveSignal, right: ProactiveSignal
 }
 
 function compareFollowUpsNewestFirst(left: FollowUp, right: FollowUp): number {
+  return right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id);
+}
+
+function compareGoalsNewestFirst(left: InitiativeGoal, right: InitiativeGoal): number {
   return right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id);
 }

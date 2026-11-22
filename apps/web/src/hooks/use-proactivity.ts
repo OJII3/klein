@@ -23,9 +23,7 @@ export function useProactivity({ active, onUpdated }: UseProactivityOptions) {
       onUpdated();
     } catch (requestError) {
       setError(
-        requestError instanceof Error
-          ? requestError.message
-          : "自発的な発言の状態を取得できませんでした",
+        requestError instanceof Error ? requestError.message : "自発の状態を取得できませんでした",
       );
     } finally {
       loadedRef.current = true;

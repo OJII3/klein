@@ -170,5 +170,5 @@ test("rejects an invalid watch priority", async () => {
     join(directory, "invalid-priority.json"),
     JSON.stringify({ ...watch, priority: "critical" }),
   );
-  await assert.rejects(store.listForScope("watch", "channel-a", "owner:123"), /監視設定/u);
+  await assert.rejects(store.listForScope("watch", "channel-a", "owner:123"), /watch 設定/u);
 });

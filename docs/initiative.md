@@ -171,7 +171,7 @@ Planner のシステムプロンプトには次を定める。
 
 Planner は会話エージェントより安いモデルを使う。1 回の実行で `maxMessages` 件を読み、0 件から 2 件の提案に絞る。`maxPlansPerDay` と `maxActiveGoals` で上限を設ける。失敗が続くチャンネルは指数バックオフで間隔を空ける。
 
-Planner はチャンネルごとに独立したセッションを使い、毎回の入力をプロンプトに含める。前回の推論履歴に依存させない。
+Planner はセッションを持たず、毎回の入力をプロンプトに含めて1回の補完を呼ぶ。前回の推論履歴に依存させない。
 
 ### 会話エージェントからの Goal 作成
 
@@ -187,7 +187,7 @@ Planner の提案をそのまま実行しない。Policy が次の条件を確�
 - その日の作成数が `maxGoalsPerDay` を超えない。
 - 好みで `mute` された話題を作らない。
 - アクセス範囲が Goal の保存先と一致する。
-- リスクが `low` の Goal だけを自動で実行する。MVP では `medium` と `high` を保存だけにし、実行しない。
+- リスクが `low` の Goal だけを受け付ける。`medium` と `high` は提案時点で拒否する。
 
 MVP では `risk: low` の読み取り専用の調査と、ローカルの一時ディレクトリで完結する試作だけを自動実行する。購入、送信、アカウント操作は対象外とする。
 
@@ -239,7 +239,7 @@ MVP では「食事の好み」と「ライブラリの試作」を対象にす�
 
 ## 設定
 
-設定は `features.proactivity.initiative` に置く。この形は実装時に `config-schema.ts` へ追加する。現時点では設定ファイルに書いても無視される。
+設定は `features.proactivity.initiative` に置く。`enabled` が真のときだけ動く。
 
 ```jsonc
 {
@@ -279,7 +279,7 @@ MVP では「食事の好み」と「ライブラリの試作」を対象にす�
 - `maxGoalsPerDay` はチャンネルごとの 1 日の Goal 作成数である。
 - `maxActiveGoals` は同時に保持する `scheduled` と `running` の Goal 数である。
 - `maxGoalsPerPlan` は 1 回の計画で受け付ける Goal 数である。
-- `approval` は `auto`、`propose`、`off` のいずれかである。`auto` は低リスクだけを実行し、`propose` は実行前にユーザーへ提案し、`off` は保存だけにする。
+- `approval` は `auto`、`propose`、`off` のいずれかである。`auto` は低リスクだけを実行し、`off` は作成しない。`propose` は承認フローが未実装のため、有効にすると起動時にエラーになる。
 
 ## アクセスとプライバシー
 
@@ -321,6 +321,10 @@ Phase 6 は watch を使う条件付き Goal と承認フローを追加する�
 Phase 7 はカレンダーとメールのツールを追加する。
 
 Phase 3 までで、Planner が提案した Goal を保存し、ログで確認できる。Phase 4 で worker が動き、Phase 5 で Web UI から確認できる。
+
+## 実装状況
+
+Phase 2〜5 は実装済みである。`propose` の承認 UI は未実装で、`approval: "propose"` は起動時に拒否する。watch を使う条件付き Goal とカレンダー・メール連携は未実装である。共有メモリとユーザーメモリは Planner の入力に含める。
 
 ## 検証
 
