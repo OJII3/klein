@@ -283,8 +283,8 @@ test("reminds the agent on the third consecutive watch check failure", async () 
 
   assert.equal(harness.events.length, 1);
   assert.equal(harness.events[0]?.type, "watch.failed");
-  assert.match(eventText(harness.events[0]), /3回連続/u);
-  assert.match(eventText(harness.events[0]), /これ以降/u);
+  assert.match(eventText(harness.events[0]), /3 times in a row/u);
+  assert.match(eventText(harness.events[0]), /until it succeeds/u);
 });
 
 test("stays silent after the reminder until the watch recovers", async () => {

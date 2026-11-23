@@ -361,7 +361,7 @@ test("delivers due digests to the conversation as proactive events", async () =>
     channelId: "channel-a",
     accessScope: "public",
     signals: [digestSignal],
-    text: "まとめて伝える候補があります。\n在庫が3個になりました（在庫監視 / まとめ）",
+    text: "There are collected signals you may report together.\n在庫が3個になりました (在庫監視 / digest)",
   };
   const harness = createHarness(undefined, undefined, {
     proactive: createProactiveStub({

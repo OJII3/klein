@@ -169,18 +169,18 @@ test("expires a signal at or after its expiry", () => {
 test("formats a signal as one line with topic, urgency, and evidence URL", () => {
   assert.equal(
     formatSignal({ ...signal, summary: "  雨が\n降りそう " }),
-    "雨が 降りそう（weather / 今日中） https://example.com/weather",
+    "雨が 降りそう (weather / today) https://example.com/weather",
   );
   assert.equal(
     formatSignal({ ...signal, urgency: "now", evidence: undefined }),
-    "雨が降りそう（weather / 今すぐ）",
+    "雨が降りそう (weather / now)",
   );
   assert.equal(
     formatSignal({ ...signal, urgency: "digest" }),
-    "雨が降りそう（weather / まとめ） https://example.com/weather",
+    "雨が降りそう (weather / digest) https://example.com/weather",
   );
   assert.equal(
     formatSignal({ ...signal, urgency: "silent" }),
-    "雨が降りそう（weather / 静か） https://example.com/weather",
+    "雨が降りそう (weather / silent) https://example.com/weather",
   );
 });

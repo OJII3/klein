@@ -4,5 +4,5 @@ export function normalizeWatchOutput(output: string): string {
 
 export function truncateWatchOutput(output: string, maxCharacters = 64 * 1_024): string {
   if (output.length <= maxCharacters) return output;
-  return `${output.slice(0, maxCharacters)}\n…（${output.length - maxCharacters}文字省略）`;
+  return `${output.slice(0, maxCharacters)}\n… (${output.length - maxCharacters} chars omitted)`;
 }
