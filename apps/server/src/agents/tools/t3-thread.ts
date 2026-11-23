@@ -52,7 +52,6 @@ const TERMINAL_RUN_STATUSES = new Set([
   "rolled_back",
 ]);
 
-/** A thread is settled when its latest run ended or it is waiting for an answer. */
 export function isT3ThreadSettled(thread: T3ThreadSummary): boolean {
   return (
     thread.status === "waiting" ||

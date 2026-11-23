@@ -5,8 +5,6 @@ import type { WatchToolCatalog } from "../ports/watch-tool";
 const TEXT_OUTPUT_SCHEMA: CodemodeJsonSchema = { type: "string" };
 
 /**
- * Render the declarations of the tools watch scripts can call.
- *
  * Mirrors the `codemode` prompt section: the agent sees the same TypeScript
  * declarations that the sandbox uses, once `watch_add` is offered.
  */

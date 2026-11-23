@@ -65,7 +65,6 @@ export function normalizeSecretLabel(label: string): string {
   return label.replaceAll(/\s+/gu, " ").trim();
 }
 
-/** Returns the first validation problem, or undefined when the fields are usable. */
 export function validateSecretFields(fields: readonly SecretField[]): string | undefined {
   if (fields.length === 0) return "At least one field is required.";
   if (fields.length > SECRET_MAX_FIELDS) {

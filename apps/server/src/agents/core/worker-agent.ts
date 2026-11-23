@@ -32,10 +32,6 @@ export interface WorkerStartInput extends WorkerScope {
   readonly id?: string;
   readonly ownerFeaturesAllowed: boolean;
   readonly prompt: string;
-  /**
-   * Closes the worker after its result is delivered. Use this for a worker that
-   * exists only to produce one result, such as a reminder.
-   */
   readonly closeAfterResult?: boolean;
 }
 export interface WorkerControl {

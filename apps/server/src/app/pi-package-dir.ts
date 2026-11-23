@@ -18,7 +18,5 @@ export function configurePiPackageDir(): void {
     process.env.PI_PACKAGE_DIR = dirname(
       require.resolve("@earendil-works/pi-coding-agent/package.json"),
     );
-  } catch {
-    // Leave pi's own resolution in place when the package metadata is unavailable.
-  }
+  } catch {}
 }
