@@ -8,6 +8,7 @@ export function createWorkerControlTools(
   channelId: string,
   accessScope: AccessScope,
   ownerFeaturesAllowed: boolean,
+  sessionFilePath?: () => string | undefined,
 ) {
   const scope: WorkerScope = {
     conversationKey: { kind: "discord", channelId },
@@ -34,17 +35,24 @@ export function createWorkerControlTools(
       name: "worker_start",
       label: "Start Worker",
       description:
-        "Start a worker: a separate agent with its own persistent session and tools. Prefer worker_start over doing multi-step web research, reading long pages or multiple sources, codemode/MCP workflows, or ongoing investigations inline in the conversation. Give a self-contained prompt; the worker cannot send Discord messages and its result arrives as an event. Use worker_send for follow-ups." +
+        "Start a worker: a separate agent with its own persistent session and tools. The worker inherits this conversation's history up to this point, so give only the specific goal or next step instead of a self-contained brief. Prefer worker_start over doing multi-step web research, reading long pages or multiple sources, codemode/MCP workflows, or ongoing investigations inline in the conversation. The worker cannot send Discord messages and its result arrives as an event. Use worker_send for follow-ups." +
         capabilitiesNote,
       parameters: Type.Object({
-        prompt: Type.String({ minLength: 1, maxLength: 4_000 }),
+        prompt: Type.String({
+          minLength: 1,
+          maxLength: 4_000,
+          description:
+            "The specific task for the worker. Do not repeat background, URLs, or message IDs that are already in this conversation.",
+        }),
       }),
       exposure: "deferred",
       async execute(_toolCallId, params) {
+        const contextSessionFile = sessionFilePath?.();
         const workerId = await target.start({
           ...scope,
           ownerFeaturesAllowed,
           prompt: params.prompt,
+          ...(contextSessionFile ? { contextSessionFile } : {}),
         });
         return {
           content: [
@@ -61,7 +69,7 @@ export function createWorkerControlTools(
       name: "worker_send",
       label: "Send to Worker",
       description:
-        "Send a follow-up instruction to an existing worker. It resumes the worker's session and returns another result event; prefer reusing an existing worker for related follow-up work.",
+        "Send a short follow-up instruction to an existing worker. It resumes the worker's session, including the history it inherited when it started, and returns another result event; prefer reusing an existing worker for related follow-up work.",
       parameters: Type.Object({
         workerId: Type.String({ minLength: 1 }),
         message: Type.String({ minLength: 1, maxLength: 4_000 }),

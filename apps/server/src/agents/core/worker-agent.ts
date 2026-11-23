@@ -33,6 +33,8 @@ export interface WorkerStartInput extends WorkerScope {
   readonly ownerFeaturesAllowed: boolean;
   readonly prompt: string;
   readonly closeAfterResult?: boolean;
+  /** Conversation session whose history the worker should inherit. */
+  readonly contextSessionFile?: string;
 }
 export interface WorkerControl {
   start(input: WorkerStartInput): Promise<string>;
@@ -85,7 +87,7 @@ export function renderWorkerDelegationSection(options: WorkerDelegationPromptOpt
   const lines = [
     "## Workers (`worker_start`)",
     "",
-    "Workers run in their own persistent Pi session outside this conversation. Prefer `worker_start` by default for anything beyond a single quick lookup so this conversation stays responsive and free of search/page/tool clutter.",
+    "Workers run in their own persistent Pi session outside this conversation. Each worker starts with a copy of this conversation's history up to the moment you start it, so it already knows the recent context. Prefer `worker_start` by default for anything beyond a single quick lookup so this conversation stays responsive and free of search/page/tool clutter.",
     "",
     "Delegate to `worker_start` (or `worker_send` to continue an existing worker; check `worker_list` when unsure) for:",
     "- Multi-step web research, reading long pages or multiple sources, comparisons, or verifying primary documentation.",
@@ -128,7 +130,7 @@ export function renderWorkerDelegationSection(options: WorkerDelegationPromptOpt
         ]
       : []),
     "",
-    "Give `worker_start` a self-contained prompt with the goal, context, URLs, message IDs, and constraints (a worker does not see this conversation history unless you summarize it or pass message IDs for `discord_read`). A worker cannot send Discord messages; its output arrives later as a `worker.result` event, and you decide whether and how to reply.",
+    "Give `worker_start` only the specific goal or next step. The worker inherits this conversation's history, so do not repeat background, URLs, message IDs, or constraints that are already here. It does not see messages that arrive after you start it. A worker cannot send Discord messages; its output arrives later as a `worker.result` event, and you decide whether and how to reply.",
     "",
     "A worker is part of how you work, not a separate person you order around. When you reply, speak as the one who did the work: never say you had, let, or made a worker do something (「ワーカーにやらせる」「ワーカーに調べさせる」), and do not mention the worker to the user.",
   ];

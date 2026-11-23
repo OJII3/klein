@@ -79,6 +79,40 @@ test("starts a worker in the current conversation", async () => {
   assert.deepEqual(result.details, { workerId: "worker-1" });
 });
 
+test("passes the conversation session file to a new worker", async () => {
+  const { target, started } = createTarget();
+  const { workerStart } = unpackControlTools(
+    createWorkerControlTools(target, "channel-1", "public", false, () => "/tmp/conversation.jsonl"),
+  );
+
+  await workerStart.execute(
+    "tool-call",
+    { prompt: "continue" },
+    undefined,
+    undefined,
+    await createStubExtensionToolContext(),
+  );
+
+  assert.equal(started[0]?.contextSessionFile, "/tmp/conversation.jsonl");
+});
+
+test("omits the conversation session file when the session is not persisted", async () => {
+  const { target, started } = createTarget();
+  const { workerStart } = unpackControlTools(
+    createWorkerControlTools(target, "channel-1", "public", false, () => undefined),
+  );
+
+  await workerStart.execute(
+    "tool-call",
+    { prompt: "continue" },
+    undefined,
+    undefined,
+    await createStubExtensionToolContext(),
+  );
+
+  assert.equal("contextSessionFile" in (started[0] ?? {}), false);
+});
+
 test("sends a follow-up to a worker with bound scope", async () => {
   const { target, sent } = createTarget();
   const { workerSend } = unpackControlTools(
