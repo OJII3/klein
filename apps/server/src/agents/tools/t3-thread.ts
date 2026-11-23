@@ -7,6 +7,8 @@ const MAX_THREAD_ID_LENGTH = 200;
 const MAX_TITLE_LENGTH = 200;
 const MAX_LISTED_THREADS = 50;
 const MAX_TOOL_OUTPUT_CHARS = 20_000;
+const DEFAULT_WAIT_SECONDS = 300;
+const MAX_WAIT_SECONDS = 1_800;
 
 export interface T3ThreadMessage {
   readonly role: string;
@@ -50,9 +52,29 @@ const TERMINAL_RUN_STATUSES = new Set([
   "rolled_back",
 ]);
 
+/** A thread is settled when its latest run ended or it is waiting for an answer. */
+export function isT3ThreadSettled(thread: T3ThreadSummary): boolean {
+  return (
+    thread.status === "waiting" ||
+    thread.status === "idle" ||
+    (thread.pendingRequestCount ?? 0) > 0 ||
+    TERMINAL_RUN_STATUSES.has(thread.status)
+  );
+}
+
 export interface T3ThreadDetail {
   readonly thread: T3ThreadSummary;
   readonly messages: readonly T3ThreadMessage[];
+}
+
+export interface T3ThreadWaitInput {
+  readonly threadId: string;
+  readonly messages: number;
+  readonly timeoutMs: number;
+}
+
+export interface T3ThreadWaitResult extends T3ThreadDetail {
+  readonly timedOut: boolean;
 }
 
 export interface T3ThreadStartInput {
@@ -78,6 +100,7 @@ export interface T3ThreadRunner {
   list(project: string | undefined, signal?: AbortSignal): Promise<readonly T3ThreadSummary[]>;
   start(input: T3ThreadStartInput, signal?: AbortSignal): Promise<T3ThreadRun>;
   send(input: T3ThreadSendInput, signal?: AbortSignal): Promise<T3ThreadRun>;
+  wait(input: T3ThreadWaitInput, signal?: AbortSignal): Promise<T3ThreadWaitResult>;
   show(threadId: string, messages: number, signal?: AbortSignal): Promise<T3ThreadDetail>;
 }
 
@@ -178,6 +201,44 @@ export function createT3ThreadTools(runner: T3ThreadRunner): readonly ToolDefini
       },
     }),
     defineTool({
+      name: "t3_thread_wait",
+      label: "Wait for T3 Thread",
+      description:
+        "Wait for a T3 Code thread's latest run to finish or ask for input, polling its state. " +
+        "Returns the thread state and latest messages. Use this after starting with wait set to false, or to follow a thread from an earlier session. " +
+        "When the timeout expires it returns timedOut with the current state; call it again to keep waiting.",
+      promptSnippet: "Wait for a T3 Code thread to finish or ask for input.",
+      parameters: Type.Object({
+        threadId: Type.String({ minLength: 1, maxLength: MAX_THREAD_ID_LENGTH }),
+        timeoutSeconds: Type.Optional(
+          Type.Integer({
+            minimum: 1,
+            maximum: MAX_WAIT_SECONDS,
+            default: DEFAULT_WAIT_SECONDS,
+            description: `Defaults to ${DEFAULT_WAIT_SECONDS} seconds. Max ${MAX_WAIT_SECONDS}.`,
+          }),
+        ),
+        messages: Type.Optional(
+          Type.Integer({ minimum: 1, maximum: 50, default: 10, description: "Defaults to 10." }),
+        ),
+      }),
+      async execute(_toolCallId, params, signal) {
+        const timeoutSeconds = params.timeoutSeconds ?? DEFAULT_WAIT_SECONDS;
+        const result = await runner.wait(
+          {
+            threadId: params.threadId,
+            messages: params.messages ?? 10,
+            timeoutMs: timeoutSeconds * 1_000,
+          },
+          signal,
+        );
+        return {
+          content: [{ type: "text", text: formatWait(result, timeoutSeconds) }],
+          details: result,
+        };
+      },
+    }),
+    defineTool({
       name: "t3_thread_show",
       label: "Show T3 Thread",
       description:
@@ -235,7 +296,22 @@ function formatRun(verb: "Started" | "Sent to", result: T3ThreadRun): string {
   return limitOutput(lines.join("\n"));
 }
 
+function formatWait(result: T3ThreadWaitResult, timeoutSeconds: number): string {
+  const { thread, timedOut } = result;
+  const needsAnswer = thread.status === "waiting" || (thread.pendingRequestCount ?? 0) > 0;
+  const headline = timedOut
+    ? `T3 thread ${thread.id} is still ${thread.status} after ${timeoutSeconds}s. Call t3_thread_wait again to keep waiting.`
+    : needsAnswer
+      ? `T3 thread ${thread.id} is waiting for an answer. Read the question, then answer it with t3_thread_send.`
+      : `T3 thread ${thread.id} finished (${thread.status}).`;
+  return limitOutput([headline, "", ...detailLines(result)].join("\n"));
+}
+
 function formatDetail(detail: T3ThreadDetail): string {
+  return limitOutput(detailLines(detail).join("\n"));
+}
+
+function detailLines(detail: T3ThreadDetail): string[] {
   const { thread, messages } = detail;
   const lines = [`${thread.title || "(untitled)"} — ${thread.id} (${thread.status})`];
   if (thread.link) lines.push(thread.link);
@@ -257,7 +333,7 @@ function formatDetail(detail: T3ThreadDetail): string {
   for (const message of messages) {
     lines.push("", `[${message.role}]`, message.text);
   }
-  return limitOutput(lines.join("\n"));
+  return lines;
 }
 
 function formatThreadList(threads: readonly T3ThreadSummary[]): string {

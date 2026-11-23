@@ -8,6 +8,7 @@ import {
   type T3ThreadRunner,
   type T3ThreadStartInput,
   type T3ThreadSendInput,
+  type T3ThreadWaitInput,
 } from "./t3-thread";
 
 function createStubRunner() {
@@ -45,6 +46,17 @@ function createStubRunner() {
     async send(input) {
       sendInputs.push(input);
       return { threadId: input.threadId, status: "completed", reply: "Also updated the tests." };
+    },
+    async wait(input) {
+      return {
+        thread: {
+          id: input.threadId,
+          title: "Fix the parser",
+          status: "completed",
+        },
+        messages: [{ role: "assistant", text: "ok" }],
+        timedOut: false,
+      };
     },
     async show(threadId, messages) {
       showInputs.push({ threadId, messages });
@@ -89,7 +101,7 @@ test("registers the T3 thread tools", () => {
 
   assert.deepEqual(
     tools.map((tool) => tool.name),
-    ["t3_thread_start", "t3_thread_send", "t3_thread_show", "t3_thread_list"],
+    ["t3_thread_start", "t3_thread_send", "t3_thread_wait", "t3_thread_show", "t3_thread_list"],
   );
 });
 
@@ -215,6 +227,87 @@ test("sends a follow-up and returns the reply", async () => {
     { threadId: "mcp:thread-1", message: "Update the tests too.", wait: true },
   ]);
   assert.match(textOf(result), /Also updated the tests\./);
+});
+
+test("waits for a thread with a default timeout and returns its messages", async () => {
+  const { runner } = createStubRunner();
+  const waitInputs: T3ThreadWaitInput[] = [];
+  runner.wait = async (input) => {
+    waitInputs.push(input);
+    return {
+      thread: { id: input.threadId, title: "Fix the parser", status: "completed" },
+      messages: [{ role: "assistant", text: "Fixed it." }],
+      timedOut: false,
+    };
+  };
+  const tool = createT3ThreadTools(runner).find((candidate) => candidate.name === "t3_thread_wait");
+  assert.ok(tool);
+
+  const result = await tool.execute(
+    "tool-call",
+    { threadId: "mcp:thread-1" },
+    undefined,
+    undefined,
+    await createStubExtensionToolContext(),
+  );
+
+  assert.deepEqual(waitInputs, [{ threadId: "mcp:thread-1", messages: 10, timeoutMs: 300_000 }]);
+  assert.match(textOf(result), /finished \(completed\)/);
+  assert.match(textOf(result), /Fixed it\./);
+});
+
+test("returns the current state when waiting times out", async () => {
+  const { runner } = createStubRunner();
+  const waitInputs: T3ThreadWaitInput[] = [];
+  runner.wait = async (input) => {
+    waitInputs.push(input);
+    return {
+      thread: { id: input.threadId, title: "Fix the parser", status: "running" },
+      messages: [{ role: "assistant", text: "Still working." }],
+      timedOut: true,
+    };
+  };
+  const tool = createT3ThreadTools(runner).find((candidate) => candidate.name === "t3_thread_wait");
+  assert.ok(tool);
+
+  const result = await tool.execute(
+    "tool-call",
+    { threadId: "mcp:thread-1", timeoutSeconds: 5, messages: 2 },
+    undefined,
+    undefined,
+    await createStubExtensionToolContext(),
+  );
+
+  assert.deepEqual(waitInputs, [{ threadId: "mcp:thread-1", messages: 2, timeoutMs: 5_000 }]);
+  assert.match(textOf(result), /still running after 5s/);
+  assert.match(textOf(result), /t3_thread_wait again/);
+});
+
+test("reports a waiting thread as asking for an answer", async () => {
+  const { runner } = createStubRunner();
+  runner.wait = async (input) => ({
+    thread: {
+      id: input.threadId,
+      title: "Fix the parser",
+      status: "waiting",
+      pendingRequestCount: 1,
+    },
+    messages: [{ role: "assistant", text: "Which branch?" }],
+    timedOut: false,
+  });
+  const tool = createT3ThreadTools(runner).find((candidate) => candidate.name === "t3_thread_wait");
+  assert.ok(tool);
+
+  const result = await tool.execute(
+    "tool-call",
+    { threadId: "mcp:thread-1" },
+    undefined,
+    undefined,
+    await createStubExtensionToolContext(),
+  );
+
+  assert.match(textOf(result), /waiting for an answer/);
+  assert.match(textOf(result), /Which branch\?/);
 });
 
 test("shows the thread link and latest messages", async () => {

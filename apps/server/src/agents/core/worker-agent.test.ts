@@ -95,6 +95,7 @@ test("renders worker guidance for routing repository work to T3 threads", () => 
 
   assert.match(section, /t3_thread_start/);
   assert.match(section, /t3_thread_send/);
+  assert.match(section, /t3_thread_wait/);
   assert.match(section, /t3_thread_show/);
   assert.match(section, /t3_project_list/);
   assert.match(section, /PR creation/);

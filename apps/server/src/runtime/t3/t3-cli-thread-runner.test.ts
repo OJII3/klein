@@ -28,7 +28,11 @@ case "$1 $2" in
     printf '%s\\n' '[{"threadId":"mcp:thread-1","title":"Fix the parser","status":"completed","link":"https://example.test/thread-1","branch":"feat/parser","worktreePath":"/tmp/klein-worktree","pendingRequestCount":0,"pullRequestCount":2,"openPullRequestCount":1,"linkedPullRequest":{"projectId":"project-1","repository":"OJII3/klein","number":12,"url":"https://github.com/OJII3/klein/pull/12"}}]'
     ;;
   "thread show")
-    printf '%s\\n' '{"thread":{"threadId":"mcp:thread-1","title":"Fix the parser","status":"completed","branch":"feat/parser","worktreePath":"/tmp/klein-worktree","pendingRequestCount":2,"pullRequestCount":2,"openPullRequestCount":1,"linkedPullRequest":{"projectId":"project-1","repository":"OJII3/klein","number":12,"url":"https://github.com/OJII3/klein/pull/12"}},"messages":[{"role":"assistant","text":"ok"}]}'
+    if [ -f "$0.running" ]; then
+      printf '%s\\n' '{"thread":{"threadId":"mcp:thread-1","title":"Fix the parser","status":"running"},"messages":[{"role":"assistant","text":"working"}]}'
+    else
+      printf '%s\\n' '{"thread":{"threadId":"mcp:thread-1","title":"Fix the parser","status":"completed","branch":"feat/parser","worktreePath":"/tmp/klein-worktree","pendingRequestCount":2,"pullRequestCount":2,"openPullRequestCount":1,"linkedPullRequest":{"projectId":"project-1","repository":"OJII3/klein","number":12,"url":"https://github.com/OJII3/klein/pull/12"}},"messages":[{"role":"assistant","text":"ok"}]}'
+    fi
     ;;
   *)
     echo "unexpected command: $1 $2" >&2
@@ -161,6 +165,55 @@ test("marks a start without wait as running", async (t) => {
   const result = await runner.start({ message: "Fix the parser.", wait: false });
 
   assert.deepEqual(result, { threadId: "mcp:thread-1", status: "running" });
+});
+
+test("waits for a settled thread and returns its messages", async (t) => {
+  const { command, directory } = await createFakeT3();
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const runner = createT3CliThreadRunner({ command, pollIntervalMs: 5 });
+
+  const result = await runner.wait({
+    threadId: "mcp:thread-1",
+    messages: 5,
+    timeoutMs: 1_000,
+  });
+
+  assert.equal(result.timedOut, false);
+  assert.equal(result.thread.status, "completed");
+  assert.deepEqual(result.messages, [{ role: "assistant", text: "ok" }]);
+  assert.deepEqual(await readArgs(command), [
+    "thread",
+    "show",
+    "--json",
+    "--messages",
+    "5",
+    "mcp:thread-1",
+  ]);
+});
+
+test("returns timed out while the thread is still running", async (t) => {
+  const { command, directory } = await createFakeT3();
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  await writeFile(`${command}.running`, "");
+  const runner = createT3CliThreadRunner({ command, pollIntervalMs: 5 });
+
+  const result = await runner.wait({
+    threadId: "mcp:thread-1",
+    messages: 2,
+    timeoutMs: 30,
+  });
+
+  assert.equal(result.timedOut, true);
+  assert.equal(result.thread.status, "running");
+  assert.deepEqual(result.messages, [{ role: "assistant", text: "working" }]);
+  assert.deepEqual(await readArgs(command), [
+    "thread",
+    "show",
+    "--json",
+    "--messages",
+    "2",
+    "mcp:thread-1",
+  ]);
 });
 
 test("shows a thread and its messages", async (t) => {
