@@ -52,14 +52,14 @@ export function LogTable({ logs, expandedId, onToggle }: LogTableProps) {
       <table className="table table-sm">
         <thead>
           <tr className="border-b border-line bg-surface-muted">
-            <th className="w-[5.5rem] px-3 py-2 text-[0.68rem] font-medium text-ink-faint">時刻</th>
+            <th className="w-[5.5rem] px-3 py-2 text-[0.68rem] font-medium text-ink-faint">Time</th>
             <th className="w-[5.5rem] px-3 py-2 text-[0.68rem] font-medium text-ink-faint">
-              レベル
+              Level
             </th>
             <th className="hidden px-3 py-2 text-[0.68rem] font-medium text-ink-faint md:table-cell">
-              イベント
+              Event
             </th>
-            <th className="px-3 py-2 text-[0.68rem] font-medium text-ink-faint">概要</th>
+            <th className="px-3 py-2 text-[0.68rem] font-medium text-ink-faint">Summary</th>
           </tr>
         </thead>
         {days.map((day) => (
@@ -72,7 +72,7 @@ export function LogTable({ logs, expandedId, onToggle }: LogTableProps) {
               >
                 {day.label}
                 <span className="ml-2 font-mono text-[0.62rem] font-normal text-ink-faint">
-                  {day.items.length} 件
+                  {day.items.length} logs
                 </span>
               </th>
             </tr>

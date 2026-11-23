@@ -79,7 +79,7 @@ export function useMemory({ active, onUpdated, selectedScopeKey }: UseMemoryOpti
       onUpdated();
     } catch (requestError) {
       setScopesError(
-        requestError instanceof Error ? requestError.message : "メモリ一覧の取得に失敗しました",
+        requestError instanceof Error ? requestError.message : "Failed to load memory list",
       );
     } finally {
       scopesLoadedRef.current = true;
@@ -124,7 +124,7 @@ export function useMemory({ active, onUpdated, selectedScopeKey }: UseMemoryOpti
       } catch (requestError) {
         if (!current) return;
         setDetailError(
-          requestError instanceof Error ? requestError.message : "メモリの取得に失敗しました",
+          requestError instanceof Error ? requestError.message : "Failed to load memory",
         );
       } finally {
         if (current && !silent) setDetailLoading(false);
@@ -162,7 +162,7 @@ export function useMemory({ active, onUpdated, selectedScopeKey }: UseMemoryOpti
         return true;
       } catch (requestError) {
         setFileError(
-          requestError instanceof Error ? requestError.message : "メモリの保存に失敗しました",
+          requestError instanceof Error ? requestError.message : "Failed to save memory",
         );
         return false;
       } finally {
@@ -187,7 +187,7 @@ export function useMemory({ active, onUpdated, selectedScopeKey }: UseMemoryOpti
         return true;
       } catch (requestError) {
         setFileError(
-          requestError instanceof Error ? requestError.message : "メモリの削除に失敗しました",
+          requestError instanceof Error ? requestError.message : "Failed to delete memory",
         );
         return false;
       } finally {
@@ -211,9 +211,7 @@ export function useMemory({ active, onUpdated, selectedScopeKey }: UseMemoryOpti
         void load();
       } catch (requestError) {
         setFileError(
-          requestError instanceof Error
-            ? requestError.message
-            : "ユーザーメモリの削除に失敗しました",
+          requestError instanceof Error ? requestError.message : "Failed to delete user memory",
         );
       } finally {
         setDeletingUserMemory(false);

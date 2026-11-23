@@ -13,9 +13,14 @@ export function formatTimestamp(value: string | undefined): string {
   if (!value) return "—";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("ja-JP", {
-    dateStyle: "short",
-    timeStyle: "medium",
+  return date.toLocaleString("en-US", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
   });
 }
 
@@ -23,12 +28,13 @@ export function formatShortTimestamp(value: string | undefined): string {
   if (!value) return "—";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("ja-JP", {
+  return date.toLocaleString("en-US", {
     year: "numeric",
     month: "numeric",
     day: "numeric",
     hour: "2-digit",
     minute: "2-digit",
+    hour12: false,
   });
 }
 
@@ -37,7 +43,7 @@ export function formatCompactTimestamp(value: string | undefined): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   const includeYear = date.getFullYear() !== new Date().getFullYear();
-  return date.toLocaleString("ja-JP", {
+  return date.toLocaleString("en-US", {
     ...(includeYear ? { year: "numeric" as const } : {}),
     month: "2-digit",
     day: "2-digit",
@@ -52,7 +58,7 @@ export function formatDate(value: string | undefined): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   const includeYear = date.getFullYear() !== new Date().getFullYear();
-  return date.toLocaleDateString("ja-JP", {
+  return date.toLocaleDateString("en-US", {
     ...(includeYear ? { year: "numeric" as const } : {}),
     month: "2-digit",
     day: "2-digit",
@@ -63,7 +69,7 @@ export function formatClock(value: string | undefined): string {
   if (!value) return "—";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleTimeString("ja-JP", {
+  return date.toLocaleTimeString("en-US", {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
@@ -74,7 +80,7 @@ export function formatClockSeconds(value: string | undefined): string {
   if (!value) return "—";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleTimeString("ja-JP", {
+  return date.toLocaleTimeString("en-US", {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
@@ -86,7 +92,7 @@ export function formatDayLabel(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   const includeYear = date.getFullYear() !== new Date().getFullYear();
-  return date.toLocaleDateString("ja-JP", {
+  return date.toLocaleDateString("en-US", {
     ...(includeYear ? { year: "numeric" as const } : {}),
     month: "long",
     day: "numeric",

@@ -27,7 +27,7 @@ export function useLogs({ active, onUpdated }: UseLogsOptions) {
         setNextCursor(response.nextCursor);
         onUpdated();
       } catch (requestError) {
-        setError(requestError instanceof Error ? requestError.message : "ログの取得に失敗しました");
+        setError(requestError instanceof Error ? requestError.message : "Failed to load logs");
       } finally {
         if (append) setLoadingMore(false);
         else setLoading(false);

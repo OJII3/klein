@@ -52,10 +52,10 @@ export function SessionsView({
 
   return (
     <section className="flex flex-col gap-4" aria-labelledby="sessions-heading">
-      <ViewHeader headingId="sessions-heading" title="Pi セッション">
+      <ViewHeader headingId="sessions-heading" title="Pi Sessions">
         <StatStrip>
-          <Stat label="セッション" value={sessions.length.toLocaleString("ja-JP")} />
-          <Stat label="メッセージ" value={totalMessages.toLocaleString("ja-JP")} />
+          <Stat label="Sessions" value={sessions.length.toLocaleString("en-US")} />
+          <Stat label="Messages" value={totalMessages.toLocaleString("en-US")} />
         </StatStrip>
       </ViewHeader>
 
@@ -66,14 +66,14 @@ export function SessionsView({
         </div>
       ) : sessions.length === 0 ? (
         <div className="card border border-base-300 bg-base-100">
-          <EmptyState>セッションがまだありません</EmptyState>
+          <EmptyState>No sessions yet</EmptyState>
         </div>
       ) : (
         <div className="grid gap-4 lg:grid-cols-[20rem_minmax(0,1fr)] lg:items-start">
           <div className="card overflow-hidden border border-base-300 bg-base-100 lg:sticky lg:top-[4.25rem]">
             <div className="border-b border-line p-3 lg:hidden">
               <label className="flex flex-col gap-1">
-                <span className="text-[0.7rem] font-medium text-ink-soft">セッション</span>
+                <span className="text-[0.7rem] font-medium text-ink-soft">Session</span>
                 <select
                   className="select select-sm w-full"
                   onChange={(event) => {
@@ -84,12 +84,12 @@ export function SessionsView({
                   value={selectedSession?.id ?? ""}
                 >
                   <option disabled value="">
-                    セッションを選択
+                    Select a session
                   </option>
                   {selectableSessions.map((session) => (
                     <option key={session.id} value={session.id}>
-                      {truncateMiddle(channelLabel(session), 24)}（
-                      {formatCompactTimestamp(session.modified)}）
+                      {truncateMiddle(channelLabel(session), 24)} (
+                      {formatCompactTimestamp(session.modified)})
                     </option>
                   ))}
                 </select>
@@ -97,8 +97,8 @@ export function SessionsView({
             </div>
 
             <div className="hidden items-center justify-between border-b border-line px-3 py-2 lg:flex">
-              <span className="text-[0.7rem] font-medium text-ink-faint">セッション</span>
-              <span className="font-mono text-[0.62rem] text-ink-faint">{sessions.length} 件</span>
+              <span className="text-[0.7rem] font-medium text-ink-faint">Sessions</span>
+              <span className="font-mono text-[0.62rem] text-ink-faint">{sessions.length}</span>
             </div>
 
             <div className="hidden max-h-[calc(100vh-12rem)] overflow-y-auto lg:block">
@@ -109,7 +109,7 @@ export function SessionsView({
                     <li key={session.id}>
                       <button
                         aria-current={selected ? "true" : undefined}
-                        aria-label={`${channelLabel(session)} (${session.messageCount} メッセージ)`}
+                        aria-label={`${channelLabel(session)} (${session.messageCount} messages)`}
                         className="w-full"
                         onClick={() => onSelect(session.id)}
                         type="button"
@@ -122,7 +122,7 @@ export function SessionsView({
                             {truncateMiddle(channelLabel(session), 40)}
                           </span>
                           <span className="flex items-baseline justify-between gap-2 font-mono text-[0.62rem] text-ink-faint">
-                            <span>{session.messageCount} メッセージ</span>
+                            <span>{session.messageCount} messages</span>
                             <span>{formatCompactTimestamp(session.modified)}</span>
                           </span>
                         </span>
@@ -141,10 +141,10 @@ export function SessionsView({
                   onClick={onLoadMoreSessions}
                   type="button"
                 >
-                  {loadingMoreSessions ? "読み込み中…" : "古いセッションを読み込む"}
+                  {loadingMoreSessions ? "Loading…" : "Load older sessions"}
                 </button>
               ) : (
-                <p className="text-[0.62rem] text-ink-faint">これより古いセッションはありません</p>
+                <p className="text-[0.62rem] text-ink-faint">No older sessions</p>
               )}
             </div>
           </div>
@@ -153,7 +153,7 @@ export function SessionsView({
             {detailError && <ErrorNotice message={detailError} onRetry={onRetryDetail} />}
             <div className="card overflow-hidden border border-base-300 bg-base-100">
               {loadingDetail ? (
-                <LoadingState label="セッションを読み込み中…" />
+                <LoadingState label="Loading sessions…" />
               ) : selectedSession ? (
                 <SessionTimeline
                   events={events}
@@ -163,7 +163,7 @@ export function SessionsView({
                   session={selectedSession}
                 />
               ) : (
-                <EmptyState>セッションを選択してください</EmptyState>
+                <EmptyState>Select a session</EmptyState>
               )}
             </div>
           </div>

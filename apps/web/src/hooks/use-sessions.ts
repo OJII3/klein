@@ -47,7 +47,7 @@ export function useSessions({ active, onUpdated, selectedSessionId }: UseSession
         onUpdated();
       } catch (requestError) {
         setSessionsError(
-          requestError instanceof Error ? requestError.message : "セッションの取得に失敗しました",
+          requestError instanceof Error ? requestError.message : "Failed to load sessions",
         );
       } finally {
         if (append) setSessionsLoadingMore(false);
@@ -87,7 +87,7 @@ export function useSessions({ active, onUpdated, selectedSessionId }: UseSession
       } catch (requestError: unknown) {
         if (!current) return;
         setDetailError(
-          requestError instanceof Error ? requestError.message : "セッションの取得に失敗しました",
+          requestError instanceof Error ? requestError.message : "Failed to load sessions",
         );
       } finally {
         if (current) setDetailLoading(false);
@@ -124,7 +124,7 @@ export function useSessions({ active, onUpdated, selectedSessionId }: UseSession
       } catch (requestError: unknown) {
         if (effectiveSessionIdRef.current !== requestedSessionId) return;
         setDetailError(
-          requestError instanceof Error ? requestError.message : "セッションの取得に失敗しました",
+          requestError instanceof Error ? requestError.message : "Failed to load sessions",
         );
       } finally {
         if (effectiveSessionIdRef.current === requestedSessionId) setDetailLoadingMore(false);

@@ -23,9 +23,7 @@ export function useToolUsage({ active, onUpdated }: UseToolUsageOptions) {
       loadedRef.current = true;
       onUpdated();
     } catch (requestError) {
-      setError(
-        requestError instanceof Error ? requestError.message : "ツール使用状況の取得に失敗しました",
-      );
+      setError(requestError instanceof Error ? requestError.message : "Failed to load tool usage");
     } finally {
       setLoading(false);
     }

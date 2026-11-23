@@ -13,11 +13,11 @@ interface AppShellProps {
 }
 
 const VIEWS: { value: View; label: string }[] = [
-  { value: "logs", label: "ログ" },
-  { value: "sessions", label: "セッション" },
+  { value: "logs", label: "Logs" },
+  { value: "sessions", label: "Sessions" },
   { value: "proactivity", label: "Proactivity" },
-  { value: "tools", label: "ツール" },
-  { value: "memory", label: "メモリ" },
+  { value: "tools", label: "Tools" },
+  { value: "memory", label: "Memory" },
 ];
 
 interface NavLinksProps {
@@ -27,7 +27,7 @@ interface NavLinksProps {
 
 function NavLinks({ view, className }: NavLinksProps) {
   return (
-    <nav aria-label="表示切り替え" className={className}>
+    <nav aria-label="Views" className={className}>
       <ul className="menu menu-horizontal menu-sm gap-0.5 p-0 [--menu-active-bg:var(--color-green-soft)] [--menu-active-fg:var(--color-green-strong)]">
         {VIEWS.map((item) => {
           const active = view === item.value;
@@ -72,19 +72,19 @@ export function AppShell({ displayName, view, lastUpdated, onRefresh, children }
           <div className="navbar-end gap-2.5 text-xs sm:gap-3">
             <span className="flex items-center gap-1.5 text-ink-soft">
               <span aria-hidden="true" className="status status-success" />
-              <span className="hidden sm:inline">ローカル接続</span>
+              <span className="hidden sm:inline">Local connection</span>
             </span>
             {updatedAt && (
               <time
                 className="font-mono text-[0.68rem] text-ink-faint"
                 dateTime={updatedAt}
-                title={`更新 ${formatTimestamp(updatedAt)}`}
+                title={`Updated ${formatTimestamp(updatedAt)}`}
               >
-                更新 {formatClock(updatedAt)}
+                Updated {formatClock(updatedAt)}
               </time>
             )}
             <button className="btn btn-xs" onClick={onRefresh} type="button">
-              ↻<span className="hidden sm:inline">再読み込み</span>
+              ↻<span className="hidden sm:inline">Reload</span>
             </button>
           </div>
         </div>

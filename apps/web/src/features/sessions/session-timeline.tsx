@@ -64,22 +64,22 @@ export function SessionTimeline({
         </h2>
         <dl className="mt-2.5 flex flex-wrap gap-x-5 gap-y-1 text-[0.68rem]">
           <div className="flex gap-1.5">
-            <dt className="text-ink-faint">メッセージ</dt>
+            <dt className="text-ink-faint">Messages</dt>
             <dd className="font-mono text-ink-soft">{session.messageCount}</dd>
           </div>
           <div className="flex gap-1.5">
-            <dt className="text-ink-faint">開始</dt>
+            <dt className="text-ink-faint">Started</dt>
             <dd className="font-mono text-ink-soft">{formatCompactTimestamp(session.created)}</dd>
           </div>
           <div className="flex gap-1.5">
-            <dt className="text-ink-faint">更新</dt>
+            <dt className="text-ink-faint">Updated</dt>
             <dd className="font-mono text-ink-soft">{formatCompactTimestamp(session.modified)}</dd>
           </div>
         </dl>
       </header>
 
       {events.length === 0 ? (
-        <EmptyState>イベントがありません</EmptyState>
+        <EmptyState>No events</EmptyState>
       ) : (
         <div className="divide-y divide-line">
           {events.map((event) => (
@@ -135,10 +135,10 @@ export function SessionTimeline({
               onClick={onLoadMore}
               type="button"
             >
-              {loadingMore ? "読み込み中…" : "古いイベントを読み込む"}
+              {loadingMore ? "Loading…" : "Load older events"}
             </button>
           ) : (
-            <p className="text-[0.66rem] text-ink-faint">これより古いイベントはありません</p>
+            <p className="text-[0.66rem] text-ink-faint">No older events</p>
           )}
         </div>
       )}

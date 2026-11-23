@@ -88,7 +88,7 @@ export function MemoryView(props: MemoryViewProps) {
         .filter(
           (summary) =>
             !normalizedQuery ||
-            `${summary.scope.guildId} ${guildNames.get(summary.scope.guildId) ?? ""} ギルド`
+            `${summary.scope.guildId} ${guildNames.get(summary.scope.guildId) ?? ""} guild`
               .toLowerCase()
               .includes(normalizedQuery),
         ),
@@ -111,18 +111,18 @@ export function MemoryView(props: MemoryViewProps) {
 
   return (
     <section className="flex flex-col gap-4" aria-labelledby="memory-heading">
-      <ViewHeader headingId="memory-heading" title="メモリ">
+      <ViewHeader headingId="memory-heading" title="Memory">
         <StatStrip>
-          <Stat label="ギルド" value={scopes.length.toLocaleString("ja-JP")} />
-          <Stat label="ユーザー" value={users.length.toLocaleString("ja-JP")} />
-          <Stat label="エントリ" value={entryCount.toLocaleString("ja-JP")} />
+          <Stat label="Guilds" value={scopes.length.toLocaleString("en-US")} />
+          <Stat label="Users" value={users.length.toLocaleString("en-US")} />
+          <Stat label="Entries" value={entryCount.toLocaleString("en-US")} />
         </StatStrip>
       </ViewHeader>
 
       {error && <ErrorNotice message={error} onRetry={onRetry} />}
       {!error && !enabled && !userMemoryEnabled ? (
         <div className="card border border-base-300 bg-base-100">
-          <EmptyState>メモリ機能が無効です</EmptyState>
+          <EmptyState>Memory is disabled</EmptyState>
         </div>
       ) : loading && !hasMemories ? (
         <div className="card border border-base-300 bg-base-100">
@@ -130,19 +130,19 @@ export function MemoryView(props: MemoryViewProps) {
         </div>
       ) : !hasMemories ? (
         <div className="card border border-base-300 bg-base-100">
-          <EmptyState>保存されたメモリがまだありません</EmptyState>
+          <EmptyState>No memory saved yet</EmptyState>
         </div>
       ) : (
         <div className="grid gap-4 lg:grid-cols-[19rem_minmax(0,1fr)] lg:items-start">
           <div className="card overflow-hidden border border-base-300 bg-base-100 lg:sticky lg:top-[4.25rem]">
             <div className="border-b border-line p-2.5">
               <input
-                aria-label="メモリを検索"
+                aria-label="Search memory"
                 className="input input-sm w-full"
                 onChange={(event) => {
                   if (event.target instanceof HTMLInputElement) setQuery(event.target.value);
                 }}
-                placeholder="名前・ID で絞り込み"
+                placeholder="Filter by name or ID"
                 type="search"
                 value={query}
               />
@@ -150,36 +150,34 @@ export function MemoryView(props: MemoryViewProps) {
 
             <div className="max-h-72 overflow-y-auto lg:max-h-[calc(100vh-12rem)]">
               {scopes.length > 0 && (
-                <ScopeGroup count={guilds.length} title="ギルド">
+                <ScopeGroup count={guilds.length} title="Guilds">
                   {guilds.length === 0 ? (
-                    <p className="px-3 py-2 text-[0.68rem] text-ink-faint">該当なし</p>
+                    <p className="px-3 py-2 text-[0.68rem] text-ink-faint">No matches</p>
                   ) : (
                     guilds.map((summary) => (
                       <ScopeItem
-                        badge={`${summary.entryCount} 件`}
+                        badge={`${summary.entryCount} entries`}
                         key={memoryScopeKey(summary.scope)}
-                        meta={`更新 ${formatCompactTimestamp(summary.updatedAt ?? undefined)}`}
+                        meta={`Updated ${formatCompactTimestamp(summary.updatedAt ?? undefined)}`}
                         onClick={() => onSelect(summary.scope)}
                         selected={
                           selectedScope !== null &&
                           memoryScopeKey(selectedScope) === memoryScopeKey(summary.scope)
                         }
                         subtitle={summary.scope.guildId}
-                        title={guildNames.get(summary.scope.guildId) ?? "共有メモリ"}
+                        title={guildNames.get(summary.scope.guildId) ?? "Shared memory"}
                       />
                     ))
                   )}
                 </ScopeGroup>
               )}
 
-              <ScopeGroup count={filteredUsers.length} title="ユーザー">
+              <ScopeGroup count={filteredUsers.length} title="Users">
                 {!userMemoryEnabled ? (
-                  <p className="px-3 py-2 text-[0.68rem] text-ink-faint">
-                    ユーザーメモリが無効です
-                  </p>
+                  <p className="px-3 py-2 text-[0.68rem] text-ink-faint">User memory is disabled</p>
                 ) : filteredUsers.length === 0 ? (
                   <p className="px-3 py-2 text-[0.68rem] text-ink-faint">
-                    {users.length === 0 ? "まだユーザーメモリがありません" : "該当なし"}
+                    {users.length === 0 ? "No user memory yet" : "No matches"}
                   </p>
                 ) : (
                   filteredUsers.map((user) => (
@@ -187,7 +185,7 @@ export function MemoryView(props: MemoryViewProps) {
                       badge={formatImpression(user.impression)}
                       badgeTone={impressionTone(user.impression)}
                       key={user.userId}
-                      meta={`更新 ${formatCompactTimestamp(user.updatedAt)}`}
+                      meta={`Updated ${formatCompactTimestamp(user.updatedAt)}`}
                       onClick={() => onSelect({ type: "user", userId: user.userId })}
                       selected={
                         selectedScope?.type === "user" && selectedScope.userId === user.userId
@@ -203,12 +201,12 @@ export function MemoryView(props: MemoryViewProps) {
 
           <div className="flex min-w-0 flex-col gap-3">
             {fileError && (
-              <ErrorNotice message={fileError} onRetry={onDismissFileError} retryLabel="閉じる" />
+              <ErrorNotice message={fileError} onRetry={onDismissFileError} retryLabel="Close" />
             )}
             {detailError && <ErrorNotice message={detailError} onRetry={onRetryDetail} />}
             <div className="card overflow-hidden border border-base-300 bg-base-100">
               {loadingDetail ? (
-                <LoadingState label="メモリを読み込み中…" />
+                <LoadingState label="Loading memory…" />
               ) : selectedScope?.type === "user" ? (
                 userMemory ? (
                   <UserMemoryDetail
@@ -218,7 +216,7 @@ export function MemoryView(props: MemoryViewProps) {
                     userId={selectedScope.userId}
                   />
                 ) : (
-                  <EmptyState>ユーザーメモリを読み込めませんでした</EmptyState>
+                  <EmptyState>Failed to load user memory</EmptyState>
                 )
               ) : selectedScope?.type === "guild" ? (
                 <SharedMemoryDetail
@@ -232,7 +230,7 @@ export function MemoryView(props: MemoryViewProps) {
                   savingFileKey={savingFileKey}
                 />
               ) : (
-                <EmptyState>スコープを選択してください</EmptyState>
+                <EmptyState>Select a scope</EmptyState>
               )}
             </div>
           </div>
@@ -333,16 +331,16 @@ function SharedMemoryDetail({
     <div className="flex min-w-0 flex-col">
       <header className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-4 py-4">
         <div className="min-w-0">
-          <h2 className="text-[1.05rem] font-semibold text-ink">{guildName ?? "共有メモリ"}</h2>
+          <h2 className="text-[1.05rem] font-semibold text-ink">{guildName ?? "Shared memory"}</h2>
           <p className="mt-1 truncate font-mono text-[0.64rem] text-ink-faint">guild {guildId}</p>
         </div>
         <p className="shrink-0 font-mono text-[0.68rem] text-ink-faint">
-          {visibleFiles.length.toLocaleString("ja-JP")} ファイル
+          {visibleFiles.length.toLocaleString("en-US")} files
         </p>
       </header>
 
       {visibleFiles.length === 0 ? (
-        <EmptyState>このギルドの共有メモリは空です</EmptyState>
+        <EmptyState>Shared memory for this guild is empty</EmptyState>
       ) : (
         <div className="divide-y divide-line">
           {visibleFiles.map((file) => (
@@ -392,7 +390,8 @@ function SharedMemoryFileCard({
         <div className="min-w-0">
           <h3 className="text-[0.9rem] font-semibold text-ink">{label}</h3>
           <p className="mt-0.5 font-mono text-[0.62rem] text-ink-faint">
-            {sharedMemoryRelativePath(file.scope)} · 更新 {formatCompactTimestamp(file.updatedAt)}
+            {sharedMemoryRelativePath(file.scope)} · Updated{" "}
+            {formatCompactTimestamp(file.updatedAt)}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
@@ -406,7 +405,7 @@ function SharedMemoryFileCard({
                 }}
                 type="button"
               >
-                キャンセル
+                Cancel
               </button>
               <button
                 className="btn btn-primary btn-xs"
@@ -418,7 +417,7 @@ function SharedMemoryFileCard({
                 }}
                 type="button"
               >
-                {saving ? "保存中…" : "保存"}
+                {saving ? "Saving…" : "Save"}
               </button>
             </>
           ) : (
@@ -430,30 +429,26 @@ function SharedMemoryFileCard({
               }}
               type="button"
             >
-              編集
+              Edit
             </button>
           )}
           <button
             className="btn btn-error btn-soft btn-xs"
             disabled={deleting || saving}
             onClick={() => {
-              if (
-                window.confirm(
-                  `「${label}」のメモリファイルを削除しますか？\nこの操作は元に戻せません。`,
-                )
-              )
+              if (window.confirm(`Delete the memory file for "${label}"?\nThis cannot be undone.`))
                 void onDelete();
             }}
             type="button"
           >
-            {deleting ? "削除中…" : "削除"}
+            {deleting ? "Deleting…" : "Delete"}
           </button>
         </div>
       </div>
 
       {editing ? (
         <textarea
-          aria-label={`${label} の内容`}
+          aria-label={`${label} contents`}
           className="textarea mt-3 min-h-[20rem] w-full resize-y font-mono text-[0.78rem] leading-6"
           onChange={(event) => {
             if (event.target instanceof HTMLTextAreaElement) setDraft(event.target.value);
@@ -480,7 +475,7 @@ function sharedMemoryScopeLabel(
   channelNames: ReadonlyMap<string, string>,
 ): string {
   const label = (channelId: string): string => channelNames.get(channelId) ?? channelId;
-  if (scope.type === "guild") return "ギルド全体";
+  if (scope.type === "guild") return "Guild-wide";
   if (scope.type === "channel") return `#${label(scope.channelId)}`;
   return `${label(scope.threadId)} (#${label(scope.channelId)})`;
 }
@@ -512,7 +507,7 @@ function UserMemoryDetail({
             @{memory.discordId}
           </p>
           <p className="mt-0.5 truncate font-mono text-[0.62rem] text-ink-faint">
-            {realName || "本名は未登録"} · 更新 {formatCompactTimestamp(memory.updatedAt)}
+            {realName || "No real name"} · Updated {formatCompactTimestamp(memory.updatedAt)}
           </p>
         </div>
         <div className="flex shrink-0 items-start gap-3">
@@ -523,20 +518,20 @@ function UserMemoryDetail({
             onClick={() => {
               if (
                 window.confirm(
-                  `「${memory.displayName}」のユーザーメモリを削除しますか？\nこの操作は元に戻せません。次にこのユーザーが発言すると、新しいメモリが作られます。`,
+                  `Delete user memory for "${memory.displayName}"?\nThis cannot be undone. A new memory will be created the next time this user speaks.`,
                 )
               )
                 onDelete(userId);
             }}
             type="button"
           >
-            {deleting ? "削除中…" : "削除"}
+            {deleting ? "Deleting…" : "Delete"}
           </button>
         </div>
       </header>
 
       <section className="border-b border-line px-4 py-4">
-        <h3 className="text-[0.68rem] font-medium tracking-wide text-ink-faint">要約</h3>
+        <h3 className="text-[0.68rem] font-medium tracking-wide text-ink-faint">Summary</h3>
         <p className="mt-1.5 max-w-[60rem] text-[0.84rem] leading-6 break-words whitespace-pre-wrap text-ink-soft">
           {memory.summary || "—"}
         </p>
@@ -561,13 +556,13 @@ function ImpressionMeter({ value }: { value: number }) {
   return (
     <div className="flex w-40 shrink-0 flex-col gap-1">
       <div className="flex items-baseline justify-between">
-        <span className="text-[0.62rem] text-ink-faint">印象</span>
+        <span className="text-[0.62rem] text-ink-faint">Impression</span>
         <span className={`font-mono text-[0.72rem] font-medium ${impressionTone(value)}`}>
           {formatImpression(value)}
         </span>
       </div>
       <meter
-        aria-label={`印象 ${value}`}
+        aria-label={`Impression ${value}`}
         className="sr-only"
         high={50}
         low={-50}
@@ -601,9 +596,9 @@ function impressionTone(value: number): string {
 }
 
 function impressionLabel(value: number): string {
-  if (value >= 50) return "とても好意的";
-  if (value > 0) return "好意的";
-  if (value <= -50) return "とても否定的";
-  if (value < 0) return "否定的";
-  return "中立";
+  if (value >= 50) return "Very positive";
+  if (value > 0) return "Positive";
+  if (value <= -50) return "Very negative";
+  if (value < 0) return "Negative";
+  return "Neutral";
 }
