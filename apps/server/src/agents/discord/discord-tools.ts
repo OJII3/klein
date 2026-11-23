@@ -48,6 +48,7 @@ export interface DiscordAgentToolsOptions {
   readonly discordUserDirectory?: DiscordUserResolver;
   readonly workers?: WorkerControl;
   readonly t3ProjectLister?: T3ProjectLister;
+  readonly sessionFilePath?: () => string | undefined;
   readonly proactive?: ProactiveToolCoordinator;
   readonly initiative?: InitiativeToolCoordinator;
   readonly promiseGuard?: { readonly mode: PromiseGuardMode; readonly logger: Logger };
@@ -117,6 +118,7 @@ export function createDiscordAgentTools(
           options.channelId,
           accessScope,
           ownerFeaturesAllowed,
+          options.sessionFilePath,
         )
       : []),
     ...(ownerFeaturesAllowed && options.t3ProjectLister

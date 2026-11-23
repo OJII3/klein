@@ -34,6 +34,7 @@ import {
 } from "./background-compaction";
 import {
   createAssistantTextContextExtension,
+  createInheritedPiSessionManager,
   createPiAgentFactory,
   createPiSessionManager,
   createResourceLoader,
@@ -1253,6 +1254,178 @@ test("stores worker sessions under sessions/worker", async () => {
   });
 
   assert.equal(worker.getSessionDir(), resolvePath(agentDir, "sessions", "worker", "worker-1"));
+});
+
+test("inherits another session's history up to its latest user message", async () => {
+  await using temp = await createTempDir("klein-pi-inherit-");
+  const agentDir = temp.path;
+  const role = { kind: "worker", workerId: "worker-1" } as const;
+  const conversation = createPiSessionManager(
+    agentDir,
+    "discord-channel:123",
+    "new",
+    process.cwd(),
+  );
+  appendTestConversation(conversation);
+  conversation.appendMessage({
+    role: "user",
+    content: "current request",
+    timestamp: Date.now(),
+  });
+  conversation.appendMessage(
+    createStubAssistantMessage({
+      content: [
+        {
+          type: "toolCall",
+          id: "tool-call-1",
+          name: "worker_start",
+          arguments: { prompt: "do it" },
+        },
+      ],
+    }),
+  );
+  const sourceSessionFile = conversation.getSessionFile();
+  assert.ok(sourceSessionFile);
+
+  const worker = createInheritedPiSessionManager(
+    agentDir,
+    "worker-1",
+    process.cwd(),
+    role,
+    sourceSessionFile,
+  );
+
+  const context = worker.buildSessionContext();
+  assert.deepEqual(
+    context.messages.map((message) => message.role),
+    ["user", "assistant", "user"],
+  );
+  const lastContextMessage = context.messages.at(-1);
+  assert.equal(lastContextMessage?.role, "user");
+  if (lastContextMessage?.role === "user") {
+    assert.equal(lastContextMessage.content, "current request");
+  }
+  assert.equal(worker.getSessionDir(), resolvePath(agentDir, "sessions", "worker", "worker-1"));
+  assert.equal(worker.getHeader()?.parentSession, sourceSessionFile);
+  assert.ok(existsSync(worker.getSessionFile() ?? ""));
+});
+
+test("does not inherit the conversation's system prompt or tool definitions", async () => {
+  await using temp = await createTempDir("klein-pi-inherit-system-");
+  const agentDir = temp.path;
+  const role = { kind: "worker", workerId: "worker-1" } as const;
+  const conversation = createPiSessionManager(
+    agentDir,
+    "discord-channel:123",
+    "new",
+    process.cwd(),
+  );
+  conversation.appendMessage({
+    role: "system",
+    content: "",
+    sections: { preamble: "conversation-only prompt" },
+    timestamp: Date.now(),
+  });
+  const firstUserId = conversation.appendMessage({
+    role: "user",
+    content: "hello",
+    timestamp: Date.now(),
+  });
+  conversation.appendMessage(
+    createStubAssistantMessage({ content: [{ type: "text", text: "hello" }] }),
+  );
+  conversation.appendCompaction("summary of earlier turns", firstUserId, 100);
+  conversation.appendMessage({
+    role: "user",
+    content: "current request",
+    timestamp: Date.now(),
+  });
+  conversation.appendMessage(
+    createStubAssistantMessage({
+      content: [
+        {
+          type: "toolCall",
+          id: "tool-call-1",
+          name: "worker_start",
+          arguments: { prompt: "do it" },
+        },
+      ],
+    }),
+  );
+  const sourceSessionFile = conversation.getSessionFile();
+  assert.ok(sourceSessionFile);
+
+  const worker = createInheritedPiSessionManager(
+    agentDir,
+    "worker-1",
+    process.cwd(),
+    role,
+    sourceSessionFile,
+  );
+  const messages = worker.buildSessionContext().messages;
+  const serialized = JSON.stringify(messages);
+
+  assert.equal(
+    messages.some((message) => message.role === "system"),
+    false,
+  );
+  assert.equal(serialized.includes("conversation-only prompt"), false);
+  assert.equal(serialized.includes("worker_start"), false);
+  assert.equal(serialized.includes("summary of earlier turns"), true);
+  assert.equal(messages.at(-1)?.role, "user");
+});
+
+test("keeps an inherited history free of the unfinished tool call after resume", async () => {
+  await using temp = await createTempDir("klein-pi-inherit-resume-");
+  const agentDir = temp.path;
+  const role = { kind: "worker", workerId: "worker-1" } as const;
+  const conversation = createPiSessionManager(
+    agentDir,
+    "discord-channel:123",
+    "new",
+    process.cwd(),
+  );
+  appendTestConversation(conversation);
+  conversation.appendMessage({
+    role: "user",
+    content: "current request",
+    timestamp: Date.now(),
+  });
+  conversation.appendMessage(
+    createStubAssistantMessage({
+      content: [
+        {
+          type: "toolCall",
+          id: "tool-call-1",
+          name: "worker_start",
+          arguments: { prompt: "do it" },
+        },
+      ],
+    }),
+  );
+  const sourceSessionFile = conversation.getSessionFile();
+  assert.ok(sourceSessionFile);
+
+  const worker = createInheritedPiSessionManager(
+    agentDir,
+    "worker-1",
+    process.cwd(),
+    role,
+    sourceSessionFile,
+  );
+  worker.appendMessage({ role: "user", content: "worker task", timestamp: Date.now() });
+
+  const resumed = createPiSessionManager(agentDir, "worker-1", "resume", process.cwd(), role);
+  const context = resumed.buildSessionContext();
+  assert.deepEqual(
+    context.messages.map((message) => message.role),
+    ["user", "assistant", "user", "user"],
+  );
+  const lastResumedMessage = context.messages.at(-1);
+  assert.equal(lastResumedMessage?.role, "user");
+  if (lastResumedMessage?.role === "user") {
+    assert.equal(lastResumedMessage.content, "worker task");
+  }
 });
 
 test("starts background compaction before the built-in threshold", async () => {

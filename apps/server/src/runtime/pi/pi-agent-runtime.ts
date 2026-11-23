@@ -8,6 +8,7 @@ import {
   ModelRuntime,
   SessionManager,
   SettingsManager,
+  buildSessionProjection,
   createAgentSession,
   createCodemodeExtension,
   createMcpExtension,
@@ -141,6 +142,7 @@ export const DEFAULT_SKILLS_DIRECTORY = "config/klein/skills";
 const HANDOFF_COMPACTION_INSTRUCTIONS =
   "Create the concise Japanese handoff summary requested by Klein's handoff extension.";
 const HANDOFF_CUSTOM_MESSAGE_TYPE = "klein-context-handoff";
+const WORKER_CONTEXT_CUSTOM_TYPE = "klein-worker-inherited-context";
 const DEFAULT_EXTENSION_TOOL_NAMES = [
   "codemode",
   "web_search",
@@ -163,6 +165,41 @@ export function createPiSessionManager(
   return sessionMode === "resume"
     ? SessionManager.continueRecent(cwd, sessionDir)
     : SessionManager.create(cwd, sessionDir);
+}
+
+/**
+ * Copy another session's active history into a new session for `sessionKey`.
+ * Only model-visible messages are carried over, so the new session keeps its
+ * own system prompt and tool definitions. The history stops at the latest user
+ * message, avoiding an unfinished tool call at the end.
+ */
+export function createInheritedPiSessionManager(
+  agentDir: string,
+  sessionKey: string,
+  cwd: string,
+  role: AgentRole,
+  sourceSessionFile: string,
+): SessionManager {
+  const source = SessionManager.open(sourceSessionFile);
+  const lastUserEntry = source
+    .getBranch()
+    .findLast((entry) => entry.type === "message" && entry.message.role === "user");
+  if (!lastUserEntry) {
+    throw new Error(`Cannot inherit context without a user message: ${sourceSessionFile}`);
+  }
+  const inheritedMessages = convertToLlm(
+    buildSessionProjection(source.getEntries(), lastUserEntry.id).messages,
+  ).filter((message) => message.role !== "system");
+
+  const sessionDir = resolve(agentDir, "sessions", role.kind, encodeURIComponent(sessionKey));
+  const sessionManager = SessionManager.create(cwd, sessionDir, {
+    parentSession: sourceSessionFile,
+  });
+  for (const message of inheritedMessages) {
+    sessionManager.appendMessage(message);
+  }
+  sessionManager.appendCustomEntry(WORKER_CONTEXT_CUSTOM_TYPE, { sourceSessionFile });
+  return sessionManager;
 }
 
 interface PiTurnState {
@@ -761,13 +798,43 @@ export function createPiAgentFactory({
       const userShellTool = enablesUserShell(options.role, userEnvironment)
         ? createUserShellTool(userEnvironment)
         : undefined;
-      const sessionManager = createPiSessionManager(
-        agentDir,
-        options.sessionKey,
-        options.resumeSession === true ? "resume" : sessionMode,
-        workerCwd(options.role, userEnvironment),
-        options.role,
-      );
+      const sessionCwd = workerCwd(options.role, userEnvironment);
+      let sessionManager: SessionManager;
+      if (options.inheritContextFromSessionFile && options.resumeSession !== true) {
+        try {
+          sessionManager = createInheritedPiSessionManager(
+            agentDir,
+            options.sessionKey,
+            sessionCwd,
+            options.role,
+            options.inheritContextFromSessionFile,
+          );
+        } catch (error) {
+          logger.warn(
+            {
+              err: error,
+              event: "session_context_inheritance_failed",
+              sessionKey: options.sessionKey,
+            },
+            "Failed to inherit session context; starting a new session",
+          );
+          sessionManager = createPiSessionManager(
+            agentDir,
+            options.sessionKey,
+            "new",
+            sessionCwd,
+            options.role,
+          );
+        }
+      } else {
+        sessionManager = createPiSessionManager(
+          agentDir,
+          options.sessionKey,
+          options.resumeSession === true ? "resume" : sessionMode,
+          sessionCwd,
+          options.role,
+        );
+      }
       const sessionId = sessionManager.getSessionId();
       const model = withOpenCodeSessionHeader(
         withContextWindowRatio(
@@ -783,6 +850,7 @@ export function createPiAgentFactory({
         ? new PiImageAnalyzer(modelRuntime, sessionImageModel, llm.image?.thinkingLevel)
         : undefined;
       const turnState: PiTurnState = {};
+      let agentSession: AgentSession | undefined;
       const toolContext: AgentToolContext = {
         ...(imageAnalyzer
           ? {
@@ -795,6 +863,7 @@ export function createPiAgentFactory({
             }
           : {}),
         requesterId: () => turnState.requesterId,
+        sessionFilePath: () => agentSession?.sessionManager.getSessionFile(),
       };
 
       const authorization = new ToolAuthorization(
@@ -917,6 +986,7 @@ export function createPiAgentFactory({
           "source_check",
         ],
       });
+      agentSession = session;
       await session.bindExtensions({});
 
       if (

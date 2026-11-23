@@ -70,6 +70,7 @@ interface Harness {
   readonly closedWorkers: ClosedWorker[];
   readonly roles: AgentCreationOptions["role"][];
   readonly resumeSessions: (boolean | undefined)[];
+  readonly inheritedContextFiles: (string | undefined)[];
   readonly toolWorkerIds: string[];
   readonly receivedToolContexts: AgentToolContext[];
   readonly store: MemoryWorkerStore;
@@ -93,6 +94,7 @@ function createHarness(
   const closedWorkers: ClosedWorker[] = [];
   const roles: AgentCreationOptions["role"][] = [];
   const resumeSessions: (boolean | undefined)[] = [];
+  const inheritedContextFiles: (string | undefined)[] = [];
   const toolWorkerIds: string[] = [];
   const receivedToolContexts: AgentToolContext[] = [];
   const taskCoordinator = new TaskCoordinator();
@@ -100,6 +102,7 @@ function createHarness(
     async create(_definition, createTools, creationOptions) {
       roles.push(creationOptions.role);
       resumeSessions.push(creationOptions.resumeSession);
+      inheritedContextFiles.push(creationOptions.inheritContextFromSessionFile);
       createTools(options?.toolContext ?? { requesterId: () => undefined });
       if (createRuntime) return createRuntime(creationOptions);
       return {
@@ -147,6 +150,7 @@ function createHarness(
     closedWorkers,
     roles,
     resumeSessions,
+    inheritedContextFiles,
     toolWorkerIds,
     receivedToolContexts,
     store,
@@ -185,6 +189,17 @@ test("passes the worker id to its tools", async () => {
   await waitFor(() => harness.deliveries.length === 1);
 
   assert.deepEqual(harness.toolWorkerIds, [workerId]);
+});
+
+test("starts a worker from the conversation session it was given", async () => {
+  const harness = createHarness();
+  await harness.coordinator.start({
+    ...startInput("channel-1", "look into the discussion so far"),
+    contextSessionFile: "/tmp/conversation.jsonl",
+  });
+  await waitFor(() => harness.deliveries.length === 1);
+
+  assert.deepEqual(harness.inheritedContextFiles, ["/tmp/conversation.jsonl"]);
 });
 
 test("queues follow-ups on the same session", async () => {
@@ -253,6 +268,7 @@ test("restores a saved worker and resumes its session on the next prompt", async
   assert.equal(await second.coordinator.send(scope("channel-1"), workerId, "second"), true);
   await waitFor(() => second.deliveries.length === 1);
   assert.deepEqual(second.resumeSessions, [true]);
+  assert.deepEqual(second.inheritedContextFiles, [undefined]);
   assert.deepEqual(second.prompts, ["second"]);
   assert.equal(second.deliveries[0]?.result.text, "result for second");
 });
