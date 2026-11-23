@@ -35,7 +35,6 @@ Select one with `"profile"` in `config/config.jsonc` (default: `klein`). The bun
 
 ## Documentation
 
-- [docs/features.md](docs/features.md) — Discord, providers, voice, memory, schedules, MCP, Web UI
 - [docs/voice-chat-asr-protocol.md](docs/voice-chat-asr-protocol.md) — ASR WebSocket protocol
 - [docs/sbv2-tts-protocol.md](docs/sbv2-tts-protocol.md) — SBV2 HTTP protocol
 

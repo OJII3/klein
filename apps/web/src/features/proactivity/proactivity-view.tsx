@@ -33,18 +33,18 @@ interface ProactivityViewProps {
 type SignalFilter = "all" | ProactiveSignalStatus;
 
 const SIGNAL_FILTERS: readonly { value: SignalFilter; label: string }[] = [
-  { value: "all", label: "すべて" },
-  { value: "queued", label: "保留" },
-  { value: "surfaced", label: "提示済み" },
-  { value: "dismissed", label: "却下" },
-  { value: "expired", label: "期限切れ" },
+  { value: "all", label: "All" },
+  { value: "queued", label: "Queued" },
+  { value: "surfaced", label: "Surfaced" },
+  { value: "dismissed", label: "Dismissed" },
+  { value: "expired", label: "Expired" },
 ];
 
 const SIGNAL_STATUS_LABELS: Readonly<Record<ProactiveSignalStatus, string>> = {
-  queued: "保留",
-  surfaced: "提示済み",
-  dismissed: "却下",
-  expired: "期限切れ",
+  queued: "Queued",
+  surfaced: "Surfaced",
+  dismissed: "Dismissed",
+  expired: "Expired",
 };
 
 const SIGNAL_STATUS_TONES: Readonly<Record<ProactiveSignalStatus, string>> = {
@@ -55,10 +55,10 @@ const SIGNAL_STATUS_TONES: Readonly<Record<ProactiveSignalStatus, string>> = {
 };
 
 const URGENCY_LABELS: Readonly<Record<ProactiveUrgency, string>> = {
-  now: "今すぐ",
-  today: "今日中",
-  digest: "まとめ",
-  silent: "静か",
+  now: "Now",
+  today: "Today",
+  digest: "Digest",
+  silent: "Silent",
 };
 
 const URGENCY_TONES: Readonly<Record<ProactiveUrgency, string>> = {
@@ -69,19 +69,19 @@ const URGENCY_TONES: Readonly<Record<ProactiveUrgency, string>> = {
 };
 
 const DELIVERY_LABELS: Readonly<Record<ProactiveDeliveryMode, string>> = {
-  interrupt: "すぐ話す",
-  attach: "次の発言に添える",
-  digest: "まとめて話す",
-  silent: "保存のみ",
+  interrupt: "Interrupt",
+  attach: "Attach",
+  digest: "Digest",
+  silent: "Silent",
 };
 
 const FOLLOW_UP_STATUS_LABELS: Readonly<Record<FollowUpStatus, string>> = {
-  active: "追跡中",
-  notified: "通知済み",
-  done: "完了",
-  orphaned: "追跡先なし",
-  expired: "期限切れ",
-  dismissed: "取り下げ",
+  active: "Active",
+  notified: "Notified",
+  done: "Done",
+  orphaned: "Orphaned",
+  expired: "Expired",
+  dismissed: "Dismissed",
 };
 
 const FOLLOW_UP_STATUS_TONES: Readonly<Record<FollowUpStatus, string>> = {
@@ -94,19 +94,19 @@ const FOLLOW_UP_STATUS_TONES: Readonly<Record<FollowUpStatus, string>> = {
 };
 
 const WATCHER_LABELS: Readonly<Record<FollowUpWatcherKind, string>> = {
-  watch: "watch",
-  reminder: "リマインダー",
-  worker: "ワーカー",
+  watch: "Watch",
+  reminder: "Reminder",
+  worker: "Worker",
 };
 
 const GOAL_STATUS_LABELS: Readonly<Record<InitiativeGoalStatus, string>> = {
-  scheduled: "実行待ち",
-  running: "実行中",
-  ready: "結果あり",
-  delivered: "配信済み",
-  dismissed: "取り下げ",
-  expired: "期限切れ",
-  failed: "失敗",
+  scheduled: "Scheduled",
+  running: "Running",
+  ready: "Ready",
+  delivered: "Delivered",
+  dismissed: "Dismissed",
+  expired: "Expired",
+  failed: "Failed",
 };
 
 const GOAL_STATUS_TONES: Readonly<Record<InitiativeGoalStatus, string>> = {
@@ -120,22 +120,22 @@ const GOAL_STATUS_TONES: Readonly<Record<InitiativeGoalStatus, string>> = {
 };
 
 const GOAL_RISK_LABELS: Readonly<Record<InitiativeGoalRisk, string>> = {
-  low: "低リスク",
-  medium: "中リスク",
-  high: "高リスク",
+  low: "Low risk",
+  medium: "Medium risk",
+  high: "High risk",
 };
 
 const GOAL_DELIVERY_LABELS: Readonly<Record<InitiativeGoalDelivery, string>> = {
-  interrupt: "すぐ話す",
-  attach: "次の発言に添える",
-  digest: "まとめて話す",
-  silent: "保存のみ",
+  interrupt: "Interrupt",
+  attach: "Attach",
+  digest: "Digest",
+  silent: "Silent",
 };
 
 const TOPIC_MODE_LABELS: Readonly<Record<ProactiveTopicMode, string>> = {
-  allow: "許可",
-  mute: "禁止",
-  "urgent-only": "緊急のみ",
+  allow: "Allow",
+  mute: "Mute",
+  "urgent-only": "Urgent only",
 };
 
 export function ProactivityView({
@@ -156,14 +156,17 @@ export function ProactivityView({
 
   return (
     <section className="flex flex-col gap-4" aria-labelledby="proactivity-heading">
-      <ViewHeader headingId="proactivity-heading" title="自発">
+      <ViewHeader headingId="proactivity-heading" title="Proactivity">
         {report && (
           <StatStrip>
-            <Stat label="保留中の候補" value={queuedSignals.length.toLocaleString("ja-JP")} />
-            <Stat label="提示済み" value={surfacedSignals.length.toLocaleString("ja-JP")} />
-            <Stat label="追跡中の約束" value={activeFollowUps.length.toLocaleString("ja-JP")} />
-            <Stat label="Goal" value={activeGoals.length.toLocaleString("ja-JP")} />
-            <Stat label="好み" value={report.preferences.length.toLocaleString("ja-JP")} />
+            <Stat label="Queued signals" value={queuedSignals.length.toLocaleString("ja-JP")} />
+            <Stat label="Surfaced" value={surfacedSignals.length.toLocaleString("ja-JP")} />
+            <Stat
+              label="Active follow-ups"
+              value={activeFollowUps.length.toLocaleString("ja-JP")}
+            />
+            <Stat label="Goals" value={activeGoals.length.toLocaleString("ja-JP")} />
+            <Stat label="Preferences" value={report.preferences.length.toLocaleString("ja-JP")} />
           </StatStrip>
         )}
       </ViewHeader>
@@ -175,7 +178,7 @@ export function ProactivityView({
         </div>
       ) : !error && !report ? null : report && !report.enabled ? (
         <div className="card border border-base-300 bg-base-100">
-          <EmptyState>自発的な活動は無効です</EmptyState>
+          <EmptyState>Proactivity は無効です</EmptyState>
         </div>
       ) : report ? (
         <>
@@ -213,7 +216,7 @@ function SignalSection({
     <section className="card overflow-hidden border border-base-300 bg-base-100">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-3">
         <div className="flex items-baseline gap-2">
-          <h2 className="text-sm font-semibold text-ink">候補</h2>
+          <h2 className="text-sm font-semibold text-ink">Signals</h2>
           <span className="font-mono text-[0.68rem] text-ink-faint">
             {signals.length.toLocaleString("ja-JP")} 件{truncated ? "（最新のみ）" : ""}
           </span>
@@ -238,7 +241,7 @@ function SignalSection({
       </div>
 
       {visible.length === 0 ? (
-        <EmptyState>該当する候補がありません</EmptyState>
+        <EmptyState>該当する Signal はありません</EmptyState>
       ) : (
         <ul>
           {visible.map((signal) => (
@@ -284,16 +287,16 @@ function SignalRow({
           <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[0.7rem] text-ink-soft">
             <span>{signal.topic}</span>
             <span className="text-ink-faint">
-              由来: {signal.source.kind}
+              Source: {signal.source.kind}
               {signal.source.ref ? ` (${signal.source.ref})` : ""}
             </span>
             {signal.audience === "public" && (
-              <span className="badge badge-xs badge-ghost">公開</span>
+              <span className="badge badge-xs badge-ghost">Public</span>
             )}
           </p>
           {signal.evidence && (
             <details className="mt-2">
-              <summary className="cursor-pointer text-[0.7rem] text-ink-soft">根拠</summary>
+              <summary className="cursor-pointer text-[0.7rem] text-ink-soft">Evidence</summary>
               {signal.evidence.text && (
                 <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded bg-surface-muted p-2 font-mono text-[0.68rem] text-ink-soft">
                   {signal.evidence.text}
@@ -320,10 +323,10 @@ function SignalRow({
         <div className="shrink-0 text-right text-[0.68rem] text-ink-faint">
           <time dateTime={signal.observedAt}>{formatCompactTimestamp(signal.observedAt)}</time>
           {signal.surfacedAt && (
-            <p className="mt-0.5">提示 {formatCompactTimestamp(signal.surfacedAt)}</p>
+            <p className="mt-0.5">Surfaced {formatCompactTimestamp(signal.surfacedAt)}</p>
           )}
           {signal.expiresAt && (
-            <p className="mt-0.5">期限 {formatCompactTimestamp(signal.expiresAt)}</p>
+            <p className="mt-0.5">Expires {formatCompactTimestamp(signal.expiresAt)}</p>
           )}
         </div>
       </div>
@@ -341,14 +344,14 @@ function GoalSection({
   return (
     <section className="card overflow-hidden border border-base-300 bg-base-100">
       <div className="flex items-baseline justify-between gap-2 border-b border-line px-4 py-3">
-        <h2 className="text-sm font-semibold text-ink">Goal</h2>
+        <h2 className="text-sm font-semibold text-ink">Goals</h2>
         <span className="font-mono text-[0.68rem] text-ink-faint">
           {goals.length.toLocaleString("ja-JP")} 件
         </span>
       </div>
 
       {goals.length === 0 ? (
-        <EmptyState>自分で立てた Goal はありません</EmptyState>
+        <EmptyState>Goal はまだありません</EmptyState>
       ) : (
         <ul>
           {goals.map((goal) => (
@@ -385,24 +388,24 @@ function GoalRow({
               {channelLabel(channelNames, goal.channelId)} · {scopeLabel(goal.accessScope)}
             </span>
             <span className="text-[0.7rem] text-ink-faint">
-              {goal.createdBy === "planner" ? "Planner" : "会話"}
+              {goal.createdBy === "planner" ? "Planner" : "Conversation"}
             </span>
           </div>
           <p className="mt-1.5 text-sm font-medium leading-snug text-ink">{goal.title}</p>
           <p className="mt-1 text-[0.78rem] leading-snug text-ink-soft">{goal.rationale}</p>
           <details className="mt-2">
-            <summary className="cursor-pointer text-[0.7rem] text-ink-soft">実行計画</summary>
+            <summary className="cursor-pointer text-[0.7rem] text-ink-soft">Plan</summary>
             <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-surface-muted p-2 font-mono text-[0.68rem] text-ink-soft">
               {goal.plan}
             </pre>
           </details>
           {goal.lastError && (
-            <p className="mt-1 text-[0.7rem] text-error">失敗: {goal.lastError}</p>
+            <p className="mt-1 text-[0.7rem] text-error">Failed: {goal.lastError}</p>
           )}
         </div>
         <div className="shrink-0 text-right text-[0.68rem] text-ink-faint">
-          <p>実行 {formatCompactTimestamp(goal.dueAt)}</p>
-          <p className="mt-0.5">期限 {formatCompactTimestamp(goal.expiresAt)}</p>
+          <p>Due {formatCompactTimestamp(goal.dueAt)}</p>
+          <p className="mt-0.5">Expires {formatCompactTimestamp(goal.expiresAt)}</p>
           {goal.workerId && <p className="mt-0.5 font-mono">{goal.workerId}</p>}
           {goal.signalId && <p className="mt-0.5 font-mono">{goal.signalId}</p>}
         </div>
@@ -421,14 +424,14 @@ function FollowUpSection({
   return (
     <section className="card overflow-hidden border border-base-300 bg-base-100">
       <div className="flex items-baseline justify-between gap-2 border-b border-line px-4 py-3">
-        <h2 className="text-sm font-semibold text-ink">約束</h2>
+        <h2 className="text-sm font-semibold text-ink">Follow-ups</h2>
         <span className="font-mono text-[0.68rem] text-ink-faint">
           {followUps.length.toLocaleString("ja-JP")} 件
         </span>
       </div>
 
       {followUps.length === 0 ? (
-        <EmptyState>追跡している約束はありません</EmptyState>
+        <EmptyState>Follow-up はまだありません</EmptyState>
       ) : (
         <ul>
           {followUps.map((followUp) => (
@@ -471,10 +474,10 @@ function FollowUpRow({
         <div className="shrink-0 text-right text-[0.68rem] text-ink-faint">
           <time dateTime={followUp.createdAt}>{formatCompactTimestamp(followUp.createdAt)}</time>
           {followUp.lastNotifiedAt && (
-            <p className="mt-0.5">通知 {formatCompactTimestamp(followUp.lastNotifiedAt)}</p>
+            <p className="mt-0.5">Notified {formatCompactTimestamp(followUp.lastNotifiedAt)}</p>
           )}
           {followUp.expiresAt && (
-            <p className="mt-0.5">期限 {formatCompactTimestamp(followUp.expiresAt)}</p>
+            <p className="mt-0.5">Expires {formatCompactTimestamp(followUp.expiresAt)}</p>
           )}
         </div>
       </div>
@@ -492,14 +495,14 @@ function PreferenceSection({
   return (
     <section className="card overflow-hidden border border-base-300 bg-base-100">
       <div className="flex items-baseline justify-between gap-2 border-b border-line px-4 py-3">
-        <h2 className="text-sm font-semibold text-ink">好み</h2>
+        <h2 className="text-sm font-semibold text-ink">Preferences</h2>
         <span className="font-mono text-[0.68rem] text-ink-faint">
           {preferences.length.toLocaleString("ja-JP")} 件
         </span>
       </div>
 
       {preferences.length === 0 ? (
-        <EmptyState>保存された好みはありません</EmptyState>
+        <EmptyState>Preference はまだありません</EmptyState>
       ) : (
         <div className="grid gap-3 p-3 md:grid-cols-2 xl:grid-cols-3">
           {preferences.map((preference) => (
@@ -530,46 +533,46 @@ function PreferenceCard({
       <header className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
           <span className="badge badge-sm badge-ghost">
-            {preference.scope === "user" ? "ユーザー" : "チャンネル"}
+            {preference.scope === "user" ? "User" : "Channel"}
           </span>
           <span className="truncate text-[0.78rem] font-medium text-ink">
             {preference.scope === "channel" && preference.channelId
               ? channelLabel(channelNames, preference.channelId)
-              : `ユーザー ${preference.userId ?? ""}`}
+              : `User ${preference.userId ?? ""}`}
           </span>
         </div>
         <code className="font-mono text-[0.62rem] text-ink-faint">{preference.key}</code>
       </header>
 
       {!hasContent ? (
-        <p className="mt-2 text-[0.7rem] text-ink-faint">既定のみ</p>
+        <p className="mt-2 text-[0.7rem] text-ink-faint">Defaults only</p>
       ) : (
         <div className="mt-2 flex flex-col gap-2">
           {hasDelivery && (
-            <PreferenceGroup title="届け方">
+            <PreferenceGroup title="Delivery">
               {preference.delivery.defaultMode && (
                 <PreferenceLine
-                  label="既定"
+                  label="Default"
                   value={DELIVERY_LABELS[preference.delivery.defaultMode]}
                 />
               )}
               {preference.delivery.quietHours && (
                 <PreferenceLine
-                  label="静かな時間"
+                  label="Quiet hours"
                   value={`${preference.delivery.quietHours.start}-${preference.delivery.quietHours.end}`}
                 />
               )}
               {preference.delivery.digestAt && (
-                <PreferenceLine label="まとめ" value={preference.delivery.digestAt} />
+                <PreferenceLine label="Digest" value={preference.delivery.digestAt} />
               )}
               {preference.delivery.maxPerDay !== undefined && (
-                <PreferenceLine label="1日の上限" value={`${preference.delivery.maxPerDay} 件`} />
+                <PreferenceLine label="Daily limit" value={`${preference.delivery.maxPerDay} 件`} />
               )}
             </PreferenceGroup>
           )}
 
           {preference.topics.length > 0 && (
-            <PreferenceGroup title="話題">
+            <PreferenceGroup title="Topics">
               {preference.topics.map((topic) => (
                 <div className="flex flex-wrap items-baseline gap-1.5" key={topic.topic}>
                   <span className="text-[0.72rem] text-ink">{topic.topic}</span>
@@ -585,7 +588,7 @@ function PreferenceCard({
           )}
 
           {preference.notes.length > 0 && (
-            <PreferenceGroup title="メモ">
+            <PreferenceGroup title="Notes">
               {preference.notes.map((note) => (
                 <p className="text-[0.72rem] leading-snug text-ink-soft" key={note}>
                   {note}
@@ -645,8 +648,8 @@ function toExternalUrl(value: string): string | undefined {
 }
 
 function scopeLabel(scope: string): string {
-  if (scope === "public") return "公開";
-  if (scope.startsWith("owner:")) return "所有者";
-  if (scope.startsWith("user:")) return `ユーザー ${scope.slice("user:".length)}`;
+  if (scope === "public") return "Public";
+  if (scope.startsWith("owner:")) return "Owner";
+  if (scope.startsWith("user:")) return `User ${scope.slice("user:".length)}`;
   return scope;
 }
