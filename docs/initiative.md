@@ -210,7 +210,7 @@ Goal の結果は既存の Signal と同じ経路に流す。どの配信方法�
 
 計画や実行の失敗は `initiative_plan_failed`、`initiative_goal_start_failed`、`initiative_goal_check_failed`、`initiative_goal_delivery_failed` で記録する。
 
-Web UI の「自発」画面には Goal の状態、期限、理由、結果を読み取り専用で表示する。
+Web UI の「Proactivity」画面には Goal の状態、期限、理由、結果を読み取り専用で表示する。
 
 ## 参考
 

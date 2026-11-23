@@ -45,10 +45,10 @@ interface MemoryViewProps {
 }
 
 const USER_SECTIONS: readonly { key: UserMemorySectionKey; label: string }[] = [
-  { key: "facts", label: "事実" },
-  { key: "history", label: "履歴" },
-  { key: "inCommon", label: "共通点" },
-  { key: "strengthening", label: "関係の強化" },
+  { key: "facts", label: "Facts" },
+  { key: "history", label: "History" },
+  { key: "inCommon", label: "In common" },
+  { key: "strengthening", label: "Strengthening" },
 ];
 
 export function MemoryView(props: MemoryViewProps) {
