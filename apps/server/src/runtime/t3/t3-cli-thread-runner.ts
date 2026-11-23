@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 
 import type {
   T3ThreadMessage,
+  T3ThreadPullRequest,
   T3ThreadRun,
   T3ThreadRunner,
   T3ThreadSummary,
@@ -47,13 +48,13 @@ export function createT3CliThreadRunner(options: T3CliThreadRunnerOptions = {}):
       if (input.worktree) args.push("--worktree", input.worktree);
       if (input.branch) args.push("--branch", input.branch);
       args.push(input.project ?? cwd, input.message);
-      return toThreadRun(await run(args, signal), "t3 thread start");
+      return toThreadRun(await run(args, signal), "t3 thread start", "running");
     },
     async send(input, signal) {
       const args = ["thread", "send", "--json"];
       if (input.wait) args.push("--wait");
       args.push(input.threadId, input.message);
-      return toThreadRun(await run(args, signal), "t3 thread send");
+      return toThreadRun(await run(args, signal), "t3 thread send", "running");
     },
     async show(threadId, messages, signal) {
       const args = ["thread", "show", "--json", "--messages", String(messages), threadId];
@@ -158,23 +159,49 @@ function toThreadSummary(value: unknown): T3ThreadSummary {
   if (!isRecord(value) || typeof value.threadId !== "string") {
     throw new Error("T3 Code returned a thread without an id");
   }
+  const linkedPullRequest = toPullRequest(value.linkedPullRequest);
   return {
     id: value.threadId,
     title: typeof value.title === "string" ? value.title : "",
     status: typeof value.status === "string" ? value.status : "unknown",
     ...(typeof value.link === "string" ? { link: value.link } : {}),
     ...(typeof value.updatedAt === "string" ? { updatedAt: value.updatedAt } : {}),
+    ...(typeof value.branch === "string" ? { branch: value.branch } : {}),
+    ...(typeof value.worktreePath === "string" ? { worktreePath: value.worktreePath } : {}),
+    ...(typeof value.pendingRequestCount === "number"
+      ? { pendingRequestCount: value.pendingRequestCount }
+      : {}),
+    ...(typeof value.pullRequestCount === "number"
+      ? { pullRequestCount: value.pullRequestCount }
+      : {}),
+    ...(typeof value.openPullRequestCount === "number"
+      ? { openPullRequestCount: value.openPullRequestCount }
+      : {}),
+    ...(linkedPullRequest ? { linkedPullRequest } : {}),
   };
 }
 
-function toThreadRun(output: CommandOutput, label: string): T3ThreadRun {
+function toPullRequest(value: unknown): T3ThreadPullRequest | undefined {
+  if (
+    !isRecord(value) ||
+    typeof value.repository !== "string" ||
+    typeof value.number !== "number" ||
+    typeof value.url !== "string"
+  ) {
+    return undefined;
+  }
+  return { repository: value.repository, number: value.number, url: value.url };
+}
+
+function toThreadRun(output: CommandOutput, label: string, fallbackStatus: string): T3ThreadRun {
   const value = parseOutput(output, label);
   if (!isRecord(value) || typeof value.threadId !== "string") {
     throw new Error(`${label} returned an unexpected result`);
   }
   return {
     threadId: value.threadId,
-    status: typeof value.status === "string" ? value.status : "unknown",
+    status: typeof value.status === "string" ? value.status : fallbackStatus,
+    ...(typeof value.link === "string" && value.link.trim() ? { link: value.link } : {}),
     ...(typeof value.reply === "string" && value.reply.trim() ? { reply: value.reply } : {}),
     ...(typeof value.error === "string" && value.error.trim() ? { error: value.error } : {}),
   };

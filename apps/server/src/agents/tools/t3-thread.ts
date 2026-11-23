@@ -13,20 +13,42 @@ export interface T3ThreadMessage {
   readonly text: string;
 }
 
+export interface T3ThreadPullRequest {
+  readonly repository: string;
+  readonly number: number;
+  readonly url: string;
+}
+
 export interface T3ThreadSummary {
   readonly id: string;
   readonly title: string;
   readonly status: string;
   readonly link?: string;
   readonly updatedAt?: string;
+  readonly branch?: string;
+  readonly worktreePath?: string;
+  readonly pendingRequestCount?: number;
+  readonly pullRequestCount?: number;
+  readonly openPullRequestCount?: number;
+  readonly linkedPullRequest?: T3ThreadPullRequest;
 }
 
 export interface T3ThreadRun {
   readonly threadId: string;
   readonly status: string;
+  readonly link?: string;
   readonly reply?: string;
   readonly error?: string;
 }
+
+/** Run statuses that end the run. `waiting` is the CLI's request-for-input status. */
+const TERMINAL_RUN_STATUSES = new Set([
+  "completed",
+  "failed",
+  "cancelled",
+  "interrupted",
+  "rolled_back",
+]);
 
 export interface T3ThreadDetail {
   readonly thread: T3ThreadSummary;
@@ -100,10 +122,16 @@ export function createT3ThreadTools(runner: T3ThreadRunner): readonly ToolDefini
           }),
         ),
         branch: Type.Optional(
-          Type.String({ minLength: 1, description: "Branch name for the new worktree." }),
+          Type.String({
+            minLength: 1,
+            description: "Branch name for the new worktree. Needs worktree.",
+          }),
         ),
       }),
       async execute(_toolCallId, params, signal) {
+        if (params.branch && !params.worktree) {
+          throw new Error("`branch` needs `worktree`. Pass the base branch, tag, or commit too.");
+        }
         const result = await runner.start(
           {
             ...(params.project ? { project: params.project } : {}),
@@ -153,8 +181,8 @@ export function createT3ThreadTools(runner: T3ThreadRunner): readonly ToolDefini
       name: "t3_thread_show",
       label: "Show T3 Thread",
       description:
-        "Show a T3 Code thread's status, link, and latest messages. " +
-        "Use this to check a thread started with wait set to false.",
+        "Show a T3 Code thread's status, link, branch, pull requests, pending questions, and latest messages. " +
+        "Use this to check a thread started with wait set to false, or to read a question when a run reports waiting.",
       promptSnippet: "Read a T3 Code thread's status and latest messages.",
       parameters: Type.Object({
         threadId: Type.String({ minLength: 1, maxLength: MAX_THREAD_ID_LENGTH }),
@@ -190,10 +218,19 @@ export function createT3ThreadTools(runner: T3ThreadRunner): readonly ToolDefini
 
 function formatRun(verb: "Started" | "Sent to", result: T3ThreadRun): string {
   const lines = [`${verb} T3 thread ${result.threadId} (${result.status}).`];
+  if (result.link) lines.push(result.link);
   if (result.error) lines.push(`Error: ${result.error}`);
   if (result.reply) lines.push("", result.reply);
-  if (!result.error && !result.reply && result.status !== "completed") {
-    lines.push("The thread is still running; use t3_thread_show to check it.");
+  if (result.status === "waiting") {
+    lines.push(
+      "",
+      "The thread is waiting for an answer. Read the question with t3_thread_show, answer it with t3_thread_send, or report the question.",
+    );
+  } else if (!result.error && !result.reply && !TERMINAL_RUN_STATUSES.has(result.status)) {
+    lines.push(
+      "",
+      "The thread is still running; use t3_thread_show to check its status, link, and pull requests.",
+    );
   }
   return limitOutput(lines.join("\n"));
 }
@@ -202,6 +239,21 @@ function formatDetail(detail: T3ThreadDetail): string {
   const { thread, messages } = detail;
   const lines = [`${thread.title || "(untitled)"} — ${thread.id} (${thread.status})`];
   if (thread.link) lines.push(thread.link);
+  if (thread.branch || thread.worktreePath) {
+    lines.push(
+      `branch: ${thread.branch ?? "(detached)"}${
+        thread.worktreePath ? ` (worktree ${thread.worktreePath})` : ""
+      }`,
+    );
+  }
+  if (thread.pendingRequestCount && thread.pendingRequestCount > 0) {
+    lines.push(`Waiting for ${thread.pendingRequestCount} answer(s).`);
+  }
+  if (thread.linkedPullRequest) {
+    lines.push(`PR: ${thread.linkedPullRequest.url}`);
+  } else if (thread.pullRequestCount && thread.pullRequestCount > 0) {
+    lines.push(`PRs: ${thread.pullRequestCount} (${thread.openPullRequestCount ?? 0} open)`);
+  }
   for (const message of messages) {
     lines.push("", `[${message.role}]`, message.text);
   }
@@ -213,9 +265,21 @@ function formatThreadList(threads: readonly T3ThreadSummary[]): string {
   return limitOutput(
     threads
       .slice(0, MAX_LISTED_THREADS)
-      .map((thread) => `- ${thread.id}  ${thread.status}  ${thread.title || "(untitled)"}`)
+      .map((thread) => formatThreadLine(thread))
       .join("\n"),
   );
+}
+
+function formatThreadLine(thread: T3ThreadSummary): string {
+  const notes: string[] = [];
+  if (thread.pendingRequestCount && thread.pendingRequestCount > 0) {
+    notes.push(`waiting ${thread.pendingRequestCount}`);
+  }
+  if (thread.openPullRequestCount && thread.openPullRequestCount > 0) {
+    notes.push(`${thread.openPullRequestCount} open PR`);
+  }
+  const suffix = notes.length > 0 ? `  [${notes.join(", ")}]` : "";
+  return `- ${thread.id}  ${thread.status}  ${thread.title || "(untitled)"}${suffix}`;
 }
 
 function limitOutput(text: string): string {

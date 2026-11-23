@@ -103,7 +103,9 @@ sandbox は worker を信頼しないための境界ではない。`secret_run` 
 
 ## T3 Code スレッド
 
-所有者の会話から始まったワーカーには、`t3_thread_*` ツールを渡す。ワーカーは T3 Code のスレッドを開始し、`wait` が有効なら実行が終わるまで待って返信を受け取る。`t3_thread_send` で同じスレッドに続きを頼み、`t3_thread_show` で状態と最新メッセージを読み、`t3_thread_list` でプロジェクトのスレッドを一覧する。`t3_thread_start` は `project`、`title`、`worktree`、`branch` を受け取る。
+所有者の会話から始まったワーカーには、`t3_thread_*` ツールを渡す。ワーカーは T3 Code のスレッドを開始し、`wait` が有効なら実行が終わるまで待って返信を受け取る。`t3_thread_send` で同じスレッドに続きを頼み、`t3_thread_show` で状態、リンク、ブランチ、未回答の質問、PR、最新メッセージを読み、`t3_thread_list` でプロジェクトのスレッドを一覧する。`t3_thread_start` は `project`、`title`、`worktree`、`branch` を受け取る。`branch` は `worktree` と一緒にだけ指定できる。
+
+実行が質問待ちで終わると `waiting` を返す。これは実行中ではないため、ワーカーは `t3_thread_show` で質問を読み、`t3_thread_send` で答えるか、質問自体を結果として返す。開始直後に返す `wait: false` の結果は `running` になる。
 
 `t3` CLI が PATH にあり、T3 Code のサーバーが動いている必要がある。スレッドはプロジェクトの既定の provider・model・権限で動くため、所有者のワーカーだけに渡す。手順はプロファイルの `t3-thread` スキルに置く。
 
