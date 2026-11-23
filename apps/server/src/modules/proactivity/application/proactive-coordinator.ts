@@ -50,7 +50,7 @@ const MAX_PENDING_SIGNALS = 5;
 const SIGNAL_EVIDENCE_LIMIT = 2_000;
 const SIGNAL_LIFETIME_MS = 7 * 24 * 60 * 60 * 1_000;
 const DIGEST_INSTRUCTION =
-  "まとめて伝える候補があります。必要なものだけを選び、クラインの言葉で短く伝えてください。全部を並べる必要はありません。話す価値がなければ黙ってください。";
+  "There are collected signals you may report together. Pick only the ones worth mentioning and convey them briefly in your own words. You do not need to list them all. Stay silent if none is worth mentioning.";
 
 export interface ProactiveCoordinatorOptions {
   readonly preferenceStore: ProactivePreferenceStore;

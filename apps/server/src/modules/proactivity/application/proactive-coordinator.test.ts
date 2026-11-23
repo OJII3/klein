@@ -640,7 +640,7 @@ test("collects only signals observed before today's digest time", async () => {
         batches[0]?.signals.map((signal) => signal.id),
         ["early"],
       );
-      assert.match(batches[0]?.text ?? "", /まとめて伝える候補があります/u);
+      assert.match(batches[0]?.text ?? "", /collected signals you may report together/u);
       assert.match(batches[0]?.text ?? "", /候補 early/u);
       assert.doesNotMatch(batches[0]?.text ?? "", /候補 late/u);
 

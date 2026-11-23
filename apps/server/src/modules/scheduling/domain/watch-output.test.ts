@@ -11,6 +11,6 @@ test("keeps runner-sized output intact", () => {
 test("truncates output larger than the display limit", () => {
   const output = "a".repeat(64 * 1024 + 1);
   const truncated = truncateWatchOutput(output);
-  assert.match(truncated, /1文字省略/u);
+  assert.match(truncated, /1 chars omitted/u);
   assert.ok(truncated.startsWith("a".repeat(64 * 1024)));
 });

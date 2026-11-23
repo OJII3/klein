@@ -54,10 +54,10 @@ const DELIVERY_MODES: readonly ProactiveDeliveryMode[] = [
 ];
 
 const URGENCY_LABELS: Readonly<Record<ProactiveUrgency, string>> = {
-  now: "今すぐ",
-  today: "今日中",
-  digest: "まとめ",
-  silent: "静か",
+  now: "now",
+  today: "today",
+  digest: "digest",
+  silent: "silent",
 };
 
 export function parseProactiveSignal(value: unknown): ProactiveSignal {
@@ -181,9 +181,9 @@ export function isSignalExpired(signal: ProactiveSignal, now: number): boolean {
 
 export function formatSignal(signal: ProactiveSignal): string {
   const url = signal.evidence?.url !== undefined ? ` ${signal.evidence.url}` : "";
-  return `${normalizeInlineText(signal.summary)}（${normalizeInlineText(signal.topic)} / ${
+  return `${normalizeInlineText(signal.summary)} (${normalizeInlineText(signal.topic)} / ${
     URGENCY_LABELS[signal.urgency]
-  }）${url}`;
+  })${url}`;
 }
 
 function parseEvidence(value: unknown): NonNullable<ProactiveSignal["evidence"]> | undefined {

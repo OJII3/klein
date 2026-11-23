@@ -162,7 +162,7 @@ test("delivers a collected digest through the conversation coordinator", async (
     assert.equal(turns.length, 1);
     assert.equal(turns[0]?.event.type, "proactive.digest");
     assert.equal(turns[0]?.event.source, "proactivity");
-    assert.match(eventText(turns[0]), /まとめて伝える候補があります/u);
+    assert.match(eventText(turns[0]), /collected signals you may report together/u);
     assert.match(eventText(turns[0]), /在庫が3個になりました/u);
     assert.equal((await signalStore.get("signal-1"))?.status, "surfaced");
   });
