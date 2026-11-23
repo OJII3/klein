@@ -41,8 +41,6 @@ export async function createWebUiServerApp(options: WebUiServerOptions) {
     indexHTML: false,
     prefix: "/assets",
   });
-  // Read on every request: a running process must serve the index that matches
-  // the assets currently on disk, even after a rebuild.
   const serveIndex = async () =>
     new Response(await readFile(resolve(options.staticDirectory, "index.html")), {
       headers: {
