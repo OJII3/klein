@@ -8,6 +8,7 @@ import {
   type T3ThreadRunner,
   type T3ThreadStartInput,
   type T3ThreadSendInput,
+  type T3ThreadWaitInput,
 } from "./t3-thread";
 
 function createStubRunner() {
@@ -25,6 +26,16 @@ function createStubRunner() {
           title: "Fix the parser",
           status: "completed",
           link: "https://app.t3.codes/threads/example/mcp%3Athread-1",
+          branch: "feat/parser",
+          worktreePath: "/tmp/klein-worktree",
+          pendingRequestCount: 2,
+          pullRequestCount: 2,
+          openPullRequestCount: 1,
+          linkedPullRequest: {
+            repository: "OJII3/klein",
+            number: 12,
+            url: "https://github.com/OJII3/klein/pull/12",
+          },
         },
       ];
     },
@@ -36,6 +47,17 @@ function createStubRunner() {
       sendInputs.push(input);
       return { threadId: input.threadId, status: "completed", reply: "Also updated the tests." };
     },
+    async wait(input) {
+      return {
+        thread: {
+          id: input.threadId,
+          title: "Fix the parser",
+          status: "completed",
+        },
+        messages: [{ role: "assistant", text: "ok" }],
+        timedOut: false,
+      };
+    },
     async show(threadId, messages) {
       showInputs.push({ threadId, messages });
       return {
@@ -44,6 +66,16 @@ function createStubRunner() {
           title: "Fix the parser",
           status: "completed",
           link: "https://app.t3.codes/threads/example/mcp%3Athread-1",
+          branch: "feat/parser",
+          worktreePath: "/tmp/klein-worktree",
+          pendingRequestCount: 2,
+          pullRequestCount: 2,
+          openPullRequestCount: 1,
+          linkedPullRequest: {
+            repository: "OJII3/klein",
+            number: 12,
+            url: "https://github.com/OJII3/klein/pull/12",
+          },
         },
         messages: [
           { role: "user", text: "Fix the parser." },
@@ -69,7 +101,7 @@ test("registers the T3 thread tools", () => {
 
   assert.deepEqual(
     tools.map((tool) => tool.name),
-    ["t3_thread_start", "t3_thread_send", "t3_thread_show", "t3_thread_list"],
+    ["t3_thread_start", "t3_thread_send", "t3_thread_wait", "t3_thread_show", "t3_thread_list"],
   );
 });
 
@@ -122,6 +154,62 @@ test("returns as soon as the thread starts when wait is false", async () => {
   assert.match(textOf(result), /still running; use t3_thread_show/);
 });
 
+test("tells the worker to answer a thread that is waiting", async () => {
+  const { runner } = createStubRunner();
+  runner.send = async (input) => ({ threadId: input.threadId, status: "waiting" });
+  const tool = createT3ThreadTools(runner).find((candidate) => candidate.name === "t3_thread_send");
+  assert.ok(tool);
+
+  const result = await tool.execute(
+    "tool-call",
+    { threadId: "mcp:thread-1", message: "Continue." },
+    undefined,
+    undefined,
+    await createStubExtensionToolContext(),
+  );
+
+  assert.match(textOf(result), /waiting for an answer/);
+  assert.match(textOf(result), /t3_thread_send/);
+  assert.doesNotMatch(textOf(result), /still running/);
+});
+
+test("does not report a cancelled run as still running", async () => {
+  const { runner } = createStubRunner();
+  runner.send = async (input) => ({ threadId: input.threadId, status: "cancelled" });
+  const tool = createT3ThreadTools(runner).find((candidate) => candidate.name === "t3_thread_send");
+  assert.ok(tool);
+
+  const result = await tool.execute(
+    "tool-call",
+    { threadId: "mcp:thread-1", message: "Continue." },
+    undefined,
+    undefined,
+    await createStubExtensionToolContext(),
+  );
+
+  assert.doesNotMatch(textOf(result), /still running/);
+});
+
+test("rejects a branch name without a worktree base", async () => {
+  const { runner, startInputs } = createStubRunner();
+  const tool = createT3ThreadTools(runner).find(
+    (candidate) => candidate.name === "t3_thread_start",
+  );
+  assert.ok(tool);
+
+  await assert.rejects(
+    tool.execute(
+      "tool-call",
+      { message: "Fix the parser.", branch: "feat/parser" },
+      undefined,
+      undefined,
+      await createStubExtensionToolContext(),
+    ),
+    /`branch` needs `worktree`/,
+  );
+  assert.deepEqual(startInputs, []);
+});
+
 test("sends a follow-up and returns the reply", async () => {
   const { runner, sendInputs } = createStubRunner();
   const tool = createT3ThreadTools(runner).find((candidate) => candidate.name === "t3_thread_send");
@@ -141,6 +229,87 @@ test("sends a follow-up and returns the reply", async () => {
   assert.match(textOf(result), /Also updated the tests\./);
 });
 
+test("waits for a thread with a default timeout and returns its messages", async () => {
+  const { runner } = createStubRunner();
+  const waitInputs: T3ThreadWaitInput[] = [];
+  runner.wait = async (input) => {
+    waitInputs.push(input);
+    return {
+      thread: { id: input.threadId, title: "Fix the parser", status: "completed" },
+      messages: [{ role: "assistant", text: "Fixed it." }],
+      timedOut: false,
+    };
+  };
+  const tool = createT3ThreadTools(runner).find((candidate) => candidate.name === "t3_thread_wait");
+  assert.ok(tool);
+
+  const result = await tool.execute(
+    "tool-call",
+    { threadId: "mcp:thread-1" },
+    undefined,
+    undefined,
+    await createStubExtensionToolContext(),
+  );
+
+  assert.deepEqual(waitInputs, [{ threadId: "mcp:thread-1", messages: 10, timeoutMs: 300_000 }]);
+  assert.match(textOf(result), /finished \(completed\)/);
+  assert.match(textOf(result), /Fixed it\./);
+});
+
+test("returns the current state when waiting times out", async () => {
+  const { runner } = createStubRunner();
+  const waitInputs: T3ThreadWaitInput[] = [];
+  runner.wait = async (input) => {
+    waitInputs.push(input);
+    return {
+      thread: { id: input.threadId, title: "Fix the parser", status: "running" },
+      messages: [{ role: "assistant", text: "Still working." }],
+      timedOut: true,
+    };
+  };
+  const tool = createT3ThreadTools(runner).find((candidate) => candidate.name === "t3_thread_wait");
+  assert.ok(tool);
+
+  const result = await tool.execute(
+    "tool-call",
+    { threadId: "mcp:thread-1", timeoutSeconds: 5, messages: 2 },
+    undefined,
+    undefined,
+    await createStubExtensionToolContext(),
+  );
+
+  assert.deepEqual(waitInputs, [{ threadId: "mcp:thread-1", messages: 2, timeoutMs: 5_000 }]);
+  assert.match(textOf(result), /still running after 5s/);
+  assert.match(textOf(result), /t3_thread_wait again/);
+});
+
+test("reports a waiting thread as asking for an answer", async () => {
+  const { runner } = createStubRunner();
+  runner.wait = async (input) => ({
+    thread: {
+      id: input.threadId,
+      title: "Fix the parser",
+      status: "waiting",
+      pendingRequestCount: 1,
+    },
+    messages: [{ role: "assistant", text: "Which branch?" }],
+    timedOut: false,
+  });
+  const tool = createT3ThreadTools(runner).find((candidate) => candidate.name === "t3_thread_wait");
+  assert.ok(tool);
+
+  const result = await tool.execute(
+    "tool-call",
+    { threadId: "mcp:thread-1" },
+    undefined,
+    undefined,
+    await createStubExtensionToolContext(),
+  );
+
+  assert.match(textOf(result), /waiting for an answer/);
+  assert.match(textOf(result), /Which branch\?/);
+});
+
 test("shows the thread link and latest messages", async () => {
   const { runner, showInputs } = createStubRunner();
   const tool = createT3ThreadTools(runner).find((candidate) => candidate.name === "t3_thread_show");
@@ -158,7 +327,10 @@ test("shows the thread link and latest messages", async () => {
   assert.equal(
     textOf(result),
     "Fix the parser — mcp:thread-1 (completed)\n" +
-      "https://app.t3.codes/threads/example/mcp%3Athread-1\n\n" +
+      "https://app.t3.codes/threads/example/mcp%3Athread-1\n" +
+      "branch: feat/parser (worktree /tmp/klein-worktree)\n" +
+      "Waiting for 2 answer(s).\n" +
+      "PR: https://github.com/OJII3/klein/pull/12\n\n" +
       "[user]\nFix the parser.\n\n" +
       "[assistant]\nFixed it.",
   );
@@ -178,5 +350,5 @@ test("lists threads and defaults the project to the runner", async () => {
   );
 
   assert.deepEqual(listProjects, [undefined]);
-  assert.equal(textOf(result), "- mcp:thread-1  completed  Fix the parser");
+  assert.equal(textOf(result), "- mcp:thread-1  completed  Fix the parser  [waiting 2, 1 open PR]");
 });

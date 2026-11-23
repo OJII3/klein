@@ -1,20 +1,27 @@
 import { spawn } from "node:child_process";
 
-import type {
-  T3ThreadMessage,
-  T3ThreadRun,
-  T3ThreadRunner,
-  T3ThreadSummary,
+import {
+  isT3ThreadSettled,
+  type T3ThreadDetail,
+  type T3ThreadMessage,
+  type T3ThreadPullRequest,
+  type T3ThreadRun,
+  type T3ThreadRunner,
+  type T3ThreadSummary,
+  type T3ThreadWaitResult,
 } from "@agents/tools/t3-thread";
 import { isRecord } from "@shared/type-guards";
 
 const DEFAULT_MAX_OUTPUT_CHARS = 1_000_000;
 const MAX_ERROR_CHARS = 2_000;
+const DEFAULT_POLL_INTERVAL_MS = 3_000;
 
 export interface T3CliThreadRunnerOptions {
   readonly command?: string;
   readonly cwd?: string;
   readonly maxOutputChars?: number;
+  /** Interval between `thread show` calls while waiting. */
+  readonly pollIntervalMs?: number;
 }
 
 /**
@@ -25,9 +32,29 @@ export function createT3CliThreadRunner(options: T3CliThreadRunnerOptions = {}):
   const command = options.command ?? "t3";
   const cwd = options.cwd ?? process.cwd();
   const maxOutputChars = options.maxOutputChars ?? DEFAULT_MAX_OUTPUT_CHARS;
+  const pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
 
   const run = (args: readonly string[], signal?: AbortSignal) =>
     runCommand(command, args, { cwd, maxOutputChars, ...(signal ? { signal } : {}) });
+
+  const readThread = async (
+    threadId: string,
+    messages: number,
+    signal?: AbortSignal,
+  ): Promise<T3ThreadDetail> => {
+    const args = ["thread", "show", "--json", "--messages", String(messages), threadId];
+    const value = parseOutput(await run(args, signal), "t3 thread show");
+    if (!isRecord(value) || !isRecord(value.thread)) {
+      throw new Error("t3 thread show returned an unexpected result");
+    }
+    const parsedMessages = Array.isArray(value.messages)
+      ? value.messages.flatMap((message) => {
+          const parsed = toThreadMessage(message);
+          return parsed ? [parsed] : [];
+        })
+      : [];
+    return { thread: toThreadSummary(value.thread), messages: parsedMessages };
+  };
 
   return {
     async list(project, signal) {
@@ -47,28 +74,25 @@ export function createT3CliThreadRunner(options: T3CliThreadRunnerOptions = {}):
       if (input.worktree) args.push("--worktree", input.worktree);
       if (input.branch) args.push("--branch", input.branch);
       args.push(input.project ?? cwd, input.message);
-      return toThreadRun(await run(args, signal), "t3 thread start");
+      return toThreadRun(await run(args, signal), "t3 thread start", "running");
     },
     async send(input, signal) {
       const args = ["thread", "send", "--json"];
       if (input.wait) args.push("--wait");
       args.push(input.threadId, input.message);
-      return toThreadRun(await run(args, signal), "t3 thread send");
+      return toThreadRun(await run(args, signal), "t3 thread send", "running");
     },
-    async show(threadId, messages, signal) {
-      const args = ["thread", "show", "--json", "--messages", String(messages), threadId];
-      const value = parseOutput(await run(args, signal), "t3 thread show");
-      if (!isRecord(value) || !isRecord(value.thread)) {
-        throw new Error("t3 thread show returned an unexpected result");
+    async wait(input, signal): Promise<T3ThreadWaitResult> {
+      const deadline = Date.now() + input.timeoutMs;
+      for (;;) {
+        const detail = await readThread(input.threadId, input.messages, signal);
+        if (isT3ThreadSettled(detail.thread)) return { ...detail, timedOut: false };
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) return { ...detail, timedOut: true };
+        await delay(Math.min(pollIntervalMs, remaining), signal);
       }
-      const parsedMessages = Array.isArray(value.messages)
-        ? value.messages.flatMap((message) => {
-            const parsed = toThreadMessage(message);
-            return parsed ? [parsed] : [];
-          })
-        : [];
-      return { thread: toThreadSummary(value.thread), messages: parsedMessages };
     },
+    show: readThread,
   };
 }
 
@@ -82,6 +106,24 @@ interface CommandOutput {
   readonly stdout: string;
   readonly stderr: string;
   readonly code: number | null;
+}
+
+function delay(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", abort);
+      resolve();
+    }, ms);
+    function abort() {
+      clearTimeout(timer);
+      reject(new Error("The T3 Code wait was aborted"));
+    }
+    if (signal?.aborted) {
+      abort();
+      return;
+    }
+    signal?.addEventListener("abort", abort, { once: true });
+  });
 }
 
 function runCommand(
@@ -158,23 +200,49 @@ function toThreadSummary(value: unknown): T3ThreadSummary {
   if (!isRecord(value) || typeof value.threadId !== "string") {
     throw new Error("T3 Code returned a thread without an id");
   }
+  const linkedPullRequest = toPullRequest(value.linkedPullRequest);
   return {
     id: value.threadId,
     title: typeof value.title === "string" ? value.title : "",
     status: typeof value.status === "string" ? value.status : "unknown",
     ...(typeof value.link === "string" ? { link: value.link } : {}),
     ...(typeof value.updatedAt === "string" ? { updatedAt: value.updatedAt } : {}),
+    ...(typeof value.branch === "string" ? { branch: value.branch } : {}),
+    ...(typeof value.worktreePath === "string" ? { worktreePath: value.worktreePath } : {}),
+    ...(typeof value.pendingRequestCount === "number"
+      ? { pendingRequestCount: value.pendingRequestCount }
+      : {}),
+    ...(typeof value.pullRequestCount === "number"
+      ? { pullRequestCount: value.pullRequestCount }
+      : {}),
+    ...(typeof value.openPullRequestCount === "number"
+      ? { openPullRequestCount: value.openPullRequestCount }
+      : {}),
+    ...(linkedPullRequest ? { linkedPullRequest } : {}),
   };
 }
 
-function toThreadRun(output: CommandOutput, label: string): T3ThreadRun {
+function toPullRequest(value: unknown): T3ThreadPullRequest | undefined {
+  if (
+    !isRecord(value) ||
+    typeof value.repository !== "string" ||
+    typeof value.number !== "number" ||
+    typeof value.url !== "string"
+  ) {
+    return undefined;
+  }
+  return { repository: value.repository, number: value.number, url: value.url };
+}
+
+function toThreadRun(output: CommandOutput, label: string, fallbackStatus: string): T3ThreadRun {
   const value = parseOutput(output, label);
   if (!isRecord(value) || typeof value.threadId !== "string") {
     throw new Error(`${label} returned an unexpected result`);
   }
   return {
     threadId: value.threadId,
-    status: typeof value.status === "string" ? value.status : "unknown",
+    status: typeof value.status === "string" ? value.status : fallbackStatus,
+    ...(typeof value.link === "string" && value.link.trim() ? { link: value.link } : {}),
     ...(typeof value.reply === "string" && value.reply.trim() ? { reply: value.reply } : {}),
     ...(typeof value.error === "string" && value.error.trim() ? { error: value.error } : {}),
   };

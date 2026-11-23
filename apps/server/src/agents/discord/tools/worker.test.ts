@@ -120,6 +120,13 @@ test("adds the T3 project and thread tools only when they are supplied", () => {
     async send() {
       return { threadId: "mcp:1", status: "completed" };
     },
+    async wait() {
+      return {
+        thread: { id: "mcp:1", title: "T", status: "completed" },
+        messages: [],
+        timedOut: false,
+      };
+    },
     async show() {
       return {
         thread: { id: "mcp:1", title: "T", status: "completed" },
@@ -160,7 +167,14 @@ test("adds the T3 project and thread tools only when they are supplied", () => {
   );
   assert.deepEqual(
     withT3.filter((tool) => tool.name.startsWith("t3_")).map((tool) => tool.name),
-    ["t3_project_list", "t3_thread_start", "t3_thread_send", "t3_thread_show", "t3_thread_list"],
+    [
+      "t3_project_list",
+      "t3_thread_start",
+      "t3_thread_send",
+      "t3_thread_wait",
+      "t3_thread_show",
+      "t3_thread_list",
+    ],
   );
 });
 

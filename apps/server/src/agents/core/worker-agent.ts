@@ -148,7 +148,9 @@ export function renderWorkerT3ThreadSection(): string {
     "",
     "Threads are not limited to Klein's own repository. Pass a project id or a path inside any existing repository in `project` to work on that repository, including Klein's source code. Use `t3_project_list` when you need to find the right project. A thread runs directly on this machine, so it can also edit dotfiles and change machine settings.",
     "",
-    "Continue the same thread with `t3_thread_send` for follow-ups, and check a long run with `t3_thread_show`. Report the thread's status, result, and link in your result.",
+    "Continue the same thread with `t3_thread_send` for follow-ups, and check a long run with `t3_thread_show`. To wait for an existing thread to finish, call `t3_thread_wait`; it returns when the latest run ends, asks for an answer, or the timeout expires. Report the thread's status and result, and include the thread link and any pull request from `t3_thread_show` in your result.",
+    "",
+    "A thread reported as `waiting` is asking a question. Read it with `t3_thread_show`, answer it with `t3_thread_send`, or report the question instead of waiting for the run to finish. If `t3_thread_wait` times out, the run is still going: call it again or report the current state.",
   ].join("\n");
 }
 
