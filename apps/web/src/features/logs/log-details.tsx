@@ -14,22 +14,22 @@ export function LogDetails({ log }: { log: PinoLog }) {
           <dd className="font-mono text-ink-soft">{log.id}</dd>
         </div>
         <div className="flex gap-1.5">
-          <dt className="text-ink-faint">レベル</dt>
+          <dt className="text-ink-faint">Level</dt>
           <dd className="font-mono text-ink-soft">{levelLabel(log.level)}</dd>
         </div>
         <div className="flex gap-1.5">
-          <dt className="text-ink-faint">イベント</dt>
+          <dt className="text-ink-faint">Event</dt>
           <dd className="font-mono text-ink-soft">{log.kind}</dd>
         </div>
         <div className="flex gap-1.5">
-          <dt className="text-ink-faint">時刻</dt>
+          <dt className="text-ink-faint">Time</dt>
           <dd className="font-mono text-ink-soft">{formatTimestamp(log.timestamp)}</dd>
         </div>
       </dl>
       {attributes ? (
         <JsonValue value={attributes} />
       ) : (
-        <p className="text-sm text-ink-faint">属性はありません</p>
+        <p className="text-sm text-ink-faint">No attributes</p>
       )}
     </div>
   );

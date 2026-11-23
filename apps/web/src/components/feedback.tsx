@@ -4,7 +4,7 @@ interface ErrorNoticeProps {
   retryLabel?: string;
 }
 
-export function ErrorNotice({ message, onRetry, retryLabel = "再試行" }: ErrorNoticeProps) {
+export function ErrorNotice({ message, onRetry, retryLabel = "Retry" }: ErrorNoticeProps) {
   return (
     <div className="alert alert-error alert-soft" role="alert">
       <span className="flex-1 text-sm">{message}</span>
@@ -23,7 +23,7 @@ export function EmptyState({ children }: { children: string }) {
   );
 }
 
-export function LoadingState({ label = "読み込み中…" }: { label?: string }) {
+export function LoadingState({ label = "Loading…" }: { label?: string }) {
   return (
     <output className="flex items-center justify-center gap-2.5 px-4 py-12">
       <span aria-hidden="true" className="loading loading-spinner loading-sm text-primary" />

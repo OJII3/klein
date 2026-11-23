@@ -124,15 +124,15 @@ function errorMessage(error: unknown): string {
   if (error && typeof error === "object") {
     if ("value" in error) {
       const value = errorMessage(error.value);
-      if (value !== "APIリクエストに失敗しました") return value;
+      if (value !== "API request failed") return value;
     }
     if ("error" in error) {
       const value = errorMessage(error.error);
-      if (value !== "APIリクエストに失敗しました") return value;
+      if (value !== "API request failed") return value;
     }
     if ("message" in error && typeof error.message === "string") return error.message;
   }
-  return "APIリクエストに失敗しました";
+  return "API request failed";
 }
 
 function isErrorBody(value: unknown): value is { error: string } {
@@ -150,7 +150,7 @@ async function unwrap<T>(
   const response = await request;
   if (response.error) throw new Error(errorMessage(response.error));
   if (response.data === null || response.data === undefined) {
-    throw new Error("APIレスポンスが空です");
+    throw new Error("API response was empty");
   }
   if (isErrorBody(response.data)) {
     throw new Error(response.data.error);

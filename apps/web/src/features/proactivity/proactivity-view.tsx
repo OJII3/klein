@@ -159,14 +159,14 @@ export function ProactivityView({
       <ViewHeader headingId="proactivity-heading" title="Proactivity">
         {report && (
           <StatStrip>
-            <Stat label="Queued signals" value={queuedSignals.length.toLocaleString("ja-JP")} />
-            <Stat label="Surfaced" value={surfacedSignals.length.toLocaleString("ja-JP")} />
+            <Stat label="Queued signals" value={queuedSignals.length.toLocaleString("en-US")} />
+            <Stat label="Surfaced" value={surfacedSignals.length.toLocaleString("en-US")} />
             <Stat
               label="Active follow-ups"
-              value={activeFollowUps.length.toLocaleString("ja-JP")}
+              value={activeFollowUps.length.toLocaleString("en-US")}
             />
-            <Stat label="Goals" value={activeGoals.length.toLocaleString("ja-JP")} />
-            <Stat label="Preferences" value={report.preferences.length.toLocaleString("ja-JP")} />
+            <Stat label="Goals" value={activeGoals.length.toLocaleString("en-US")} />
+            <Stat label="Preferences" value={report.preferences.length.toLocaleString("en-US")} />
           </StatStrip>
         )}
       </ViewHeader>
@@ -178,7 +178,7 @@ export function ProactivityView({
         </div>
       ) : !error && !report ? null : report && !report.enabled ? (
         <div className="card border border-base-300 bg-base-100">
-          <EmptyState>Proactivity は無効です</EmptyState>
+          <EmptyState>Proactivity is disabled</EmptyState>
         </div>
       ) : report ? (
         <>
@@ -218,7 +218,7 @@ function SignalSection({
         <div className="flex items-baseline gap-2">
           <h2 className="text-sm font-semibold text-ink">Signals</h2>
           <span className="font-mono text-[0.68rem] text-ink-faint">
-            {signals.length.toLocaleString("ja-JP")} 件{truncated ? "（最新のみ）" : ""}
+            {signals.length.toLocaleString("en-US")} signals{truncated ? " (latest only)" : ""}
           </span>
         </div>
         <div className="flex flex-wrap gap-1">
@@ -241,7 +241,7 @@ function SignalSection({
       </div>
 
       {visible.length === 0 ? (
-        <EmptyState>該当する Signal はありません</EmptyState>
+        <EmptyState>No signals match the filter</EmptyState>
       ) : (
         <ul>
           {visible.map((signal) => (
@@ -346,12 +346,12 @@ function GoalSection({
       <div className="flex items-baseline justify-between gap-2 border-b border-line px-4 py-3">
         <h2 className="text-sm font-semibold text-ink">Goals</h2>
         <span className="font-mono text-[0.68rem] text-ink-faint">
-          {goals.length.toLocaleString("ja-JP")} 件
+          {goals.length.toLocaleString("en-US")} goals
         </span>
       </div>
 
       {goals.length === 0 ? (
-        <EmptyState>Goal はまだありません</EmptyState>
+        <EmptyState>No goals yet</EmptyState>
       ) : (
         <ul>
           {goals.map((goal) => (
@@ -426,12 +426,12 @@ function FollowUpSection({
       <div className="flex items-baseline justify-between gap-2 border-b border-line px-4 py-3">
         <h2 className="text-sm font-semibold text-ink">Follow-ups</h2>
         <span className="font-mono text-[0.68rem] text-ink-faint">
-          {followUps.length.toLocaleString("ja-JP")} 件
+          {followUps.length.toLocaleString("en-US")} follow-ups
         </span>
       </div>
 
       {followUps.length === 0 ? (
-        <EmptyState>Follow-up はまだありません</EmptyState>
+        <EmptyState>No follow-ups yet</EmptyState>
       ) : (
         <ul>
           {followUps.map((followUp) => (
@@ -497,12 +497,12 @@ function PreferenceSection({
       <div className="flex items-baseline justify-between gap-2 border-b border-line px-4 py-3">
         <h2 className="text-sm font-semibold text-ink">Preferences</h2>
         <span className="font-mono text-[0.68rem] text-ink-faint">
-          {preferences.length.toLocaleString("ja-JP")} 件
+          {preferences.length.toLocaleString("en-US")} preferences
         </span>
       </div>
 
       {preferences.length === 0 ? (
-        <EmptyState>Preference はまだありません</EmptyState>
+        <EmptyState>No preferences yet</EmptyState>
       ) : (
         <div className="grid gap-3 p-3 md:grid-cols-2 xl:grid-cols-3">
           {preferences.map((preference) => (
@@ -566,7 +566,7 @@ function PreferenceCard({
                 <PreferenceLine label="Digest" value={preference.delivery.digestAt} />
               )}
               {preference.delivery.maxPerDay !== undefined && (
-                <PreferenceLine label="Daily limit" value={`${preference.delivery.maxPerDay} 件`} />
+                <PreferenceLine label="Daily limit" value={`${preference.delivery.maxPerDay}`} />
               )}
             </PreferenceGroup>
           )}
@@ -580,7 +580,7 @@ function PreferenceCard({
                     {TOPIC_MODE_LABELS[topic.mode]}
                   </span>
                   {topic.until && (
-                    <span className="text-[0.65rem] text-ink-faint">{topic.until} まで</span>
+                    <span className="text-[0.65rem] text-ink-faint">until {topic.until}</span>
                   )}
                 </div>
               ))}

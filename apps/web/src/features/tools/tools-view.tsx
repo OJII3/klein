@@ -16,16 +16,16 @@ const MCP_TOOL_NAME = /^mcp__(.+?)__(.+)$/;
 export function ToolsView({ report, loading, error, onRetry }: ToolsViewProps) {
   return (
     <section className="flex flex-col gap-4" aria-labelledby="tools-heading">
-      <ViewHeader headingId="tools-heading" title="ツール使用状況">
+      <ViewHeader headingId="tools-heading" title="Tool Usage">
         {report && (
           <StatStrip>
-            <Stat label="呼び出し" value={report.totalCalls.toLocaleString("ja-JP")} />
-            <Stat label="ツール" value={report.tools.length.toLocaleString("ja-JP")} />
-            <Stat label="MCP サーバー" value={report.mcpServers.length.toLocaleString("ja-JP")} />
+            <Stat label="Calls" value={report.totalCalls.toLocaleString("en-US")} />
+            <Stat label="Tools" value={report.tools.length.toLocaleString("en-US")} />
+            <Stat label="MCP Servers" value={report.mcpServers.length.toLocaleString("en-US")} />
             <Stat
-              label="エラー"
+              label="Errors"
               tone={report.totalErrors > 0 ? "text-red" : "text-ink"}
-              value={report.totalErrors.toLocaleString("ja-JP")}
+              value={report.totalErrors.toLocaleString("en-US")}
             />
           </StatStrip>
         )}
@@ -38,11 +38,11 @@ export function ToolsView({ report, loading, error, onRetry }: ToolsViewProps) {
         </div>
       ) : !report ? (
         <div className="card border border-base-300 bg-base-100">
-          <EmptyState>ツールの呼び出し履歴がまだありません</EmptyState>
+          <EmptyState>No tool calls yet</EmptyState>
         </div>
       ) : report.tools.length === 0 ? (
         <div className="card border border-base-300 bg-base-100">
-          <EmptyState>ツールの呼び出し履歴がまだありません</EmptyState>
+          <EmptyState>No tool calls yet</EmptyState>
         </div>
       ) : (
         <>
@@ -57,23 +57,23 @@ export function ToolsView({ report, loading, error, onRetry }: ToolsViewProps) {
 function McpServerTable({ servers }: { servers: readonly McpServerUsageStat[] }) {
   return (
     <div className="card overflow-hidden border border-base-300 bg-base-100">
-      <SectionHeader count={`${servers.length} 台`} title="MCP サーバー" />
+      <SectionHeader count={`${servers.length} servers`} title="MCP Servers" />
       <div className="overflow-x-auto">
         <table className="table table-sm">
           <thead>
             <tr className="border-b border-line bg-surface-muted">
-              <th className="px-3 py-2 text-[0.68rem] font-medium text-ink-faint">サーバー</th>
+              <th className="px-3 py-2 text-[0.68rem] font-medium text-ink-faint">Server</th>
               <th className="w-[6rem] px-3 py-2 text-right text-[0.68rem] font-medium text-ink-faint">
-                呼び出し
+                Calls
               </th>
               <th className="w-[5rem] px-3 py-2 text-right text-[0.68rem] font-medium text-ink-faint">
-                ツール
+                Tools
               </th>
               <th className="w-[5rem] px-3 py-2 text-right text-[0.68rem] font-medium text-ink-faint">
-                エラー
+                Errors
               </th>
               <th className="hidden w-[9rem] px-3 py-2 text-right text-[0.68rem] font-medium text-ink-faint sm:table-cell">
-                最終呼び出し
+                Last Call
               </th>
             </tr>
           </thead>
@@ -89,15 +89,15 @@ function McpServerTable({ servers }: { servers: readonly McpServerUsageStat[] })
                   </span>
                 </td>
                 <td className="px-3 py-2 text-right font-mono text-[0.78rem] text-ink">
-                  {server.calls.toLocaleString("ja-JP")}
+                  {server.calls.toLocaleString("en-US")}
                 </td>
                 <td className="px-3 py-2 text-right font-mono text-[0.78rem] text-ink-soft">
-                  {server.toolCount.toLocaleString("ja-JP")}
+                  {server.toolCount.toLocaleString("en-US")}
                 </td>
                 <td
                   className={`px-3 py-2 text-right font-mono text-[0.78rem] ${tone(server.errors)}`}
                 >
-                  {server.errors.toLocaleString("ja-JP")}
+                  {server.errors.toLocaleString("en-US")}
                 </td>
                 <td className="hidden px-3 py-2 text-right font-mono text-[0.68rem] text-ink-faint sm:table-cell">
                   {formatCompactTimestamp(server.lastCalledAt ?? undefined)}
@@ -114,23 +114,23 @@ function McpServerTable({ servers }: { servers: readonly McpServerUsageStat[] })
 function ToolTable({ report }: { report: ToolUsageReport }) {
   return (
     <div className="card overflow-hidden border border-base-300 bg-base-100">
-      <SectionHeader count={`${report.tools.length} 種`} title="ツール" />
+      <SectionHeader count={`${report.tools.length} tools`} title="Tools" />
       <div className="overflow-x-auto">
         <table className="table table-sm">
           <thead>
             <tr className="border-b border-line bg-surface-muted">
-              <th className="px-3 py-2 text-[0.68rem] font-medium text-ink-faint">ツール</th>
+              <th className="px-3 py-2 text-[0.68rem] font-medium text-ink-faint">Tool</th>
               <th className="hidden w-[10rem] px-3 py-2 text-[0.68rem] font-medium text-ink-faint md:table-cell">
-                種別
+                Kind
               </th>
               <th className="w-[6rem] px-3 py-2 text-right text-[0.68rem] font-medium text-ink-faint">
-                呼び出し
+                Calls
               </th>
               <th className="w-[5rem] px-3 py-2 text-right text-[0.68rem] font-medium text-ink-faint">
-                エラー
+                Errors
               </th>
               <th className="hidden w-[9rem] px-3 py-2 text-right text-[0.68rem] font-medium text-ink-faint sm:table-cell">
-                最終呼び出し
+                Last Call
               </th>
             </tr>
           </thead>
@@ -147,12 +147,12 @@ function ToolTable({ report }: { report: ToolUsageReport }) {
                 </td>
                 <td className="hidden px-3 py-2 md:table-cell">{kindBadge(tool)}</td>
                 <td className="px-3 py-2 text-right font-mono text-[0.78rem] text-ink">
-                  {tool.calls.toLocaleString("ja-JP")}
+                  {tool.calls.toLocaleString("en-US")}
                 </td>
                 <td
                   className={`px-3 py-2 text-right font-mono text-[0.78rem] ${tone(tool.errors)}`}
                 >
-                  {tool.errors.toLocaleString("ja-JP")}
+                  {tool.errors.toLocaleString("en-US")}
                 </td>
                 <td className="hidden px-3 py-2 text-right font-mono text-[0.68rem] text-ink-faint sm:table-cell">
                   {formatCompactTimestamp(tool.lastCalledAt ?? undefined)}
@@ -181,7 +181,7 @@ function mcpServerName(toolName: string): string | undefined {
 
 function toolKind(tool: ToolUsageStat): string {
   const server = mcpServerName(tool.name);
-  return server ? `MCP: ${server}` : "組み込み";
+  return server ? `MCP: ${server}` : "Built-in";
 }
 
 function kindBadge(tool: ToolUsageStat) {
@@ -189,7 +189,7 @@ function kindBadge(tool: ToolUsageStat) {
   return server ? (
     <span className="badge badge-sm badge-info badge-soft normal-case">MCP: {server}</span>
   ) : (
-    <span className="badge badge-sm badge-ghost">組み込み</span>
+    <span className="badge badge-sm badge-ghost">Built-in</span>
   );
 }
 

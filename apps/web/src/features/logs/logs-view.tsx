@@ -83,25 +83,29 @@ export function LogsView({
 
   return (
     <section className="flex flex-col gap-4" aria-labelledby="logs-heading">
-      <ViewHeader headingId="logs-heading" title="アプリケーションログ">
+      <ViewHeader headingId="logs-heading" title="Application Logs">
         <StatStrip>
-          <Stat label="表示中" value={logs.length.toLocaleString("ja-JP")} />
-          <Stat label="エラー" tone={errorCount > 0 ? "text-red" : "text-ink"} value={errorCount} />
-          <Stat label="警告" tone={warnCount > 0 ? "text-amber" : "text-ink"} value={warnCount} />
+          <Stat label="Showing" value={logs.length.toLocaleString("en-US")} />
+          <Stat label="Errors" tone={errorCount > 0 ? "text-red" : "text-ink"} value={errorCount} />
+          <Stat
+            label="Warnings"
+            tone={warnCount > 0 ? "text-amber" : "text-ink"}
+            value={warnCount}
+          />
         </StatStrip>
       </ViewHeader>
 
-      <search aria-label="ログの絞り込み">
+      <search aria-label="Filter logs">
         <form className="card border border-base-300 bg-base-100 p-3" onSubmit={submit}>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[9rem_minmax(0,1fr)_10rem_10rem_auto] xl:items-end">
             <label className="flex flex-col gap-1">
-              <span className="text-[0.7rem] font-medium text-ink-soft">レベル</span>
+              <span className="text-[0.7rem] font-medium text-ink-soft">Level</span>
               <select
                 className="select select-sm w-full"
                 onChange={update("level")}
                 value={draft.level}
               >
-                <option value="">すべて</option>
+                <option value="">All</option>
                 {LEVEL_OPTIONS.map((level) => (
                   <option key={level} value={level}>
                     {level}
@@ -110,42 +114,42 @@ export function LogsView({
               </select>
             </label>
             <label className="flex flex-col gap-1">
-              <span className="text-[0.7rem] font-medium text-ink-soft">検索</span>
+              <span className="text-[0.7rem] font-medium text-ink-soft">Search</span>
               <input
-                aria-label="検索"
+                aria-label="Search"
                 className="input input-sm w-full"
                 onChange={update("q")}
-                placeholder="概要・イベント名で検索"
+                placeholder="Search summaries and event names"
                 type="search"
                 value={draft.q}
               />
             </label>
             <label className="flex flex-col gap-1">
-              <span className="text-[0.7rem] font-medium text-ink-soft">チャンネル</span>
+              <span className="text-[0.7rem] font-medium text-ink-soft">Channel</span>
               <input
-                aria-label="チャンネル"
+                aria-label="Channel"
                 className="input input-sm w-full"
                 onChange={update("channelId")}
-                placeholder="チャンネルID"
+                placeholder="Channel ID"
                 value={draft.channelId}
               />
             </label>
             <label className="flex flex-col gap-1">
-              <span className="text-[0.7rem] font-medium text-ink-soft">イベント</span>
+              <span className="text-[0.7rem] font-medium text-ink-soft">Event</span>
               <input
-                aria-label="イベント"
+                aria-label="Event"
                 className="input input-sm w-full"
                 onChange={update("event")}
-                placeholder="イベント名"
+                placeholder="Event name"
                 value={draft.event}
               />
             </label>
             <div className="flex gap-2 sm:col-span-2 xl:col-span-1 xl:justify-end">
               <button className="btn btn-primary btn-sm" type="submit">
-                絞り込む
+                Filter
               </button>
               <button className="btn btn-ghost btn-sm" onClick={clear} type="button">
-                クリア
+                Clear
               </button>
             </div>
           </div>
@@ -159,7 +163,7 @@ export function LogsView({
         </div>
       ) : logs.length === 0 ? (
         <div className="card border border-base-300 bg-base-100">
-          <EmptyState>条件に一致するログはありません</EmptyState>
+          <EmptyState>No logs match the filters</EmptyState>
         </div>
       ) : (
         <div className="card overflow-hidden border border-base-300 bg-base-100">
@@ -176,10 +180,10 @@ export function LogsView({
                 onClick={onLoadMore}
                 type="button"
               >
-                {loadingMore ? "読み込み中…" : "次のログを読み込む"}
+                {loadingMore ? "Loading…" : "Load older logs"}
               </button>
             ) : (
-              <p className="text-[0.7rem] text-ink-faint">これより古いログはありません</p>
+              <p className="text-[0.7rem] text-ink-faint">No older logs</p>
             )}
           </div>
         </div>

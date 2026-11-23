@@ -22,11 +22,7 @@ export function useProactivity({ active, onUpdated }: UseProactivityOptions) {
       setReport(response);
       onUpdated();
     } catch (requestError) {
-      setError(
-        requestError instanceof Error
-          ? requestError.message
-          : "Proactivity の状態を取得できませんでした",
-      );
+      setError(requestError instanceof Error ? requestError.message : "Failed to load proactivity");
     } finally {
       loadedRef.current = true;
       setLoading(false);

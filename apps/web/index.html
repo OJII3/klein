@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ja">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -24,7 +24,7 @@
           panel.style.cssText =
             "white-space:pre-wrap;padding:16px;margin:0;font:12px/1.6 monospace;color:#e5e7eb;background:#0a0f0c";
           panel.textContent =
-            "Klein Web UI を読み込めませんでした\n\n" +
+            "Failed to load the Klein Web UI\n\n" +
             reason +
             "\nasset: " +
             (script ? script.src : "unknown") +
@@ -47,7 +47,7 @@
           renderFailure(String(event.reason));
         });
         setTimeout(function () {
-          renderFailure("アプリが時間内に描画されませんでした");
+          renderFailure("The app did not render in time");
         }, 10000);
       })();
     </script>

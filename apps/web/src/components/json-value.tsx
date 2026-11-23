@@ -11,7 +11,7 @@ export function JsonValue({ value }: JsonValueProps) {
 
   return (
     <pre
-      aria-label="JSON データ"
+      aria-label="JSON data"
       className="max-h-96 overflow-auto rounded border border-line bg-surface-muted p-3 font-mono text-[0.72rem] leading-relaxed whitespace-pre-wrap text-ink-soft"
     >
       {text}
