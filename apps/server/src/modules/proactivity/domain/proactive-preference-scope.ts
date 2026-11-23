@@ -5,10 +5,6 @@ export interface ProactivePreferenceTarget {
   readonly accessScope: AccessScope;
 }
 
-/**
- * Preferences follow a user in private scopes and a channel in public scopes.
- * A linked user keeps the same preferences across their linked channels.
- */
 export function proactivePreferenceKey(target: ProactivePreferenceTarget): string {
   if (target.accessScope === "public") {
     return `channel-${encodeURIComponent(target.channelId)}`;
@@ -20,11 +16,6 @@ export function proactivePreferenceKey(target: ProactivePreferenceTarget): strin
   return `user-${encodeURIComponent(userId)}`;
 }
 
-/**
- * Linked users change their own private preferences. A public channel's
- * preferences are shared by everyone who speaks there, so only the owner may
- * change them.
- */
 export function canUpdateProactivePreferences(
   target: ProactivePreferenceTarget,
   requesterUserId: string | undefined,

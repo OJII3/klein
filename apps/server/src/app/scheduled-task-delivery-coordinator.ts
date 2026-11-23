@@ -162,8 +162,6 @@ export class ScheduledTaskDeliveryCoordinator {
       }
       return;
     }
-    // A one-time task has no next occurrence, so remember it for this process instead of
-    // rechecking it every tick.
     this.skippedTasks.add(taskKey(task));
   }
 
@@ -435,8 +433,6 @@ export class ScheduledTaskDeliveryCoordinator {
     }
 
     if (!sent) {
-      // The worker was closed or lost, so keep the notification by handing it
-      // to the conversation instead of dropping the event.
       this.dependencies.logger.warn(
         {
           event: "watch_worker_unavailable",

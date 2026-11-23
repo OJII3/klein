@@ -184,9 +184,7 @@ function parseOutput(output: CommandOutput, label: string): unknown {
   if (text) {
     try {
       return JSON.parse(text);
-    } catch {
-      // Fall through to the exit-code handling below.
-    }
+    } catch {}
   }
 
   const detail = (output.stderr.trim() || text).slice(0, MAX_ERROR_CHARS);

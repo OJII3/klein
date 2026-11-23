@@ -80,7 +80,6 @@ async function findRunningInstances(): Promise<readonly RunningInstance[]> {
     try {
       cmdline = await readFile(`/proc/${pid}/cmdline`, "utf8");
     } catch {
-      // The process exited while /proc was being scanned.
       continue;
     }
 

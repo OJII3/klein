@@ -114,9 +114,7 @@ function resolveExecutable(name: string): string | undefined {
     try {
       accessSync(candidate, constants.X_OK);
       return candidate;
-    } catch {
-      // Try the next PATH entry.
-    }
+    } catch {}
   }
   return undefined;
 }

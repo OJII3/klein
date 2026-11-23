@@ -59,8 +59,6 @@ export function createWatchTools(
   watchCheckRunner: WatchCheckRunner,
   ownerWorkerId?: string,
 ) {
-  // The conversation manages every watch in its channel; a worker sees only the
-  // watches it registered, so two workers do not edit each other's watches.
   const canManage = (watch: WatchTask) =>
     ownerWorkerId === undefined || watch.ownerWorkerId === ownerWorkerId;
   return [
@@ -382,19 +380,11 @@ function requireNextRunAt(schedule: StoredSchedule, now: number): string {
   return nextRunAt;
 }
 
-/**
- * A changed script or a re-enabled watch starts a new failure streak, so the
- * next failure is notified instead of silently continuing the old count.
- */
 function resetWatchFailureState(watch: WatchTask): WatchTask {
   const { lastStatus: _lastStatus, lastError: _lastError, ...rest } = watch;
   return { ...rest, consecutiveFailures: 0 };
 }
 
-/**
- * Runs the script once without delivering a wake or keeping `store()` writes, so a watch
- * cannot be registered or enabled while its script fails.
- */
 async function requireSuccessfulDryRun(
   runner: WatchCheckRunner,
   watch: WatchTask,
