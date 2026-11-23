@@ -122,7 +122,6 @@ export class ScheduledTaskDeliveryCoordinator {
     if (current.kind === "watch") {
       const outcome = await this.checkWatch(current, now);
       if (!outcome) return;
-      // The watch may have been deleted while its check ran outside the conversation lock.
       if (!(await this.taskStillExists(outcome.watch))) return;
       if (outcome.kind === "failed") {
         await this.deliverWatchFailure(outcome);
@@ -179,10 +178,6 @@ export class ScheduledTaskDeliveryCoordinator {
     return tasks.some((current) => current.id === task.id);
   }
 
-  /**
-   * Re-reads a watch before writing so a check that ran outside the conversation
-   * lock cannot overwrite edits such as disabling or deleting the watch.
-   */
   private async updateWatch(
     watch: WatchTask,
     update: (current: WatchTask) => WatchTask,

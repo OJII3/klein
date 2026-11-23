@@ -61,6 +61,11 @@ test("serves client-side routes without enumerating views on the server", async 
   assert.equal(await lateAsset.text(), "console.log('late')");
   assert.match(lateAsset.headers.get("cache-control") ?? "", /immutable/);
 
+  await writeFile(join(staticDirectory, "index.html"), "<!doctype html><title>Rebuilt</title>");
+  const rebuiltIndex = await app.handle(new Request("http://localhost/"));
+  assert.equal(rebuiltIndex.status, 200);
+  assert.match(await rebuiltIndex.text(), /Rebuilt/);
+
   const missingApi = await app.handle(new Request("http://localhost/api/nope"));
   assert.equal(missingApi.status, 404);
   assert.deepEqual(await missingApi.json(), { error: "Not found" });
