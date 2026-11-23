@@ -76,6 +76,7 @@ interface HarnessOptions {
   readonly promptFails?: boolean;
   readonly workerSendResult?: boolean;
   readonly tasks?: readonly (WatchTask | ReminderTask)[];
+  readonly store?: InMemoryScheduledTaskStore;
   readonly runner?: WatchCheckRunner;
 }
 
@@ -134,7 +135,7 @@ function createHarness(options: HarnessOptions = {}) {
     readonly message: string;
   }[] = [];
   const workerStarts: string[] = [];
-  const store = new InMemoryScheduledTaskStore(options.tasks ?? [watch]);
+  const store = options.store ?? new InMemoryScheduledTaskStore(options.tasks ?? [watch]);
   const coordinator = new ScheduledTaskDeliveryCoordinator({
     workers: {
       async start(input) {
@@ -178,9 +179,13 @@ function createHarness(options: HarnessOptions = {}) {
   };
 }
 
-function createRunner(decision: "wake" | "silent" = "wake"): WatchCheckRunner {
+function createRunner(
+  decision: "wake" | "silent" = "wake",
+  beforeRun?: () => Promise<void> | void,
+): WatchCheckRunner {
   return {
     async run() {
+      await beforeRun?.();
       return { output: "changed", decision, exitCode: 0, durationMs: 1, state: { runs: 1 } };
     },
   };
@@ -361,6 +366,54 @@ test("sends a worker watch to its worker without consulting the gate", async () 
   assert.equal(harness.workerSends[0]?.workerId, "worker-1");
   assert.match(harness.workerSends[0]?.message ?? "", /changed/u);
   assert.ok(harness.storedWatch()?.lastTriggeredAt);
+});
+
+test("does not deliver a watch deleted while its check runs", async () => {
+  const store = new InMemoryScheduledTaskStore([watch]);
+  const harness = createHarness({
+    store,
+    mode: "interrupt",
+    runner: createRunner("wake", async () => {
+      await store.delete("watch", watch.channelId, watch.accessScope, watch.id);
+    }),
+  });
+
+  await harness.coordinator.deliverDueTasks(DUE_AT);
+
+  assert.deepEqual(harness.ingestCalls, []);
+  assert.deepEqual(harness.events, []);
+  assert.equal(store.tasks.has(watch.id), false);
+});
+
+test("does not recreate a watch deleted while its check runs", async () => {
+  const store = new InMemoryScheduledTaskStore([watch]);
+  const harness = createHarness({
+    store,
+    runner: createRunner("silent", async () => {
+      await store.delete("watch", watch.channelId, watch.accessScope, watch.id);
+    }),
+  });
+
+  await harness.coordinator.deliverDueTasks(DUE_AT);
+
+  assert.equal(store.tasks.has(watch.id), false);
+});
+
+test("does not re-enable a watch disabled while its check runs", async () => {
+  const store = new InMemoryScheduledTaskStore([watch]);
+  const harness = createHarness({
+    store,
+    runner: createRunner("silent", async () => {
+      await store.update({ ...watch, enabled: false });
+    }),
+  });
+
+  await harness.coordinator.deliverDueTasks(DUE_AT);
+
+  const stored = harness.storedWatch();
+  assert.equal(stored?.enabled, false);
+  assert.equal(stored?.lastStatus, "ok");
+  assert.equal(stored?.lastCheckedAt, new Date(DUE_AT).toISOString());
 });
 
 test("leaves reminder delivery unchanged", async () => {
