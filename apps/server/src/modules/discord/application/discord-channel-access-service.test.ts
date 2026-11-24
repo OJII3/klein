@@ -54,6 +54,7 @@ function createHarness(
       calls.push("send-owner-request");
       if (options.failOwnerRequest) throw new Error("owner unavailable");
       ownerRequests.push(request);
+      return { messageId: "owner-message-1" };
     },
     updatePendingNotice: async (request, outcome) => {
       calls.push("update-pending-notice");
@@ -125,6 +126,7 @@ test("asks the owner about the posted notice and keeps its message id", async ()
   assert.equal(harness.persisted.size, 1);
   const [saved] = [...harness.persisted.values()];
   assert.equal(saved?.pendingMessageId, "pending-message-1");
+  assert.equal(saved?.ownerMessageId, "owner-message-1");
 });
 
 test("persists the request with an expiry before showing it to anyone", async () => {
@@ -271,4 +273,68 @@ test("removes the request when the owner cannot be reached", async () => {
   assert.equal(harness.notices.length, 1);
   assert.equal(harness.notices[0]?.outcome, "owner-unreachable");
   assert.equal(harness.notices[0]?.request.pendingMessageId, "pending-message-1");
+});
+
+const FUTURE_EXPIRY = new Date(NOW + DISCORD_APPROVAL_REQUEST_TTL_MS).toISOString();
+
+test("removes an expired request at startup and tells the requester it expired", async () => {
+  const harness = createHarness({
+    seedRequests: [{ ...storedRequest, expiresAt: new Date(NOW - 1).toISOString() }],
+  });
+
+  await harness.service.reconcile(harness.presentation);
+
+  assert.equal(harness.persisted.size, 0);
+  assert.equal(harness.ownerRequests.length, 0);
+  assert.equal(harness.notices.length, 1);
+  assert.equal(harness.notices[0]?.outcome, "expired");
+});
+
+test("removes a stored request without an expiry at startup", async () => {
+  const harness = createHarness({ seedRequests: [storedRequest] });
+
+  await harness.service.reconcile(harness.presentation);
+
+  assert.equal(harness.persisted.size, 0);
+  assert.equal(harness.notices[0]?.outcome, "expired");
+});
+
+test("resends the owner request at startup when its message id is missing", async () => {
+  const harness = createHarness({
+    seedRequests: [{ ...storedRequest, expiresAt: FUTURE_EXPIRY }],
+  });
+
+  await harness.service.reconcile(harness.presentation);
+  await harness.service.reconcile(harness.presentation);
+
+  assert.equal(harness.ownerRequests.length, 1);
+  assert.equal(harness.ownerRequests[0]?.requestId, storedRequest.requestId);
+  assert.equal(harness.persisted.get(storedRequest.requestId)?.ownerMessageId, "owner-message-1");
+});
+
+test("does not resend the owner request when its message id is stored", async () => {
+  const harness = createHarness({
+    seedRequests: [
+      { ...storedRequest, expiresAt: FUTURE_EXPIRY, ownerMessageId: "owner-message-0" },
+    ],
+  });
+
+  await harness.service.reconcile(harness.presentation);
+
+  assert.equal(harness.ownerRequests.length, 0);
+  assert.equal(harness.persisted.get(storedRequest.requestId)?.ownerMessageId, "owner-message-0");
+});
+
+test("removes the request at startup when the owner cannot be reached again", async () => {
+  const harness = createHarness({
+    failOwnerRequest: true,
+    seedRequests: [{ ...storedRequest, expiresAt: FUTURE_EXPIRY }],
+  });
+
+  await harness.service.reconcile(harness.presentation);
+
+  assert.equal(harness.ownerRequests.length, 0);
+  assert.equal(harness.persisted.size, 0);
+  assert.equal(harness.notices.length, 1);
+  assert.equal(harness.notices[0]?.outcome, "owner-unreachable");
 });

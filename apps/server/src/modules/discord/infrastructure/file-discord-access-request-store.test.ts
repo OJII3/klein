@@ -69,6 +69,20 @@ test("persists and restores the request expiry", async () => {
   assert.deepEqual(reloaded.list(), [expiring]);
 });
 
+test("persists and restores the owner message id", async () => {
+  await using temp = await createTempDir("klein-discord-access-requests-");
+  const filePath = join(temp.path, "requests.json");
+  const store = new FileDiscordAccessRequestStore(filePath);
+  await store.load();
+
+  const withOwnerMessage = { ...request, ownerMessageId: "600" };
+  await store.save(withOwnerMessage);
+
+  const reloaded = new FileDiscordAccessRequestStore(filePath);
+  await reloaded.load();
+  assert.deepEqual(reloaded.list(), [withOwnerMessage]);
+});
+
 test("rejects an empty request expiry", async () => {
   await using temp = await createTempDir("klein-discord-access-requests-");
   const filePath = join(temp.path, "requests.json");

@@ -730,6 +730,7 @@ export async function bootstrapApplication(): Promise<void> {
           : Promise.resolve();
       },
     );
+    await discordService.reconcileApprovals();
     await agentCoordinator.initialize();
     await workerAgentCoordinator.resumePendingWork();
     restoringReactions = false;

@@ -75,6 +75,10 @@ export class DiscordChannelAccessService {
     return this.approval.request(request, presentation);
   }
 
+  reconcile(presentation: DiscordApprovalPresentation<PendingDiscordAccessRequest>): Promise<void> {
+    return this.approval.reconcile(presentation);
+  }
+
   handleButton(button: {
     readonly customId: string;
     readonly userId: string;

@@ -19,6 +19,7 @@ export interface DiscordChannelAccessRequest {
 export interface PendingDiscordAccessRequest extends DiscordChannelAccessRequest {
   readonly requestId: string;
   readonly pendingMessageId?: string;
+  readonly ownerMessageId?: string;
   readonly expiresAt?: string;
 }
 

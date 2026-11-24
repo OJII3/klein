@@ -16,7 +16,7 @@ import type { DiscordApprovalRequestStore } from "../ports/discord-approval-requ
 
 export interface DiscordApprovalPresentation<R extends DiscordApprovalRequest> {
   postPendingNotice(request: R): Promise<{ messageId?: string }>;
-  sendOwnerRequest(request: R): Promise<void>;
+  sendOwnerRequest(request: R): Promise<{ messageId?: string }>;
   updatePendingNotice(request: R, outcome: DiscordApprovalNoticeOutcome): Promise<void>;
 }
 
@@ -104,7 +104,12 @@ export class DiscordApprovalService<R extends DiscordApprovalRequest> {
     }
 
     try {
-      await presentation.sendOwnerRequest(pending);
+      const sent = await presentation.sendOwnerRequest(pending);
+      if (sent.messageId) {
+        pending = { ...pending, ownerMessageId: sent.messageId };
+        this.remember(pending);
+        await this.save(pending);
+      }
     } catch (error) {
       await this.remove(pending);
       this.dependencies.logger?.warn(
@@ -122,6 +127,70 @@ export class DiscordApprovalService<R extends DiscordApprovalRequest> {
     }
 
     return "requested";
+  }
+
+  /**
+   * Brings persisted requests back in line with Discord at startup. Requests
+   * older than their expiry leave the store and their notice says so, and a
+   * request whose owner message never went out asks the owner again.
+   */
+  async reconcile(presentation: DiscordApprovalPresentation<R>): Promise<void> {
+    const pendings = Array.from(this.pendingByRequestId.values());
+    for (const pending of pendings) {
+      if (isDiscordApprovalExpired(pending, this.currentTime())) {
+        await this.remove(pending);
+        this.dependencies.logger?.info(
+          {
+            event: "discord_approval_request_expired",
+            requestId: pending.requestId,
+            guildId: pending.guildId,
+            channelId: pending.channelId,
+            threadId: pending.threadId,
+          },
+          "Removed an expired Discord approval request",
+        );
+        await presentation.updatePendingNotice(pending, "expired");
+        continue;
+      }
+
+      if (pending.ownerMessageId) continue;
+
+      let ownerMessageId: string | undefined;
+      try {
+        ownerMessageId = (await presentation.sendOwnerRequest(pending)).messageId;
+      } catch (error) {
+        await this.remove(pending);
+        this.dependencies.logger?.warn(
+          {
+            err: error,
+            event: "discord_approval_owner_resend_failed",
+            requestId: pending.requestId,
+            guildId: pending.guildId,
+            channelId: pending.channelId,
+            threadId: pending.threadId,
+          },
+          "Failed to resend the owner request for a pending Discord approval",
+        );
+        await presentation.updatePendingNotice(pending, "owner-unreachable");
+        continue;
+      }
+
+      if (!ownerMessageId) continue;
+
+      const updated = { ...pending, ownerMessageId };
+      this.remember(updated);
+      await this.save(updated);
+      this.dependencies.logger?.info(
+        {
+          event: "discord_approval_owner_resent",
+          requestId: pending.requestId,
+          guildId: pending.guildId,
+          channelId: pending.channelId,
+          threadId: pending.threadId,
+        },
+        "Resent the owner request for a pending Discord approval",
+      );
+    }
   }
 
   async handleButton(button: {

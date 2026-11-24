@@ -82,6 +82,12 @@ export class DiscordChannelLinkService {
     return this.approval.request(request, presentation);
   }
 
+  reconcile(
+    presentation: DiscordApprovalPresentation<PendingDiscordChannelLinkRequest>,
+  ): Promise<void> {
+    return this.approval.reconcile(presentation);
+  }
+
   handleButton(button: { readonly customId: string; readonly userId: string }) {
     return this.approval.handleButton(button);
   }

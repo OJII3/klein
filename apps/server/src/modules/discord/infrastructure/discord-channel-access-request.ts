@@ -81,6 +81,10 @@ function noticeFor(outcome: DiscordApprovalNoticeOutcome): {
       text: "### 拒否されました\nこのチャンネルは許可されませんでした。",
       tone: "danger" as const,
     },
+    expired: {
+      text: "### 期限切れです\nこの承認リクエストは期限切れになりました。もう一度 Klein にメンションしてください。",
+      tone: "warning" as const,
+    },
     "owner-unreachable": {
       text: "### 確認できませんでした\nオーナーに確認できなかったため、このチャンネルでは返信できません。",
       tone: "danger" as const,
@@ -124,5 +128,9 @@ export class DiscordChannelAccessRequester {
 
   handleButton(interaction: DiscordApprovalButtonInteraction): Promise<boolean> {
     return this.approval.handleButton(interaction);
+  }
+
+  reconcile(): Promise<void> {
+    return this.approval.reconcile();
   }
 }

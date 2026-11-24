@@ -53,6 +53,7 @@ export interface DiscordApprovalController<R extends DiscordApprovalRequest> {
     location: { readonly guildId: string; readonly channelId: string; readonly threadId?: string },
     presentation: Pick<DiscordApprovalPresentation<R>, "updatePendingNotice">,
   ): Promise<void>;
+  reconcile(presentation: DiscordApprovalPresentation<R>): Promise<void>;
 }
 
 interface SendableTextChannel {
@@ -102,7 +103,9 @@ export interface DiscordApprovalClient {
     readonly cache: { get(id: string): { readonly name?: string } | undefined };
   };
   readonly users: {
-    fetch(id: string): Promise<{ send(payload: DiscordContainerMessage): Promise<unknown> }>;
+    fetch(
+      id: string,
+    ): Promise<{ send(payload: DiscordContainerMessage): Promise<{ readonly id: string }> }>;
   };
 }
 
@@ -137,6 +140,10 @@ export class DiscordApprovalRequester<
     readonly threadId?: string;
   }): Promise<void> {
     return this.dependencies.service.cancelPending(location, this);
+  }
+
+  reconcile(): Promise<void> {
+    return this.dependencies.service.reconcile(this);
   }
 
   async handleButton(interaction: DiscordApprovalButtonInteraction): Promise<boolean> {
@@ -177,9 +184,9 @@ export class DiscordApprovalRequester<
     return { messageId: message.id };
   }
 
-  async sendOwnerRequest(request: R): Promise<void> {
+  async sendOwnerRequest(request: R): Promise<{ messageId?: string }> {
     const ownerId = this.dependencies.ownerUserId;
-    if (!ownerId) return;
+    if (!ownerId) return {};
     const owner = await this.dependencies.client.users.fetch(ownerId);
     const content = this.dependencies.messages.ownerRequest(
       request,
@@ -199,7 +206,11 @@ export class DiscordApprovalRequester<
       ),
     );
 
-    await owner.send({ components: [container], flags: MessageFlags.IsComponentsV2 });
+    const message = await owner.send({
+      components: [container],
+      flags: MessageFlags.IsComponentsV2,
+    });
+    return { messageId: message.id };
   }
 
   async updatePendingNotice(request: R, outcome: DiscordApprovalNoticeOutcome): Promise<void> {

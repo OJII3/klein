@@ -53,7 +53,7 @@ function createProfileUser(
     avatarURL: () => null,
     bannerURL: () => null,
     flags: { toArray: () => [] },
-    send: async () => undefined,
+    send: async () => ({ id: "dm-message-1" }),
     ...overrides,
   };
 }
@@ -717,7 +717,7 @@ test("registers a channel through /link even when the channel is denied", async 
     ...createProfileUser(),
     send: async (payload) => {
       ownerMessages.push(payload);
-      return undefined;
+      return { id: "owner-message-1" };
     },
   });
   const channelMessages: unknown[] = [];
@@ -1407,6 +1407,98 @@ test("asks the owner when mentioned in a channel that is not allowed and shows a
   } finally {
     await service.stop();
   }
+});
+
+test("reconciles stored approval requests at startup", async () => {
+  const fakeClient = new FakeDiscordClient();
+  const ownerMessages: unknown[] = [];
+  fakeClient.users.fetch = async () => ({
+    ...createProfileUser(),
+    send: async (payload) => {
+      ownerMessages.push(payload);
+      return { id: `owner-message-${ownerMessages.length}` };
+    },
+  });
+  fakeClient.channels.fetch = async (id) => ({
+    id,
+    isTextBased: () => true,
+    isThread: () => false,
+    send: async () => ({ id: "pending-message-1" }),
+    messages: {
+      fetch: async () => Object.assign(createMessage(), { edit: async () => undefined }),
+    },
+  });
+
+  const accessRuleStore = {
+    async load() {},
+    async setAccess() {},
+    getGuildRule: () => undefined,
+  };
+  const accessRequest: PendingDiscordAccessRequest = {
+    requestId: "access-request",
+    guildId: "100",
+    channelId: "200",
+    pendingChannelId: "200",
+    requesterUserId: "300",
+    pendingMessageId: "400",
+    expiresAt: "2999-01-01T00:00:00.000Z",
+  };
+  const requests = new Map<string, PendingDiscordAccessRequest>([
+    [accessRequest.requestId, accessRequest],
+  ]);
+  const accessRequestStore = {
+    async load() {},
+    list: () => [...requests.values()],
+    async save(request: PendingDiscordAccessRequest) {
+      requests.set(request.requestId, request);
+    },
+    async remove(requestId: string) {
+      requests.delete(requestId);
+    },
+  };
+  const linkRequestStore = createLinkRequestStore();
+  const linkRequest: PendingDiscordChannelLinkRequest = {
+    requestId: "link-request",
+    guildId: "100",
+    channelId: "200",
+    pendingChannelId: "200",
+    requesterUserId: "300",
+    pendingMessageId: "400",
+    expiresAt: "2999-01-01T00:00:00.000Z",
+  };
+  linkRequestStore.requests.set(linkRequest.requestId, linkRequest);
+  const channelLinkStore = {
+    async load() {},
+    getLink: () => undefined,
+    async saveLink() {},
+    async removeLink() {},
+    listLinks: () => [],
+  };
+  const service = new DiscordJsService(
+    "token",
+    createDiscordAccessPolicy({ default: "deny", directMessages: "allow" }),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    accessRuleStore,
+    "owner-123",
+    accessRequestStore,
+    {
+      createClient: () => fakeClient,
+      channelLinkStore,
+      channelLinkRequestStore: linkRequestStore,
+    },
+  );
+
+  await service.reconcileApprovals();
+
+  assert.equal(ownerMessages.length, 2);
+  assert.equal(requests.get(accessRequest.requestId)?.ownerMessageId, "owner-message-1");
+  assert.equal(
+    linkRequestStore.requests.get(linkRequest.requestId)?.ownerMessageId,
+    "owner-message-2",
+  );
 });
 
 test("does not ask the owner when a denied channel message does not mention the bot", async () => {
