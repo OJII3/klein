@@ -1,13 +1,11 @@
 import {
   ActionRowBuilder,
-  MessageFlags,
   ModalBuilder,
   PermissionFlagsBits,
   SlashCommandBuilder,
   TextInputBuilder,
   TextInputStyle,
   type ApplicationCommandDataResolvable,
-  type InteractionReplyOptions,
 } from "discord.js";
 
 import type { DiscordSecretRequester } from "../../secrets/infrastructure/discord-secret-requester";
@@ -27,9 +25,9 @@ import type { DiscordAccessRuleStore } from "../ports/discord-access-rule-store"
 import type { DiscordChannelRuleStore } from "../ports/discord-channel-rule-store";
 import {
   createEphemeralTextContainerMessage,
-  createTextContainer,
   createTextContainerMessage,
   truncateTextLines,
+  type DiscordInteractionMessage,
 } from "./discord-component-message";
 import type { DiscordChannelLink, DiscordChannelLinkTarget } from "../domain/discord-channel-link";
 import type { DiscordChannelLinkCommandInteraction } from "./discord-channel-link-requester";
@@ -119,8 +117,8 @@ export interface DiscordChatInputInteraction extends VoiceChatCommandInteraction
   readonly memberPermissions: { has(permission: bigint): boolean } | null;
   isChatInputCommand(): boolean;
   isModalSubmit(): boolean;
-  reply(options: InteractionReplyOptions): Promise<unknown>;
-  editReply(options: string | InteractionReplyOptions): Promise<unknown>;
+  reply(options: DiscordInteractionMessage): Promise<unknown>;
+  editReply(options: DiscordInteractionMessage): Promise<unknown>;
   showModal(modal: ModalBuilder): Promise<unknown>;
   deleteReply(): Promise<void>;
 }
@@ -138,7 +136,7 @@ export interface DiscordModalSubmitInteraction {
   inGuild(): boolean;
   isChatInputCommand(): boolean;
   isModalSubmit(): boolean;
-  reply(options: InteractionReplyOptions): Promise<unknown>;
+  reply(options: DiscordInteractionMessage): Promise<unknown>;
 }
 
 export interface DiscordOtherInteraction {
@@ -213,10 +211,12 @@ export class DiscordJsInteractionHandler {
       }
       if (!interaction.customId.startsWith(`${CHANNEL_RULE_MODAL_ID}:`)) return;
       if (!(await this.canUseCommandsInChannel(interaction))) {
-        await interaction.reply({
-          content: "このチャンネルではコマンドを利用できません。",
-          ephemeral: true,
-        });
+        await interaction.reply(
+          createEphemeralTextContainerMessage(
+            "このチャンネルではコマンドを利用できません。",
+            "danger",
+          ),
+        );
         return;
       }
       await this.saveChannelRule(interaction);
@@ -238,10 +238,12 @@ export class DiscordJsInteractionHandler {
       return;
     }
     if (!(await this.canUseCommandsInChannel(interaction))) {
-      await interaction.reply({
-        content: "このチャンネルではコマンドを利用できません。",
-        ephemeral: true,
-      });
+      await interaction.reply(
+        createEphemeralTextContainerMessage(
+          "このチャンネルではコマンドを利用できません。",
+          "danger",
+        ),
+      );
       return;
     }
 
@@ -259,12 +261,14 @@ export class DiscordJsInteractionHandler {
       if (this.voiceChatController) {
         await this.voiceChatController.handleCommand(interaction);
       } else {
-        await interaction.reply({
-          content: interaction.inGuild()
-            ? "VC会話は無効です。"
-            : "このコマンドはサーバー内でのみ使用できます。",
-          ephemeral: true,
-        });
+        await interaction.reply(
+          createEphemeralTextContainerMessage(
+            interaction.inGuild()
+              ? "VC会話は無効です。"
+              : "このコマンドはサーバー内でのみ使用できます。",
+            "danger",
+          ),
+        );
       }
       return;
     }
@@ -282,10 +286,12 @@ export class DiscordJsInteractionHandler {
       case "ignored":
         return;
       case "rejected":
-        await interaction.reply({
-          content: OPERATING_MODE_REJECTION_MESSAGES[result.reason],
-          ephemeral: true,
-        });
+        await interaction.reply(
+          createEphemeralTextContainerMessage(
+            OPERATING_MODE_REJECTION_MESSAGES[result.reason],
+            "danger",
+          ),
+        );
         return;
       case "changed":
         this.setOperatingMode(result.mode);
@@ -322,10 +328,12 @@ export class DiscordJsInteractionHandler {
 
   private async listAllowedChannels(interaction: DiscordChatInputInteraction): Promise<void> {
     if (!interaction.inGuild() || !interaction.guildId) {
-      await interaction.reply({
-        content: "このコマンドはサーバー内でのみ使用できます。",
-        flags: MessageFlags.Ephemeral,
-      });
+      await interaction.reply(
+        createEphemeralTextContainerMessage(
+          "このコマンドはサーバー内でのみ使用できます。",
+          "danger",
+        ),
+      );
       return;
     }
 
@@ -345,10 +353,7 @@ export class DiscordJsInteractionHandler {
       },
     );
 
-    await interaction.reply({
-      components: [createTextContainer(truncateTextLines(lines))],
-      flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
-    });
+    await interaction.reply(createEphemeralTextContainerMessage(truncateTextLines(lines)));
   }
 
   private async openChannelRuleEditor(interaction: DiscordChatInputInteraction): Promise<void> {
@@ -360,7 +365,9 @@ export class DiscordJsInteractionHandler {
       channelId: interaction.channelId,
     });
     if (result.kind === "rejected") {
-      await interaction.reply({ content: RULE_EDIT_REJECTION_MESSAGES[result.reason] });
+      await interaction.reply(
+        createTextContainerMessage(RULE_EDIT_REJECTION_MESSAGES[result.reason], "danger"),
+      );
       return;
     }
 
@@ -396,7 +403,9 @@ export class DiscordJsInteractionHandler {
       rule,
     );
     if (result.kind === "rejected") {
-      await interaction.reply({ content: RULE_SUBMIT_REJECTION_MESSAGES[result.reason] });
+      await interaction.reply(
+        createTextContainerMessage(RULE_SUBMIT_REJECTION_MESSAGES[result.reason], "danger"),
+      );
       return;
     }
 

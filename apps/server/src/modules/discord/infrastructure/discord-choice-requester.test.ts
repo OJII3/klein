@@ -5,6 +5,7 @@ import { isRecord } from "@shared/type-guards";
 
 import { createDiscordAccessPolicy } from "../domain/discord-access-policy";
 import type { DiscordMessage } from "../domain/discord-message";
+import { containerMessageText } from "../../../testing/discord-container";
 import {
   DiscordChoiceRequester,
   type DiscordChoiceButtonInteraction,
@@ -76,7 +77,7 @@ function createHarness(accessAllowed = true) {
 }
 
 function createInteraction(customId: string, userId = "user-123") {
-  const replies: Array<{ content: string; flags?: number }> = [];
+  const replies: string[] = [];
   const updates: Array<{ components: ReadonlyArray<{ toJSON: () => unknown }>; flags: number }> =
     [];
   const interaction: DiscordChoiceButtonInteraction = {
@@ -90,7 +91,7 @@ function createInteraction(customId: string, userId = "user-123") {
       user: { id: "bot-123", username: "klein", displayName: "Klein" },
     },
     reply: async (payload) => {
-      replies.push(payload);
+      replies.push(containerMessageText(payload));
     },
     update: async (payload) => {
       updates.push(payload);
@@ -163,7 +164,7 @@ test("only lets the requesting user answer", async () => {
 
   assert.equal(await harness.requester.handleButton(interaction), true);
   assert.equal(harness.answers.length, 0);
-  assert.match(replies[0]?.content ?? "", /質問したユーザー/u);
+  assert.match(replies[0] ?? "", /質問したユーザー/u);
 });
 
 test("does not deliver an answer when the channel access is denied", async () => {
@@ -173,7 +174,7 @@ test("does not deliver an answer when the channel access is denied", async () =>
 
   assert.equal(await harness.requester.handleButton(interaction), true);
   assert.equal(harness.answers.length, 0);
-  assert.match(replies[0]?.content ?? "", /回答できません/u);
+  assert.match(replies[0] ?? "", /回答できません/u);
 });
 
 test("rejects a choice that is no longer pending", async () => {
@@ -182,7 +183,7 @@ test("rejects a choice that is no longer pending", async () => {
 
   assert.equal(await harness.requester.handleButton(interaction), true);
   assert.equal(harness.answers.length, 0);
-  assert.match(replies[0]?.content ?? "", /回答済み|期限切れ/u);
+  assert.match(replies[0] ?? "", /回答済み|期限切れ/u);
 });
 
 test("accepts only the first answer", async () => {
@@ -195,7 +196,7 @@ test("accepts only the first answer", async () => {
   await harness.requester.handleButton(second.interaction);
 
   assert.equal(harness.answers.length, 1);
-  assert.match(second.replies[0]?.content ?? "", /回答済み|期限切れ/u);
+  assert.match(second.replies[0] ?? "", /回答済み|期限切れ/u);
 });
 
 test("ignores buttons that belong to another feature", async () => {

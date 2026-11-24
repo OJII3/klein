@@ -10,8 +10,10 @@ import type {
   VoiceChatConversationFactory,
 } from "../ports/voice-chat-conversation";
 import {
+  createEphemeralTextContainerMessage,
   createTextContainerMessage,
   type DiscordContainerMessage,
+  type DiscordInteractionMessage,
   type DiscordMessageTone,
 } from "./discord-component-message";
 import {
@@ -53,9 +55,9 @@ export interface VoiceChatCommandInteraction {
     readonly voiceAdapterCreator: DiscordGatewayAdapterCreator;
   } | null;
   inGuild(): boolean;
-  reply(options: { content: string; ephemeral: boolean }): Promise<unknown>;
+  reply(options: DiscordInteractionMessage): Promise<unknown>;
   deferReply(options: { ephemeral: boolean }): Promise<unknown>;
-  editReply(content: string): Promise<unknown>;
+  editReply(options: DiscordInteractionMessage): Promise<unknown>;
 }
 
 export interface DiscordVoiceChatControllerOptions {
@@ -108,10 +110,12 @@ export class DiscordVoiceChatController {
   async handleCommand(interaction: VoiceChatCommandInteraction): Promise<void> {
     const guildId = interaction.guildId;
     if (!interaction.inGuild() || !guildId) {
-      await interaction.reply({
-        content: "このコマンドはサーバー内でのみ使用できます。",
-        ephemeral: true,
-      });
+      await interaction.reply(
+        createEphemeralTextContainerMessage(
+          "このコマンドはサーバー内でのみ使用できます。",
+          "danger",
+        ),
+      );
       return;
     }
 
@@ -130,17 +134,18 @@ export class DiscordVoiceChatController {
     }
 
     if (this.sessions.has(guildId)) {
-      await interaction.reply({
-        content: "このサーバーでは既にVC会話中です。",
-        ephemeral: true,
-      });
+      await interaction.reply(
+        createEphemeralTextContainerMessage("このサーバーでは既にVC会話中です。", "warning"),
+      );
       return;
     }
     if (!this.options.tts) {
-      await interaction.reply({
-        content: "VC会話を利用するにはTTSサーバーを設定してください。",
-        ephemeral: true,
-      });
+      await interaction.reply(
+        createEphemeralTextContainerMessage(
+          "VC会話を利用するにはTTSサーバーを設定してください。",
+          "danger",
+        ),
+      );
       return;
     }
 
@@ -149,11 +154,15 @@ export class DiscordVoiceChatController {
     const member = await guild.members.fetch(interaction.user.id);
     const voiceChannel = member.voice.channel;
     if (!voiceChannel) {
-      await interaction.reply({ content: "先にVCへ参加してください。", ephemeral: true });
+      await interaction.reply(
+        createEphemeralTextContainerMessage("先にVCへ参加してください。", "danger"),
+      );
       return;
     }
     if (!interaction.channel || !isSendableChannel(interaction.channel)) {
-      await interaction.reply({ content: "VC会話の投稿先を取得できません。", ephemeral: true });
+      await interaction.reply(
+        createEphemeralTextContainerMessage("VC会話の投稿先を取得できません。", "danger"),
+      );
       return;
     }
     const announcementChannel = interaction.channel;
@@ -169,10 +178,9 @@ export class DiscordVoiceChatController {
         userIsBot: interaction.user.bot,
       })
     ) {
-      await interaction.reply({
-        content: "このチャンネルではVC会話を利用できません。",
-        ephemeral: true,
-      });
+      await interaction.reply(
+        createEphemeralTextContainerMessage("このチャンネルではVC会話を利用できません。", "danger"),
+      );
       return;
     }
 
@@ -237,7 +245,9 @@ export class DiscordVoiceChatController {
         },
         "Started the voice conversation",
       );
-      await interaction.editReply("VCに参加しました。返答を音声で読み上げます。");
+      await interaction.editReply(
+        createTextContainerMessage("VCに参加しました。返答を音声で読み上げます。", "success"),
+      );
       await this.sendAnnouncement(
         announcementChannel,
         "VCに参加しました",
@@ -253,7 +263,10 @@ export class DiscordVoiceChatController {
         "Failed to start Discord voice chat",
       );
       await interaction.editReply(
-        "VC会話を開始できませんでした。設定とASR・TTSサーバーを確認してください。",
+        createTextContainerMessage(
+          "VC会話を開始できませんでした。設定とASR・TTSサーバーを確認してください。",
+          "danger",
+        ),
       );
     }
   }
@@ -271,14 +284,15 @@ export class DiscordVoiceChatController {
   private async leave(interaction: VoiceChatCommandInteraction, guildId: string): Promise<void> {
     const active = this.sessions.get(guildId);
     if (!active) {
-      await interaction.reply({ content: "VC会話セッションはありません。", ephemeral: true });
+      await interaction.reply(
+        createEphemeralTextContainerMessage("VC会話セッションはありません。", "warning"),
+      );
       return;
     }
     if (active.userId !== interaction.user.id) {
-      await interaction.reply({
-        content: "開始したユーザーだけが終了できます。",
-        ephemeral: true,
-      });
+      await interaction.reply(
+        createEphemeralTextContainerMessage("開始したユーザーだけが終了できます。", "danger"),
+      );
       return;
     }
 
@@ -288,7 +302,7 @@ export class DiscordVoiceChatController {
       { event: "discord_voice_chat_stopped", guildId, userId: active.userId },
       "Stopped the voice conversation",
     );
-    await interaction.reply({ content: "VCから退出しました。", ephemeral: true });
+    await interaction.reply(createEphemeralTextContainerMessage("VCから退出しました。", "success"));
     await this.sendAnnouncement(
       interaction.channel,
       "VCから退出しました",

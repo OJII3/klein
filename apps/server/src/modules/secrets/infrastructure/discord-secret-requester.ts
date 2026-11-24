@@ -36,7 +36,7 @@ const MODAL_TITLE_LIMIT = 45;
 export interface DiscordSecretButtonInteraction {
   readonly customId: string;
   readonly user: { readonly id: string };
-  reply(options: { content: string; flags: MessageFlags.Ephemeral }): Promise<unknown>;
+  reply(options: DiscordEphemeralContainerMessage): Promise<unknown>;
   update(options: DiscordContainerMessage): Promise<unknown>;
   showModal(modal: ModalBuilder): Promise<unknown>;
 }
@@ -145,10 +145,12 @@ export class DiscordSecretRequester implements SecretRequestIntake {
       return true;
     }
     if (lookup.request.userId !== interaction.user.id) {
-      await interaction.reply({
-        content: "このシークレットリクエストを操作できるのは、依頼された本人だけです。",
-        flags: MessageFlags.Ephemeral,
-      });
+      await interaction.reply(
+        createEphemeralTextContainerMessage(
+          "このシークレットリクエストを操作できるのは、依頼された本人だけです。",
+          "danger",
+        ),
+      );
       return true;
     }
 
@@ -174,10 +176,12 @@ export class DiscordSecretRequester implements SecretRequestIntake {
         { err: error, event: "secret_request_modal_failed", requestId: parsed.requestId },
         "Failed to open the secret request modal",
       );
-      await interaction.reply({
-        content: "入力フォームを開けませんでした。時間を置いてもう一度お試しください。",
-        flags: MessageFlags.Ephemeral,
-      });
+      await interaction.reply(
+        createEphemeralTextContainerMessage(
+          "入力フォームを開けませんでした。時間を置いてもう一度お試しください。",
+          "danger",
+        ),
+      );
     }
     return true;
   }
@@ -290,10 +294,12 @@ export class DiscordSecretRequester implements SecretRequestIntake {
   }
 
   private async replyExpired(interaction: DiscordSecretButtonInteraction): Promise<void> {
-    await interaction.reply({
-      content: "このシークレットリクエストは期限切れか、既に処理済みです。",
-      flags: MessageFlags.Ephemeral,
-    });
+    await interaction.reply(
+      createEphemeralTextContainerMessage(
+        "このシークレットリクエストは期限切れか、既に処理済みです。",
+        "warning",
+      ),
+    );
   }
 
   private async replySubmissionProblem(
@@ -306,7 +312,7 @@ export class DiscordSecretRequester implements SecretRequestIntake {
         : outcome.kind === "invalid"
           ? outcome.message
           : "このシークレットリクエストは期限切れか、既に処理済みです。";
-    await interaction.reply({ content: message, flags: MessageFlags.Ephemeral });
+    await interaction.reply(createEphemeralTextContainerMessage(message, "danger"));
   }
 
   private async updateDirectMessage(

@@ -300,17 +300,17 @@ test("ignores button presses from anyone other than the owner", async () => {
   const customId = toJson(ownerMessage)[0]?.components[1]?.components?.[0]?.custom_id;
   assert.ok(customId);
 
-  const replies: Array<{ content: string; flags?: number }> = [];
+  const replies: string[] = [];
   const interaction: DiscordChannelAccessButtonInteraction = {
     customId,
     user: { id: "other-user" },
     reply: async (payload) => {
-      replies.push(payload);
+      replies.push(JSON.stringify(payload));
     },
     update: async () => undefined,
   };
 
   assert.equal(await requester.handleButton(interaction), true);
   assert.equal(harness.updates.length, 0);
-  assert.match(replies[0]?.content ?? "", /オーナー/u);
+  assert.match(replies[0] ?? "", /オーナー/u);
 });
