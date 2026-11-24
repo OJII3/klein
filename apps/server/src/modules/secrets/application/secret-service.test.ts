@@ -79,11 +79,11 @@ function createHarness(now = new Date("2026-11-22T00:00:00.000Z")) {
 
 test("requests once and saves submitted values for the linked user", async () => {
   const harness = createHarness();
-  const first = await harness.service.request(draft);
+  const first = await harness.service.createPending(draft);
   assert.equal(first.kind, "requested");
   if (first.kind !== "requested") assert.fail("expected a requested outcome");
 
-  const duplicate = await harness.service.request(draft);
+  const duplicate = await harness.service.createPending(draft);
   assert.equal(duplicate.kind, "pending");
   if (duplicate.kind !== "pending") assert.fail("expected a pending outcome");
   assert.equal(duplicate.request.requestId, first.request.requestId);
@@ -110,8 +110,8 @@ test("requests once and saves submitted values for the linked user", async () =>
 
 test("allows different workers to request the same service", async () => {
   const harness = createHarness();
-  const first = await harness.service.request(draft);
-  const second = await harness.service.request({
+  const first = await harness.service.createPending(draft);
+  const second = await harness.service.createPending({
     ...draft,
     workerId: "worker-2",
     channelId: "channel-2",
@@ -128,7 +128,7 @@ test("allows different workers to request the same service", async () => {
 
 test("allows only the requested user to complete or cancel", async () => {
   const harness = createHarness();
-  const requested = await harness.service.request(draft);
+  const requested = await harness.service.createPending(draft);
   if (requested.kind !== "requested") assert.fail("expected a requested outcome");
 
   assert.equal(
@@ -150,7 +150,7 @@ test("allows only the requested user to complete or cancel", async () => {
 
 test("rejects reserved environment aliases", async () => {
   const harness = createHarness();
-  const outcome = await harness.service.request({
+  const outcome = await harness.service.createPending({
     ...draft,
     fields: [{ key: "token", label: "トークン", env: "PATH" }],
   });
@@ -167,7 +167,7 @@ test("deletes secrets through the store", async () => {
 test("expires a request before it can be completed", async () => {
   const now = new Date("2026-11-22T00:00:00.000Z");
   const harness = createHarness(now);
-  const requested = await harness.service.request({ ...draft, expiresInMinutes: 1 });
+  const requested = await harness.service.createPending({ ...draft, expiresInMinutes: 1 });
   if (requested.kind !== "requested") assert.fail("expected a requested outcome");
 
   now.setTime(Date.parse("2026-11-22T00:01:01.000Z"));
@@ -180,10 +180,10 @@ test("expires a request before it can be completed", async () => {
 
 test("rejects values that do not match the request and mismatched scopes", async () => {
   const harness = createHarness();
-  const mismatched = await harness.service.request({ ...draft, accessScope: "user:456" });
+  const mismatched = await harness.service.createPending({ ...draft, accessScope: "user:456" });
   assert.equal(mismatched.kind, "invalid");
 
-  const requested = await harness.service.request({
+  const requested = await harness.service.createPending({
     ...draft,
     fields: [
       { key: "token", label: "トークン" },
@@ -211,7 +211,7 @@ test("rejects values that do not match the request and mismatched scopes", async
 test("reports missing and expired requests", async () => {
   const now = new Date("2026-11-22T00:00:00.000Z");
   const harness = createHarness(now);
-  const requested = await harness.service.request({ ...draft, expiresInMinutes: 1 });
+  const requested = await harness.service.createPending({ ...draft, expiresInMinutes: 1 });
   if (requested.kind !== "requested") assert.fail("expected a requested outcome");
   await harness.requests.remove("missing");
 

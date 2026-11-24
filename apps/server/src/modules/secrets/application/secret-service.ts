@@ -20,11 +20,12 @@ import {
 import type { SecretStore } from "../ports/secret-store";
 import type { SecretRequestStore } from "../ports/secret-request-store";
 
-export type SecretRequestOutcome =
+export type SecretRequestCreationOutcome =
   | { readonly kind: "requested"; readonly request: SecretRequest }
   | { readonly kind: "pending"; readonly request: SecretRequest }
-  | { readonly kind: "unavailable" }
   | { readonly kind: "invalid"; readonly message: string };
+
+export type SecretRequestOutcome = SecretRequestCreationOutcome | { readonly kind: "unavailable" };
 
 export type SecretPendingLookup =
   | { readonly kind: "pending"; readonly request: SecretRequest }
@@ -39,8 +40,12 @@ export type SecretSubmissionOutcome =
   | { readonly kind: "forbidden" }
   | { readonly kind: "invalid"; readonly message: string };
 
-export interface SecretControl {
-  request(draft: SecretRequestDraft): Promise<SecretRequestOutcome>;
+/**
+ * Moves pending requests through their lifecycle. Saving is not delivery, so
+ * this interface never reaches the user.
+ */
+export interface SecretRequestLifecycle {
+  createPending(draft: SecretRequestDraft): Promise<SecretRequestCreationOutcome>;
   lookupPending(requestId: string): Promise<SecretPendingLookup>;
   attachMessage(requestId: string, dmChannelId: string, dmMessageId: string): Promise<void>;
   abandon(requestId: string): Promise<void>;
@@ -50,9 +55,17 @@ export interface SecretControl {
     values: Readonly<Record<string, string>>,
   ): Promise<SecretSubmissionOutcome>;
   cancel(requestId: string, userId: string): Promise<SecretSubmissionOutcome>;
+}
+
+export interface SecretQuery {
   list(userId: string): Promise<readonly SecretSummary[]>;
   read(userId: string, service: string): Promise<SecretValues | undefined>;
   delete(userId: string, service: string): Promise<boolean>;
+}
+
+/** Creates a secret request and delivers it to the linked user. */
+export interface SecretRequestIntake {
+  requestSecret(draft: SecretRequestDraft): Promise<SecretRequestOutcome>;
 }
 
 export interface SecretServiceDependencies {
@@ -68,7 +81,7 @@ export interface SecretServiceDependencies {
  * for the user who owns the conversation. A missing or expired request never
  * grants access to another user's secrets.
  */
-export class SecretService implements SecretControl {
+export class SecretService implements SecretRequestLifecycle, SecretQuery {
   private readonly now: () => Date;
 
   constructor(private readonly dependencies: SecretServiceDependencies) {
@@ -85,7 +98,7 @@ export class SecretService implements SecretControl {
     }
   }
 
-  async request(draft: SecretRequestDraft): Promise<SecretRequestOutcome> {
+  async createPending(draft: SecretRequestDraft): Promise<SecretRequestCreationOutcome> {
     const problem = validateDraft(draft);
     if (problem) return { kind: "invalid", message: problem };
 

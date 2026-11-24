@@ -12,6 +12,8 @@ import {
   type ModalBuilder,
 } from "discord.js";
 
+import type { SecretRequestLifecycle } from "../../secrets/application/secret-service";
+import type { SecretRequest, SecretRequestDraft } from "../../secrets/domain/secret-request";
 import { isRecord } from "@shared/type-guards";
 import { createDiscordAccessPolicy } from "../domain/discord-access-policy";
 import type { DiscordMessage } from "../domain/discord-message";
@@ -52,6 +54,54 @@ function createProfileUser(
     bannerURL: () => null,
     flags: { toArray: () => [] },
     send: async () => undefined,
+    ...overrides,
+  };
+}
+
+function createSecretRequest(): SecretRequest {
+  return {
+    requestId: "request-1",
+    userId: "user-123",
+    channelId: "channel-123",
+    accessScope: "user:user-123",
+    workerId: "worker-1",
+    service: "github",
+    label: "GitHub",
+    reason: "Issueを確認するため",
+    fields: [{ key: "token", label: "トークン", env: "GH_TOKEN" }],
+    createdAt: "2026-11-24T00:00:00.000Z",
+    expiresAt: "2026-11-24T00:15:00.000Z",
+  };
+}
+
+function createSecretRequestDraft(): SecretRequestDraft {
+  const {
+    requestId: _requestId,
+    createdAt: _createdAt,
+    expiresAt: _expiresAt,
+    ...draft
+  } = createSecretRequest();
+  return draft;
+}
+
+function createSecretRequestLifecycle(
+  overrides: Partial<SecretRequestLifecycle> = {},
+): SecretRequestLifecycle {
+  return {
+    async createPending() {
+      throw new Error("Unexpected secret request");
+    },
+    async lookupPending() {
+      return { kind: "missing" };
+    },
+    async attachMessage() {},
+    async abandon() {},
+    async complete() {
+      return { kind: "missing" };
+    },
+    async cancel() {
+      return { kind: "missing" };
+    },
     ...overrides,
   };
 }
@@ -1740,5 +1790,66 @@ test("reads a user profile with the current server's member fields", async () =>
       boostingSince: "2022-03-04T05:06:07.000Z",
       roles: [{ id: "role-admin", name: "Admin" }],
     },
+  });
+});
+
+test("requestSecret はリンク済みユーザーにDMを送り、そのメッセージを記録する", async () => {
+  const fakeClient = new FakeDiscordClient();
+  const sent: unknown[] = [];
+  fakeClient.users.fetch = async (id) => ({
+    ...createProfileUser({ id }),
+    send: async (payload: unknown) => {
+      sent.push(payload);
+      return { id: "dm-message-1", channelId: "dm-channel-1" };
+    },
+  });
+  const attached: { requestId: string; dmChannelId: string; dmMessageId: string }[] = [];
+  const secrets = createSecretRequestLifecycle({
+    async createPending() {
+      return { kind: "requested", request: createSecretRequest() };
+    },
+    async attachMessage(requestId, dmChannelId, dmMessageId) {
+      attached.push({ requestId, dmChannelId, dmMessageId });
+    },
+  });
+  const service = new DiscordJsService(
+    "token",
+    createDiscordAccessPolicy({ default: "allow", directMessages: "allow" }),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    { createClient: () => fakeClient, secrets },
+  );
+
+  const outcome = await service.requestSecret(createSecretRequestDraft());
+
+  assert.equal(outcome.kind, "requested");
+  assert.equal(sent.length, 1);
+  assert.deepEqual(attached, [
+    { requestId: "request-1", dmChannelId: "dm-channel-1", dmMessageId: "dm-message-1" },
+  ]);
+});
+
+test("requestSecret はシークレット機能が無い場合に unavailable を返す", async () => {
+  const fakeClient = new FakeDiscordClient();
+  const service = new DiscordJsService(
+    "token",
+    createDiscordAccessPolicy({ default: "allow", directMessages: "allow" }),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    { createClient: () => fakeClient },
+  );
+
+  assert.deepEqual(await service.requestSecret(createSecretRequestDraft()), {
+    kind: "unavailable",
   });
 });

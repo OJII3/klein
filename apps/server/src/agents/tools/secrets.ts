@@ -1,7 +1,7 @@
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
-import type { SecretControl } from "@modules/secrets/application/secret-service";
+import type { SecretQuery, SecretRequestIntake } from "@modules/secrets/application/secret-service";
 import {
   SECRET_ENVIRONMENT_ALIAS_PATTERN,
   SECRET_FIELD_KEY_PATTERN,
@@ -29,7 +29,8 @@ export type SecretCommandRunner = (
 ) => Promise<SecretCommandResult>;
 
 export interface SecretToolDependencies {
-  readonly secrets: Pick<SecretControl, "request" | "list" | "read" | "delete">;
+  readonly requests: SecretRequestIntake;
+  readonly secrets: SecretQuery;
   readonly userId: string;
   readonly channelId: string;
   readonly accessScope: AccessScope;
@@ -90,7 +91,7 @@ export function createSecretTools(dependencies: SecretToolDependencies): readonl
         content: { type: "text"; text: string }[];
         details: SecretRequestToolDetails;
       }> {
-        const outcome = await dependencies.secrets.request({
+        const outcome = await dependencies.requests.requestSecret({
           userId: dependencies.userId,
           channelId: dependencies.channelId,
           accessScope: dependencies.accessScope,

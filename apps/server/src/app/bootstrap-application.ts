@@ -330,6 +330,7 @@ export async function bootstrapApplication(): Promise<void> {
       return [
         ...workerTools,
         ...createSecretTools({
+          requests: discordService,
           secrets: secretService,
           userId: workerUserId,
           channelId: conversationKey.channelId,

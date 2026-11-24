@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createStubExtensionToolContext } from "@agents/testing/test-stubs";
-import type { SecretControl } from "@modules/secrets/application/secret-service";
+import type { SecretQuery, SecretRequestIntake } from "@modules/secrets/application/secret-service";
 import type { SecretSummary, SecretValues } from "@modules/secrets/domain/secret";
 import type { SecretRequest } from "@modules/secrets/domain/secret-request";
 import { createSecretTools, type SecretCommandRunner } from "./secrets";
@@ -37,13 +37,21 @@ const unusedRunCommand: SecretCommandRunner = async () => {
   throw new Error("runCommand is not used in this test");
 };
 
-test("requests secrets through the Discord flow", async () => {
-  const requests: unknown[] = [];
-  const secrets: Pick<SecretControl, "request" | "list" | "read" | "delete"> = {
-    async request(draft) {
-      requests.push(draft);
+const unusedRequests: SecretRequestIntake = {
+  async requestSecret() {
+    throw new Error("requestSecret is not used in this test");
+  },
+};
+
+test("requests secrets through the delivery intake", async () => {
+  const drafts: unknown[] = [];
+  const requests: SecretRequestIntake = {
+    async requestSecret(draft) {
+      drafts.push(draft);
       return { kind: "requested", request };
     },
+  };
+  const secrets: SecretQuery = {
     async list() {
       return [summary];
     },
@@ -55,6 +63,7 @@ test("requests secrets through the Discord flow", async () => {
     },
   };
   const tools = createSecretTools({
+    requests,
     secrets,
     userId: "123",
     channelId: "channel-1",
@@ -79,7 +88,7 @@ test("requests secrets through the Discord flow", async () => {
     ctx,
   );
 
-  assert.deepEqual(requests, [
+  assert.deepEqual(drafts, [
     {
       userId: "123",
       channelId: "channel-1",
@@ -95,10 +104,7 @@ test("requests secrets through the Discord flow", async () => {
 });
 
 test("lists services without values", async () => {
-  const secrets: Pick<SecretControl, "request" | "list" | "read" | "delete"> = {
-    async request() {
-      return { kind: "unavailable" };
-    },
+  const secrets: SecretQuery = {
     async list() {
       return [summary];
     },
@@ -110,6 +116,7 @@ test("lists services without values", async () => {
     },
   };
   const tools = createSecretTools({
+    requests: unusedRequests,
     secrets,
     userId: "123",
     channelId: "channel-1",
@@ -131,10 +138,7 @@ test("lists services without values", async () => {
 
 test("injects secret fields into the shell and redacts printed values", async () => {
   const seen: { environment: Readonly<Record<string, string>>; command: string }[] = [];
-  const secrets: Pick<SecretControl, "request" | "list" | "read" | "delete"> = {
-    async request() {
-      return { kind: "unavailable" };
-    },
+  const secrets: SecretQuery = {
     async list() {
       return [summary];
     },
@@ -146,6 +150,7 @@ test("injects secret fields into the shell and redacts printed values", async ()
     },
   };
   const tools = createSecretTools({
+    requests: unusedRequests,
     secrets,
     userId: "123",
     channelId: "channel-1",
@@ -181,10 +186,7 @@ test("injects secret fields into the shell and redacts printed values", async ()
 
 test("deletes saved secrets only for the linked user", async () => {
   const deleted: { userId: string; service: string }[] = [];
-  const secrets: Pick<SecretControl, "request" | "list" | "read" | "delete"> = {
-    async request() {
-      return { kind: "unavailable" };
-    },
+  const secrets: SecretQuery = {
     async list() {
       return [summary];
     },
@@ -197,6 +199,7 @@ test("deletes saved secrets only for the linked user", async () => {
     },
   };
   const tools = createSecretTools({
+    requests: unusedRequests,
     secrets,
     userId: "123",
     channelId: "channel-1",
