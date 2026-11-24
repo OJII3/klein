@@ -2,7 +2,9 @@ import type { ComponentChildren } from "preact";
 
 export function StatStrip({ children }: { children: ComponentChildren }) {
   return (
-    <div className="stats stats-horizontal border border-base-300 bg-base-100">{children}</div>
+    <div className="stats stats-horizontal max-w-full border border-base-300 bg-base-100">
+      {children}
+    </div>
   );
 }
 
