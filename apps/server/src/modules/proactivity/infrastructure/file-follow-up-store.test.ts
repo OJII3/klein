@@ -115,15 +115,22 @@ test("keeps working after a new store instance reads the directory", async () =>
   });
 });
 
-test("raises for corrupt JSON instead of silently dropping a promise", async () => {
+test("quarantines corrupt JSON instead of failing every read", async () => {
   await withTempDir(async (directory) => {
     const store = new FileFollowUpStore(directory);
+    await store.create(first);
     await writeFile(join(directory, "broken.json"), "{", "utf8");
     await writeFile(join(directory, "notes.txt"), "ignored", "utf8");
 
-    await assert.rejects(store.get("broken"));
-    await assert.rejects(store.listForScope("channel-a", "owner:123"));
-    await assert.rejects(store.listByWatcher("watch", "watch-1"));
+    assert.deepEqual(await store.get("broken"), undefined);
+    assert.deepEqual(await store.listForScope("channel-a", "owner:123"), [first]);
+    assert.deepEqual(await store.listByWatcher("watch", "watch-1"), [first]);
+    assert.deepEqual((await readdir(directory)).toSorted(), [
+      "corrupt",
+      "follow-up-1.json",
+      "notes.txt",
+    ]);
+    assert.equal((await readdir(join(directory, "corrupt"))).length, 1);
   });
 });
 

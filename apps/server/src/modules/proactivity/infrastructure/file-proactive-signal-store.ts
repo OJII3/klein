@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readdir, rename, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import type { AccessScope } from "@shared/access";
-import { isFileNotFound, parseJson } from "@shared/type-guards";
+import { readJsonRecord } from "@shared/record-file";
+import { isFileNotFound } from "@shared/type-guards";
 
 import type { ProactiveDeliveryMode } from "../domain/proactive-preference";
 import { parseProactiveSignal, type ProactiveSignal } from "../domain/proactive-signal";
@@ -25,15 +26,7 @@ export class FileProactiveSignalStore implements ProactiveSignalStore {
   }
 
   async get(id: string): Promise<ProactiveSignal | undefined> {
-    const path = this.getFilePath(id);
-    let raw: string;
-    try {
-      raw = await readFile(path, "utf8");
-    } catch (error) {
-      if (isFileNotFound(error)) return undefined;
-      throw error;
-    }
-    return parseProactiveSignal(parseJson(raw));
+    return readJsonRecord(this.getFilePath(id), parseProactiveSignal);
   }
 
   async findActiveByDedupeKey(dedupeKey: string): Promise<ProactiveSignal | undefined> {
@@ -90,9 +83,10 @@ export class FileProactiveSignalStore implements ProactiveSignalStore {
 
   private async readAll(): Promise<ProactiveSignal[]> {
     const paths = await this.getFiles();
-    return Promise.all(
-      paths.map(async (path) => parseProactiveSignal(parseJson(await readFile(path, "utf8")))),
+    const signals = await Promise.all(
+      paths.map((path) => readJsonRecord(path, parseProactiveSignal)),
     );
+    return signals.filter((signal): signal is ProactiveSignal => signal !== undefined);
   }
 
   private async getFiles(): Promise<string[]> {

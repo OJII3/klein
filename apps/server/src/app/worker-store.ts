@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, readdir, rename, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readdir, rename, unlink, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import type { WorkerResult, WorkerScope, WorkerStatus } from "@agents/core/worker-agent";
 import { parseAccessScope } from "@shared/access";
 import { isConversationKey } from "@shared/conversation-key";
-import { isFileNotFound, isRecord, parseJson } from "@shared/type-guards";
+import { readJsonRecord } from "@shared/record-file";
+import { isFileNotFound, isRecord } from "@shared/type-guards";
 
 /** The worker metadata that outlives the process. The Pi session itself lives in `sessions/worker/`. */
 export interface StoredWorker extends WorkerScope {
@@ -43,17 +44,8 @@ export class FileWorkerStore implements WorkerStore {
       .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
       .map((entry) => resolve(this.directory, entry.name));
 
-    const workers = await Promise.all(
-      paths.map(async (path) => {
-        const content = await readFile(path, "utf8");
-        try {
-          return parseJson(content);
-        } catch {
-          return undefined;
-        }
-      }),
-    );
-    return workers.filter((worker) => isStoredWorker(worker));
+    const workers = await Promise.all(paths.map((path) => readJsonRecord(path, parseStoredWorker)));
+    return workers.filter((worker): worker is StoredWorker => worker !== undefined);
   }
 
   async save(worker: StoredWorker): Promise<void> {
@@ -75,6 +67,11 @@ export class FileWorkerStore implements WorkerStore {
   private getFilePath(id: string): string {
     return resolve(this.directory, `${encodeURIComponent(id)}.json`);
   }
+}
+
+function parseStoredWorker(value: unknown): StoredWorker {
+  if (!isStoredWorker(value)) throw new Error("Invalid worker record");
+  return value;
 }
 
 function isStoredWorker(value: unknown): value is StoredWorker {

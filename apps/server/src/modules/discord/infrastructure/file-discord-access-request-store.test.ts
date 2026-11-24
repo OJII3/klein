@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { writeFile } from "node:fs/promises";
+import { readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 
@@ -83,23 +83,30 @@ test("persists and restores the owner message id", async () => {
   assert.deepEqual(reloaded.list(), [withOwnerMessage]);
 });
 
-test("rejects an empty request expiry", async () => {
+test("loads an empty list and quarantines a request with an empty expiry", async () => {
   await using temp = await createTempDir("klein-discord-access-requests-");
   const filePath = join(temp.path, "requests.json");
   const store = new FileDiscordAccessRequestStore(filePath);
   await writeFile(filePath, JSON.stringify({ requests: [{ ...request, expiresAt: "" }] }));
 
-  await assert.rejects(store.load(), /invalid/u);
+  await store.load();
+
+  assert.deepEqual(store.list(), []);
+  assert.deepEqual(await readdir(temp.path), ["corrupt"]);
+  assert.equal((await readdir(join(temp.path, "corrupt"))).length, 1);
 });
 
-test("rejects invalid pending request files", async () => {
+test("loads an empty list and quarantines invalid pending request files", async () => {
   await using temp = await createTempDir("klein-discord-access-requests-");
   const filePath = join(temp.path, "requests.json");
   const store = new FileDiscordAccessRequestStore(filePath);
 
   await writeFile(filePath, "{");
-  await assert.rejects(store.load(), /not valid JSON/u);
+  await store.load();
+  assert.deepEqual(store.list(), []);
 
   await writeFile(filePath, JSON.stringify({ requests: [{ requestId: "request-1" }] }));
-  await assert.rejects(store.load(), /invalid/u);
+  await store.load();
+  assert.deepEqual(store.list(), []);
+  assert.equal((await readdir(join(temp.path, "corrupt"))).length, 2);
 });

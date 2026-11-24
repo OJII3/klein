@@ -222,7 +222,7 @@ test("round-trips Discord messages and agent events", async () => {
   assert.deepEqual(eventRest, { ...eventInput, status: "claimed", attempts: 1 });
 });
 
-test("skips malformed items while loading valid siblings", async () => {
+test("moves malformed items to corrupt/ while loading valid siblings", async () => {
   await using temp = await createTempDir("klein-conversation-inbox-");
   const store = new ConversationInbox(temp.path);
 
@@ -242,6 +242,11 @@ test("skips malformed items while loading valid siblings", async () => {
   assert.equal((await store.claimNext(channelA))?.id, "valid");
   assert.equal(await store.claimNext(channelA), undefined);
   assert.equal(await store.claimNext(channelB), undefined);
+
+  assert.deepEqual((await readdir(directory)).toSorted(), ["corrupt", "valid.json"]);
+  assert.equal((await readdir(join(directory, "corrupt"))).length, 2);
+  assert.deepEqual(await readdir(otherDirectory), ["corrupt"]);
+  assert.equal((await readdir(join(otherDirectory, "corrupt"))).length, 1);
 });
 
 test("lists conversations that still have pending items", async () => {

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { writeFile } from "node:fs/promises";
+import { readdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import test from "node:test";
 
@@ -47,7 +47,7 @@ test("saves, lists, and deletes workers", async () => {
   await store.delete("worker-1");
 });
 
-test("ignores legacy and malformed worker files", async () => {
+test("quarantines legacy and malformed worker files", async () => {
   await using temp = await createTempDir("klein-workers-");
   await writeFile(resolve(temp.path, "broken.json"), "{ not json", "utf8");
   await writeFile(resolve(temp.path, "invalid.json"), JSON.stringify({ id: "x" }), "utf8");
@@ -84,6 +84,7 @@ test("ignores legacy and malformed worker files", async () => {
 
   const store = new FileWorkerStore(temp.path);
   assert.deepEqual(await store.list(), []);
+  assert.equal((await readdir(resolve(temp.path, "corrupt"))).length, 5);
 });
 
 test("persists a pending result and rejects malformed result fields", async () => {

@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
-import { isFileNotFound, parseJson } from "@shared/type-guards";
+import { readJsonRecord } from "@shared/record-file";
+import { isFileNotFound } from "@shared/type-guards";
 
 import {
   parseScheduledTask,
@@ -64,13 +65,8 @@ export class FileScheduledTaskStore implements ScheduledTaskStore {
     taskId: string,
   ): Promise<boolean> {
     const path = this.getFilePath(taskId);
-    let task: ScheduledTask;
-    try {
-      task = parseScheduledTask(parseJson(await readFile(path, "utf8")));
-    } catch (error) {
-      if (isFileNotFound(error)) return false;
-      throw error;
-    }
+    const task = await readJsonRecord(path, parseScheduledTask);
+    if (task === undefined) return false;
     if (task.kind !== kind || task.channelId !== channelId || task.accessScope !== accessScope) {
       return false;
     }
@@ -84,9 +80,8 @@ export class FileScheduledTaskStore implements ScheduledTaskStore {
 
   private async readAll(): Promise<ScheduledTask[]> {
     const paths = await this.getFiles();
-    return Promise.all(
-      paths.map(async (path) => parseScheduledTask(parseJson(await readFile(path, "utf8")))),
-    );
+    const tasks = await Promise.all(paths.map((path) => readJsonRecord(path, parseScheduledTask)));
+    return tasks.filter((task): task is ScheduledTask => task !== undefined);
   }
 
   private async getFiles(): Promise<string[]> {

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 
@@ -37,6 +38,21 @@ test("updates a goal and finds it by worker id", async () => {
 
   assert.deepEqual(await store.findByWorkerId("worker-1"), updated);
   assert.equal(await store.findByWorkerId("worker-2"), undefined);
+});
+
+test("quarantines a corrupt sibling and keeps reading valid goals", async () => {
+  await using temp = await createTempDir("klein-initiative-goals-");
+  const directory = join(temp.path, "goals");
+  const store = new FileInitiativeGoalStore(directory);
+  const goal = makeGoal({ id: "goal-1" });
+  await store.create(goal);
+  await writeFile(join(directory, "broken.json"), "{not json", "utf8");
+  await writeFile(join(directory, "invalid.json"), JSON.stringify({ id: "goal-2" }), "utf8");
+
+  assert.deepEqual(await store.listAll(), [goal]);
+  assert.equal(await store.get("broken"), undefined);
+  assert.deepEqual(await store.get("goal-1"), goal);
+  assert.equal((await readdir(join(directory, "corrupt"))).length, 2);
 });
 
 function makeGoal(overrides: Partial<InitiativeGoal> = {}): InitiativeGoal {

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { link, mkdir, readdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { link, mkdir, readdir, rename, unlink, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import type { AgentEvent, AgentEventContent } from "@agents/core/agent-event";
@@ -16,7 +16,8 @@ import {
   serializeConversationKey,
   type ConversationKey,
 } from "@shared/conversation-key";
-import { getErrorCode, isFileNotFound, isRecord, parseJson } from "@shared/type-guards";
+import { readJsonRecord } from "@shared/record-file";
+import { getErrorCode, isFileNotFound, isRecord } from "@shared/type-guards";
 
 export type InboxItemStatus = "pending" | "claimed" | "done" | "interrupted" | "failed";
 
@@ -171,21 +172,7 @@ export class ConversationInbox implements ConversationInboxStore {
   }
 
   private async readItem(path: string): Promise<InboxItem | undefined> {
-    let content: string;
-    try {
-      content = await readFile(path, "utf8");
-    } catch (error) {
-      if (isFileNotFound(error)) return undefined;
-      throw error;
-    }
-
-    let value: unknown;
-    try {
-      value = parseJson(content);
-    } catch {
-      return undefined;
-    }
-    return isInboxItem(value) ? value : undefined;
+    return readJsonRecord(path, parseInboxItem);
   }
 
   private async write(item: InboxItem): Promise<void> {
@@ -221,6 +208,11 @@ function serializeItem(item: InboxItem): string {
 
 function compareItems(left: InboxItem, right: InboxItem): number {
   return left.enqueuedAt.localeCompare(right.enqueuedAt) || left.id.localeCompare(right.id);
+}
+
+function parseInboxItem(value: unknown): InboxItem {
+  if (!isInboxItem(value)) throw new Error("Invalid inbox item");
+  return value;
 }
 
 function isInboxItem(value: unknown): value is InboxItem {

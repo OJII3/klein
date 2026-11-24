@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { mkdir, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 
@@ -22,4 +23,15 @@ test("saves and loads planner state per scope", async () => {
 
   assert.deepEqual(await store.get("channel-1", "owner:1"), state);
   assert.equal(await store.get("channel-1", "user:2"), undefined);
+});
+
+test("quarantines corrupt planner state so that channel starts fresh", async () => {
+  await using temp = await createTempDir("klein-planner-state-");
+  const directory = join(temp.path, "planner");
+  await mkdir(directory, { recursive: true });
+  await writeFile(join(directory, `${encodeURIComponent("channel-1:owner:1")}.json`), "{not json");
+  const store = new FilePlannerStateStore(directory);
+
+  assert.equal(await store.get("channel-1", "owner:1"), undefined);
+  assert.equal((await readdir(join(directory, "corrupt"))).length, 1);
 });
