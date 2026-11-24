@@ -237,6 +237,7 @@ export const ConfigSchema = Type.Object(
       {
         agentDir: Type.String({ minLength: 1 }),
         logDir: Type.Optional(Type.String({ minLength: 1 })),
+        stateDir: Type.Optional(Type.String({ minLength: 1 })),
       },
       { additionalProperties: false },
     ),

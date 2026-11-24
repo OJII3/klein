@@ -291,6 +291,10 @@
         "logDir": {
           "type": "string",
           "minLength": 1
+        },
+        "stateDir": {
+          "type": "string",
+          "minLength": 1
         }
       },
       "additionalProperties": false
