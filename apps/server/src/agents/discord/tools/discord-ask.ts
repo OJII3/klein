@@ -7,6 +7,7 @@ export function createDiscordAskTool(
   channelApi: Pick<DiscordChannelApi, "sendChoices">,
   channelId: string,
   requesterUserId: () => string | undefined,
+  onMessageSent?: () => void,
 ) {
   return defineSurfaceTool(
     {
@@ -34,6 +35,7 @@ export function createDiscordAskTool(
           options: params.options,
           requesterUserId: userId,
         });
+        onMessageSent?.();
 
         return {
           content: [

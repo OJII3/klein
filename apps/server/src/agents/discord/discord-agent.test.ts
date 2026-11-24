@@ -169,6 +169,49 @@ test("routes voice replies through discord_speak using the existing runtime prom
   agent.dispose();
 });
 
+test("counts messages sent by Discord surface tools", async () => {
+  let tools: readonly ToolDefinition[] = [];
+  const runtime: AgentRuntime = {
+    async prompt() {
+      const sendTool = tools.find((candidate) => candidate.name === "discord_send");
+      assert.ok(sendTool);
+      await sendTool.execute(
+        "tool-call",
+        { content: "送信する本文" },
+        undefined,
+        undefined,
+        await createStubExtensionToolContext(),
+      );
+      return undefined;
+    },
+    dispose() {},
+  };
+  const agentFactory: AgentFactory<ToolDefinition> = {
+    async create(_definition, createTools) {
+      tools = createTools({ requesterId: () => undefined });
+      return runtime;
+    },
+  };
+  const channelApi = createStubDiscordChannelApi();
+  const agent = await DiscordAgent.create(agentFactory, "channel-123", "system prompt", {
+    tools: (toolContext, hooks) =>
+      createDiscordAgentTools({
+        analyzeImage: async () => "",
+        channelApi,
+        channelId: "channel-123",
+        ownerFeaturesAllowed: false,
+        requesterUserId: toolContext.requesterId,
+        onMessageSent: hooks.onMessageSent,
+        watchCheckRunner: silentWatchCheckRunner,
+      }),
+  });
+
+  assert.equal(agent.getSentMessageCount(), 0);
+  await agent.promptMessage(message);
+  assert.equal(agent.getSentMessageCount(), 1);
+  agent.dispose();
+});
+
 test("adds discord_ask only when a turn requester is available", () => {
   const channelApi = createStubDiscordChannelApi();
   const withRequester = createDiscordAgentTools({

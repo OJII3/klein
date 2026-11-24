@@ -8,6 +8,7 @@ export function createDiscordSendTool(
   channelApi: Pick<DiscordChannelApi, "sendMessage" | "sendTyping">,
   channelId: Parameters<DiscordChannelApi["sendMessage"]>[0],
   guard?: PromiseGuard,
+  onMessageSent?: () => void,
 ) {
   return defineSurfaceTool(
     {
@@ -31,6 +32,7 @@ export function createDiscordSendTool(
         });
         const sent = await channelApi.sendMessage(channelId, params.content);
         const messageIds = Array.isArray(sent) ? sent : [];
+        onMessageSent?.();
 
         return {
           content: [

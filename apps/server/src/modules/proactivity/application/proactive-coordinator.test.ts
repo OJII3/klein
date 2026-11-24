@@ -579,10 +579,15 @@ test("attaches up to five queued signals and expires overdue ones", async () => 
       accessScope: "owner:123",
     });
     const lines = context.pendingSignals?.split("\n") ?? [];
-    assert.equal(lines.length, 5);
-    assert.match(lines[0] ?? "", /候補 0/u);
-    assert.match(lines[4] ?? "", /候補 4/u);
+    assert.equal(lines.length, 6);
+    assert.match(lines[0] ?? "", /These topics were collected/u);
+    assert.match(lines[1] ?? "", /候補 0/u);
+    assert.match(lines[5] ?? "", /候補 4/u);
 
+    const pending = await signalStore.get("attach-0");
+    assert.equal(pending?.status, "queued");
+
+    await coordinator.markPendingSignalsSurfaced(context.pendingSignalsToSurface ?? []);
     const consumed = await signalStore.get("attach-0");
     assert.equal(consumed?.status, "surfaced");
     assert.deepEqual(consumed?.delivery, {

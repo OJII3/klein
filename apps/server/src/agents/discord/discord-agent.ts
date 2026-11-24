@@ -13,26 +13,37 @@ import {
 import { BOT_MESSAGE_GUIDANCE } from "./prompt-policy";
 import type { AccessScope } from "@shared/access";
 
+export interface DiscordAgentToolHooks {
+  /** Called after a tool has sent a user-visible message to the channel. */
+  readonly onMessageSent: () => void;
+}
+
 export interface DiscordAgentCreateOptions {
   readonly sessionKey?: string;
   readonly handoffContext?: string;
   readonly ownerFeaturesAllowed?: boolean;
   readonly ownerUserId?: string;
   readonly accessScope?: AccessScope;
-  readonly tools?: (context: AgentToolContext) => readonly ToolDefinition[];
+  readonly tools?: (
+    context: AgentToolContext,
+    hooks: DiscordAgentToolHooks,
+  ) => readonly ToolDefinition[];
 }
 
 export interface DiscordConversationAgent extends ConversationAgent {
   promptMessage(message: DiscordMessage, context?: DiscordTurnContext): Promise<void>;
   steerMessage?(message: DiscordMessage, context?: DiscordTurnContext): Promise<void>;
+  /** Number of user-visible messages sent by this agent so far. */
+  getSentMessageCount?(): number;
 }
 
 export class DiscordAgent implements DiscordConversationAgent {
   private constructor(
     private readonly runtime: AgentRuntime,
     private readonly channelId: string,
-    private readonly ownerUserId?: string,
-    private readonly ownerFeaturesAllowed = false,
+    private readonly sentMessages: { count: number },
+    private readonly ownerUserId: string | undefined,
+    private readonly ownerFeaturesAllowed: boolean,
   ) {}
 
   static async create(
@@ -42,11 +53,17 @@ export class DiscordAgent implements DiscordConversationAgent {
     options: DiscordAgentCreateOptions = {},
   ): Promise<DiscordAgent> {
     const ownerFeaturesAllowed = options.ownerFeaturesAllowed === true && !!options.ownerUserId;
+    const sentMessages = { count: 0 };
     const runtime = await agentFactory.create(
       {
         systemPrompt,
       },
-      options.tools ?? (() => []),
+      (toolContext) =>
+        options.tools?.(toolContext, {
+          onMessageSent: () => {
+            sentMessages.count += 1;
+          },
+        }) ?? [],
       {
         role: { kind: "conversation" },
         initialContext: options.handoffContext
@@ -60,7 +77,17 @@ export class DiscordAgent implements DiscordConversationAgent {
       },
     );
 
-    return new DiscordAgent(runtime, channelId, options.ownerUserId, ownerFeaturesAllowed);
+    return new DiscordAgent(
+      runtime,
+      channelId,
+      sentMessages,
+      options.ownerUserId,
+      ownerFeaturesAllowed,
+    );
+  }
+
+  getSentMessageCount(): number {
+    return this.sentMessages.count;
   }
 
   prompt(turn: AgentTurn): Promise<void> {

@@ -52,6 +52,7 @@ export interface DiscordAgentToolsOptions {
   readonly proactive?: ProactiveToolCoordinator;
   readonly initiative?: InitiativeToolCoordinator;
   readonly promiseGuard?: { readonly mode: PromiseGuardMode; readonly logger: Logger };
+  readonly onMessageSent?: () => void;
 }
 
 /** エージェント本体ではなく composition root から呼ぶ。 */
@@ -93,13 +94,34 @@ export function createDiscordAgentTools(
     ),
     createDiscordChannelHistoryContentTool(channelHistoryStore),
     ...(options.requesterUserId
-      ? [createDiscordAskTool(options.channelApi, options.channelId, options.requesterUserId)]
+      ? [
+          createDiscordAskTool(
+            options.channelApi,
+            options.channelId,
+            options.requesterUserId,
+            options.onMessageSent,
+          ),
+        ]
       : []),
     ...(options.speak
-      ? [createDiscordSpeakTool(options.speak)]
-      : [createDiscordSendTool(options.channelApi, options.channelId, promiseGuard)]),
+      ? [createDiscordSpeakTool(options.speak, options.onMessageSent)]
+      : [
+          createDiscordSendTool(
+            options.channelApi,
+            options.channelId,
+            promiseGuard,
+            options.onMessageSent,
+          ),
+        ]),
     ...(!options.speak && options.tts
-      ? [createDiscordVoiceTool(options.channelApi, options.channelId, options.tts)]
+      ? [
+          createDiscordVoiceTool(
+            options.channelApi,
+            options.channelId,
+            options.tts,
+            options.onMessageSent,
+          ),
+        ]
       : []),
     ...(options.scheduledTaskStore
       ? createReminderTools(options.scheduledTaskStore, options.channelId, accessScope)

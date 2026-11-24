@@ -60,6 +60,7 @@ export interface AgentCoordinatorDependencies {
   readonly proactive?: Pick<
     ProactiveCoordinator,
     | "getContext"
+    | "markPendingSignalsSurfaced"
     | "ingestWatchSignal"
     | "markSignalsSurfaced"
     | "collectDueDigests"
@@ -339,6 +340,7 @@ export class AgentCoordinator {
             accessScope,
             logger,
           );
+          const sentBefore = agent.getSentMessageCount?.();
           await agent.promptMessage(message, {
             userMemory,
             sharedMemory,
@@ -347,6 +349,13 @@ export class AgentCoordinator {
             ...(proactive?.waitingOn ? { waitingOn: proactive.waitingOn } : {}),
             ...(proactive?.pendingSignals ? { pendingSignals: proactive.pendingSignals } : {}),
           });
+          await this.surfacePendingSignalsAfterReply(
+            message.channelId,
+            agent,
+            proactive?.pendingSignalsToSurface,
+            sentBefore,
+            logger,
+          );
           logger.debug(
             {
               durationMs: Date.now() - startedAt,
@@ -391,6 +400,28 @@ export class AgentCoordinator {
         "Failed to read proactive context",
       );
       return undefined;
+    }
+  }
+
+  private async surfacePendingSignalsAfterReply(
+    channelId: string,
+    agent: DiscordConversationAgent,
+    signals: ProactiveContext["pendingSignalsToSurface"],
+    sentBefore: number | undefined,
+    logger: Logger,
+  ): Promise<void> {
+    if (!signals || signals.length === 0) return;
+    const replied =
+      sentBefore === undefined || (agent.getSentMessageCount?.() ?? sentBefore) > sentBefore;
+    if (!replied) return;
+
+    try {
+      await this.dependencies.proactive?.markPendingSignalsSurfaced(signals);
+    } catch (error) {
+      logger.warn(
+        { err: error, event: "proactive_pending_signals_surface_failed", channelId },
+        "Failed to mark pending signals as surfaced",
+      );
     }
   }
 
