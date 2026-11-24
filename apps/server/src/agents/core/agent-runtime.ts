@@ -21,5 +21,7 @@ export interface AgentRuntime {
   abort?(): Promise<void>;
   compactForHandoff?(): Promise<string>;
   getTurnProgress?(eventId: string): AgentTurnProgress;
+  /** Leaves a model-visible note that the turn was interrupted after partial output. */
+  markInterrupted?(eventId: string): Promise<void>;
   dispose(): void;
 }

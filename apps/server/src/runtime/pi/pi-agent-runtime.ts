@@ -325,6 +325,20 @@ export class PiAgentRuntime implements AgentRuntime {
     return "none";
   }
 
+  async markInterrupted(_eventId: string): Promise<void> {
+    await this.enqueue(async () => {
+      this.ensureSessionAvailable();
+      await this.session.sendCustomMessage({
+        content:
+          "A previous turn was interrupted after it started producing output. " +
+          "Its partial output is above. Do not repeat messages that were already sent. " +
+          "Continue only if the user asks or the remaining work is clearly needed.",
+        customType: "klein-turn-interrupted",
+        display: false,
+      });
+    });
+  }
+
   async steer(turn: AgentTurn): Promise<void> {
     const prompt = createPiEventPrompt(turn.event);
     this.ensureSessionAvailable();

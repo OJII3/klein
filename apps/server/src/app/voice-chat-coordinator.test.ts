@@ -31,6 +31,7 @@ function createFakeVoiceAgent(
     getTurnProgress() {
       return "none";
     },
+    async markInterrupted() {},
     compactForHandoff() {
       return undefined;
     },

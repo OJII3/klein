@@ -37,6 +37,8 @@ export interface DiscordConversationAgent extends ConversationAgent {
   getSentMessageCount?(): number;
   /** Durable progress of the turn for an event id, read from the Pi session. */
   getTurnProgress(eventId: string): AgentTurnProgress;
+  /** Leaves a model-visible note that the turn was interrupted after partial output. */
+  markInterrupted(eventId: string): Promise<void>;
 }
 
 export class DiscordAgent implements DiscordConversationAgent {
@@ -94,6 +96,10 @@ export class DiscordAgent implements DiscordConversationAgent {
 
   getTurnProgress(eventId: string): AgentTurnProgress {
     return this.runtime.getTurnProgress?.(eventId) ?? "none";
+  }
+
+  markInterrupted(eventId: string): Promise<void> {
+    return this.runtime.markInterrupted?.(eventId) ?? Promise.resolve();
   }
 
   prompt(turn: AgentTurn): Promise<void> {

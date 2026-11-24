@@ -51,6 +51,7 @@ interface TestHarness {
   readonly createdSessionKeys: string[];
   readonly prompts: Map<string, AgentTurn[]>;
   readonly ownerFeaturesAllowed: boolean[];
+  readonly interruptedNotes: string[];
 }
 
 function createHarness(
@@ -91,6 +92,7 @@ function createHarness(
   const createdSessionKeys: string[] = [];
   const prompts = new Map<string, AgentTurn[]>();
   const ownerFeaturesAllowed: boolean[] = [];
+  const interruptedNotes: string[] = [];
   const workerStarts: WorkerStartInput[] = [];
   const workerSends: { scope: WorkerScope; workerId: string; message: string }[] = [];
   const workers: WorkerControl = {
@@ -132,6 +134,9 @@ function createHarness(
           const progress = runtimeBehavior.turnProgress;
           if (typeof progress === "function") return progress(eventId, creationOptions.sessionKey);
           return progress ?? "none";
+        },
+        async markInterrupted(eventId) {
+          interruptedNotes.push(eventId);
         },
         async compactForHandoff() {
           return "previous conversation summary";
@@ -192,6 +197,7 @@ function createHarness(
     createdSessionKeys,
     prompts,
     ownerFeaturesAllowed,
+    interruptedNotes,
   };
 }
 
@@ -432,6 +438,7 @@ test("leaves an inbox item interrupted when its turn outcome is uncertain", asyn
 
     assert.equal(harness.prompts.get("channel-a")?.length ?? 0, 0);
     assert.equal(harness.inbox.get(conversationKey, message.id)?.status, "interrupted");
+    assert.deepEqual(harness.interruptedNotes, ["message-a"]);
   } finally {
     await harness.agentCoordinator.dispose();
   }

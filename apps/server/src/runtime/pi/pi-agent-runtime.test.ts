@@ -595,6 +595,27 @@ test("leaves a turn started when the prompt fails", async () => {
   runtime.dispose();
 });
 
+test("leaves a model-visible note when a turn is interrupted after partial output", async () => {
+  const sent: unknown[] = [];
+  const runtime = new PiAgentRuntime(
+    createStubPiRuntimeSession({
+      async sendCustomMessage(message) {
+        sent.push(message);
+      },
+    }),
+  );
+
+  await runtime.markInterrupted("event-1");
+
+  assert.equal(sent.length, 1);
+  const note = sent[0];
+  assert.ok(isRecord(note));
+  assert.equal(note.customType, "klein-turn-interrupted");
+  assert.equal(note.display, false);
+  assert.match(String(note.content), /interrupted/u);
+  runtime.dispose();
+});
+
 test("passes image analysis to the main session without image attachments", async () => {
   const received: Array<{ kind: string; value: unknown }> = [];
   const runtime = new PiAgentRuntime(

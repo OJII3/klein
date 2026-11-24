@@ -568,7 +568,7 @@ export class AgentCoordinator {
     eventId: string,
     logger: Logger,
   ): Promise<InboxItemOutcome | undefined> {
-    const progress = await this.readTurnProgress(conversationKey, accessScope, eventId);
+    const { agent, progress } = await this.readTurnState(conversationKey, accessScope, eventId);
     if (progress === "completed") {
       logger.info(
         { conversationKey, event: "conversation_inbox_item_completed", eventId },
@@ -577,6 +577,19 @@ export class AgentCoordinator {
       return "done";
     }
     if (progress === "uncertain") {
+      try {
+        await agent.markInterrupted(eventId);
+      } catch (error) {
+        logger.warn(
+          {
+            err: error,
+            conversationKey,
+            event: "conversation_inbox_interrupted_note_failed",
+            eventId,
+          },
+          "Failed to leave an interrupted-turn note in the session",
+        );
+      }
       logger.warn(
         { conversationKey, event: "conversation_inbox_item_interrupted", eventId },
         "Left a conversation inbox item interrupted because its turn has no decisive outcome",
@@ -586,18 +599,18 @@ export class AgentCoordinator {
     return undefined;
   }
 
-  private async readTurnProgress(
+  private async readTurnState(
     conversationKey: ConversationKey,
     accessScope: AccessScope,
     eventId: string,
-  ): Promise<AgentTurnProgress> {
+  ): Promise<{ readonly agent: DiscordConversationAgent; readonly progress: AgentTurnProgress }> {
     const state = await this.sessionManager.ensureConversationState(
       conversationKey,
       Date.now(),
       accessScope,
     );
     const agent = await this.sessionManager.getAgent(conversationKey, state);
-    return agent.getTurnProgress(eventId);
+    return { agent, progress: agent.getTurnProgress(eventId) };
   }
 
   private async resolveProactiveContext(
