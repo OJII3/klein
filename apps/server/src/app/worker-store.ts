@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rename, unlink, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
-import type { WorkerScope, WorkerStatus } from "@agents/core/worker-agent";
+import type { WorkerResult, WorkerScope, WorkerStatus } from "@agents/core/worker-agent";
 import { parseAccessScope } from "@shared/access";
 import { isConversationKey } from "@shared/conversation-key";
 import { isFileNotFound, isRecord, parseJson } from "@shared/type-guards";
@@ -16,6 +16,10 @@ export interface StoredWorker extends WorkerScope {
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly closeAfterResult: boolean;
+  /** The last prompt result, kept until the conversation receives it. */
+  readonly lastResult?: WorkerResult;
+  /** When `lastResult` was delivered to the conversation. */
+  readonly resultDeliveredAt?: string;
 }
 
 export interface WorkerStore {
@@ -88,6 +92,22 @@ function isStoredWorker(value: unknown): value is StoredWorker {
       value.status === "interrupted") &&
     typeof value.createdAt === "string" &&
     typeof value.updatedAt === "string" &&
-    typeof value.closeAfterResult === "boolean"
+    typeof value.closeAfterResult === "boolean" &&
+    (value.lastResult === undefined || isWorkerResult(value.lastResult)) &&
+    (value.resultDeliveredAt === undefined || isTimestamp(value.resultDeliveredAt))
   );
+}
+
+function isWorkerResult(value: unknown): value is WorkerResult {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.workerId === "string" &&
+    (value.status === "completed" || value.status === "failed") &&
+    typeof value.text === "string" &&
+    (value.error === undefined || typeof value.error === "string")
+  );
+}
+
+function isTimestamp(value: unknown): value is string {
+  return typeof value === "string" && Number.isFinite(Date.parse(value));
 }

@@ -730,6 +730,7 @@ export async function bootstrapApplication(): Promise<void> {
       },
     );
     await agentCoordinator.initialize();
+    await workerAgentCoordinator.resumePendingWork();
     restoringReactions = false;
     await Promise.all(
       pendingReactions.map((reaction) =>
