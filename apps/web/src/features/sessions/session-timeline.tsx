@@ -2,10 +2,10 @@ import type { PiSessionEvent, SessionSummary } from "../../api";
 import { EmptyState } from "../../components/feedback";
 import { JsonValue } from "../../components/json-value";
 import {
-  channelLabel,
   formatClockSeconds,
   formatCompactTimestamp,
   formatTimestamp,
+  sessionLabel,
 } from "../../lib/format";
 
 interface SessionTimelineProps {
@@ -60,7 +60,7 @@ export function SessionTimeline({
           className="truncate text-[1.05rem] leading-snug font-semibold text-ink"
           title={session.channelKey}
         >
-          {channelLabel(session)}
+          {sessionLabel(session)}
         </h2>
         <dl className="mt-2.5 flex flex-wrap gap-x-5 gap-y-1 text-[0.68rem]">
           <div className="flex gap-1.5">

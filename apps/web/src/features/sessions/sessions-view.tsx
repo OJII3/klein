@@ -2,7 +2,7 @@ import type { PiSessionEvent, SessionSummary } from "../../api";
 import { EmptyState, ErrorNotice, LoadingState } from "../../components/feedback";
 import { Stat, StatStrip } from "../../components/stats";
 import { ViewHeader } from "../../components/view-header";
-import { channelLabel, formatCompactTimestamp, truncateMiddle } from "../../lib/format";
+import { formatCompactTimestamp, sessionLabel, truncateMiddle } from "../../lib/format";
 import { SessionTimeline } from "./session-timeline";
 
 interface SessionsViewProps {
@@ -88,7 +88,7 @@ export function SessionsView({
                   </option>
                   {selectableSessions.map((session) => (
                     <option key={session.id} value={session.id}>
-                      {truncateMiddle(channelLabel(session), 24)} (
+                      {truncateMiddle(sessionLabel(session), 24)} (
                       {formatCompactTimestamp(session.modified)})
                     </option>
                   ))}
@@ -109,7 +109,7 @@ export function SessionsView({
                     <li key={session.id}>
                       <button
                         aria-current={selected ? "true" : undefined}
-                        aria-label={`${channelLabel(session)} (${session.messageCount} messages)`}
+                        aria-label={`${sessionLabel(session)} (${session.messageCount} messages)`}
                         className="w-full"
                         onClick={() => onSelect(session.id)}
                         type="button"
@@ -119,7 +119,7 @@ export function SessionsView({
                             className="truncate text-[0.8rem] font-medium text-ink"
                             title={session.channelKey}
                           >
-                            {truncateMiddle(channelLabel(session), 40)}
+                            {truncateMiddle(sessionLabel(session), 40)}
                           </span>
                           <span className="flex items-baseline justify-between gap-2 font-mono text-[0.62rem] text-ink-faint">
                             <span>{session.messageCount} messages</span>

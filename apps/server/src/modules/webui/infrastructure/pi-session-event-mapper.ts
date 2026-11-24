@@ -2,21 +2,23 @@ import type { SessionEntry, SessionInfo } from "@earendil-works/pi-coding-agent"
 
 import { parseDiscordChannelId } from "@shared/discord-channel-session-key";
 import { isRecord } from "@shared/type-guards";
-import type { PiViewerEvent, ViewerSessionSummary } from "@klein/webui-api";
+import type { PiViewerEvent, ViewerSessionAgentRole, ViewerSessionSummary } from "@klein/webui-api";
 
 const FIRST_MESSAGE_MAX_LENGTH = 240;
 const EVENT_SUMMARY_MAX_LENGTH = 500;
 
 export function toViewerSessionSummary(
   info: SessionInfo,
-  channelKey: string,
+  sessionKey: string,
+  agentRole: ViewerSessionAgentRole,
   channelNames?: ReadonlyMap<string, string>,
 ): ViewerSessionSummary {
-  const channelId = parseDiscordChannelId(channelKey);
+  const channelId = agentRole === "conversation" ? parseDiscordChannelId(sessionKey) : undefined;
   const channelName = channelId ? channelNames?.get(channelId) : undefined;
   return {
     id: info.id,
-    channelKey,
+    agentRole,
+    channelKey: sessionKey,
     ...(channelId ? { channelId } : {}),
     ...(channelName ? { channelName } : {}),
     created: info.created.toISOString(),

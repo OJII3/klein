@@ -42,8 +42,11 @@ export interface PiViewerEvent {
 
 export type ViewerEvent = PinoViewerEvent | PiViewerEvent;
 
+export type ViewerSessionAgentRole = "conversation" | "worker";
+
 export interface ViewerSessionSummary {
   readonly id: string;
+  readonly agentRole: ViewerSessionAgentRole;
   readonly channelKey: string;
   readonly channelId?: string;
   readonly channelName?: string;

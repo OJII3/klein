@@ -1,3 +1,5 @@
+import type { ViewerSessionAgentRole } from "../api";
+
 export const LEVEL_LABELS: Record<number, string> = {
   10: "trace",
   20: "debug",
@@ -117,6 +119,22 @@ export function truncateMiddle(value: string, maxLength: number): string {
 
 export function channelLabel(session: { channelName?: string; channelKey: string }): string {
   return session.channelName ? `#${session.channelName}` : session.channelKey;
+}
+
+const WORKER_ID_PREFIX = "worker-";
+
+export function sessionLabel(session: {
+  agentRole: ViewerSessionAgentRole;
+  channelName?: string;
+  channelKey: string;
+}): string {
+  if (session.agentRole === "worker") {
+    const id = session.channelKey.startsWith(WORKER_ID_PREFIX)
+      ? session.channelKey.slice(WORKER_ID_PREFIX.length)
+      : session.channelKey;
+    return `Worker ${id}`;
+  }
+  return channelLabel(session);
 }
 
 export function levelLabel(level: number | string): string {
