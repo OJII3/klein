@@ -7,11 +7,13 @@ import { FileWorkerStore } from "./worker-store";
 import { ChannelSessionStateStore } from "./channel-session-state-store";
 import { parseCliOptions } from "./cli-options";
 import { loadConfig } from "./config";
+import { ConversationInbox } from "./conversation-inbox";
 import { resolveCredentials } from "./credentials";
 import { createLogFilePath, createLogger, flushLogger } from "./logger";
 import { collectModelsInUse } from "./model-configuration";
 import { loadConversationSystemPrompt, loadPromptFile, PROACTIVITY_PROMPT_PATH } from "./prompt";
 import { loadProfile } from "./profile";
+import { resolveStateDir } from "./runtime-paths";
 import { createShutdownRunner } from "./shutdown";
 import { TaskCoordinator } from "./task-coordinator";
 import { VoiceChatCoordinator } from "./voice-chat-coordinator";
@@ -86,7 +88,6 @@ import { QuickJsWatchCheckRunner } from "@modules/scheduling/infrastructure/quic
 import { SecretService } from "@modules/secrets/application/secret-service";
 import { FileSecretStore } from "@modules/secrets/infrastructure/file-secret-store";
 import { FileSecretRequestStore } from "@modules/secrets/infrastructure/file-secret-request-store";
-import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import type { DiscordReactionEvent } from "@modules/discord/domain/discord-reaction";
 import { accessScopeUserId, isOwnerAccessScope, parseAccessScope } from "@shared/access";
 import { ensureUserEnvironment, resolveUserEnvironment } from "@shared/user-environment";
@@ -108,6 +109,7 @@ export async function bootstrapApplication(): Promise<void> {
   logger.info({ event: "application_starting" }, "Starting Klein");
 
   const agentDir = resolve(config.runtime.agentDir);
+  const stateDir = resolveStateDir(config);
   const proactivityConfig = resolveProactivityConfig(config, agentDir);
   const initiativeConfig = resolveInitiativeConfig(config, agentDir, proactivityConfig.enabled);
   const systemPrompt = await loadConversationSystemPrompt({
@@ -124,6 +126,7 @@ export async function bootstrapApplication(): Promise<void> {
     ? await loadPromptFile(profile.voiceSystemPromptFile)
     : undefined;
   const taskCoordinator = new TaskCoordinator();
+  const conversationInbox = new ConversationInbox(stateDir);
   const tts = config.features.tts?.enabled ? new Sbv2Tts(config.features.tts.serverUrl) : undefined;
   const discordUserDirectory = new DiscordUserDirectory(
     new FileDiscordUserStore(resolve(agentDir, "discord-users.json")),
@@ -580,6 +583,7 @@ export async function bootstrapApplication(): Promise<void> {
     scheduledTaskStore,
     userMemoryCoordinator,
     userMemoryStore,
+    inbox: conversationInbox,
     watchCheckRunner,
     taskCoordinator,
   });
@@ -710,20 +714,13 @@ export async function bootstrapApplication(): Promise<void> {
   });
 
   try {
-    const pendingMessages: DiscordMessage[] = [];
     const pendingReactions: DiscordReactionEvent[] = [];
-    let restoring = true;
+    let restoringReactions = true;
     await workerAgentCoordinator.load();
     await discordService.start(
-      (message) => {
-        if (restoring) {
-          pendingMessages.push(message);
-          return Promise.resolve();
-        }
-        return agentCoordinator.handleDiscordMessage(message);
-      },
+      (message) => agentCoordinator.acceptDiscordMessage(message),
       (reaction) => {
-        if (restoring) {
+        if (restoringReactions) {
           pendingReactions.push(reaction);
           return Promise.resolve();
         }
@@ -733,15 +730,14 @@ export async function bootstrapApplication(): Promise<void> {
       },
     );
     await agentCoordinator.initialize();
-    restoring = false;
-    await Promise.all([
-      ...pendingMessages.map((message) => agentCoordinator.handleDiscordMessage(message)),
-      ...pendingReactions.map((reaction) =>
+    restoringReactions = false;
+    await Promise.all(
+      pendingReactions.map((reaction) =>
         discordOperatingState.isActive()
           ? evalFeedbackObserver.handleReaction(reaction)
           : Promise.resolve(),
       ),
-    ]);
+    );
   } catch (error) {
     logger.fatal({ err: error, event: "startup_failed" }, "Klein failed to start");
     await runShutdown("startup_failed", 1);

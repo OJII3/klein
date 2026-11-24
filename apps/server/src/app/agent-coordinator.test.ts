@@ -34,10 +34,13 @@ import { isOwnerAccessScope, parseAccessScope } from "@shared/access";
 import { TaskCoordinator } from "./task-coordinator";
 import { AgentCoordinator, type AgentCoordinatorDependencies } from "./agent-coordinator";
 import { ChannelSessionStateStore, getChannelRotationBucket } from "./channel-session-state-store";
+import { MemoryInbox } from "../testing/memory-inbox";
 import { createTempDir } from "../testing/temp-dir";
 
 interface TestHarness {
   readonly agentCoordinator: AgentCoordinator;
+  readonly inbox: MemoryInbox;
+  readonly taskCoordinator: TaskCoordinator;
   readonly workerStarts: WorkerStartInput[];
   readonly workerSends: {
     readonly scope: WorkerScope;
@@ -62,16 +65,23 @@ function createHarness(
     | "userMemoryStore"
     | "proactive"
     | "initiative"
-  > = {},
+  > & {
+    readonly inbox?: MemoryInbox;
+    readonly operatingState?: DiscordOperatingState;
+  } = {},
   watchCheckRunner?: WatchCheckRunner,
   workerSendResult = false,
   replyWithMessage = false,
+  promptBehavior: { readonly gate?: Promise<void>; readonly error?: Error } = {},
 ): TestHarness {
   const resolvedWatchCheckRunner: WatchCheckRunner = watchCheckRunner ?? {
     async run() {
       throw new Error("Unexpected watch check");
     },
   };
+  const inbox = options.inbox ?? new MemoryInbox();
+  const operatingState = options.operatingState ?? new DiscordOperatingState();
+  const taskCoordinator = new TaskCoordinator();
   const channelLocationCalls: string[] = [];
   const createdSessionKeys: string[] = [];
   const prompts = new Map<string, AgentTurn[]>();
@@ -108,6 +118,8 @@ function createHarness(
 
       return {
         async prompt(turn) {
+          if (promptBehavior.gate) await promptBehavior.gate;
+          if (promptBehavior.error) throw promptBehavior.error;
           channelPrompts.push(turn);
           if (replyWithMessage) sentHooks.get(channelId)?.();
         },
@@ -141,6 +153,8 @@ function createHarness(
   return {
     agentCoordinator: new AgentCoordinator({
       ...options,
+      inbox,
+      operatingState,
       workers,
       createDiscordAgent: (channelId, sessionKey, handoffContext, accessScope) =>
         DiscordAgent.create(agentFactory, channelId, "system prompt", {
@@ -156,11 +170,12 @@ function createHarness(
         }),
       channelApi,
       logger: pino({ level: "silent" }),
-      operatingState: new DiscordOperatingState(),
       scheduledTaskStore,
       watchCheckRunner: resolvedWatchCheckRunner,
-      taskCoordinator: new TaskCoordinator(),
+      taskCoordinator,
     }),
+    inbox,
+    taskCoordinator,
     workerStarts,
     workerSends,
     channelLocationCalls,
@@ -235,6 +250,144 @@ test("reuses one Pi session for messages in the same Discord channel", async () 
       ),
       ["ユーザー (@user):\n最初のメッセージ", "ユーザー (@user):\n次のメッセージ"],
     );
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+test("prompts once when the same Discord message id arrives twice", async () => {
+  const harness = createHarness();
+
+  try {
+    const message = createMessage("channel-a", "message-a", "一度だけ");
+    await harness.agentCoordinator.handleDiscordMessage(message);
+    await harness.agentCoordinator.handleDiscordMessage(message);
+
+    assert.equal(harness.prompts.get("channel-a")?.length, 1);
+    assert.equal(harness.inbox.list().length, 1);
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+test("drains items that were already pending when the coordinator initializes", async () => {
+  const inbox = new MemoryInbox();
+  const message = createMessage("channel-a", "message-pending", "起動前のメッセージ");
+  const conversationKey = { kind: "discord", channelId: message.channelId } as const;
+  await inbox.enqueue({
+    kind: "discord.message",
+    id: message.id,
+    conversationKey,
+    enqueuedAt: "2026-10-14T09:30:42.123Z",
+    message,
+  });
+  const harness = createHarness(undefined, undefined, { inbox });
+
+  try {
+    await harness.agentCoordinator.initialize();
+
+    assert.equal(harness.prompts.get("channel-a")?.length, 1);
+    assert.equal(harness.inbox.get(conversationKey, message.id)?.status, "done");
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+test("keeps a message accepted before initialization pending until drains start", async () => {
+  const harness = createHarness();
+
+  try {
+    const message = createMessage("channel-a", "message-a", "起動中");
+    const conversationKey = { kind: "discord", channelId: message.channelId } as const;
+    await harness.agentCoordinator.acceptDiscordMessage(message);
+
+    assert.equal(harness.prompts.size, 0);
+    assert.equal(harness.inbox.get(conversationKey, message.id)?.status, "pending");
+
+    await harness.agentCoordinator.initialize();
+
+    assert.equal(harness.prompts.get("channel-a")?.length, 1);
+    assert.equal(harness.inbox.get(conversationKey, message.id)?.status, "done");
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+test("accepts a message without waiting for its gated turn", async () => {
+  let releasePrompt!: () => void;
+  const promptGate = new Promise<void>((resolve) => {
+    releasePrompt = resolve;
+  });
+  const harness = createHarness(undefined, undefined, {}, undefined, false, false, {
+    gate: promptGate,
+  });
+
+  try {
+    await harness.agentCoordinator.initialize();
+
+    let accepted = false;
+    const acceptance = (async () => {
+      await harness.agentCoordinator.acceptDiscordMessage(
+        createMessage("channel-a", "message-a", "急ぎ"),
+      );
+      accepted = true;
+    })();
+    await new Promise<void>((resolve) => {
+      setImmediate(resolve);
+    });
+
+    assert.equal(accepted, true);
+    assert.equal(harness.prompts.get("channel-a")?.length ?? 0, 0);
+
+    releasePrompt();
+    await acceptance;
+    await harness.taskCoordinator.waitForCompletion();
+
+    assert.equal(harness.prompts.get("channel-a")?.length, 1);
+  } finally {
+    releasePrompt();
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+test("marks an inbox item failed when its prompt fails", async () => {
+  const harness = createHarness(undefined, undefined, {}, undefined, false, false, {
+    error: new Error("prompt failed"),
+  });
+
+  try {
+    const message = createMessage("channel-a", "message-a", "失敗する");
+    await harness.agentCoordinator.handleDiscordMessage(message);
+
+    const item = harness.inbox.get({ kind: "discord", channelId: "channel-a" }, message.id);
+    assert.equal(item?.status, "failed");
+    assert.match(item?.error ?? "", /prompt failed/u);
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+test("leaves pending inbox items pending while Klein is paused", async () => {
+  const inbox = new MemoryInbox();
+  const message = createMessage("channel-a", "message-a", "停止中のメッセージ");
+  const conversationKey = { kind: "discord", channelId: message.channelId } as const;
+  await inbox.enqueue({
+    kind: "discord.message",
+    id: message.id,
+    conversationKey,
+    enqueuedAt: "2026-10-14T09:30:42.123Z",
+    message,
+  });
+  const harness = createHarness(undefined, undefined, {
+    inbox,
+    operatingState: new DiscordOperatingState("paused"),
+  });
+
+  try {
+    await harness.agentCoordinator.initialize();
+
+    assert.equal(harness.prompts.size, 0);
+    assert.equal(harness.inbox.get(conversationKey, message.id)?.status, "pending");
   } finally {
     await harness.agentCoordinator.dispose();
   }

@@ -49,7 +49,15 @@ export type NewInboxItem =
   | (NewInboxItemBase & { readonly kind: "discord.message"; readonly message: DiscordMessage })
   | (NewInboxItemBase & { readonly kind: "agent.event"; readonly event: AgentEvent });
 
-export class ConversationInbox {
+export interface ConversationInboxStore {
+  enqueue(item: NewInboxItem): Promise<boolean>;
+  claimNext(conversationKey: ConversationKey): Promise<InboxItem | undefined>;
+  finish(item: InboxItem, outcome: InboxItemOutcome, error?: string): Promise<void>;
+  recoverClaims(): Promise<number>;
+  listPendingConversations(): Promise<readonly ConversationKey[]>;
+}
+
+export class ConversationInbox implements ConversationInboxStore {
   private readonly inboxDirectory: string;
 
   constructor(stateDir: string) {

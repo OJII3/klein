@@ -38,6 +38,7 @@ import {
   type ConversationKey,
 } from "./channel-session-state-store";
 import { ChannelSessionManager } from "./channel-session-manager";
+import type { ConversationInboxStore, InboxItem } from "./conversation-inbox";
 import { ScheduledTaskDeliveryCoordinator } from "./scheduled-task-delivery-coordinator";
 import { SessionSpeakerTracker } from "./session-speaker-tracker";
 
@@ -71,6 +72,7 @@ export interface AgentCoordinatorDependencies {
   readonly userMemoryCoordinator?: Pick<UserMemoryCoordinator, "observe">;
   readonly userMemoryStore?: Pick<UserMemoryStore, "read">;
   readonly initiative?: Pick<InitiativeCoordinator, "handleWorkerResult" | "markResultDelivered">;
+  readonly inbox: ConversationInboxStore;
   readonly watchCheckRunner: WatchCheckRunner;
   readonly taskCoordinator: TaskCoordinator;
 }
@@ -80,6 +82,7 @@ export class AgentCoordinator {
   private readonly sessionManager: ChannelSessionManager<DiscordConversationAgent>;
   private readonly sessionSpeakers = new SessionSpeakerTracker();
   private readonly scheduledTaskDeliveryCoordinator: ScheduledTaskDeliveryCoordinator;
+  private drainsEnabled = false;
 
   constructor(private readonly dependencies: AgentCoordinatorDependencies) {
     this.logger = dependencies.logger.child({ component: "agent-coordinator" });
@@ -113,14 +116,22 @@ export class AgentCoordinator {
     });
   }
 
-  handleDiscordMessage(message: DiscordMessage): Promise<void> {
-    if (!this.dependencies.operatingState.isActive()) return Promise.resolve();
+  async handleDiscordMessage(message: DiscordMessage): Promise<void> {
+    const conversationKey = discordConversationKey(message);
+    if (!(await this.enqueueDiscordMessage(message))) return;
+    await this.drain(conversationKey);
+  }
 
-    const conversationKey = { kind: "discord", channelId: message.channelId } as const;
-    this.sessionManager.recordInbound(conversationKey);
-    return this.dependencies.taskCoordinator.run(() =>
-      this.sessionManager.runForConversation(conversationKey, () => this.processMessage(message)),
-    );
+  async acceptDiscordMessage(message: DiscordMessage): Promise<void> {
+    const conversationKey = discordConversationKey(message);
+    if (!(await this.enqueueDiscordMessage(message))) return;
+    if (!this.drainsEnabled) return;
+    void this.drain(conversationKey).catch((error: unknown) => {
+      this.logger.error(
+        { err: error, event: "conversation_inbox_drain_failed", conversationKey },
+        "Failed to drain a conversation inbox",
+      );
+    });
   }
 
   async rotateIdleChannels(): Promise<void> {
@@ -129,6 +140,10 @@ export class AgentCoordinator {
 
   async initialize(): Promise<void> {
     await this.sessionManager.initialize();
+    await this.dependencies.inbox.recoverClaims();
+    this.drainsEnabled = true;
+    const conversations = await this.dependencies.inbox.listPendingConversations();
+    await Promise.all(conversations.map((conversationKey) => this.drain(conversationKey)));
   }
 
   async deliverDueTasks(now = Date.now()): Promise<void> {
@@ -281,9 +296,77 @@ export class AgentCoordinator {
     await this.sessionManager.dispose();
   }
 
+  private async enqueueDiscordMessage(message: DiscordMessage): Promise<boolean> {
+    if (!this.dependencies.operatingState.isActive()) return false;
+    const conversationKey = discordConversationKey(message);
+    this.sessionManager.recordInbound(conversationKey);
+    return this.dependencies.inbox.enqueue({
+      kind: "discord.message",
+      id: message.id,
+      conversationKey,
+      enqueuedAt: new Date().toISOString(),
+      message,
+    });
+  }
+
+  private drain(conversationKey: ConversationKey): Promise<void> {
+    return this.dependencies.taskCoordinator.run(() =>
+      this.sessionManager.runForConversation(conversationKey, () =>
+        this.drainConversation(conversationKey),
+      ),
+    );
+  }
+
+  private async drainConversation(conversationKey: ConversationKey): Promise<void> {
+    while (this.dependencies.operatingState.isActive()) {
+      const item = await this.dependencies.inbox.claimNext(conversationKey);
+      if (item === undefined) return;
+
+      try {
+        await this.processItem(item);
+      } catch (error) {
+        await this.dependencies.inbox.finish(item, "failed", errorMessage(error));
+        this.logger.error(
+          {
+            err: error,
+            event: "conversation_inbox_item_failed",
+            conversationKey,
+            itemId: item.id,
+            itemKind: item.kind,
+          },
+          "Failed to process a conversation inbox item",
+        );
+        continue;
+      }
+      await this.dependencies.inbox.finish(item, "done");
+    }
+  }
+
+  private processItem(item: InboxItem): Promise<void> {
+    switch (item.kind) {
+      case "discord.message":
+        return this.processMessage(item.message);
+      case "agent.event":
+        return this.processAgentEvent(item);
+      default:
+        return assertNever(item);
+    }
+  }
+
+  private async processAgentEvent(
+    item: Extract<InboxItem, { kind: "agent.event" }>,
+  ): Promise<void> {
+    await this.sessionManager.runTurn(
+      item.conversationKey,
+      item.accessScope ?? PUBLIC_ACCESS_SCOPE,
+      async (agent) => {
+        await agent.promptEvent(item.event);
+      },
+    );
+  }
+
   private async processMessage(message: DiscordMessage): Promise<void> {
-    if (!this.dependencies.operatingState.isActive()) return;
-    const conversationKey = { kind: "discord", channelId: message.channelId } as const;
+    const conversationKey = discordConversationKey(message);
     const target = {
       guildId: message.guildId,
       channelId: message.parentChannelId ?? message.channelId,
@@ -379,6 +462,7 @@ export class AgentCoordinator {
         message.channelId,
         "ごめん、今はうまく返答できないみたい。",
       );
+      throw error;
     } finally {
       if (!ownerFeaturesAllowed) this.dependencies.sharedMemoryCoordinator?.enqueue(message);
     }
@@ -458,6 +542,18 @@ export class AgentCoordinator {
       return undefined;
     }
   }
+}
+
+function discordConversationKey(message: DiscordMessage): ConversationKey {
+  return { kind: "discord", channelId: message.channelId };
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function assertNever(value: never): never {
+  throw new Error(`Unsupported conversation inbox item: ${String(value)}`);
 }
 
 function createProactiveDigestEvent(batch: ProactiveDigestBatch): AgentEvent {

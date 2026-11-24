@@ -17,6 +17,7 @@ import type { ProactiveSignal } from "@modules/proactivity/domain/proactive-sign
 import { FileFollowUpStore } from "@modules/proactivity/infrastructure/file-follow-up-store";
 import { FileProactivePreferenceStore } from "@modules/proactivity/infrastructure/file-proactive-preference-store";
 import { FileProactiveSignalStore } from "@modules/proactivity/infrastructure/file-proactive-signal-store";
+import { MemoryInbox } from "../testing/memory-inbox";
 import { createTempDir } from "../testing/temp-dir";
 import { parseAccessScope } from "@shared/access";
 import { AgentCoordinator } from "./agent-coordinator";
@@ -137,6 +138,7 @@ async function withIntegration(
     channelApi,
     logger: pino({ level: "silent" }),
     operatingState: new DiscordOperatingState(),
+    inbox: new MemoryInbox(),
     proactive,
     watchCheckRunner: {
       async run() {
