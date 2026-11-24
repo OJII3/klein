@@ -29,7 +29,7 @@ export interface ResolvedInitiativeConfig {
 
 export function resolveInitiativeConfig(
   config: AppConfig,
-  agentDir: string,
+  stateDir: string,
   proactivityEnabled: boolean,
 ): ResolvedInitiativeConfig {
   const initiative = config.features.proactivity?.initiative;
@@ -43,9 +43,9 @@ export function resolveInitiativeConfig(
 
   return {
     enabled,
-    goalsDirectory: resolve(initiative?.goalsDirectory ?? resolve(agentDir, "initiative/goals")),
+    goalsDirectory: resolve(initiative?.goalsDirectory ?? resolve(stateDir, "initiative/goals")),
     plannerStateDirectory: resolve(
-      initiative?.plannerStateDirectory ?? resolve(agentDir, "initiative/planner"),
+      initiative?.plannerStateDirectory ?? resolve(stateDir, "initiative/planner"),
     ),
     llm: {
       provider: llm.provider,

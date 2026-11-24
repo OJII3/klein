@@ -20,20 +20,20 @@ export interface ResolvedProactivityConfig {
 
 export function resolveProactivityConfig(
   config: AppConfig,
-  agentDir: string,
+  stateDir: string,
 ): ResolvedProactivityConfig {
   const proactivity = config.features.proactivity;
 
   return {
     enabled: proactivity?.enabled ?? false,
     preferencesDirectory: resolve(
-      proactivity?.preferencesDirectory ?? resolve(agentDir, "proactive/preferences"),
+      proactivity?.preferencesDirectory ?? resolve(stateDir, "proactive/preferences"),
     ),
     followUpDirectory: resolve(
-      proactivity?.followUpDirectory ?? resolve(agentDir, "proactive/follow-ups"),
+      proactivity?.followUpDirectory ?? resolve(stateDir, "proactive/follow-ups"),
     ),
     signalDirectory: resolve(
-      proactivity?.signalDirectory ?? resolve(agentDir, "proactive/signals"),
+      proactivity?.signalDirectory ?? resolve(stateDir, "proactive/signals"),
     ),
     defaults: {
       defaultMode: proactivity?.defaultMode ?? DEFAULT_PROACTIVE_DELIVERY_MODE,

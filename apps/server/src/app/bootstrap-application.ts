@@ -15,6 +15,7 @@ import { loadConversationSystemPrompt, loadPromptFile, PROACTIVITY_PROMPT_PATH }
 import { loadProfile } from "./profile";
 import { resolveStateDir } from "./runtime-paths";
 import { createShutdownRunner } from "./shutdown";
+import { migrateStateDirectories } from "./state-migration";
 import { TaskCoordinator } from "./task-coordinator";
 import { VoiceChatCoordinator } from "./voice-chat-coordinator";
 import { DiscordAgent } from "@agents/discord/discord-agent";
@@ -110,8 +111,18 @@ export async function bootstrapApplication(): Promise<void> {
 
   const agentDir = resolve(config.runtime.agentDir);
   const stateDir = resolveStateDir(config);
-  const proactivityConfig = resolveProactivityConfig(config, agentDir);
-  const initiativeConfig = resolveInitiativeConfig(config, agentDir, proactivityConfig.enabled);
+  const userMemoryConfig = resolveUserMemoryConfig(config);
+  await migrateStateDirectories({
+    agentDir,
+    stateDir,
+    logger,
+    extraDirectories:
+      userMemoryConfig?.enabled === true && userMemoryConfig.directory === undefined
+        ? ["user-memory"]
+        : [],
+  });
+  const proactivityConfig = resolveProactivityConfig(config, stateDir);
+  const initiativeConfig = resolveInitiativeConfig(config, stateDir, proactivityConfig.enabled);
   const systemPrompt = await loadConversationSystemPrompt({
     systemPromptFile: profile.systemPromptFile,
     ...(proactivityConfig.enabled ? { proactivityPromptFile: PROACTIVITY_PROMPT_PATH } : {}),
@@ -129,31 +140,31 @@ export async function bootstrapApplication(): Promise<void> {
   const conversationInbox = new ConversationInbox(stateDir);
   const tts = config.features.tts?.enabled ? new Sbv2Tts(config.features.tts.serverUrl) : undefined;
   const discordUserDirectory = new DiscordUserDirectory(
-    new FileDiscordUserStore(resolve(agentDir, "discord-users.json")),
+    new FileDiscordUserStore(resolve(stateDir, "discord-users.json")),
     logger,
   );
   await discordUserDirectory.load();
   const channelSessionStateStore = new ChannelSessionStateStore(
-    resolve(agentDir, "channel-sessions"),
+    resolve(stateDir, "channel-sessions"),
   );
-  const scheduledTaskStore = new FileScheduledTaskStore(resolve(agentDir, "schedules"));
+  const scheduledTaskStore = new FileScheduledTaskStore(resolve(stateDir, "schedules"));
   const watchToolCatalog = { tools: [createWatchFetchTool({ agentDir })] };
   const watchCheckRunner = new QuickJsWatchCheckRunner({ tools: watchToolCatalog.tools });
-  const channelRuleStore = new FileDiscordChannelRuleStore(resolve(agentDir, "channel-rules"));
+  const channelRuleStore = new FileDiscordChannelRuleStore(resolve(stateDir, "channel-rules"));
   const discordAccessRuleStore = new FileDiscordAccessRuleStore(
-    resolve(agentDir, "discord-access.json"),
+    resolve(stateDir, "discord-access.json"),
   );
   await discordAccessRuleStore.load();
   const discordAccessRequestStore = new FileDiscordAccessRequestStore(
-    resolve(agentDir, "discord-access-requests.json"),
+    resolve(stateDir, "discord-access-requests.json"),
   );
   await discordAccessRequestStore.load();
   const discordChannelLinkStore = new FileDiscordChannelLinkStore(
-    resolve(agentDir, "discord-channel-links.json"),
+    resolve(stateDir, "discord-channel-links.json"),
   );
   await discordChannelLinkStore.load();
   const discordChannelLinkRequestStore = new FileDiscordChannelLinkRequestStore(
-    resolve(agentDir, "discord-channel-link-requests.json"),
+    resolve(stateDir, "discord-channel-link-requests.json"),
   );
   await discordChannelLinkRequestStore.load();
   const discordAccessPolicy = createDiscordAccessPolicy(
@@ -162,12 +173,11 @@ export async function bootstrapApplication(): Promise<void> {
     discordAccessRuleStore,
     (target) => discordChannelLinkStore.getLink(target)?.userId,
   );
-  const userMemoryConfig = resolveUserMemoryConfig(config);
   const userMemoryDirectory =
     userMemoryConfig?.enabled === true
       ? userMemoryConfig.directory
         ? resolve(userMemoryConfig.directory)
-        : resolve(agentDir, "user-memory")
+        : resolve(stateDir, "user-memory")
       : undefined;
   const userMemoryStore = userMemoryDirectory
     ? new MarkdownUserMemoryStore(userMemoryDirectory)
@@ -257,7 +267,7 @@ export async function bootstrapApplication(): Promise<void> {
   let workerAgentCoordinator!: WorkerAgentCoordinator;
   const secretService = new SecretService({
     secrets: new FileSecretStore(agentDir, logger),
-    requests: new FileSecretRequestStore(resolve(agentDir, "secret-requests.json")),
+    requests: new FileSecretRequestStore(resolve(stateDir, "secret-requests.json")),
     onResolved: async (request, outcome) => {
       const scope = parseAccessScope(request.accessScope);
       if (!scope) return;
@@ -289,7 +299,7 @@ export async function bootstrapApplication(): Promise<void> {
     factory: piAgentFactory,
     systemPrompt: WORKER_SYSTEM_PROMPT,
     logger,
-    store: new FileWorkerStore(resolve(agentDir, "workers")),
+    store: new FileWorkerStore(resolve(stateDir, "workers")),
     taskCoordinator,
     hasOwnedWatches: async ({ id, conversationKey, accessScope }) => {
       const scope = parseAccessScope(accessScope);
