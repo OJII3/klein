@@ -19,6 +19,12 @@ interface ScheduledTaskBase {
 export interface ReminderTask extends ScheduledTaskBase {
   readonly kind: "reminder";
   readonly message: string;
+  /** The worker producing this occurrence's notification, until its result is recorded. */
+  readonly runningWorkerId?: string;
+  /** Worker starts for this occurrence, including a start that threw. */
+  readonly attempts?: number;
+  /** Why the last worker start or worker lifetime failed. */
+  readonly lastError?: string;
 }
 
 export interface WatchTask extends ScheduledTaskBase {
@@ -78,9 +84,17 @@ export function parseScheduledTask(value: unknown): ScheduledTask {
 
   const schedule = parseStoredSchedule(value.schedule);
   if (kind === "reminder") {
-    const { message } = value;
-    if (typeof message !== "string" || message.length === 0) {
-      throw new Error("リマインダーの本文が不正です。");
+    const { message, runningWorkerId, attempts, lastError } = value;
+    if (
+      typeof message !== "string" ||
+      message.length === 0 ||
+      (runningWorkerId !== undefined &&
+        (typeof runningWorkerId !== "string" || runningWorkerId.length === 0)) ||
+      (attempts !== undefined &&
+        (typeof attempts !== "number" || !Number.isInteger(attempts) || attempts < 0)) ||
+      (lastError !== undefined && (typeof lastError !== "string" || lastError.length === 0))
+    ) {
+      throw new Error("リマインダーの保存内容が不正です。");
     }
     return {
       kind: "reminder",
@@ -91,6 +105,9 @@ export function parseScheduledTask(value: unknown): ScheduledTask {
       schedule,
       nextRunAt,
       message,
+      ...(runningWorkerId !== undefined ? { runningWorkerId } : {}),
+      ...(attempts !== undefined ? { attempts } : {}),
+      ...(lastError !== undefined ? { lastError } : {}),
     };
   }
 

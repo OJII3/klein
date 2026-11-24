@@ -353,6 +353,7 @@ export async function bootstrapApplication(): Promise<void> {
         delivery.result,
       ),
     onWorkerClosed: async ({ id, conversationKey, accessScope }) => {
+      await agentCoordinator.releaseWorkerSchedules({ id, conversationKey, accessScope });
       const scope = parseAccessScope(accessScope);
       if (!scope) return;
       const watches = await scheduledTaskStore.listForScope(

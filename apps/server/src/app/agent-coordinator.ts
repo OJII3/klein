@@ -28,6 +28,7 @@ import type { WatchCheckRunner } from "@modules/scheduling/ports/watch-check-run
 import {
   isOwnerAccessScope,
   ownerAccessScope,
+  parseAccessScope,
   PUBLIC_ACCESS_SCOPE,
   userAccessScope,
   type AccessScope,
@@ -41,6 +42,7 @@ import {
 import { ChannelSessionManager } from "./channel-session-manager";
 import type { ConversationInboxStore, InboxItem, InboxItemOutcome } from "./conversation-inbox";
 import { ScheduledTaskDeliveryCoordinator } from "./scheduled-task-delivery-coordinator";
+import type { ClosedWorker } from "./worker-agent-coordinator";
 import { SessionSpeakerTracker } from "./session-speaker-tracker";
 
 const MAX_INBOX_ATTEMPTS = 3;
@@ -153,6 +155,17 @@ export class AgentCoordinator {
     await this.scheduledTaskDeliveryCoordinator.deliverDueTasks(now);
   }
 
+  /** Leaves reminders that pointed at a closed worker due for another attempt. */
+  async releaseWorkerSchedules(worker: ClosedWorker): Promise<void> {
+    const accessScope = parseAccessScope(worker.accessScope);
+    if (!accessScope) return;
+    await this.scheduledTaskDeliveryCoordinator.releaseReminderWorker(
+      worker.conversationKey.channelId,
+      accessScope,
+      worker.id,
+    );
+  }
+
   async deliverDueDigests(now = Date.now()): Promise<void> {
     const proactive = this.dependencies.proactive;
     if (!proactive || !this.dependencies.operatingState.isActive()) return;
@@ -203,6 +216,12 @@ export class AgentCoordinator {
       }
       return;
     }
+
+    await this.scheduledTaskDeliveryCoordinator.completeReminderForWorker(
+      conversationKey.channelId,
+      accessScope,
+      result.workerId,
+    );
 
     if (!(await this.isWorkerDeliveryAllowed(conversationKey, accessScope))) return;
 

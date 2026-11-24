@@ -4,6 +4,7 @@ import pino from "pino";
 
 import type { AgentEvent } from "@agents/core/agent-event";
 import type { ConversationAgent } from "@agents/core/conversation-agent";
+import type { WorkerInfo, WorkerScope, WorkerStartInput } from "@agents/core/worker-agent";
 import {
   createStubDiscordChannelApi,
   InMemoryScheduledTaskStore,
@@ -19,7 +20,11 @@ import type { ProactiveSignal } from "@modules/proactivity/domain/proactive-sign
 import type { ReminderTask, WatchTask } from "@modules/scheduling/domain/scheduled-task";
 import type { WatchCheckRunner } from "@modules/scheduling/ports/watch-check-runner";
 import { ChannelSessionManager } from "./channel-session-manager";
-import { ScheduledTaskDeliveryCoordinator } from "./scheduled-task-delivery-coordinator";
+import {
+  MAX_REMINDER_WORKER_ATTEMPTS,
+  reminderWorkerId,
+  ScheduledTaskDeliveryCoordinator,
+} from "./scheduled-task-delivery-coordinator";
 import { TaskCoordinator } from "./task-coordinator";
 
 const DUE_AT = Date.parse("2026-10-14T00:05:00.000Z");
@@ -134,13 +139,29 @@ function createHarness(options: HarnessOptions = {}) {
     readonly workerId: string;
     readonly message: string;
   }[] = [];
-  const workerStarts: string[] = [];
+  const workerStarts: WorkerStartInput[] = [];
+  const runningWorkers = new Map<
+    string,
+    { readonly scope: WorkerScope; readonly info: WorkerInfo }
+  >();
+  let startError: Error | undefined;
   const store = options.store ?? new InMemoryScheduledTaskStore(options.tasks ?? [watch]);
   const coordinator = new ScheduledTaskDeliveryCoordinator({
     workers: {
       async start(input) {
-        workerStarts.push(input.prompt);
-        return "worker-1";
+        workerStarts.push(input);
+        if (startError) {
+          const error = startError;
+          startError = undefined;
+          throw error;
+        }
+        const id = input.id ?? "worker-1";
+        const now = new Date().toISOString();
+        runningWorkers.set(id, {
+          scope: { conversationKey: input.conversationKey, accessScope: input.accessScope },
+          info: { id, prompt: input.prompt, status: "running", createdAt: now, updatedAt: now },
+        });
+        return id;
       },
       async send(_scope, workerId, message) {
         workerSends.push({ workerId, message });
@@ -149,8 +170,14 @@ function createHarness(options: HarnessOptions = {}) {
       async close() {
         return false;
       },
-      list() {
-        return [];
+      list(scope) {
+        return [...runningWorkers.values()]
+          .filter(
+            (worker) =>
+              worker.scope.conversationKey.channelId === scope.conversationKey.channelId &&
+              worker.scope.accessScope === scope.accessScope,
+          )
+          .map((worker) => worker.info);
       },
     },
     channelApi,
@@ -176,8 +203,30 @@ function createHarness(options: HarnessOptions = {}) {
       const stored = store.tasks.get("watch-1");
       return stored?.kind === "watch" ? stored : undefined;
     },
+    storedReminder: (id = "reminder-1") => {
+      const stored = store.tasks.get(id);
+      return stored?.kind === "reminder" ? stored : undefined;
+    },
+    addWorker: (id: string, scope: WorkerScope = defaultWorkerScope) => {
+      const now = new Date().toISOString();
+      runningWorkers.set(id, {
+        scope,
+        info: { id, prompt: "", status: "running", createdAt: now, updatedAt: now },
+      });
+    },
+    removeWorker: (id: string) => {
+      runningWorkers.delete(id);
+    },
+    failNextStart: (message = "start failed") => {
+      startError = new Error(message);
+    },
   };
 }
+
+const defaultWorkerScope: WorkerScope = {
+  conversationKey: { kind: "discord", channelId: "channel-a" },
+  accessScope: "public",
+};
 
 function createRunner(
   decision: "wake" | "silent" = "wake",
@@ -416,18 +465,33 @@ test("does not re-enable a watch disabled while its check runs", async () => {
   assert.equal(stored?.lastCheckedAt, new Date(DUE_AT).toISOString());
 });
 
-test("leaves reminder delivery unchanged", async () => {
+test("starts a reminder worker and keeps the reminder until its result is recorded", async () => {
   const harness = createHarness({ tasks: [reminder] });
 
   await harness.coordinator.deliverDueTasks(Date.parse(reminder.nextRunAt));
 
   assert.deepEqual(harness.ingestCalls, []);
   assert.equal(harness.workerStarts.length, 1);
+  const workerId = reminderWorkerId(reminder);
+  assert.equal(harness.workerStarts[0]?.id, workerId);
+  assert.equal(harness.workerStarts[0]?.closeAfterResult, true);
+  const running = harness.storedReminder();
+  assert.equal(running?.runningWorkerId, workerId);
+  assert.equal(running?.attempts, 1);
+  assert.equal(running?.lastError, undefined);
+  assert.equal(harness.store.tasks.has("reminder-1"), true);
+  assert.deepEqual(harness.completedWatchers, []);
+
+  await harness.coordinator.completeReminderForWorker("channel-a", "public", workerId);
+
   assert.equal(harness.store.tasks.has("reminder-1"), false);
+  assert.deepEqual(harness.completedWatchers, [{ kind: "reminder", id: "reminder-1" }]);
+
+  await harness.coordinator.completeReminderForWorker("channel-a", "public", workerId);
   assert.deepEqual(harness.completedWatchers, [{ kind: "reminder", id: "reminder-1" }]);
 });
 
-test("does not complete reminder follow-ups for a repeating reminder", async () => {
+test("keeps a repeating reminder due until its worker result completes the occurrence", async () => {
   const repeating: ReminderTask = {
     ...reminder,
     id: "reminder-repeating",
@@ -437,9 +501,175 @@ test("does not complete reminder follow-ups for a repeating reminder", async () 
 
   await harness.coordinator.deliverDueTasks(Date.parse(repeating.nextRunAt));
 
+  const workerId = reminderWorkerId(repeating);
   assert.equal(harness.workerStarts.length, 1);
-  assert.equal(harness.store.tasks.has("reminder-repeating"), true);
+  const running = harness.storedReminder("reminder-repeating");
+  assert.equal(running?.runningWorkerId, workerId);
+  assert.equal(running?.attempts, 1);
   assert.deepEqual(harness.completedWatchers, []);
+
+  const before = Date.now();
+  await harness.coordinator.completeReminderForWorker("channel-a", "public", workerId);
+
+  const stored = harness.storedReminder("reminder-repeating");
+  assert.ok(stored);
+  assert.equal(stored.runningWorkerId, undefined);
+  assert.equal(stored.attempts, undefined);
+  assert.equal(stored.lastError, undefined);
+  assert.ok(Date.parse(stored.nextRunAt) > before);
+  assert.deepEqual(harness.completedWatchers, []);
+});
+
+test("waits for an existing reminder worker instead of starting another", async () => {
+  const harness = createHarness({ tasks: [reminder] });
+  const dueAt = Date.parse(reminder.nextRunAt);
+
+  await harness.coordinator.deliverDueTasks(dueAt);
+  await harness.coordinator.deliverDueTasks(dueAt + 10_000);
+
+  assert.equal(harness.workerStarts.length, 1);
+  assert.equal(harness.storedReminder()?.runningWorkerId, reminderWorkerId(reminder));
+  assert.equal(harness.storedReminder()?.attempts, 1);
+});
+
+test("retries a reminder whose worker disappeared before recording a result", async () => {
+  const harness = createHarness({ tasks: [reminder] });
+  const dueAt = Date.parse(reminder.nextRunAt);
+  await harness.coordinator.deliverDueTasks(dueAt);
+  const workerId = reminderWorkerId(reminder);
+  harness.removeWorker(workerId);
+
+  await harness.coordinator.deliverDueTasks(dueAt + 10_000);
+
+  const released = harness.storedReminder();
+  assert.equal(released?.runningWorkerId, undefined);
+  assert.equal(released?.attempts, 1);
+  assert.match(released?.lastError ?? "", /disappeared/u);
+  assert.equal(harness.workerStarts.length, 1);
+
+  await harness.coordinator.deliverDueTasks(dueAt + 20_000);
+
+  assert.equal(harness.workerStarts.length, 2);
+  assert.equal(harness.workerStarts[1]?.id, workerId);
+  assert.equal(harness.storedReminder()?.attempts, 2);
+  assert.equal(harness.storedReminder()?.runningWorkerId, workerId);
+});
+
+test("leaves a reminder due with its attempt and error when the worker fails to start", async () => {
+  const harness = createHarness({ tasks: [reminder] });
+  const dueAt = Date.parse(reminder.nextRunAt);
+  harness.failNextStart("boom");
+
+  await harness.coordinator.deliverDueTasks(dueAt);
+
+  assert.equal(harness.workerStarts.length, 1);
+  const failed = harness.storedReminder();
+  assert.equal(failed?.runningWorkerId, undefined);
+  assert.equal(failed?.attempts, 1);
+  assert.equal(failed?.lastError, "boom");
+  assert.equal(harness.store.tasks.has("reminder-1"), true);
+  assert.deepEqual(harness.completedWatchers, []);
+
+  await harness.coordinator.deliverDueTasks(dueAt + 10_000);
+
+  assert.equal(harness.workerStarts.length, 2);
+  assert.equal(harness.storedReminder()?.attempts, 2);
+  assert.equal(harness.storedReminder()?.runningWorkerId, reminderWorkerId(reminder));
+});
+
+test("adopts a reminder worker that already exists after a start error", async () => {
+  const harness = createHarness({ tasks: [reminder] });
+  const workerId = reminderWorkerId(reminder);
+  harness.addWorker(workerId);
+  harness.failNextStart(`Worker already exists: ${workerId}`);
+
+  await harness.coordinator.deliverDueTasks(Date.parse(reminder.nextRunAt));
+
+  const running = harness.storedReminder();
+  assert.equal(running?.runningWorkerId, workerId);
+  assert.equal(running?.attempts, 1);
+  assert.equal(running?.lastError, undefined);
+});
+
+test("fails a one-time reminder whose worker attempts are exhausted", async () => {
+  const harness = createHarness({ tasks: [reminder] });
+  const dueAt = Date.parse(reminder.nextRunAt);
+  for (let attempt = 1; attempt <= MAX_REMINDER_WORKER_ATTEMPTS; attempt += 1) {
+    harness.failNextStart("boom");
+    await harness.coordinator.deliverDueTasks(dueAt + attempt);
+    assert.equal(harness.workerStarts.length, attempt);
+    assert.equal(harness.storedReminder()?.attempts, attempt);
+  }
+  assert.equal(harness.store.tasks.has("reminder-1"), true);
+
+  await harness.coordinator.deliverDueTasks(dueAt + MAX_REMINDER_WORKER_ATTEMPTS + 1);
+
+  assert.equal(harness.workerStarts.length, MAX_REMINDER_WORKER_ATTEMPTS);
+  assert.equal(harness.store.tasks.has("reminder-1"), false);
+  assert.deepEqual(harness.completedWatchers, [{ kind: "reminder", id: "reminder-1" }]);
+});
+
+test("advances a repeating reminder whose worker attempts are exhausted", async () => {
+  const repeating: ReminderTask = {
+    ...reminder,
+    id: "reminder-repeating",
+    schedule: { type: "every", minutes: 30 },
+    attempts: MAX_REMINDER_WORKER_ATTEMPTS,
+  };
+  const harness = createHarness({ tasks: [repeating] });
+
+  const before = Date.now();
+  await harness.coordinator.deliverDueTasks(Date.parse(repeating.nextRunAt));
+
+  assert.equal(harness.workerStarts.length, 0);
+  const stored = harness.storedReminder("reminder-repeating");
+  assert.ok(stored);
+  assert.equal(stored.runningWorkerId, undefined);
+  assert.equal(stored.attempts, undefined);
+  assert.equal(stored.lastError, undefined);
+  assert.ok(Date.parse(stored.nextRunAt) > before);
+  assert.deepEqual(harness.completedWatchers, []);
+});
+
+test("releases a reminder whose worker closed without a result", async () => {
+  const harness = createHarness({ tasks: [reminder] });
+  const dueAt = Date.parse(reminder.nextRunAt);
+  await harness.coordinator.deliverDueTasks(dueAt);
+  const workerId = reminderWorkerId(reminder);
+
+  await harness.coordinator.releaseReminderWorker("channel-a", "public", workerId);
+
+  const released = harness.storedReminder();
+  assert.equal(released?.runningWorkerId, undefined);
+  assert.equal(released?.attempts, 1);
+  assert.match(released?.lastError ?? "", /closed/u);
+  assert.equal(released?.nextRunAt, reminder.nextRunAt);
+
+  await harness.coordinator.releaseReminderWorker("channel-a", "public", "other-worker");
+  assert.equal(harness.storedReminder()?.attempts, 1);
+
+  await harness.coordinator.deliverDueTasks(dueAt + 10_000);
+
+  assert.equal(harness.workerStarts.length, 2);
+  assert.equal(harness.storedReminder()?.attempts, 2);
+  assert.equal(harness.storedReminder()?.runningWorkerId, workerId);
+});
+
+test("does not deliver a reminder deleted between the due list and its delivery", async () => {
+  let listCalls = 0;
+  const store = new InMemoryScheduledTaskStore([reminder], {
+    onListForScope: (kind, channelId, accessScope) => {
+      if (kind !== "reminder" || channelId !== "channel-a" || accessScope !== "public") return;
+      listCalls += 1;
+      if (listCalls === 2) store.tasks.delete("reminder-1");
+    },
+  });
+  const harness = createHarness({ store });
+
+  await harness.coordinator.deliverDueTasks(Date.parse(reminder.nextRunAt));
+
+  assert.equal(harness.workerStarts.length, 0);
+  assert.equal(store.tasks.has("reminder-1"), false);
 });
 
 function eventText(event: AgentEvent | undefined): string {

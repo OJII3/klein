@@ -75,6 +75,44 @@ test("persists tasks in a linked user scope", async () => {
   assert.deepEqual(await reopened.listForScope("watch", "channel-a", "user:456"), [userWatch]);
 });
 
+test("round-trips a reminder's running worker, attempts, and error", async () => {
+  await using temp = await createTempDir("klein-schedules-");
+  const store = new FileScheduledTaskStore(temp.path);
+  const running: ReminderTask = {
+    ...reminder,
+    runningWorkerId: "reminder:reminder-1:2026-10-14T00:01:00.000Z",
+    attempts: 2,
+    lastError: "worker start failed",
+  };
+  await store.create(running);
+  assert.deepEqual(await store.listForScope("reminder", "channel-a", "public"), [running]);
+});
+
+test("rejects invalid reminder run fields", async () => {
+  await using temp = await createTempDir("klein-schedules-");
+  const directory = temp.path;
+  const store = new FileScheduledTaskStore(directory);
+  const invalidFields = [
+    { runningWorkerId: "" },
+    { runningWorkerId: 1 },
+    { attempts: -1 },
+    { attempts: 1.5 },
+    { attempts: "1" },
+    { lastError: "" },
+    { lastError: 1 },
+  ];
+  for (const [index, fields] of invalidFields.entries()) {
+    await writeFile(
+      join(directory, `invalid-reminder-${index}.json`),
+      JSON.stringify({ ...reminder, ...fields }),
+    );
+  }
+  await assert.rejects(
+    store.listForScope("reminder", "channel-a", "public"),
+    /リマインダーの保存内容/u,
+  );
+});
+
 test("rejects the old reminder file shape", async () => {
   await using temp = await createTempDir("klein-schedules-");
   const directory = temp.path;

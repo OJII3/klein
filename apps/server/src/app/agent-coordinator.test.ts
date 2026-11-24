@@ -96,7 +96,7 @@ function createHarness(
   const workers: WorkerControl = {
     async start(input) {
       workerStarts.push(input);
-      return `worker-${workerStarts.length}`;
+      return input.id ?? `worker-${workerStarts.length}`;
     },
     async send(scope, workerId, message) {
       workerSends.push({ scope, workerId, message });
@@ -1241,7 +1241,6 @@ test("starts a reminder worker and keeps the conversation session for conversati
   try {
     await harness.agentCoordinator.deliverDueTasks(Date.parse("2026-10-14T00:02:00.000Z"));
     assert.deepEqual(harness.createdSessionKeys, []);
-    assert.equal(reminders.getStored(), undefined);
     assert.equal(harness.workerStarts.length, 1);
     assert.deepEqual(harness.workerStarts[0]?.conversationKey, {
       kind: "discord",
@@ -1250,6 +1249,11 @@ test("starts a reminder worker and keeps the conversation session for conversati
     assert.equal(harness.workerStarts[0]?.accessScope, "public");
     assert.equal(harness.workerStarts[0]?.closeAfterResult, true);
     assert.match(harness.workerStarts[0]?.prompt ?? "", /定例会が始まります/u);
+    const stored = reminders.getStored();
+    assert.ok(stored?.kind === "reminder");
+    assert.match(stored.runningWorkerId ?? "", /^reminder:reminder-1:/u);
+    assert.equal(stored.runningWorkerId, harness.workerStarts[0]?.id);
+    assert.equal(stored.attempts, 1);
 
     await harness.agentCoordinator.handleDiscordMessage(
       createMessage("test-channel", "reply", "ありがとう"),
@@ -1309,7 +1313,10 @@ test("starts a reminder worker without rotating the conversation session", async
     await harness.agentCoordinator.deliverDueTasks(Date.parse("2026-10-14T00:02:00.000Z"));
     assert.deepEqual(harness.createdSessionKeys, []);
     assert.equal(harness.workerStarts.length, 1);
-    assert.equal(reminders.getStored(), undefined);
+    const stored = reminders.getStored();
+    assert.ok(stored?.kind === "reminder");
+    assert.equal(stored.runningWorkerId, harness.workerStarts[0]?.id);
+    assert.equal(stored.attempts, 1);
     const state = await channelSessionStateStore.getOrCreate(
       { kind: "discord", channelId: dueReminder.channelId },
       getChannelRotationBucket(Date.now()),
@@ -1335,7 +1342,10 @@ test("starts a reminder worker without prompting an active channel agent", async
       ["discord.message"],
     );
     assert.equal(harness.workerStarts.length, 1);
-    assert.equal(reminders.getStored(), undefined);
+    const stored = reminders.getStored();
+    assert.ok(stored?.kind === "reminder");
+    assert.equal(stored.runningWorkerId, harness.workerStarts[0]?.id);
+    assert.equal(stored.attempts, 1);
   } finally {
     await harness.agentCoordinator.dispose();
   }
@@ -1367,8 +1377,12 @@ for (const { scope, access, owner, delivered } of [
       await harness.agentCoordinator.deliverDueTasks(Date.parse("2026-10-14T00:02:00.000Z"));
       assert.equal(harness.createdSessionKeys.length, 0);
       assert.equal(harness.workerStarts.length, delivered ? 1 : 0);
-      assert.equal(reminders.getStored() === undefined, delivered);
+      const stored = reminders.getStored();
+      assert.ok(stored?.kind === "reminder");
+      assert.equal(stored.runningWorkerId !== undefined, delivered);
       if (delivered) {
+        assert.equal(stored.runningWorkerId, harness.workerStarts[0]?.id);
+        assert.equal(stored.attempts, 1);
         assert.deepEqual(harness.workerStarts[0]?.conversationKey, {
           kind: "discord",
           channelId: "test-channel",
@@ -1404,7 +1418,7 @@ test("delivers a linked user's reminder while the channel link remains", async (
   }
 });
 
-test("advances a recurring reminder without changing its stable ownership", async () => {
+test("advances a recurring reminder when its worker result is delivered", async () => {
   const reminder: ReminderTask = {
     ...dueReminder,
     schedule: { type: "daily", time: "09:00" },
@@ -1412,15 +1426,92 @@ test("advances a recurring reminder without changing its stable ownership", asyn
   const reminders = createScheduledTaskStore(reminder);
   const harness = createHarness(undefined, reminders.store);
   try {
-    const before = Date.now();
     await harness.agentCoordinator.deliverDueTasks(Date.parse("2026-10-14T00:02:00.000Z"));
+    const running = reminders.getStored();
+    assert.ok(running?.kind === "reminder");
+    assert.equal(running.channelId, reminder.channelId);
+    assert.equal(running.accessScope, reminder.accessScope);
+    assert.equal(running.nextRunAt, reminder.nextRunAt);
+    assert.equal(running.runningWorkerId, harness.workerStarts[0]?.id);
+    assert.equal(running.attempts, 1);
+    assert.equal(harness.workerStarts.length, 1);
+
+    const before = Date.now();
+    const workerId = harness.workerStarts[0]?.id;
+    assert.ok(workerId);
+    await harness.agentCoordinator.deliverWorkerResult(
+      { kind: "discord", channelId: reminder.channelId },
+      reminder.accessScope,
+      { workerId, status: "completed", text: "定例会が始まります" },
+    );
+
     const stored = reminders.getStored();
-    assert.ok(stored);
+    assert.ok(stored?.kind === "reminder");
+    assert.ok(Date.parse(stored.nextRunAt) > before);
     assert.equal(stored.channelId, reminder.channelId);
     assert.equal(stored.accessScope, reminder.accessScope);
-    assert.ok(Date.parse(stored.nextRunAt) > before);
+    assert.equal(stored.runningWorkerId, undefined);
+    assert.equal(stored.attempts, undefined);
+    assert.equal(stored.lastError, undefined);
     assert.equal("sessionKey" in stored, false);
-    assert.equal(harness.workerStarts.length, 1);
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+test("completes a one-time reminder when its worker result is delivered", async () => {
+  const completedWatchers: { kind: string; id: string }[] = [];
+  const reminders = createScheduledTaskStore(dueReminder);
+  const harness = createHarness(undefined, reminders.store, {
+    proactive: createProactiveStub({
+      async markWatcherCompleted(kind, id) {
+        completedWatchers.push({ kind, id });
+      },
+    }),
+  });
+  try {
+    await harness.agentCoordinator.deliverDueTasks(Date.parse("2026-10-14T00:02:00.000Z"));
+    const workerId = harness.workerStarts[0]?.id;
+    assert.ok(workerId);
+    assert.match(workerId, /^reminder:reminder-1:/u);
+    assert.ok(reminders.getStored());
+
+    await harness.agentCoordinator.deliverWorkerResult(
+      { kind: "discord", channelId: dueReminder.channelId },
+      dueReminder.accessScope,
+      { workerId, status: "completed", text: "定例会が始まります" },
+    );
+
+    assert.equal(reminders.getStored(), undefined);
+    assert.deepEqual(
+      completedWatchers.filter((watcher) => watcher.kind === "reminder"),
+      [{ kind: "reminder", id: "reminder-1" }],
+    );
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+test("releases a reminder when its worker closes without a result", async () => {
+  const reminders = createScheduledTaskStore(dueReminder);
+  const harness = createHarness(undefined, reminders.store);
+  try {
+    await harness.agentCoordinator.deliverDueTasks(Date.parse("2026-10-14T00:02:00.000Z"));
+    const workerId = harness.workerStarts[0]?.id;
+    assert.ok(workerId);
+
+    await harness.agentCoordinator.releaseWorkerSchedules({
+      id: workerId,
+      conversationKey: { kind: "discord", channelId: dueReminder.channelId },
+      accessScope: dueReminder.accessScope,
+    });
+
+    const stored = reminders.getStored();
+    assert.ok(stored?.kind === "reminder");
+    assert.equal(stored.runningWorkerId, undefined);
+    assert.equal(stored.attempts, 1);
+    assert.match(stored.lastError ?? "", /closed/u);
+    assert.equal(stored.nextRunAt, dueReminder.nextRunAt);
   } finally {
     await harness.agentCoordinator.dispose();
   }

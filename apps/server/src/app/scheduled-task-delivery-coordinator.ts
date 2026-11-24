@@ -14,6 +14,7 @@ import {
 import type {
   ReminderTask,
   ScheduledTask,
+  ScheduledTaskAccessScope,
   WatchTask,
 } from "@modules/scheduling/domain/scheduled-task";
 import { normalizeWatchOutput, truncateWatchOutput } from "@modules/scheduling/domain/watch-output";
@@ -65,6 +66,8 @@ type WatchCheckOutcome = TriggeredWatch | FailedWatch;
  * to repair or stop the watch.
  */
 const WATCH_FAILURE_REMINDER_AT = 3;
+
+export const MAX_REMINDER_WORKER_ATTEMPTS = 3;
 
 export class ScheduledTaskDeliveryCoordinator {
   private checkRunning = false;
@@ -231,20 +234,161 @@ export class ScheduledTaskDeliveryCoordinator {
     );
   }
 
+  /**
+   * Completes the reminder whose worker produced this result. The worker result is durable
+   * by the time it is delivered, so a crash before conversation delivery redelivers the
+   * result instead of losing the reminder. A worker that matches nothing is a no-op.
+   */
+  async completeReminderForWorker(
+    channelId: string,
+    accessScope: ScheduledTaskAccessScope,
+    workerId: string,
+  ): Promise<void> {
+    const store = this.dependencies.scheduledTaskStore;
+    if (!store) return;
+    const reminder = (await store.listForScope("reminder", channelId, accessScope)).find(
+      (candidate) => candidate.runningWorkerId === workerId,
+    );
+    if (!reminder) return;
+    await this.completeReminder(reminder);
+    this.dependencies.logger.info(
+      {
+        event: "scheduled_task_completed",
+        taskId: reminder.id,
+        taskKind: reminder.kind,
+        workerId,
+      },
+      "Completed a scheduled reminder after its worker recorded a result",
+    );
+  }
+
+  /** Leaves a reminder due for another attempt after its worker closed without a result. */
+  async releaseReminderWorker(
+    channelId: string,
+    accessScope: ScheduledTaskAccessScope,
+    workerId: string,
+  ): Promise<void> {
+    const store = this.dependencies.scheduledTaskStore;
+    if (!store) return;
+    const reminder = (await store.listForScope("reminder", channelId, accessScope)).find(
+      (candidate) => candidate.runningWorkerId === workerId,
+    );
+    if (!reminder) return;
+    await store.update(
+      clearRunningWorker(reminder, "The worker closed before recording a result."),
+    );
+    this.dependencies.logger.warn(
+      {
+        event: "scheduled_task_worker_released",
+        taskId: reminder.id,
+        taskKind: reminder.kind,
+        workerId,
+      },
+      "Released a reminder worker that closed without a result",
+    );
+  }
+
   private async deliverReminder(task: ReminderTask): Promise<void> {
     const store = this.dependencies.scheduledTaskStore;
     if (!store) return;
-    await this.dependencies.workers.start({
-      conversationKey: { kind: "discord", channelId: task.channelId },
-      accessScope: task.accessScope,
-      ownerFeaturesAllowed: isOwnerAccessScope(task.accessScope, this.dependencies.ownerUserId),
-      prompt: buildReminderPrompt(task),
-      closeAfterResult: true,
-    });
-    await this.completeReminder(task);
+    const current = (await store.listForScope("reminder", task.channelId, task.accessScope)).find(
+      (candidate) => candidate.id === task.id && candidate.nextRunAt === task.nextRunAt,
+    );
+    if (!current) return;
+
+    const scope = {
+      conversationKey: { kind: "discord", channelId: current.channelId },
+      accessScope: current.accessScope,
+    } as const;
+    const workerId = reminderWorkerId(current);
+
+    if (current.runningWorkerId !== undefined) {
+      if (
+        this.dependencies.workers
+          .list(scope)
+          .some((worker) => worker.id === current.runningWorkerId)
+      ) {
+        return;
+      }
+      const reason = `Worker ${current.runningWorkerId} disappeared before recording a result.`;
+      await store.update(clearRunningWorker(current, reason));
+      this.dependencies.logger.warn(
+        {
+          event: "scheduled_task_worker_lost",
+          taskId: current.id,
+          taskKind: current.kind,
+          workerId: current.runningWorkerId,
+        },
+        "Reminder worker disappeared before recording a result; retrying on the next tick",
+      );
+      return;
+    }
+
+    const attempts = current.attempts ?? 0;
+    if (attempts >= MAX_REMINDER_WORKER_ATTEMPTS) {
+      await this.failReminder(
+        current,
+        current.lastError ?? `No worker result after ${attempts} attempts.`,
+      );
+      return;
+    }
+
+    const running: ReminderTask = {
+      ...current,
+      runningWorkerId: workerId,
+      attempts: attempts + 1,
+    };
+    await store.update(running);
+
+    try {
+      await this.dependencies.workers.start({
+        id: workerId,
+        conversationKey: scope.conversationKey,
+        accessScope: current.accessScope,
+        ownerFeaturesAllowed: isOwnerAccessScope(
+          current.accessScope,
+          this.dependencies.ownerUserId,
+        ),
+        prompt: buildReminderPrompt(current),
+        closeAfterResult: true,
+      });
+    } catch (error) {
+      if (this.dependencies.workers.list(scope).some((worker) => worker.id === workerId)) {
+        this.dependencies.logger.info(
+          {
+            event: "scheduled_task_worker_adopted",
+            taskId: current.id,
+            taskKind: current.kind,
+            workerId,
+          },
+          "Adopted the reminder worker that was already running",
+        );
+        return;
+      }
+      await store.update(clearRunningWorker(running, startFailureReason(error)));
+      this.dependencies.logger.warn(
+        {
+          err: error,
+          event: "scheduled_task_worker_start_failed",
+          taskId: current.id,
+          taskKind: current.kind,
+          workerId,
+          attempts: running.attempts,
+        },
+        "Failed to start a reminder worker; retrying on the next tick",
+      );
+      return;
+    }
+
     this.dependencies.logger.info(
-      { event: "scheduled_task_delivered", taskId: task.id, taskKind: task.kind },
-      "Delivered scheduled task",
+      {
+        event: "scheduled_task_worker_started",
+        taskId: current.id,
+        taskKind: current.kind,
+        workerId,
+        attempts: running.attempts,
+      },
+      "Started a worker for a scheduled reminder",
     );
   }
 
@@ -528,7 +672,21 @@ export class ScheduledTaskDeliveryCoordinator {
       await store.delete("reminder", task.channelId, task.accessScope, task.id);
       return;
     }
-    await store.update({ ...task, nextRunAt });
+    await store.update({ ...withoutReminderRun(task), nextRunAt });
+  }
+
+  private async failReminder(task: ReminderTask, reason: string): Promise<void> {
+    await this.completeReminder(task);
+    this.dependencies.logger.warn(
+      {
+        event: "scheduled_task_failed",
+        taskId: task.id,
+        taskKind: task.kind,
+        attempts: task.attempts ?? 0,
+        reason,
+      },
+      "Failed a scheduled reminder occurrence",
+    );
   }
 
   private async completeWatch(task: WatchTask): Promise<void> {
@@ -566,6 +724,32 @@ function requireNextRunAt(schedule: StoredSchedule, now: number): string {
 
 function taskKey(task: ScheduledTask): string {
   return `${task.id}:${task.nextRunAt}`;
+}
+
+/** Stable across retries for one occurrence, new once `nextRunAt` advances. */
+export function reminderWorkerId(task: ReminderTask): string {
+  return `reminder:${task.id}:${task.nextRunAt}`;
+}
+
+/** Saved reminders reject an empty `lastError`, and a thrown error may carry no message. */
+function startFailureReason(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.length > 0 ? message : "The worker failed to start.";
+}
+
+function withoutReminderRun(task: ReminderTask): ReminderTask {
+  const {
+    runningWorkerId: _runningWorkerId,
+    attempts: _attempts,
+    lastError: _lastError,
+    ...rest
+  } = task;
+  return rest;
+}
+
+function clearRunningWorker(task: ReminderTask, reason: string): ReminderTask {
+  const { runningWorkerId: _runningWorkerId, ...rest } = task;
+  return { ...rest, lastError: reason };
 }
 
 function clearWatchError(watch: WatchTask): WatchTask {
