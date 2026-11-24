@@ -17,6 +17,7 @@ test("keeps each linked user inside their own directory", () => {
   assert.equal(environment.rootDirectory, "/tmp/agent/users/123");
   assert.equal(environment.workspaceDirectory, "/tmp/agent/users/123/workspace");
   assert.equal(environment.homeDirectory, "/tmp/agent/users/123/home");
+  assert.equal(environment.binDirectory, "/tmp/agent/users/123/home/.local/bin");
   assert.equal(environment.credentialsDirectory, "/tmp/agent/users/123/credentials");
   assert.equal(environment.temporaryDirectory, "/tmp/agent/users/123/tmp");
 });
@@ -39,6 +40,7 @@ test("repairs permissions on an existing environment", async () => {
     environment.rootDirectory,
     environment.workspaceDirectory,
     environment.homeDirectory,
+    environment.binDirectory,
     environment.credentialsDirectory,
     environment.temporaryDirectory,
   ]) {
@@ -63,6 +65,7 @@ test("creates the environment with owner-only permissions", async () => {
     environment.rootDirectory,
     environment.workspaceDirectory,
     environment.homeDirectory,
+    environment.binDirectory,
     environment.credentialsDirectory,
     environment.temporaryDirectory,
   ]) {

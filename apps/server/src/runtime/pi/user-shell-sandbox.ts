@@ -462,7 +462,7 @@ export function buildBubblewrapArguments(
   const shell = SHELL_CANDIDATES.find((candidate) => existsSync(candidate)) ?? "/bin/sh";
   const variables = {
     ...userEnvironmentVariables(environment),
-    PATH: sandboxPathEntries(process.env.PATH).join(delimiter),
+    PATH: [environment.binDirectory, ...sandboxPathEntries(process.env.PATH)].join(delimiter),
     LANG: process.env.LANG ?? "C.UTF-8",
     TERM: "dumb",
     USER: `discord-${userEnvironmentKey(environment.userId)}`,

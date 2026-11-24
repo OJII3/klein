@@ -73,6 +73,12 @@ test("builds a sandbox that mounts only the user's writable directories", async 
   assert.ok(!mountedSources.has(environment.rootDirectory));
   assert.ok(!mountedSources.has(environment.credentialsDirectory));
 
+  const pathIndex = args.findIndex(
+    (argument, index) => argument === "--setenv" && args[index + 1] === "PATH",
+  );
+  assert.ok(pathIndex >= 0);
+  assert.equal(args[pathIndex + 2]?.split(":")[0], environment.binDirectory);
+
   assert.equal(args.at(-2), "-c");
   assert.ok(args.at(-1)?.endsWith("echo ok"));
   assert.match(args.at(-1) ?? "", /ulimit -S -v/u);
@@ -123,6 +129,11 @@ test("runs commands inside the user's environment", { skip: sandboxSkip }, async
   await writeFile(join(temp.path, "host-secret.txt"), "host secret");
   await writeFile(join(environment.credentialsDirectory, "credential.txt"), "credential");
   await writeFile(join(otherEnvironment.workspaceDirectory, "other.txt"), "other user");
+  await writeFile(
+    join(environment.binDirectory, "klein-bin-check"),
+    '#!/bin/sh\nprintf "bin-command=%s\\n" "$1"\n',
+    { mode: 0o755 },
+  );
   const hostServer = createServer((socket) => socket.end("host"));
   await new Promise<void>((resolve) => {
     hostServer.listen(0, "127.0.0.1", () => resolve());
@@ -144,6 +155,7 @@ test("runs commands inside the user's environment", { skip: sandboxSkip }, async
         "cat ../credentials/credential.txt 2>/dev/null || echo credentials-hidden",
         "cat ../users/456/workspace/other.txt 2>/dev/null || echo other-user-hidden",
         `(echo >/dev/tcp/127.0.0.1/${hostPort}) 2>/dev/null && echo host-loopback-reachable || echo host-loopback-blocked`,
+        "klein-bin-check ok",
         "touch written.txt && echo wrote-in-workspace",
       ].join("\n"),
     );
@@ -156,6 +168,7 @@ test("runs commands inside the user's environment", { skip: sandboxSkip }, async
     assert.match(result.output, /credentials-hidden/);
     assert.match(result.output, /other-user-hidden/);
     assert.match(result.output, /host-loopback-blocked/);
+    assert.match(result.output, /bin-command=ok/);
     assert.match(result.output, /wrote-in-workspace/);
     await access(join(environment.workspaceDirectory, "written.txt"));
   } finally {
