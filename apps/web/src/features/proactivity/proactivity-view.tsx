@@ -265,8 +265,16 @@ function SignalRow({
 
   return (
     <li className="border-b border-line/70 px-4 py-3 last:border-b-0">
-      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
-        <div className="min-w-0 flex-1">
+      <EntryRow
+        meta={
+          <>
+            <time dateTime={signal.observedAt}>{formatCompactTimestamp(signal.observedAt)}</time>
+            {signal.surfacedAt && <p>Surfaced {formatCompactTimestamp(signal.surfacedAt)}</p>}
+            {signal.expiresAt && <p>Expires {formatCompactTimestamp(signal.expiresAt)}</p>}
+          </>
+        }
+      >
+        <div>
           <div className="flex flex-wrap items-center gap-1.5">
             <span className={`badge badge-sm ${SIGNAL_STATUS_TONES[signal.status]}`}>
               {SIGNAL_STATUS_LABELS[signal.status]}
@@ -320,16 +328,7 @@ function SignalRow({
             </details>
           )}
         </div>
-        <div className="shrink-0 text-right text-[0.68rem] text-ink-faint">
-          <time dateTime={signal.observedAt}>{formatCompactTimestamp(signal.observedAt)}</time>
-          {signal.surfacedAt && (
-            <p className="mt-0.5">Surfaced {formatCompactTimestamp(signal.surfacedAt)}</p>
-          )}
-          {signal.expiresAt && (
-            <p className="mt-0.5">Expires {formatCompactTimestamp(signal.expiresAt)}</p>
-          )}
-        </div>
-      </div>
+      </EntryRow>
     </li>
   );
 }
@@ -372,8 +371,17 @@ function GoalRow({
 }) {
   return (
     <li className="border-b border-line/70 px-4 py-3 last:border-b-0">
-      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
-        <div className="min-w-0 flex-1">
+      <EntryRow
+        meta={
+          <>
+            <p>Due {formatCompactTimestamp(goal.dueAt)}</p>
+            <p>Expires {formatCompactTimestamp(goal.expiresAt)}</p>
+            {goal.workerId && <p className="break-all font-mono">{goal.workerId}</p>}
+            {goal.signalId && <p className="break-all font-mono">{goal.signalId}</p>}
+          </>
+        }
+      >
+        <div>
           <div className="flex flex-wrap items-center gap-1.5">
             <span className={`badge badge-sm ${GOAL_STATUS_TONES[goal.status]}`}>
               {GOAL_STATUS_LABELS[goal.status]}
@@ -403,13 +411,7 @@ function GoalRow({
             <p className="mt-1 text-[0.7rem] text-error">Failed: {goal.lastError}</p>
           )}
         </div>
-        <div className="shrink-0 text-right text-[0.68rem] text-ink-faint">
-          <p>Due {formatCompactTimestamp(goal.dueAt)}</p>
-          <p className="mt-0.5">Expires {formatCompactTimestamp(goal.expiresAt)}</p>
-          {goal.workerId && <p className="mt-0.5 font-mono">{goal.workerId}</p>}
-          {goal.signalId && <p className="mt-0.5 font-mono">{goal.signalId}</p>}
-        </div>
-      </div>
+      </EntryRow>
     </li>
   );
 }
@@ -452,8 +454,18 @@ function FollowUpRow({
 }) {
   return (
     <li className="border-b border-line/70 px-4 py-3 last:border-b-0">
-      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
-        <div className="min-w-0 flex-1">
+      <EntryRow
+        meta={
+          <>
+            <time dateTime={followUp.createdAt}>{formatCompactTimestamp(followUp.createdAt)}</time>
+            {followUp.lastNotifiedAt && (
+              <p>Notified {formatCompactTimestamp(followUp.lastNotifiedAt)}</p>
+            )}
+            {followUp.expiresAt && <p>Expires {formatCompactTimestamp(followUp.expiresAt)}</p>}
+          </>
+        }
+      >
+        <div>
           <div className="flex flex-wrap items-center gap-1.5">
             <span className={`badge badge-sm ${FOLLOW_UP_STATUS_TONES[followUp.status]}`}>
               {FOLLOW_UP_STATUS_LABELS[followUp.status]}
@@ -468,19 +480,10 @@ function FollowUpRow({
           <p className="mt-1.5 text-sm leading-snug text-ink">{followUp.subject}</p>
           <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[0.7rem] text-ink-soft">
             <span>{followUp.cadenceLabel}</span>
-            <span className="font-mono text-ink-faint">{followUp.watcher.id}</span>
+            <span className="break-all font-mono text-ink-faint">{followUp.watcher.id}</span>
           </p>
         </div>
-        <div className="shrink-0 text-right text-[0.68rem] text-ink-faint">
-          <time dateTime={followUp.createdAt}>{formatCompactTimestamp(followUp.createdAt)}</time>
-          {followUp.lastNotifiedAt && (
-            <p className="mt-0.5">Notified {formatCompactTimestamp(followUp.lastNotifiedAt)}</p>
-          )}
-          {followUp.expiresAt && (
-            <p className="mt-0.5">Expires {formatCompactTimestamp(followUp.expiresAt)}</p>
-          )}
-        </div>
-      </div>
+      </EntryRow>
     </li>
   );
 }
@@ -616,6 +619,17 @@ function PreferenceLine({ label, value }: { label: string; value: string }) {
     <div className="flex items-baseline justify-between gap-2 text-[0.72rem]">
       <span className="text-ink-soft">{label}</span>
       <span className="text-ink">{value}</span>
+    </div>
+  );
+}
+
+function EntryRow({ children, meta }: { children: ComponentChildren; meta: ComponentChildren }) {
+  return (
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-x-4">
+      <div className="min-w-0 sm:flex-1">{children}</div>
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-[0.68rem] text-ink-faint sm:shrink-0 sm:flex-col sm:items-end sm:text-right">
+        {meta}
+      </div>
     </div>
   );
 }
