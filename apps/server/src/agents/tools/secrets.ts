@@ -10,7 +10,6 @@ import {
   type SecretSummary,
 } from "@modules/secrets/domain/secret";
 import type { AccessScope } from "@shared/access";
-import type { UserEnvironment } from "@shared/user-environment";
 
 export interface SecretCommandOptions {
   readonly timeoutSeconds?: number;
@@ -25,7 +24,6 @@ export interface SecretCommandResult {
 }
 
 export type SecretCommandRunner = (
-  environment: UserEnvironment,
   command: string,
   options: SecretCommandOptions,
 ) => Promise<SecretCommandResult>;
@@ -36,7 +34,6 @@ export interface SecretToolDependencies {
   readonly channelId: string;
   readonly accessScope: AccessScope;
   readonly workerId: string;
-  readonly environment: UserEnvironment;
   readonly runCommand: SecretCommandRunner;
 }
 
@@ -176,10 +173,10 @@ export function createSecretTools(dependencies: SecretToolDependencies): readonl
       name: "secret_run",
       label: "Run with Secrets",
       description:
-        "Run a command in the linked user's sandbox with a saved secret injected as environment variables named KLEIN_SECRET_<SERVICE>_<FIELD> (uppercase). " +
+        "Run a command with a saved secret injected as environment variables named KLEIN_SECRET_<SERVICE>_<FIELD> (uppercase). " +
         "The values never appear in the tool result; printed secrets are redacted. Use secret_list first to see which services exist and the exact variable names. " +
-        "This is for API tokens and already-issued access tokens. Do not use it to create long-lived OAuth state in the sandbox; OAuth config folders written there are readable by the worker. " +
-        "The command runs with the same sandbox and timeout rules as bash, and its output is limited to 32 KiB.",
+        "This is for API tokens and already-issued access tokens. Do not use it to create long-lived OAuth state in the shell; OAuth config folders written there are readable by the worker. " +
+        "The command runs with the same shell and timeout rules as bash, and its output is limited to 32 KiB.",
       parameters: Type.Object({
         service: Type.String({
           minLength: 1,
@@ -208,7 +205,7 @@ export function createSecretTools(dependencies: SecretToolDependencies): readonl
           if (field.env) environment[field.env] = value;
         }
 
-        const result = await dependencies.runCommand(dependencies.environment, params.command, {
+        const result = await dependencies.runCommand(params.command, {
           secretEnvironment: environment,
           ...(params.timeout !== undefined ? { timeoutSeconds: params.timeout } : {}),
           ...(signal ? { signal } : {}),

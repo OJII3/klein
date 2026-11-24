@@ -10,7 +10,7 @@ export interface SecretSaveInput {
 
 /**
  * Encrypted secret files for one linked user. Values leave the store only
- * for the sandboxed command runner; listings never decrypt them.
+ * for the command runner behind `secret_run`; listings never decrypt them.
  */
 export interface SecretStore {
   save(userId: string, input: SecretSaveInput): Promise<SecretSummary>;

@@ -32,6 +32,7 @@ import { createT3CliThreadRunner } from "@runtime/t3/t3-cli-thread-runner";
 import { createT3SqliteProjectLister } from "@runtime/t3/t3-sqlite-project-lister";
 import { createWatchFetchTool } from "@runtime/pi/watch-fetch-tool";
 import { runSandboxedCommand } from "@runtime/pi/user-shell-sandbox";
+import { hostHomeDirectory, resolveWorkerShell, runHostCommand } from "@runtime/pi/worker-shell";
 import { PiSharedMemoryAgent } from "@runtime/pi/pi-shared-memory-agent";
 import { PiUserMemoryAgent } from "@runtime/pi/pi-user-memory-agent";
 import { PiVoiceTranscriptQueueSelector } from "@runtime/pi/pi-voice-transcript-queue-selector";
@@ -317,6 +318,15 @@ export async function bootstrapApplication(): Promise<void> {
       );
       const workerUserId = accessScopeUserId(accessScope);
       if (!workerUserId) return workerTools;
+      const workerEnvironment = ensureUserEnvironment(
+        resolveUserEnvironment(agentDir, workerUserId),
+      );
+      const workerShell = resolveWorkerShell({
+        role: { kind: "worker", workerId },
+        ownerFeaturesAllowed: ownerRequester !== undefined,
+        environment: workerEnvironment,
+        homeDirectory: hostHomeDirectory(),
+      });
       return [
         ...workerTools,
         ...createSecretTools({
@@ -325,8 +335,10 @@ export async function bootstrapApplication(): Promise<void> {
           channelId: conversationKey.channelId,
           accessScope,
           workerId,
-          environment: ensureUserEnvironment(resolveUserEnvironment(agentDir, workerUserId)),
-          runCommand: runSandboxedCommand,
+          runCommand: (command, options) =>
+            workerShell?.kind === "host"
+              ? runHostCommand(workerShell.homeDirectory, command, options)
+              : runSandboxedCommand(workerEnvironment, command, options),
         }),
       ];
     },

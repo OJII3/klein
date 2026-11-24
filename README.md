@@ -33,6 +33,10 @@ Profiles live in `config/<profile>/` and define the agent's personality and skil
 
 Select one with `"profile"` in `config/config.jsonc` (default: `klein`). The bundled `yachiyo` profile is based on [YacchoGPT](https://github.com/tsukumijima/YacchoGPT) (CC0-1.0).
 
+## Worker shells
+
+Owner workers run `bash` directly on the host in the owner's home, so they can use the host's repositories, dotfiles, and installed CLIs. Workers for other linked users run in the bubblewrap sandbox, limited to that user's workspace and home.
+
 ## Documentation
 
 - [docs/voice-chat-asr-protocol.md](docs/voice-chat-asr-protocol.md) — ASR WebSocket protocol

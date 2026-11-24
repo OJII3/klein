@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import test from "node:test";
 import { join, resolve as resolvePath } from "node:path";
 
@@ -1581,7 +1582,7 @@ test("compactForHandoff formats Goal and summary prompt with characterName", asy
   runtime.dispose();
 });
 
-test("runs linked-user workers in their own workspace", async () => {
+test("runs linked-user workers in the sandbox workspace and owner workers in the host home", async () => {
   await using temp = await createTempDir("klein-user-workspace-");
   const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
   const provider = fauxProvider({ tokensPerSecond: 100_000 });
@@ -1625,6 +1626,14 @@ test("runs linked-user workers in their own workspace", async () => {
     });
     linkedWorker.dispose();
 
+    const ownerWorker = await factory.create({ systemPrompt: "Worker." }, () => [], {
+      role: { kind: "worker", workerId: "owner-worker" },
+      sessionKey: "owner-worker",
+      ownerFeaturesAllowed: true,
+      accessScope: "owner:owner-user",
+    });
+    ownerWorker.dispose();
+
     const publicWorker = await factory.create({ systemPrompt: "Worker." }, () => [], {
       role: { kind: "worker", workerId: "public-worker" },
       sessionKey: "public-worker",
@@ -1641,6 +1650,10 @@ test("runs linked-user workers in their own workspace", async () => {
     workspaceDirectory,
   );
   assert.equal(
+    sessionCwds.find((session) => session.sessionKey === "owner-worker")?.cwd,
+    homedir(),
+  );
+  assert.equal(
     sessionCwds.find((session) => session.sessionKey === "conversation")?.cwd,
     process.cwd(),
   );
@@ -1652,6 +1665,11 @@ test("runs linked-user workers in their own workspace", async () => {
   assert.ok(
     sessionTools
       .find((session) => session.sessionKey === "linked-worker")
+      ?.toolNames.includes("bash"),
+  );
+  assert.ok(
+    sessionTools
+      .find((session) => session.sessionKey === "owner-worker")
       ?.toolNames.includes("bash"),
   );
   assert.ok(
@@ -1795,6 +1813,7 @@ test("appends worker delegation guidance to text conversation prompts based on o
     assert.match(ownerPrompt, /agent-browser/);
     assert.match(ownerPrompt, /t3_thread_start/);
     assert.match(ownerPrompt, /t3_project_list/);
+    assert.match(ownerPrompt, /unsandboxed shell/);
     assert.doesNotMatch(ownerPrompt, /browser-use|t3-thread/);
     assert.match(publicPrompt, /## Workers \(`worker_start`\)/);
     assert.match(publicPrompt, /This conversation does not have/);
@@ -1805,6 +1824,7 @@ test("appends worker delegation guidance to text conversation prompts based on o
     assert.match(ownerWorkerPrompt, /<name>browser-use<\/name>/);
     assert.match(ownerWorkerPrompt, /<name>t3-thread<\/name>/);
     assert.match(ownerWorkerPrompt, /## T3 Code threads/);
+    assert.match(ownerWorkerPrompt, /Repository work can run directly in your shell/);
     assert.doesNotMatch(publicWorkerPrompt, /browser-use|t3-thread|## T3 Code threads/);
     assert.match(linkedWorkerPrompt, /<name>browser-use<\/name>/);
     assert.doesNotMatch(linkedWorkerPrompt, /t3-thread|## T3 Code threads/);

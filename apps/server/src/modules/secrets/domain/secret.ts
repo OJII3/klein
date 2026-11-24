@@ -7,7 +7,7 @@ export const SECRET_FIELD_KEY_PATTERN = /^[A-Za-z][A-Za-z0-9_]{0,31}$/u;
 /** Tool-specific aliases such as `GH_TOKEN` or `AWS_ACCESS_KEY_ID`. */
 export const SECRET_ENVIRONMENT_ALIAS_PATTERN = /^[A-Z_][A-Z0-9_]{0,63}$/u;
 
-/** Variables the sandbox owns; a secret must not replace them. */
+/** Variables the shell owns; a secret must not replace them. */
 const RESERVED_ENVIRONMENT_ALIASES = new Set([
   "PATH",
   "HOME",
@@ -51,7 +51,7 @@ export interface SecretSummary {
   readonly updatedAt: string;
 }
 
-/** Decrypted secret values, only used to build a sandbox environment. */
+/** Decrypted secret values, only used to build a command environment. */
 export interface SecretValues extends SecretSummary {
   readonly values: Readonly<Record<string, string>>;
 }
@@ -100,7 +100,7 @@ export function validateSecretFields(fields: readonly SecretField[]): string | u
         return "Environment aliases cannot use the KLEIN_SECRET_ prefix.";
       }
       if (RESERVED_ENVIRONMENT_ALIASES.has(field.env)) {
-        return `The environment alias ${field.env} is reserved by the sandbox.`;
+        return `The environment alias ${field.env} is reserved by the shell.`;
       }
       if (aliases.has(field.env)) {
         return `Duplicate environment alias: ${field.env}`;

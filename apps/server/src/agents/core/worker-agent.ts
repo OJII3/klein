@@ -47,7 +47,7 @@ export interface WorkerDelegationPromptOptions {
   readonly browserAvailable: boolean;
   readonly t3Available: boolean;
   readonly t3ProjectAvailable: boolean;
-  readonly shellAvailable: boolean;
+  readonly shell?: "host" | "sandbox";
   readonly secretsAvailable: boolean;
   readonly watchAvailable: boolean;
 }
@@ -64,7 +64,11 @@ export function renderWorkerDelegationSection(options: WorkerDelegationPromptOpt
       "- T3 Code threads (`t3_thread_start`, `t3_thread_send`): hand repository edits, coding, tests, and PR creation to a T3 Code agent, in any repository on this machine, including Klein's own code, dotfiles, and machine settings.",
     );
   }
-  if (options.shellAvailable) {
+  if (options.shell === "host") {
+    workerOnlyCapabilities.push(
+      "- An unsandboxed shell (`bash`) on this machine: run commands as Klein's user in the host home, with access to the host's repositories, dotfiles, installed CLIs, and machine settings.",
+    );
+  } else if (options.shell === "sandbox") {
     workerOnlyCapabilities.push(
       "- A sandboxed shell (`bash`): run commands in the linked user's private workspace, with other users' files and Klein's configuration hidden. Missing CLI tools can be installed into the sandbox's `~/.local/bin`, which stays on `PATH`.",
     );
@@ -80,7 +84,7 @@ export function renderWorkerDelegationSection(options: WorkerDelegationPromptOpt
     ...(options.t3Available
       ? []
       : ["T3 Code thread creation and follow-ups via `t3_thread_start`"]),
-    ...(options.shellAvailable ? [] : ["a sandboxed shell"]),
+    ...(options.shell ? [] : ["a shell"]),
     ...(options.secretsAvailable ? [] : ["asking the linked user for secrets"]),
   ];
 
@@ -114,7 +118,7 @@ export function renderWorkerDelegationSection(options: WorkerDelegationPromptOpt
           "Whenever a request needs these capabilities, delegate with `worker_start` instead of declining or falling back to static `fetch_content`.",
           ...(options.t3Available
             ? [
-                "An owner worker can act on this machine through T3 Code, not just look things up: it can change any repository, dotfiles, or machine settings. Delegate such requests instead of treating them as out of scope.",
+                "An owner worker can act on this machine through its shell or T3 Code, not just look things up: it can change any repository, dotfiles, or machine settings. Delegate such requests instead of treating them as out of scope.",
               ]
             : []),
         ]
@@ -138,11 +142,13 @@ export function renderWorkerDelegationSection(options: WorkerDelegationPromptOpt
   return lines.join("\n");
 }
 
-export function renderWorkerT3ThreadSection(): string {
+export function renderWorkerT3ThreadSection(shell: "host" | "sandbox" = "sandbox"): string {
   return [
     "## T3 Code threads (`t3_thread_*`)",
     "",
-    "Repository work belongs in a T3 Code thread: hand code edits, tests, builds, commits, and PR creation to `t3_thread_start` instead of doing them in your own session.",
+    shell === "host"
+      ? "Repository work can run directly in your shell, in the host home. Use a T3 Code thread when you want a separate agent to carry a longer task, run tests, or open a pull request, and when the work should continue after this turn."
+      : "Repository work belongs in a T3 Code thread: hand code edits, tests, builds, commits, and PR creation to `t3_thread_start` instead of doing them in your own session.",
     "",
     "Threads are not limited to Klein's own repository. Pass a project id or a path inside any existing repository in `project` to work on that repository, including Klein's source code. Use `t3_project_list` when you need to find the right project. A thread runs directly on this machine, so it can also edit dotfiles and change machine settings.",
     "",
@@ -158,11 +164,11 @@ export function renderWorkerSecretsSection(): string {
     "",
     "When a task needs a password, token, or other secret, use `secret_list` to check what is already saved and `secret_request` to ask the linked user by direct message. The user answers in a private modal; the values are encrypted and never enter this conversation or your result. If these tools are not active, load them with `tool_search`.",
     "",
-    "Use `secret_run` (when available) to run a command with a saved secret. It injects each field as `KLEIN_SECRET_<SERVICE>_<FIELD>` and redacts those values from the output. Do not echo a secret, do not put one in a file that stays in the workspace, and do not ask the user to paste a secret into the channel.",
+    "Use `secret_run` (when available) to run a command with a saved secret. It injects each field as `KLEIN_SECRET_<SERVICE>_<FIELD>` and redacts those values from the output. Do not echo a secret, do not put one in a file that stays in the home or workspace, and do not ask the user to paste a secret into the channel.",
     "",
-    "If a CLI expects a fixed environment variable, set `env` on the field when requesting it (for example `SERVICE_TOKEN`); `secret_run` injects both names. For a tool that reads a config file, write the value to a file under `/tmp` inside the command and remove it when the command ends; do not leave it in the linked user's home.",
+    "If a CLI expects a fixed environment variable, set `env` on the field when requesting it (for example `SERVICE_TOKEN`); `secret_run` injects both names. For a tool that reads a config file, write the value to a file under `/tmp` inside the command and remove it when the command ends; do not leave it in the home.",
     "",
-    "Device-code logins that only ask the user for a one-time code are fine. The risk is the long-lived state the CLI writes after login: if it is stored in the sandbox, you can read it. Use the CLI's own login/logout only when the user accepts that, and prefer a hidden browser profile or a host-side adapter when the token must stay unreadable.",
+    "Device-code logins that only ask the user for a one-time code are fine. The risk is the long-lived state the CLI writes after login: if it is stored in the shell's home, you can read it. Use the CLI's own login/logout only when the user accepts that, and prefer a hidden browser profile or a host-side adapter when the token must stay unreadable.",
     "",
     "Use `secret_delete` only when the user explicitly asks to remove or revoke a saved secret.",
     "",
