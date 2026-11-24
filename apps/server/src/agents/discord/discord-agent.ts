@@ -2,7 +2,7 @@ import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 
 import type { AgentEvent } from "../core/agent-event";
 import type { AgentFactory, AgentToolContext } from "../core/agent-factory";
-import type { AgentRuntime } from "../core/agent-runtime";
+import type { AgentRuntime, AgentTurnProgress } from "../core/agent-runtime";
 import type { AgentTurn, AgentTurnContext } from "../core/agent-turn";
 import type { ConversationAgent } from "../core/conversation-agent";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
@@ -35,6 +35,8 @@ export interface DiscordConversationAgent extends ConversationAgent {
   steerMessage?(message: DiscordMessage, context?: DiscordTurnContext): Promise<void>;
   /** Number of user-visible messages sent by this agent so far. */
   getSentMessageCount?(): number;
+  /** Durable progress of the turn for an event id, read from the Pi session. */
+  getTurnProgress(eventId: string): AgentTurnProgress;
 }
 
 export class DiscordAgent implements DiscordConversationAgent {
@@ -88,6 +90,10 @@ export class DiscordAgent implements DiscordConversationAgent {
 
   getSentMessageCount(): number {
     return this.sentMessages.count;
+  }
+
+  getTurnProgress(eventId: string): AgentTurnProgress {
+    return this.runtime.getTurnProgress?.(eventId) ?? "none";
   }
 
   prompt(turn: AgentTurn): Promise<void> {

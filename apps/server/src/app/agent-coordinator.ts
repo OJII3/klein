@@ -1,6 +1,7 @@
 import type { Logger } from "pino";
 
 import type { AgentEvent } from "@agents/core/agent-event";
+import type { AgentTurnProgress } from "@agents/core/agent-runtime";
 import type { WorkerControl, WorkerResult } from "@agents/core/worker-agent";
 import type { DiscordConversationAgent } from "@agents/discord/discord-agent";
 import type { DiscordAccessPolicy } from "@modules/discord/domain/discord-access-policy";
@@ -38,9 +39,11 @@ import {
   type ConversationKey,
 } from "./channel-session-state-store";
 import { ChannelSessionManager } from "./channel-session-manager";
-import type { ConversationInboxStore, InboxItem } from "./conversation-inbox";
+import type { ConversationInboxStore, InboxItem, InboxItemOutcome } from "./conversation-inbox";
 import { ScheduledTaskDeliveryCoordinator } from "./scheduled-task-delivery-coordinator";
 import { SessionSpeakerTracker } from "./session-speaker-tracker";
+
+const MAX_INBOX_ATTEMPTS = 3;
 
 export interface AgentCoordinatorDependencies {
   readonly channelApi: DiscordChannelApi;
@@ -322,8 +325,28 @@ export class AgentCoordinator {
       const item = await this.dependencies.inbox.claimNext(conversationKey);
       if (item === undefined) return;
 
+      if (item.attempts > MAX_INBOX_ATTEMPTS) {
+        await this.dependencies.inbox.finish(
+          item,
+          "interrupted",
+          `Exceeded ${MAX_INBOX_ATTEMPTS} attempts without completing the turn`,
+        );
+        this.logger.warn(
+          {
+            attempts: item.attempts,
+            conversationKey,
+            event: "conversation_inbox_item_attempt_limit",
+            itemId: item.id,
+            itemKind: item.kind,
+          },
+          "Stopped retrying a conversation inbox item",
+        );
+        continue;
+      }
+
+      let outcome: InboxItemOutcome;
       try {
-        await this.processItem(item);
+        outcome = await this.processItem(item);
       } catch (error) {
         await this.dependencies.inbox.finish(item, "failed", errorMessage(error));
         this.logger.error(
@@ -338,11 +361,11 @@ export class AgentCoordinator {
         );
         continue;
       }
-      await this.dependencies.inbox.finish(item, "done");
+      await this.dependencies.inbox.finish(item, outcome);
     }
   }
 
-  private processItem(item: InboxItem): Promise<void> {
+  private processItem(item: InboxItem): Promise<InboxItemOutcome> {
     switch (item.kind) {
       case "discord.message":
         return this.processMessage(item.message);
@@ -355,17 +378,23 @@ export class AgentCoordinator {
 
   private async processAgentEvent(
     item: Extract<InboxItem, { kind: "agent.event" }>,
-  ): Promise<void> {
-    await this.sessionManager.runTurn(
+  ): Promise<InboxItemOutcome> {
+    const accessScope = item.accessScope ?? PUBLIC_ACCESS_SCOPE;
+    const recordedOutcome = await this.recordedTurnOutcome(
       item.conversationKey,
-      item.accessScope ?? PUBLIC_ACCESS_SCOPE,
-      async (agent) => {
-        await agent.promptEvent(item.event);
-      },
+      accessScope,
+      item.event.id,
+      this.logger,
     );
+    if (recordedOutcome) return recordedOutcome;
+
+    await this.sessionManager.runTurn(item.conversationKey, accessScope, async (agent) => {
+      await agent.promptEvent(item.event);
+    });
+    return "done";
   }
 
-  private async processMessage(message: DiscordMessage): Promise<void> {
+  private async processMessage(message: DiscordMessage): Promise<InboxItemOutcome> {
     const conversationKey = discordConversationKey(message);
     const target = {
       guildId: message.guildId,
@@ -375,14 +404,8 @@ export class AgentCoordinator {
       userIsBot: message.author.bot,
     };
     if (this.dependencies.accessPolicy && !this.dependencies.accessPolicy.canReceive(target)) {
-      return;
+      return "done";
     }
-
-    this.dependencies.discordUserDirectory?.remember(message.author);
-    if (message.replyTo?.author) {
-      this.dependencies.discordUserDirectory?.remember(message.replyTo.author);
-    }
-    await this.dependencies.userMemoryCoordinator?.observe(message);
 
     const ownerFeaturesAllowed =
       this.dependencies.accessPolicy?.canUseOwnerFeatures(target) ?? false;
@@ -400,6 +423,20 @@ export class AgentCoordinator {
       channelId: message.channelId,
       messageId: message.id,
     });
+    const recordedOutcome = await this.recordedTurnOutcome(
+      conversationKey,
+      accessScope,
+      message.id,
+      logger,
+    );
+    if (recordedOutcome) return recordedOutcome;
+
+    this.dependencies.discordUserDirectory?.remember(message.author);
+    if (message.replyTo?.author) {
+      this.dependencies.discordUserDirectory?.remember(message.replyTo.author);
+    }
+    await this.dependencies.userMemoryCoordinator?.observe(message);
+
     const startedAt = Date.now();
     logger.debug({ event: "discord_message_processing_started" }, "Processing Discord message");
     try {
@@ -449,6 +486,7 @@ export class AgentCoordinator {
         },
         { channelName: message.channelName },
       );
+      return "done";
     } catch (error) {
       logger.error(
         {
@@ -466,6 +504,48 @@ export class AgentCoordinator {
     } finally {
       if (!ownerFeaturesAllowed) this.dependencies.sharedMemoryCoordinator?.enqueue(message);
     }
+  }
+
+  /**
+   * Reads the durable turn record before `runTurn`, because rotation disposes the
+   * session that holds the marker for the previous attempt.
+   */
+  private async recordedTurnOutcome(
+    conversationKey: ConversationKey,
+    accessScope: AccessScope,
+    eventId: string,
+    logger: Logger,
+  ): Promise<InboxItemOutcome | undefined> {
+    const progress = await this.readTurnProgress(conversationKey, accessScope, eventId);
+    if (progress === "completed") {
+      logger.info(
+        { conversationKey, event: "conversation_inbox_item_completed", eventId },
+        "Skipped a conversation inbox item whose turn already completed",
+      );
+      return "done";
+    }
+    if (progress === "uncertain") {
+      logger.warn(
+        { conversationKey, event: "conversation_inbox_item_interrupted", eventId },
+        "Left a conversation inbox item interrupted because its turn has no decisive outcome",
+      );
+      return "interrupted";
+    }
+    return undefined;
+  }
+
+  private async readTurnProgress(
+    conversationKey: ConversationKey,
+    accessScope: AccessScope,
+    eventId: string,
+  ): Promise<AgentTurnProgress> {
+    const state = await this.sessionManager.ensureConversationState(
+      conversationKey,
+      Date.now(),
+      accessScope,
+    );
+    const agent = await this.sessionManager.getAgent(conversationKey, state);
+    return agent.getTurnProgress(eventId);
   }
 
   private async resolveProactiveContext(

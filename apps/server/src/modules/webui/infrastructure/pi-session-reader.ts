@@ -24,7 +24,11 @@ import {
   encodeSessionListCursor,
   normalizeSessionLimit,
 } from "./pi-session-cursor";
-import { toViewerEvent, toViewerSessionSummary } from "./pi-session-event-mapper";
+import {
+  isHiddenSessionEntry,
+  toViewerEvent,
+  toViewerSessionSummary,
+} from "./pi-session-event-mapper";
 import { listViewableSessionDirectories } from "./pi-session-files";
 
 export class PiSessionReader implements ViewerSessionReader {
@@ -88,7 +92,7 @@ export class PiSessionReader implements ViewerSessionReader {
     if (!header || header.id !== sessionId) return undefined;
 
     const sessionEntries = entries.filter(
-      (entry): entry is SessionEntry => entry.type !== "session",
+      (entry): entry is SessionEntry => entry.type !== "session" && !isHiddenSessionEntry(entry),
     );
     const limit = normalizeSessionLimit(query.limit);
     const cursor = query.cursor ? decodeSessionCursor(query.cursor, sessionId) : undefined;

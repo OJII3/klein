@@ -4,7 +4,7 @@ import pino from "pino";
 
 import { DiscordAgent } from "@agents/discord/discord-agent";
 import type { AgentFactory } from "@agents/core/agent-factory";
-import type { AgentRuntime } from "@agents/core/agent-runtime";
+import type { AgentRuntime, AgentTurnProgress } from "@agents/core/agent-runtime";
 import type { AgentEvent } from "@agents/core/agent-event";
 import type { AgentTurn } from "@agents/core/agent-turn";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
@@ -72,7 +72,12 @@ function createHarness(
   watchCheckRunner?: WatchCheckRunner,
   workerSendResult = false,
   replyWithMessage = false,
-  promptBehavior: { readonly gate?: Promise<void>; readonly error?: Error } = {},
+  runtimeBehavior: {
+    readonly gate?: Promise<void>;
+    readonly error?: Error;
+    readonly turnProgress?:
+      AgentTurnProgress | ((eventId: string, sessionKey: string) => AgentTurnProgress);
+  } = {},
 ): TestHarness {
   const resolvedWatchCheckRunner: WatchCheckRunner = watchCheckRunner ?? {
     async run() {
@@ -118,10 +123,15 @@ function createHarness(
 
       return {
         async prompt(turn) {
-          if (promptBehavior.gate) await promptBehavior.gate;
-          if (promptBehavior.error) throw promptBehavior.error;
+          if (runtimeBehavior.gate) await runtimeBehavior.gate;
+          if (runtimeBehavior.error) throw runtimeBehavior.error;
           channelPrompts.push(turn);
           if (replyWithMessage) sentHooks.get(channelId)?.();
+        },
+        getTurnProgress(eventId) {
+          const progress = runtimeBehavior.turnProgress;
+          if (typeof progress === "function") return progress(eventId, creationOptions.sessionKey);
+          return progress ?? "none";
         },
         async compactForHandoff() {
           return "previous conversation summary";
@@ -362,6 +372,220 @@ test("marks an inbox item failed when its prompt fails", async () => {
     const item = harness.inbox.get({ kind: "discord", channelId: "channel-a" }, message.id);
     assert.equal(item?.status, "failed");
     assert.match(item?.error ?? "", /prompt failed/u);
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+test("finishes an inbox item whose turn completed without prompting again", async () => {
+  const inbox = new MemoryInbox();
+  const message = createMessage("channel-a", "message-a", "返信済み");
+  const conversationKey = { kind: "discord", channelId: message.channelId } as const;
+  await inbox.enqueue({
+    kind: "discord.message",
+    id: message.id,
+    conversationKey,
+    enqueuedAt: "2026-10-14T09:30:42.123Z",
+    message,
+  });
+  await inbox.claimNext(conversationKey);
+  await inbox.recoverClaims();
+  const progressReads: string[] = [];
+  const harness = createHarness(undefined, undefined, { inbox }, undefined, false, false, {
+    turnProgress(eventId) {
+      progressReads.push(eventId);
+      return "completed";
+    },
+  });
+
+  try {
+    await harness.agentCoordinator.initialize();
+
+    assert.deepEqual(progressReads, ["message-a"]);
+    assert.deepEqual(harness.createdSessionKeys, ["discord-channel:channel-a"]);
+    assert.equal(harness.prompts.get("channel-a")?.length ?? 0, 0);
+    assert.equal(harness.inbox.get(conversationKey, message.id)?.status, "done");
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+test("leaves an inbox item interrupted when its turn outcome is uncertain", async () => {
+  const inbox = new MemoryInbox();
+  const message = createMessage("channel-a", "message-a", "結果不明");
+  const conversationKey = { kind: "discord", channelId: message.channelId } as const;
+  await inbox.enqueue({
+    kind: "discord.message",
+    id: message.id,
+    conversationKey,
+    enqueuedAt: "2026-10-14T09:30:42.123Z",
+    message,
+  });
+  await inbox.claimNext(conversationKey);
+  await inbox.recoverClaims();
+  const harness = createHarness(undefined, undefined, { inbox }, undefined, false, false, {
+    turnProgress: "uncertain",
+  });
+
+  try {
+    await harness.agentCoordinator.initialize();
+
+    assert.equal(harness.prompts.get("channel-a")?.length ?? 0, 0);
+    assert.equal(harness.inbox.get(conversationKey, message.id)?.status, "interrupted");
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+test("prompts an inbox item again when its turn started without an assistant message", async () => {
+  const inbox = new MemoryInbox();
+  const message = createMessage("channel-a", "message-a", "未返信");
+  const conversationKey = { kind: "discord", channelId: message.channelId } as const;
+  await inbox.enqueue({
+    kind: "discord.message",
+    id: message.id,
+    conversationKey,
+    enqueuedAt: "2026-10-14T09:30:42.123Z",
+    message,
+  });
+  await inbox.claimNext(conversationKey);
+  await inbox.recoverClaims();
+  const harness = createHarness(undefined, undefined, { inbox }, undefined, false, false, {
+    turnProgress: "started",
+  });
+
+  try {
+    await harness.agentCoordinator.initialize();
+
+    assert.equal(harness.prompts.get("channel-a")?.length, 1);
+    assert.equal(harness.inbox.get(conversationKey, message.id)?.status, "done");
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+test("interrupts an inbox item that exceeds the attempt limit without prompting", async () => {
+  const inbox = new MemoryInbox();
+  const message = createMessage("channel-a", "message-a", "毒メッセージ");
+  const conversationKey = { kind: "discord", channelId: message.channelId } as const;
+  await inbox.enqueue({
+    kind: "discord.message",
+    id: message.id,
+    conversationKey,
+    enqueuedAt: "2026-10-14T09:30:42.123Z",
+    message,
+  });
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    assert.ok(await inbox.claimNext(conversationKey));
+    await inbox.recoverClaims();
+  }
+  const harness = createHarness(undefined, undefined, { inbox });
+
+  try {
+    await harness.agentCoordinator.initialize();
+
+    const item = harness.inbox.get(conversationKey, message.id);
+    assert.equal(item?.status, "interrupted");
+    assert.match(item?.error ?? "", /3 attempts/u);
+    assert.equal(harness.prompts.size, 0);
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+test("reads turn progress before rotating a due conversation session", async () => {
+  const inbox = new MemoryInbox();
+  const message = createMessage("channel-a", "message-a", "返信済み");
+  const conversationKey = { kind: "discord", channelId: message.channelId } as const;
+  await inbox.enqueue({
+    kind: "discord.message",
+    id: message.id,
+    conversationKey,
+    enqueuedAt: "2026-10-14T09:30:42.123Z",
+    message,
+  });
+  await inbox.claimNext(conversationKey);
+  await inbox.recoverClaims();
+  const oldSessionKey = "discord-channel:channel-a:public:rotation:2000-01-01";
+  const channelSessionStateStore = {
+    async getOrCreate() {
+      return {
+        conversationKey,
+        accessScope: "public",
+        sessionKey: oldSessionKey,
+        lastActivityAt: Date.now() - 2 * 60 * 60 * 1000,
+        lastRotationDate: "2000-01-01",
+        hasActivitySinceRotation: true,
+      };
+    },
+    async list() {
+      return [];
+    },
+    async listChannelNames() {
+      return new Map();
+    },
+    async save() {},
+  };
+  const progressReads: { eventId: string; sessionKey: string }[] = [];
+  const harness = createHarness(
+    undefined,
+    undefined,
+    {
+      accessPolicy: createDiscordAccessPolicy({ default: "allow", directMessages: "allow" }),
+      channelSessionStateStore,
+      inbox,
+    },
+    undefined,
+    false,
+    false,
+    {
+      turnProgress(eventId, sessionKey) {
+        progressReads.push({ eventId, sessionKey });
+        return sessionKey === oldSessionKey ? "completed" : "none";
+      },
+    },
+  );
+
+  try {
+    await harness.agentCoordinator.initialize();
+
+    assert.deepEqual(progressReads, [{ eventId: "message-a", sessionKey: oldSessionKey }]);
+    assert.deepEqual(harness.createdSessionKeys, [oldSessionKey]);
+    assert.equal(harness.prompts.get("channel-a")?.length ?? 0, 0);
+    assert.equal(harness.inbox.get(conversationKey, message.id)?.status, "done");
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+test("finishes an agent event whose turn completed without prompting again", async () => {
+  const inbox = new MemoryInbox();
+  const event: AgentEvent = {
+    id: "event-1",
+    type: "reminder.due",
+    source: "reminder",
+    occurredAt: "2026-10-14T09:30:42.123Z",
+    content: [{ type: "text", text: "定例会の時間" }],
+  };
+  const conversationKey = { kind: "discord", channelId: "channel-a" } as const;
+  await inbox.enqueue({
+    kind: "agent.event",
+    id: event.id,
+    conversationKey,
+    enqueuedAt: "2026-10-14T09:30:42.123Z",
+    event,
+  });
+  await inbox.claimNext(conversationKey);
+  await inbox.recoverClaims();
+  const harness = createHarness(undefined, undefined, { inbox }, undefined, false, false, {
+    turnProgress: "completed",
+  });
+
+  try {
+    await harness.agentCoordinator.initialize();
+
+    assert.equal(harness.prompts.get("channel-a")?.length ?? 0, 0);
+    assert.equal(harness.inbox.get(conversationKey, event.id)?.status, "done");
   } finally {
     await harness.agentCoordinator.dispose();
   }

@@ -1,11 +1,17 @@
 import type { SessionEntry, SessionInfo } from "@earendil-works/pi-coding-agent";
 
+import { TURN_MARKER_CUSTOM_TYPE } from "@agents/core/agent-turn";
 import { parseDiscordChannelId } from "@shared/discord-channel-session-key";
 import { isRecord } from "@shared/type-guards";
 import type { PiViewerEvent, ViewerSessionAgentRole, ViewerSessionSummary } from "@klein/webui-api";
 
 const FIRST_MESSAGE_MAX_LENGTH = 240;
 const EVENT_SUMMARY_MAX_LENGTH = 500;
+const HIDDEN_CUSTOM_TYPES = new Set([TURN_MARKER_CUSTOM_TYPE]);
+
+export function isHiddenSessionEntry(entry: SessionEntry): boolean {
+  return entry.type === "custom" && HIDDEN_CUSTOM_TYPES.has(entry.customType);
+}
 
 export function toViewerSessionSummary(
   info: SessionInfo,

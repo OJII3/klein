@@ -38,8 +38,12 @@ import {
   type AgentRole,
 } from "@agents/core/agent-role";
 import type { AgentTool } from "@agents/core/agent-tool";
-import type { AgentTurn, AgentTurnContext } from "@agents/core/agent-turn";
-import type { AgentPrompt, AgentRuntime } from "@agents/core/agent-runtime";
+import {
+  TURN_MARKER_CUSTOM_TYPE,
+  type AgentTurn,
+  type AgentTurnContext,
+} from "@agents/core/agent-turn";
+import type { AgentPrompt, AgentRuntime, AgentTurnProgress } from "@agents/core/agent-runtime";
 import { toImageAnalysisFailure } from "@agents/core/image-analysis";
 import {
   renderWorkerSecretsSection,
@@ -49,6 +53,7 @@ import {
 import type { SessionMode } from "@app/cli-options";
 import { renderWatchToolSection } from "@modules/scheduling/application/watch-tool";
 import { accessScopeUserId, parseAccessScope } from "@shared/access";
+import { isRecord } from "@shared/type-guards";
 import { ensureUserEnvironment, resolveUserEnvironment } from "@shared/user-environment";
 import type { WatchToolCatalog } from "@modules/scheduling/ports/watch-tool";
 import {
@@ -144,6 +149,11 @@ const HANDOFF_COMPACTION_INSTRUCTIONS =
   "Create the concise Japanese handoff summary requested by Klein's handoff extension.";
 const HANDOFF_CUSTOM_MESSAGE_TYPE = "klein-context-handoff";
 const WORKER_CONTEXT_CUSTOM_TYPE = "klein-worker-inherited-context";
+
+interface TurnMarker {
+  readonly eventId: string;
+  readonly phase: "started" | "completed";
+}
 const DEFAULT_EXTENSION_TOOL_NAMES = [
   "codemode",
   "web_search",
@@ -272,8 +282,10 @@ export class PiAgentRuntime implements AgentRuntime {
       this.pendingInputs.push({ text: prompt.text, requesterId: turn.context.requesterId });
       let failed = false;
       try {
+        this.recordTurnMarker(traceId, "started");
         this.recordTurnContext(turn.context);
         await this.runPrompt(prompt);
+        this.recordTurnMarker(traceId, "completed");
         return this.assistantText === "caller" ? readLastAssistantText(this.session) : undefined;
       } catch (error) {
         failed = true;
@@ -289,6 +301,28 @@ export class PiAgentRuntime implements AgentRuntime {
         });
       }
     });
+  }
+
+  getTurnProgress(eventId: string): AgentTurnProgress {
+    const branch = this.session.sessionManager.getBranch();
+    for (let index = branch.length - 1; index >= 0; index -= 1) {
+      const entry = branch[index];
+      if (
+        entry?.type !== "custom" ||
+        entry.customType !== TURN_MARKER_CUSTOM_TYPE ||
+        !isTurnMarker(entry.data) ||
+        entry.data.eventId !== eventId
+      ) {
+        continue;
+      }
+      if (entry.data.phase === "completed") return "completed";
+      return branch
+        .slice(index + 1)
+        .some((next) => next.type === "message" && next.message.role === "assistant")
+        ? "uncertain"
+        : "started";
+    }
+    return "none";
   }
 
   async steer(turn: AgentTurn): Promise<void> {
@@ -424,6 +458,13 @@ export class PiAgentRuntime implements AgentRuntime {
             }))
           : undefined,
       source: "rpc",
+    });
+  }
+
+  private recordTurnMarker(eventId: string, phase: TurnMarker["phase"]): void {
+    this.session.sessionManager.appendCustomEntry(TURN_MARKER_CUSTOM_TYPE, {
+      eventId,
+      phase,
     });
   }
 
@@ -1029,6 +1070,14 @@ export function createPiAgentFactory({
       );
     },
   };
+}
+
+function isTurnMarker(value: unknown): value is TurnMarker {
+  return (
+    isRecord(value) &&
+    typeof value.eventId === "string" &&
+    (value.phase === "started" || value.phase === "completed")
+  );
 }
 
 function extractUserMessageText(

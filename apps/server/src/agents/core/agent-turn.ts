@@ -1,5 +1,7 @@
 import type { AgentEvent } from "./agent-event";
 
+export const TURN_MARKER_CUSTOM_TYPE = "klein-turn";
+
 export interface AgentContextBlock {
   /** Element name the runtime wraps the content in. */
   readonly name: string;

@@ -219,7 +219,7 @@ export class ChannelSessionManager<TAgent extends ConversationAgent = Conversati
       lastRotationDate: rotationBucket,
       hasActivitySinceRotation: true,
     };
-    this.inMemoryChannelStates.set(key, created);
+    await this.saveConversationState(created);
     return created;
   }
 
