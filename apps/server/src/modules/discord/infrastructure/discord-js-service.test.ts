@@ -12,7 +12,7 @@ import {
   type ModalBuilder,
 } from "discord.js";
 
-import type { SecretControl } from "../../secrets/application/secret-service";
+import type { SecretRequestLifecycle } from "../../secrets/application/secret-service";
 import type { SecretRequest, SecretRequestDraft } from "../../secrets/domain/secret-request";
 import { isRecord } from "@shared/type-guards";
 import { createDiscordAccessPolicy } from "../domain/discord-access-policy";
@@ -84,9 +84,11 @@ function createSecretRequestDraft(): SecretRequestDraft {
   return draft;
 }
 
-function createSecretControl(overrides: Partial<SecretControl> = {}): SecretControl {
+function createSecretRequestLifecycle(
+  overrides: Partial<SecretRequestLifecycle> = {},
+): SecretRequestLifecycle {
   return {
-    async request() {
+    async createPending() {
       throw new Error("Unexpected secret request");
     },
     async lookupPending() {
@@ -99,15 +101,6 @@ function createSecretControl(overrides: Partial<SecretControl> = {}): SecretCont
     },
     async cancel() {
       return { kind: "missing" };
-    },
-    async list() {
-      return [];
-    },
-    async read() {
-      return undefined;
-    },
-    async delete() {
-      return false;
     },
     ...overrides,
   };
@@ -1811,8 +1804,8 @@ test("requestSecret はリンク済みユーザーにDMを送り、そのメッ�
     },
   });
   const attached: { requestId: string; dmChannelId: string; dmMessageId: string }[] = [];
-  const secrets = createSecretControl({
-    async request() {
+  const secrets = createSecretRequestLifecycle({
+    async createPending() {
       return { kind: "requested", request: createSecretRequest() };
     },
     async attachMessage(requestId, dmChannelId, dmMessageId) {

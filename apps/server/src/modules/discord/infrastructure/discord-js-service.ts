@@ -42,7 +42,11 @@ import type { DiscordChannelLinkStore } from "../ports/discord-channel-link-stor
 import type { DiscordChannelRuleStore } from "../ports/discord-channel-rule-store";
 import type { DiscordUserProfileReader } from "../ports/discord-user-profile-reader";
 import type { PendingDiscordChannelLinkRequest } from "../domain/discord-channel-link-request";
-import type { SecretControl, SecretRequestOutcome } from "../../secrets/application/secret-service";
+import type {
+  SecretRequestIntake,
+  SecretRequestLifecycle,
+  SecretRequestOutcome,
+} from "../../secrets/application/secret-service";
 import type { SecretRequestDraft } from "../../secrets/domain/secret-request";
 import {
   DiscordSecretRequester,
@@ -294,7 +298,7 @@ function splitMessage(content: string): string[] {
 }
 
 export class DiscordJsService
-  implements DiscordGateway, DiscordChannelApi, DiscordUserProfileReader
+  implements DiscordGateway, DiscordChannelApi, DiscordUserProfileReader, SecretRequestIntake
 {
   private readonly client: DiscordServiceClient;
   private readonly channels = new Map<string, SendableChannel>();
@@ -334,7 +338,7 @@ export class DiscordJsService
         DiscordApprovalRequestStore<PendingDiscordChannelLinkRequest>,
         "list" | "save" | "remove"
       >;
-      readonly secrets?: SecretControl;
+      readonly secrets?: SecretRequestLifecycle;
     },
   ) {
     this.logger = logger?.child({ component: "discord-service" });
@@ -481,14 +485,9 @@ export class DiscordJsService
     await this.client.login(this.token);
   }
 
-  /**
-   * Asks the linked user for secrets by direct message. Callers must use this
-   * entry point instead of the secret service, because the service only stores
-   * the pending request and never delivers it.
-   */
   requestSecret(draft: SecretRequestDraft): Promise<SecretRequestOutcome> {
     if (!this.secretRequester) return Promise.resolve({ kind: "unavailable" });
-    return this.secretRequester.request(draft);
+    return this.secretRequester.requestSecret(draft);
   }
 
   async flush(): Promise<void> {

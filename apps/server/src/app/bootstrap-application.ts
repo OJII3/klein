@@ -330,12 +330,8 @@ export async function bootstrapApplication(): Promise<void> {
       return [
         ...workerTools,
         ...createSecretTools({
-          secrets: {
-            request: (draft) => discordService.requestSecret(draft),
-            list: (userId) => secretService.list(userId),
-            read: (userId, service) => secretService.read(userId, service),
-            delete: (userId, service) => secretService.delete(userId, service),
-          },
+          requests: discordService,
+          secrets: secretService,
           userId: workerUserId,
           channelId: conversationKey.channelId,
           accessScope,

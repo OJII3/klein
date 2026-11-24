@@ -2,8 +2,12 @@ import assert from "node:assert/strict";
 import { MessageFlags } from "discord.js";
 import test from "node:test";
 
-import type { SecretControl, SecretSubmissionOutcome } from "../application/secret-service";
-import type { SecretSummary, SecretValues } from "../domain/secret";
+import type {
+  SecretRequestCreationOutcome,
+  SecretRequestLifecycle,
+  SecretSubmissionOutcome,
+} from "../application/secret-service";
+import type { SecretSummary } from "../domain/secret";
 import type { SecretRequest, SecretRequestDraft } from "../domain/secret-request";
 import {
   DiscordSecretRequester,
@@ -45,7 +49,13 @@ const secret: SecretSummary = {
   updatedAt: "2026-11-22T00:00:00.000Z",
 };
 
-function createHarness(options: { dmFails?: boolean; completed?: SecretSubmissionOutcome } = {}) {
+function createHarness(
+  options: {
+    dmFails?: boolean;
+    completed?: SecretSubmissionOutcome;
+    creation?: SecretRequestCreationOutcome;
+  } = {},
+) {
   const sent: { userId: string; payload: unknown }[] = [];
   const edits: unknown[] = [];
   const attached: { requestId: string; dmChannelId: string; dmMessageId: string }[] = [];
@@ -53,9 +63,9 @@ function createHarness(options: { dmFails?: boolean; completed?: SecretSubmissio
   const completed: { requestId: string; userId: string; values: Record<string, string> }[] = [];
   const cancelled: string[] = [];
 
-  const service: SecretControl = {
-    async request(_draft) {
-      return { kind: "requested", request };
+  const service: SecretRequestLifecycle = {
+    async createPending() {
+      return options.creation ?? { kind: "requested", request };
     },
     async lookupPending() {
       return { kind: "pending", request };
@@ -73,15 +83,6 @@ function createHarness(options: { dmFails?: boolean; completed?: SecretSubmissio
     async cancel(requestId) {
       cancelled.push(requestId);
       return { kind: "cancelled" };
-    },
-    async list(): Promise<readonly SecretSummary[]> {
-      return [];
-    },
-    async read(): Promise<SecretValues | undefined> {
-      return undefined;
-    },
-    async delete() {
-      return false;
     },
   };
 
@@ -162,7 +163,7 @@ function createButtonInteraction(
 
 test("sends a Components v2 direct message and remembers it", async () => {
   const harness = createHarness();
-  const outcome = await harness.requester.request(draft);
+  const outcome = await harness.requester.requestSecret(draft);
 
   assert.equal(outcome.kind, "requested");
   assert.equal(harness.sent.length, 1);
@@ -181,8 +182,35 @@ test("sends a Components v2 direct message and remembers it", async () => {
 test("reports direct-message failures and removes the pending request", async () => {
   const harness = createHarness({ dmFails: true });
 
-  assert.equal((await harness.requester.request(draft)).kind, "unavailable");
+  assert.equal((await harness.requester.requestSecret(draft)).kind, "unavailable");
   assert.deepEqual(harness.abandoned, ["request-1"]);
+});
+
+test("redelivers a pending request that was never sent", async () => {
+  const undelivered: SecretRequest = {
+    ...request,
+    dmChannelId: undefined,
+    dmMessageId: undefined,
+  };
+  const harness = createHarness({ creation: { kind: "pending", request: undelivered } });
+
+  const outcome = await harness.requester.requestSecret(draft);
+
+  assert.equal(outcome.kind, "requested");
+  assert.equal(harness.sent.length, 1);
+  assert.deepEqual(harness.attached, [
+    { requestId: "request-1", dmChannelId: "dm-channel", dmMessageId: "dm-message" },
+  ]);
+});
+
+test("does not resend a pending request that already has a message", async () => {
+  const harness = createHarness({ creation: { kind: "pending", request } });
+
+  const outcome = await harness.requester.requestSecret(draft);
+
+  assert.equal(outcome.kind, "pending");
+  assert.equal(harness.sent.length, 0);
+  assert.deepEqual(harness.attached, []);
 });
 
 test("opens a modal with one input per requested field", async () => {

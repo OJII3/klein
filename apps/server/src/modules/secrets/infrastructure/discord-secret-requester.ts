@@ -11,7 +11,8 @@ import {
 import type { Logger } from "pino";
 
 import type {
-  SecretControl,
+  SecretRequestIntake,
+  SecretRequestLifecycle,
   SecretRequestOutcome,
   SecretSubmissionOutcome,
 } from "../application/secret-service";
@@ -58,7 +59,7 @@ export interface DiscordSecretClient {
 
 export interface DiscordSecretRequesterDependencies {
   readonly client: DiscordSecretClient;
-  readonly service: SecretControl;
+  readonly service: SecretRequestLifecycle;
   readonly logger?: Logger;
 }
 
@@ -80,50 +81,58 @@ interface EditableMessage {
  * A button opens a modal, and only the modal submit carries the values. The
  * values never pass through the conversation channel or the model.
  */
-export class DiscordSecretRequester {
+export class DiscordSecretRequester implements SecretRequestIntake {
   constructor(private readonly dependencies: DiscordSecretRequesterDependencies) {}
 
-  async request(draft: SecretRequestDraft): Promise<SecretRequestOutcome> {
-    const outcome = await this.dependencies.service.request(draft);
-    if (outcome.kind !== "requested") return outcome;
+  async requestSecret(draft: SecretRequestDraft): Promise<SecretRequestOutcome> {
+    const creation = await this.dependencies.service.createPending(draft);
+    if (creation.kind === "invalid") return creation;
+    if (creation.kind === "pending" && creation.request.dmMessageId) return creation;
 
+    // A pending request without a message was saved by an attempt that never
+    // delivered it. Deliver it now instead of telling the worker to wait for a
+    // message that does not exist.
+    const delivered = await this.deliver(creation.request);
+    return delivered ? { kind: "requested", request: creation.request } : { kind: "unavailable" };
+  }
+
+  private async deliver(request: SecretRequest): Promise<boolean> {
     let message: unknown;
     try {
-      const user = await this.dependencies.client.users.fetch(outcome.request.userId);
-      message = await user.send(createRequestMessage(outcome.request));
+      const user = await this.dependencies.client.users.fetch(request.userId);
+      message = await user.send(createRequestMessage(request));
     } catch (error) {
-      await this.dependencies.service.abandon(outcome.request.requestId);
+      await this.dependencies.service.abandon(request.requestId);
       this.dependencies.logger?.warn(
         {
           err: error,
           event: "secret_request_dm_failed",
-          userId: outcome.request.userId,
-          requestId: outcome.request.requestId,
+          userId: request.userId,
+          requestId: request.requestId,
         },
         "Failed to send an secret request by direct message",
       );
-      return { kind: "unavailable" };
+      return false;
     }
 
-    if (isSentMessage(message)) {
-      try {
-        await this.dependencies.service.attachMessage(
-          outcome.request.requestId,
-          message.channelId,
-          message.id,
-        );
-      } catch (error) {
-        this.dependencies.logger?.warn(
-          {
-            err: error,
-            event: "secret_request_message_attach_failed",
-            requestId: outcome.request.requestId,
-          },
-          "Failed to remember the secret request direct message",
-        );
-      }
+    if (!isSentMessage(message)) return true;
+    try {
+      await this.dependencies.service.attachMessage(
+        request.requestId,
+        message.channelId,
+        message.id,
+      );
+    } catch (error) {
+      this.dependencies.logger?.warn(
+        {
+          err: error,
+          event: "secret_request_message_attach_failed",
+          requestId: request.requestId,
+        },
+        "Failed to remember the secret request direct message",
+      );
     }
-    return outcome;
+    return true;
   }
 
   async handleButton(interaction: DiscordSecretButtonInteraction): Promise<boolean> {
