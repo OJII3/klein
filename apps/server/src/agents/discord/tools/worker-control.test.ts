@@ -232,10 +232,12 @@ test("describes worker capabilities that the conversation scope grants", () => {
   assert.match(publicTools.workerStart.description, /Prefer worker_start/);
   assert.doesNotMatch(
     publicTools.workerStart.description,
-    /agent-browser|t3_thread_start|sandboxed shell/,
+    /agent-browser|t3_thread_start|sandboxed shell|unsandboxed shell/,
   );
   assert.match(ownerTools.workerStart.description, /agent-browser/);
   assert.match(ownerTools.workerStart.description, /t3_thread_start, t3_thread_send/);
+  assert.match(ownerTools.workerStart.description, /unsandboxed shell \(bash\) on the host/);
+  assert.doesNotMatch(ownerTools.workerStart.description, /a sandboxed shell/);
   assert.match(linkedTools.workerStart.description, /agent-browser/);
   assert.match(linkedTools.workerStart.description, /sandboxed shell/);
   assert.doesNotMatch(linkedTools.workerStart.description, /t3_thread_start/);

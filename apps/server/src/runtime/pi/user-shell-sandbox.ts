@@ -18,7 +18,6 @@ import { delimiter, isAbsolute, relative, resolve, sep } from "node:path";
 
 import { createBashTool, type BashOperations } from "@earendil-works/pi-coding-agent";
 
-import type { AgentRole } from "@agents/core/agent-role";
 import {
   userEnvironmentKey,
   userEnvironmentVariables,
@@ -63,7 +62,7 @@ const SANDBOX_RESOLV_CONF_FILE = "resolv.conf";
 const DEFAULT_DNS_SERVER = "1.1.1.1";
 const MAX_DNS_HOSTS = 2;
 
-const DEFAULT_TIMEOUT_SECONDS = 600;
+export const DEFAULT_SHELL_COMMAND_TIMEOUT_SECONDS = 600;
 const MAX_TIMEOUT_SECONDS = 3_600;
 const MAX_OUTPUT_BYTES = 64 * 1024 * 1024;
 
@@ -73,7 +72,7 @@ const SECRET_ENVIRONMENT_DIRECTORY = "secret-runtime";
 const SECRET_ENVIRONMENT_FILE_MAX_AGE_MS = 60 * 60 * 1_000;
 
 /** A tool result should stay readable; the command may still produce more. */
-export const SANDBOXED_COMMAND_MAX_OUTPUT_BYTES = 32 * 1024;
+export const SHELL_COMMAND_MAX_OUTPUT_BYTES = 32 * 1024;
 
 /**
  * Loose per-process limits set inside the sandbox. They are backstops against
@@ -94,18 +93,6 @@ const SHELL_ULIMITS = [
   "ulimit -H -t 3600 2>/dev/null || true",
   "ulimit -S -t 3600 2>/dev/null || true",
 ] as const;
-
-/**
- * A sandboxed shell belongs to workers started from a linked user's
- * conversation. The user environment names the only directory tree the shell
- * may write, and the shell must not fall back to running on the host.
- */
-export function enablesUserShell(
-  role: AgentRole,
-  environment: UserEnvironment | undefined,
-): environment is UserEnvironment {
-  return role.kind === "worker" && environment !== undefined;
-}
 
 function resolveExecutable(name: string): string | undefined {
   for (const directory of (process.env.PATH ?? "").split(delimiter)) {
@@ -160,14 +147,14 @@ export function createUserShellTool(environment: UserEnvironment): PiTool {
   });
 }
 
-export interface SandboxedCommandOptions {
+export interface ShellCommandOptions {
   readonly timeoutSeconds?: number;
   readonly signal?: AbortSignal;
   /** Values are exported only to this command, never written to the workspace. */
   readonly secretEnvironment?: Readonly<Record<string, string>>;
 }
 
-export interface SandboxedCommandResult {
+export interface ShellCommandResult {
   readonly output: string;
   readonly exitCode: number | null;
   readonly truncated: boolean;
@@ -181,8 +168,8 @@ export interface SandboxedCommandResult {
 export async function runSandboxedCommand(
   environment: UserEnvironment,
   command: string,
-  options: SandboxedCommandOptions = {},
-): Promise<SandboxedCommandResult> {
+  options: ShellCommandOptions = {},
+): Promise<ShellCommandResult> {
   const chunks: Buffer[] = [];
   let collectedBytes = 0;
   let truncated = false;
@@ -190,7 +177,7 @@ export async function runSandboxedCommand(
     environment,
     {
       defaultTimeoutSeconds: options.timeoutSeconds,
-      maxOutputBytes: SANDBOXED_COMMAND_MAX_OUTPUT_BYTES * 2,
+      maxOutputBytes: SHELL_COMMAND_MAX_OUTPUT_BYTES * 2,
     },
     options.secretEnvironment,
   );
@@ -198,14 +185,14 @@ export async function runSandboxedCommand(
   try {
     const { exitCode } = await operations.exec(command, environment.workspaceDirectory, {
       onData(data) {
-        if (collectedBytes >= SANDBOXED_COMMAND_MAX_OUTPUT_BYTES) {
+        if (collectedBytes >= SHELL_COMMAND_MAX_OUTPUT_BYTES) {
           truncated = true;
           return;
         }
-        const remaining = SANDBOXED_COMMAND_MAX_OUTPUT_BYTES - collectedBytes;
+        const remaining = SHELL_COMMAND_MAX_OUTPUT_BYTES - collectedBytes;
         if (data.byteLength > remaining) {
           chunks.push(data.subarray(0, remaining));
-          collectedBytes = SANDBOXED_COMMAND_MAX_OUTPUT_BYTES;
+          collectedBytes = SHELL_COMMAND_MAX_OUTPUT_BYTES;
           truncated = true;
           return;
         }
@@ -334,7 +321,8 @@ export function createBubblewrapBashOperations(
         throw new Error("pasta (passt) is required to run shell commands in a user environment");
       }
 
-      const effectiveTimeout = timeout ?? limits.defaultTimeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;
+      const effectiveTimeout =
+        timeout ?? limits.defaultTimeoutSeconds ?? DEFAULT_SHELL_COMMAND_TIMEOUT_SECONDS;
       const timeoutMs = resolveTimeoutMs(effectiveTimeout);
       const dns = resolveSandboxDns();
       writeSandboxResolvConf(environment, dns);

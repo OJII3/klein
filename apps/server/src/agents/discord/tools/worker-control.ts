@@ -18,7 +18,9 @@ export function createWorkerControlTools(
     ...(accessScopeUserId(accessScope) !== undefined
       ? [
           "real browser use (agent-browser)",
-          "a sandboxed shell (bash)",
+          ownerFeaturesAllowed
+            ? "an unsandboxed shell (bash) on the host"
+            : "a sandboxed shell (bash)",
           "secret requests by direct message (secret_request, secret_list, secret_run, secret_delete)",
         ]
       : []),

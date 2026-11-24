@@ -12,7 +12,6 @@ import {
   buildBubblewrapArguments,
   buildPastaArguments,
   createBubblewrapBashOperations,
-  enablesUserShell,
   parseDefaultIpv4Gateway,
   parseNameservers,
   resolveBubblewrapBinary,
@@ -29,15 +28,6 @@ const sandboxSkip =
       : !existsSync("/dev/net/tun")
         ? "/dev/net/tun is not available"
         : false;
-
-test("limits the shell to linked-user workers", () => {
-  const environment = ensureUserEnvironment(resolveUserEnvironment("/tmp/agent", "123"));
-
-  assert.equal(enablesUserShell({ kind: "worker", workerId: "worker-1" }, environment), true);
-  assert.equal(enablesUserShell({ kind: "conversation" }, environment), false);
-  assert.equal(enablesUserShell({ kind: "standalone" }, environment), false);
-  assert.equal(enablesUserShell({ kind: "worker", workerId: "worker-1" }, undefined), false);
-});
 
 test("keeps only PATH entries that are visible inside the sandbox", () => {
   const entries = sandboxPathEntries("/usr/bin:/tmp:/home/example/.local/bin");

@@ -49,11 +49,7 @@ import {
 import type { SessionMode } from "@app/cli-options";
 import { renderWatchToolSection } from "@modules/scheduling/application/watch-tool";
 import { accessScopeUserId, parseAccessScope } from "@shared/access";
-import {
-  ensureUserEnvironment,
-  resolveUserEnvironment,
-  type UserEnvironment,
-} from "@shared/user-environment";
+import { ensureUserEnvironment, resolveUserEnvironment } from "@shared/user-environment";
 import type { WatchToolCatalog } from "@modules/scheduling/ports/watch-tool";
 import {
   AGENT_BROWSER_MCP_SERVER_NAME,
@@ -97,7 +93,12 @@ import { PiRuntimeTrace } from "./pi-runtime-trace";
 import type { PiUsageReporter } from "./pi-usage-reporter";
 import { createSkillReadTool } from "./skill-read-tool";
 import { ToolAuthorization, type ToolPermissions } from "./tool-permissions";
-import { createUserShellTool, enablesUserShell } from "./user-shell-sandbox";
+import {
+  createWorkerShellTool,
+  hostHomeDirectory,
+  resolveWorkerShell,
+  workerShellCwd,
+} from "./worker-shell";
 
 export {
   createPiModelRuntime,
@@ -794,11 +795,14 @@ export function createPiAgentFactory({
       const userEnvironment = linkedUserId
         ? ensureUserEnvironment(resolveUserEnvironment(agentDir, linkedUserId))
         : undefined;
-      const workerShellAvailable = userEnvironment !== undefined;
-      const userShellTool = enablesUserShell(options.role, userEnvironment)
-        ? createUserShellTool(userEnvironment)
-        : undefined;
-      const sessionCwd = workerCwd(options.role, userEnvironment);
+      const workerShell = resolveWorkerShell({
+        role: options.role,
+        ownerFeaturesAllowed: options.ownerFeaturesAllowed === true,
+        environment: userEnvironment,
+        homeDirectory: hostHomeDirectory(),
+      });
+      const workerShellTool = workerShell ? createWorkerShellTool(workerShell) : undefined;
+      const sessionCwd = workerShellCwd(workerShell);
       let sessionManager: SessionManager;
       if (options.inheritContextFromSessionFile && options.resumeSession !== true) {
         try {
@@ -875,7 +879,7 @@ export function createPiAgentFactory({
       const customTools: PiTool[] = [
         ...createTools(toolContext),
         ...(skillReadTool ? [skillReadTool] : []),
-        ...(userShellTool ? [userShellTool] : []),
+        ...(workerShellTool ? [workerShellTool] : []),
       ].filter(
         (tool) =>
           authorization.allowsTool(tool.name) &&
@@ -905,19 +909,26 @@ export function createPiAgentFactory({
         ...(sessionBrowserAvailable ? [] : ["browser-use"]),
         ...(sessionT3Available ? [] : ["t3-thread"]),
       ]);
+      const delegatedWorkerShell = userEnvironment
+        ? options.ownerFeaturesAllowed === true
+          ? "host"
+          : "sandbox"
+        : undefined;
       const workerDelegationSection =
         hasWorkerStart && !hasVoiceSpeak
           ? renderWorkerDelegationSection({
               browserAvailable: workerBrowserAvailable,
               t3Available: workerT3Available,
               t3ProjectAvailable: sessionT3ProjectAvailable,
-              shellAvailable: workerShellAvailable,
+              shell: delegatedWorkerShell,
               secretsAvailable: workerSecretsAvailable,
               watchAvailable: hasWatchAdd,
             })
           : undefined;
       const workerSecretsSection = hasSecretRequest ? renderWorkerSecretsSection() : undefined;
-      const workerT3ThreadSection = sessionT3Available ? renderWorkerT3ThreadSection() : undefined;
+      const workerT3ThreadSection = sessionT3Available
+        ? renderWorkerT3ThreadSection(workerShell?.kind === "host" ? "host" : "sandbox")
+        : undefined;
       const systemPrompt = [
         definition.systemPrompt,
         ...(workerDelegationSection ? [workerDelegationSection] : []),
@@ -976,7 +987,7 @@ export function createPiAgentFactory({
         thinkingLevel: llm.thinkingLevel,
         excludeTools: [
           ...(skillReadTool ? [] : ["read"]),
-          ...(userShellTool ? [] : ["bash"]),
+          ...(workerShellTool ? [] : ["bash"]),
           "edit",
           "write",
           "grep",
@@ -1018,14 +1029,6 @@ export function createPiAgentFactory({
       );
     },
   };
-}
-
-/**
- * Workers with a linked user run in that user's workspace. Conversation agents
- * and public scopes stay in the repository until a shell is opened to them.
- */
-function workerCwd(role: AgentRole, environment: UserEnvironment | undefined): string {
-  return role.kind === "worker" && environment ? environment.workspaceDirectory : process.cwd();
 }
 
 function extractUserMessageText(

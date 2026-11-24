@@ -5,8 +5,6 @@ import { createStubExtensionToolContext } from "@agents/testing/test-stubs";
 import type { SecretControl } from "@modules/secrets/application/secret-service";
 import type { SecretSummary, SecretValues } from "@modules/secrets/domain/secret";
 import type { SecretRequest } from "@modules/secrets/domain/secret-request";
-import { ensureUserEnvironment, resolveUserEnvironment } from "@shared/user-environment";
-import { createTempDir } from "../../testing/temp-dir";
 import { createSecretTools, type SecretCommandRunner } from "./secrets";
 
 const request: SecretRequest = {
@@ -40,8 +38,6 @@ const unusedRunCommand: SecretCommandRunner = async () => {
 };
 
 test("requests secrets through the Discord flow", async () => {
-  await using temp = await createTempDir("klein-secret-tools-");
-  const environment = ensureUserEnvironment(resolveUserEnvironment(temp.path, "123"));
   const requests: unknown[] = [];
   const secrets: Pick<SecretControl, "request" | "list" | "read" | "delete"> = {
     async request(draft) {
@@ -64,7 +60,6 @@ test("requests secrets through the Discord flow", async () => {
     channelId: "channel-1",
     accessScope: "user:123",
     workerId: "worker-1",
-    environment,
     runCommand: unusedRunCommand,
   });
   const tool = tools.find((candidate) => candidate.name === "secret_request");
@@ -100,8 +95,6 @@ test("requests secrets through the Discord flow", async () => {
 });
 
 test("lists services without values", async () => {
-  await using temp = await createTempDir("klein-secret-tools-list-");
-  const environment = ensureUserEnvironment(resolveUserEnvironment(temp.path, "123"));
   const secrets: Pick<SecretControl, "request" | "list" | "read" | "delete"> = {
     async request() {
       return { kind: "unavailable" };
@@ -122,7 +115,6 @@ test("lists services without values", async () => {
     channelId: "channel-1",
     accessScope: "user:123",
     workerId: "worker-1",
-    environment,
     runCommand: unusedRunCommand,
   });
   const tool = tools.find((candidate) => candidate.name === "secret_list");
@@ -137,9 +129,7 @@ test("lists services without values", async () => {
   assert.doesNotMatch(text, /ghp_secret_value/u);
 });
 
-test("injects secret fields into the sandbox and redacts printed values", async () => {
-  await using temp = await createTempDir("klein-secret-tools-run-");
-  const environment = ensureUserEnvironment(resolveUserEnvironment(temp.path, "123"));
+test("injects secret fields into the shell and redacts printed values", async () => {
   const seen: { environment: Readonly<Record<string, string>>; command: string }[] = [];
   const secrets: Pick<SecretControl, "request" | "list" | "read" | "delete"> = {
     async request() {
@@ -161,8 +151,7 @@ test("injects secret fields into the sandbox and redacts printed values", async 
     channelId: "channel-1",
     accessScope: "user:123",
     workerId: "worker-1",
-    environment,
-    async runCommand(_environment, command, options) {
+    async runCommand(command, options) {
       seen.push({ environment: options?.secretEnvironment ?? {}, command });
       return { output: `value=${values.values.token}\nexit`, exitCode: 0, truncated: false };
     },
@@ -191,8 +180,6 @@ test("injects secret fields into the sandbox and redacts printed values", async 
 });
 
 test("deletes saved secrets only for the linked user", async () => {
-  await using temp = await createTempDir("klein-secret-tools-delete-");
-  const environment = ensureUserEnvironment(resolveUserEnvironment(temp.path, "123"));
   const deleted: { userId: string; service: string }[] = [];
   const secrets: Pick<SecretControl, "request" | "list" | "read" | "delete"> = {
     async request() {
@@ -215,7 +202,6 @@ test("deletes saved secrets only for the linked user", async () => {
     channelId: "channel-1",
     accessScope: "user:123",
     workerId: "worker-1",
-    environment,
     runCommand: unusedRunCommand,
   });
   const tool = tools.find((candidate) => candidate.name === "secret_delete");
