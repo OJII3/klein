@@ -34,6 +34,27 @@ test("keeps the web UI in English", () => {
   );
 });
 
+test("keeps non-character Discord replies in container messages", () => {
+  const files = [
+    ...listFiles(join(repositoryRoot, "apps/server/src/modules/discord")),
+    ...listFiles(join(repositoryRoot, "apps/server/src/modules/secrets")),
+  ].filter((file) => file.endsWith(".ts"));
+
+  const violations = files.flatMap((file) => {
+    const source = readFileSync(file, "utf8");
+    return [...source.matchAll(/reply\(\s*(?:options:\s*)?\{\s*content\s*:/gu)].map(
+      (match) =>
+        `${relative(repositoryRoot, file)}:${source.slice(0, match.index).split("\n").length}`,
+    );
+  });
+
+  assert.deepEqual(
+    violations,
+    [],
+    `Interaction replies must use createTextContainerMessage or createEphemeralTextContainerMessage, not content.\n${violations.join("\n")}`,
+  );
+});
+
 test("requires new comments to justify themselves", () => {
   const baseline = readCommentBaseline();
   const unjustified = collectSourceComments(repositoryRoot).filter(
@@ -60,7 +81,8 @@ function readCommentBaseline(): ReadonlySet<string> {
   if (!Array.isArray(value)) throw new TypeError("comment-baseline.json must be an array");
   const texts: string[] = [];
   for (const entry of value) {
-    if (typeof entry !== "string") throw new TypeError("comment-baseline.json must contain strings");
+    if (typeof entry !== "string")
+      throw new TypeError("comment-baseline.json must contain strings");
     texts.push(entry);
   }
   return new Set(texts);
