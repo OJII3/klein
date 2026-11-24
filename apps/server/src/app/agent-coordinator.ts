@@ -110,13 +110,13 @@ export class AgentCoordinator {
       accessPolicy: dependencies.accessPolicy,
       workers: dependencies.workers,
       channelApi: dependencies.channelApi,
+      enqueueConversationEvent: (input) => this.enqueueConversationEvent(input),
       logger: this.logger,
       operatingState: dependencies.operatingState,
       ownerUserId: dependencies.ownerUserId,
       ...(dependencies.proactive ? { proactive: dependencies.proactive } : {}),
       scheduledTaskStore: dependencies.scheduledTaskStore,
       watchCheckRunner: dependencies.watchCheckRunner,
-      sessionManager: this.sessionManager,
       taskCoordinator: dependencies.taskCoordinator,
     });
   }
@@ -329,6 +329,39 @@ export class AgentCoordinator {
       enqueuedAt: new Date().toISOString(),
       message,
     });
+  }
+
+  /**
+   * Stores a conversation-bound event before its turn runs, so a crash after the
+   * producer finishes does not lose the event. A duplicate id means an earlier
+   * attempt already stored it, so no second drain starts.
+   */
+  private async enqueueConversationEvent(input: {
+    readonly event: AgentEvent;
+    readonly conversationKey: ConversationKey;
+    readonly accessScope: AccessScope;
+  }): Promise<boolean> {
+    const enqueued = await this.dependencies.inbox.enqueue({
+      kind: "agent.event",
+      id: input.event.id,
+      conversationKey: input.conversationKey,
+      accessScope: input.accessScope,
+      enqueuedAt: new Date().toISOString(),
+      event: input.event,
+    });
+    if (!enqueued) return false;
+    void this.drain(input.conversationKey).catch((error: unknown) => {
+      this.logger.error(
+        {
+          err: error,
+          event: "scheduled_task_event_drain_failed",
+          conversationKey: input.conversationKey,
+          eventId: input.event.id,
+        },
+        "Failed to drain a conversation inbox for a scheduled task event",
+      );
+    });
+    return true;
   }
 
   private drain(conversationKey: ConversationKey): Promise<void> {

@@ -22,16 +22,20 @@ import type {
   WatchCheckResult,
   WatchCheckRunner,
 } from "@modules/scheduling/ports/watch-check-runner";
-import { isOwnerAccessScope, PUBLIC_ACCESS_SCOPE } from "@shared/access";
+import { isOwnerAccessScope, PUBLIC_ACCESS_SCOPE, type AccessScope } from "@shared/access";
 import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
 import type { TaskCoordinator } from "./task-coordinator";
-import type { ChannelSessionManager } from "./channel-session-manager";
 import type { ConversationKey } from "./channel-session-state-store";
 
 export interface ScheduledTaskDeliveryCoordinatorDependencies {
   readonly accessPolicy?: DiscordAccessPolicy;
   readonly workers: WorkerControl;
   readonly channelApi: DiscordChannelApi;
+  readonly enqueueConversationEvent: (input: {
+    readonly event: AgentEvent;
+    readonly conversationKey: ConversationKey;
+    readonly accessScope: AccessScope;
+  }) => Promise<boolean>;
   readonly logger: Logger;
   readonly operatingState: DiscordOperatingState;
   readonly ownerUserId?: string;
@@ -41,7 +45,6 @@ export interface ScheduledTaskDeliveryCoordinatorDependencies {
   >;
   readonly scheduledTaskStore?: ScheduledTaskStore;
   readonly watchCheckRunner: WatchCheckRunner;
-  readonly sessionManager: ChannelSessionManager;
   readonly taskCoordinator: TaskCoordinator;
 }
 
@@ -606,51 +609,48 @@ export class ScheduledTaskDeliveryCoordinator {
     return true;
   }
 
+  /**
+   * The inbox is the delivery point: an accepted enqueue survives a crash, and a
+   * duplicate enqueue means an earlier attempt already stored the event.
+   */
   private async deliverEvent(
     conversationKey: ConversationKey,
     task: WatchTask,
     event: AgentEvent,
     complete: boolean,
   ): Promise<boolean> {
-    const store = this.dependencies.scheduledTaskStore;
-    if (!store) return false;
-    let delivered = false;
-    await this.dependencies.sessionManager.runForConversation(conversationKey, async () => {
-      if (!this.dependencies.operatingState.isActive()) return;
-      await this.dependencies.sessionManager.runTurn(
+    try {
+      await this.dependencies.enqueueConversationEvent({
+        event,
         conversationKey,
-        task.accessScope,
-        async (agent) => {
-          try {
-            await agent.promptEvent(event);
-            if (complete) await this.completeWatch(task);
-            delivered = true;
-            this.dependencies.logger.info(
-              {
-                event: "scheduled_task_delivered",
-                taskId: task.id,
-                taskKind: task.kind,
-                eventId: event.id,
-              },
-              "Delivered scheduled task",
-            );
-          } catch (error) {
-            await this.failWatchDelivery(task, error);
-            this.dependencies.logger.warn(
-              {
-                err: error,
-                event: "scheduled_task_delivery_failed",
-                taskId: task.id,
-                taskKind: task.kind,
-                eventId: event.id,
-              },
-              "Failed to deliver scheduled task",
-            );
-          }
+        accessScope: task.accessScope,
+      });
+    } catch (error) {
+      await this.failWatchDelivery(task, error);
+      this.dependencies.logger.warn(
+        {
+          err: error,
+          event: "scheduled_task_delivery_failed",
+          taskId: task.id,
+          taskKind: task.kind,
+          eventId: event.id,
         },
+        "Failed to deliver scheduled task",
       );
-    });
-    return delivered;
+      return false;
+    }
+
+    if (complete) await this.completeWatch(task);
+    this.dependencies.logger.info(
+      {
+        event: "scheduled_task_delivered",
+        taskId: task.id,
+        taskKind: task.kind,
+        eventId: event.id,
+      },
+      "Delivered scheduled task to the conversation inbox",
+    );
+    return true;
   }
 
   private async completeReminder(task: ReminderTask): Promise<void> {

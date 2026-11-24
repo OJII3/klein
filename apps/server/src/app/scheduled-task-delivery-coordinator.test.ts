@@ -3,7 +3,6 @@ import test from "node:test";
 import pino from "pino";
 
 import type { AgentEvent } from "@agents/core/agent-event";
-import type { ConversationAgent } from "@agents/core/conversation-agent";
 import type { WorkerInfo, WorkerScope, WorkerStartInput } from "@agents/core/worker-agent";
 import {
   createStubDiscordChannelApi,
@@ -19,7 +18,8 @@ import type { ProactiveDeliveryMode } from "@modules/proactivity/domain/proactiv
 import type { ProactiveSignal } from "@modules/proactivity/domain/proactive-signal";
 import type { ReminderTask, WatchTask } from "@modules/scheduling/domain/scheduled-task";
 import type { WatchCheckRunner } from "@modules/scheduling/ports/watch-check-runner";
-import { ChannelSessionManager } from "./channel-session-manager";
+import type { AccessScope } from "@shared/access";
+import type { ConversationKey } from "./channel-session-state-store";
 import {
   MAX_REMINDER_WORKER_ATTEMPTS,
   reminderWorkerId,
@@ -78,33 +78,24 @@ function makeSignal(): ProactiveSignal {
 interface HarnessOptions {
   readonly mode?: ProactiveDeliveryMode;
   readonly ingestFails?: boolean;
-  readonly promptFails?: boolean;
+  readonly deliveryFails?: boolean;
+  readonly alreadyEnqueued?: boolean;
   readonly workerSendResult?: boolean;
   readonly tasks?: readonly (WatchTask | ReminderTask)[];
   readonly store?: InMemoryScheduledTaskStore;
   readonly runner?: WatchCheckRunner;
 }
 
+interface EnqueuedEvent {
+  readonly event: AgentEvent;
+  readonly conversationKey: ConversationKey;
+  readonly accessScope: AccessScope;
+}
+
 function createHarness(options: HarnessOptions = {}) {
   const events: AgentEvent[] = [];
-  const agent: ConversationAgent = {
-    async prompt() {},
-    async promptEvent(event) {
-      if (options.promptFails) throw new Error("prompt failed");
-      events.push(event);
-    },
-    async steer() {},
-    compactForHandoff() {
-      return undefined;
-    },
-    dispose() {},
-  };
+  const enqueues: EnqueuedEvent[] = [];
   const channelApi = createStubDiscordChannelApi();
-  const sessionManager = new ChannelSessionManager<ConversationAgent>({
-    channelApi,
-    createAgent: async () => agent,
-    logger: pino({ level: "silent" }),
-  });
   const ingestCalls: WatchSignalInput[] = [];
   const surfacedCalls: {
     readonly signals: readonly ProactiveSignal[];
@@ -181,10 +172,15 @@ function createHarness(options: HarnessOptions = {}) {
       },
     },
     channelApi,
+    async enqueueConversationEvent(input) {
+      if (options.deliveryFails) throw new Error("enqueue failed");
+      enqueues.push(input);
+      events.push(input.event);
+      return !options.alreadyEnqueued;
+    },
     logger: pino({ level: "silent" }),
     operatingState: new DiscordOperatingState(),
     scheduledTaskStore: store,
-    sessionManager,
     taskCoordinator: new TaskCoordinator(),
     watchCheckRunner: options.runner ?? createRunner(),
     proactive,
@@ -194,6 +190,7 @@ function createHarness(options: HarnessOptions = {}) {
     coordinator,
     store,
     events,
+    enqueues,
     ingestCalls,
     surfacedCalls,
     completedWatchers,
@@ -276,6 +273,13 @@ test("delivers an interrupt decision and marks the signal surfaced", async () =>
   assert.equal(harness.events[0]?.type, "watch.triggered");
   assert.match(eventText(harness.events[0]), /changed/u);
   assert.deepEqual(
+    harness.enqueues.map((enqueued) => ({
+      conversationKey: enqueued.conversationKey,
+      accessScope: enqueued.accessScope,
+    })),
+    [{ conversationKey: { kind: "discord", channelId: "channel-a" }, accessScope: "public" }],
+  );
+  assert.deepEqual(
     harness.surfacedCalls.map((call) => ({
       ids: call.signals.map((signal) => signal.id),
       mode: call.mode,
@@ -287,7 +291,7 @@ test("delivers an interrupt decision and marks the signal surfaced", async () =>
 });
 
 test("records a delivery failure without touching check health or the schedule", async () => {
-  const harness = createHarness({ mode: "interrupt", promptFails: true });
+  const harness = createHarness({ mode: "interrupt", deliveryFails: true });
 
   await harness.coordinator.deliverDueTasks(DUE_AT);
 
@@ -296,7 +300,7 @@ test("records a delivery failure without touching check health or the schedule",
   const stored = harness.storedWatch();
   assert.ok(stored?.lastDeliveryAt);
   assert.equal(stored?.lastDeliveryStatus, "error");
-  assert.match(stored?.lastDeliveryError ?? "", /prompt failed/u);
+  assert.match(stored?.lastDeliveryError ?? "", /enqueue failed/u);
   assert.equal(stored?.consecutiveDeliveryFailures, 1);
   assert.equal(stored?.lastCheckedAt, undefined);
   assert.equal(stored?.lastTriggeredAt, undefined);
@@ -304,6 +308,46 @@ test("records a delivery failure without touching check health or the schedule",
   assert.equal(stored?.lastError, undefined);
   assert.equal(stored?.consecutiveFailures, 0);
   assert.equal(stored?.nextRunAt, watch.nextRunAt);
+});
+
+test("completes the watch when the event is already in the inbox", async () => {
+  const harness = createHarness({ mode: "interrupt", alreadyEnqueued: true });
+
+  await harness.coordinator.deliverDueTasks(DUE_AT);
+
+  assert.equal(harness.events.length, 1);
+  assert.equal(harness.events[0]?.type, "watch.triggered");
+  const stored = harness.storedWatch();
+  assert.ok(stored?.lastTriggeredAt);
+  assert.equal(stored.lastDeliveryStatus, "ok");
+  assert.equal(stored.consecutiveDeliveryFailures, 0);
+  assert.equal(stored.nextRunAt, "2026-10-14T00:10:00.000Z");
+  assert.equal(harness.surfacedCalls.length, 1);
+});
+
+test("keeps the watch due after an enqueue failure and retries its occurrence", async () => {
+  const options = { mode: "interrupt" as const, deliveryFails: true };
+  const harness = createHarness(options);
+
+  await harness.coordinator.deliverDueTasks(DUE_AT);
+
+  const failed = harness.storedWatch();
+  assert.ok(failed);
+  assert.equal(failed.lastDeliveryStatus, "error");
+  assert.equal(failed.consecutiveDeliveryFailures, 1);
+  assert.equal(failed.lastTriggeredAt, undefined);
+  assert.equal(failed.nextRunAt, watch.nextRunAt);
+  assert.deepEqual(harness.events, []);
+  assert.deepEqual(harness.surfacedCalls, []);
+
+  options.deliveryFails = false;
+  await harness.coordinator.deliverDueTasks(DUE_AT + 60_000);
+
+  const delivered = harness.storedWatch();
+  assert.equal(delivered?.lastDeliveryStatus, "ok");
+  assert.ok(delivered?.lastTriggeredAt);
+  assert.equal(harness.events.length, 1);
+  assert.equal(harness.surfacedCalls.length, 1);
 });
 
 test("notifies the first check failure after a delivery failure", async () => {
@@ -320,7 +364,7 @@ test("notifies the first check failure after a delivery failure", async () => {
       };
     },
   };
-  const options = { mode: "interrupt" as const, promptFails: true, runner };
+  const options = { mode: "interrupt" as const, deliveryFails: true, runner };
   const harness = createHarness(options);
 
   await harness.coordinator.deliverDueTasks(DUE_AT);
@@ -330,7 +374,7 @@ test("notifies the first check failure after a delivery failure", async () => {
   assert.equal(harness.events.length, 0);
 
   checkFails = true;
-  options.promptFails = false;
+  options.deliveryFails = false;
 
   await harness.coordinator.deliverDueTasks(DUE_AT);
 
@@ -352,7 +396,7 @@ test("records a successful delivery and clears the delivery failure", async () =
         ...watch,
         lastDeliveryAt: "2026-10-14T00:04:00.000Z",
         lastDeliveryStatus: "error",
-        lastDeliveryError: "prompt failed",
+        lastDeliveryError: "enqueue failed",
         consecutiveDeliveryFailures: 2,
       },
     ],
@@ -376,7 +420,7 @@ test("keeps delivery state when a check succeeds", async () => {
   const deliveryFailure = {
     lastDeliveryAt: "2026-10-14T00:04:00.000Z",
     lastDeliveryStatus: "error" as const,
-    lastDeliveryError: "prompt failed",
+    lastDeliveryError: "enqueue failed",
     consecutiveDeliveryFailures: 2,
   };
   const harness = createHarness({
@@ -401,7 +445,7 @@ test("keeps delivery state when a check succeeds", async () => {
   assert.deepEqual(stored?.state, { runs: 1 });
   assert.equal(stored?.lastDeliveryAt, deliveryFailure.lastDeliveryAt);
   assert.equal(stored?.lastDeliveryStatus, "error");
-  assert.equal(stored?.lastDeliveryError, "prompt failed");
+  assert.equal(stored?.lastDeliveryError, "enqueue failed");
   assert.equal(stored?.consecutiveDeliveryFailures, 2);
 });
 

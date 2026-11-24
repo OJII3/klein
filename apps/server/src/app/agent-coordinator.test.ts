@@ -1543,6 +1543,7 @@ test("delivers a watch when the script calls wake()", async () => {
 
     decision = "wake";
     await harness.agentCoordinator.deliverDueTasks(Date.parse(silent.nextRunAt));
+    await harness.taskCoordinator.waitForCompletion();
     const first = watches.getStored();
     assert.ok(first?.kind === "watch");
     assert.ok(first.lastTriggeredAt);
@@ -1552,6 +1553,8 @@ test("delivers a watch when the script calls wake()", async () => {
     assert.equal(events?.[0]?.event.type, "watch.triggered");
     assert.equal(events?.[0]?.event.source, "watch");
     assert.match(eventText(events?.[0]?.event), /two/u);
+    const inboxItem = harness.inbox.list().find((item) => item.kind === "agent.event");
+    assert.equal(inboxItem?.status, "done");
   } finally {
     await harness.agentCoordinator.dispose();
   }
@@ -1616,6 +1619,7 @@ test("delivers a worker watch to the conversation when the worker is gone", asyn
   );
   try {
     await harness.agentCoordinator.deliverDueTasks(Date.parse("2026-10-14T00:05:00.000Z"));
+    await harness.taskCoordinator.waitForCompletion();
     assert.deepEqual(
       harness.workerSends.map((send) => send.workerId),
       ["worker-1"],
@@ -1671,6 +1675,7 @@ test("delivers a public watch without an access policy", async () => {
   const harness = createHarness(undefined, watches.store, {}, runner);
   try {
     await harness.agentCoordinator.deliverDueTasks(Date.now());
+    await harness.taskCoordinator.waitForCompletion();
     const events = harness.prompts.get("test-channel");
     assert.equal(events?.[0]?.event.type, "watch.triggered");
     assert.match(eventText(events?.[0]?.event), /hello/u);
@@ -1788,6 +1793,7 @@ test("delivers watch check failures to the agent as events", async () => {
   );
   try {
     await harness.agentCoordinator.deliverDueTasks(Date.now());
+    await harness.taskCoordinator.waitForCompletion();
     const stored = watches.getStored();
     assert.ok(stored?.kind === "watch");
     assert.equal(stored.lastStatus, "error");
