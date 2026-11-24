@@ -210,3 +210,40 @@ test("rejects an invalid watch priority", async () => {
   );
   await assert.rejects(store.listForScope("watch", "channel-a", "owner:123"), /watch 設定/u);
 });
+
+test("round-trips a watch's delivery state", async () => {
+  await using temp = await createTempDir("klein-schedules-");
+  const store = new FileScheduledTaskStore(temp.path);
+  const failed: WatchTask = {
+    ...watch,
+    lastDeliveryAt: "2026-10-14T00:05:00.000Z",
+    lastDeliveryStatus: "error",
+    lastDeliveryError: "prompt failed",
+    consecutiveDeliveryFailures: 2,
+  };
+  await store.create(failed);
+  assert.deepEqual(await store.listForScope("watch", "channel-a", "owner:123"), [failed]);
+});
+
+test("rejects invalid watch delivery fields", async () => {
+  await using temp = await createTempDir("klein-schedules-");
+  const directory = temp.path;
+  const store = new FileScheduledTaskStore(directory);
+  const invalidFields = [
+    { lastDeliveryAt: "not-a-date" },
+    { lastDeliveryAt: 1 },
+    { lastDeliveryStatus: "unknown" },
+    { lastDeliveryError: "" },
+    { lastDeliveryError: 1 },
+    { consecutiveDeliveryFailures: -1 },
+    { consecutiveDeliveryFailures: 1.5 },
+    { consecutiveDeliveryFailures: "1" },
+  ];
+  for (const [index, fields] of invalidFields.entries()) {
+    await writeFile(
+      join(directory, `invalid-delivery-${index}.json`),
+      JSON.stringify({ ...watch, ...fields }),
+    );
+  }
+  await assert.rejects(store.listForScope("watch", "channel-a", "owner:123"), /watch 設定/u);
+});

@@ -365,7 +365,9 @@ export class ScheduledTaskDeliveryCoordinator {
         );
         return;
       }
-      await store.update(clearRunningWorker(running, startFailureReason(error)));
+      await store.update(
+        clearRunningWorker(running, failureReason(error, "The worker failed to start.")),
+      );
       this.dependencies.logger.warn(
         {
           err: error,
@@ -690,28 +692,33 @@ export class ScheduledTaskDeliveryCoordinator {
   }
 
   private async completeWatch(task: WatchTask): Promise<void> {
+    const deliveredAt = new Date().toISOString();
     await this.updateWatch(task, (current) =>
-      clearWatchError({
-        ...current,
-        state: task.state,
-        lastCheckedAt: task.lastCheckedAt,
-        nextRunAt: task.nextRunAt,
-        lastTriggeredAt: new Date().toISOString(),
-        lastStatus: "ok",
-        consecutiveFailures: 0,
-      }),
+      clearWatchDeliveryError(
+        clearWatchError({
+          ...current,
+          state: task.state,
+          lastCheckedAt: task.lastCheckedAt,
+          nextRunAt: task.nextRunAt,
+          lastTriggeredAt: deliveredAt,
+          lastStatus: "ok",
+          consecutiveFailures: 0,
+          lastDeliveryAt: deliveredAt,
+          lastDeliveryStatus: "ok",
+          consecutiveDeliveryFailures: 0,
+        }),
+      ),
     );
   }
 
   private async failWatchDelivery(task: WatchTask, error: unknown): Promise<void> {
+    const failedAt = new Date().toISOString();
     await this.updateWatch(task, (current) => ({
       ...current,
-      state: task.state,
-      lastCheckedAt: task.lastCheckedAt,
-      nextRunAt: task.nextRunAt,
-      lastStatus: "error",
-      lastError: error instanceof Error ? error.message : String(error),
-      consecutiveFailures: current.consecutiveFailures + 1,
+      lastDeliveryAt: failedAt,
+      lastDeliveryStatus: "error",
+      lastDeliveryError: failureReason(error, "The watch delivery failed."),
+      consecutiveDeliveryFailures: (current.consecutiveDeliveryFailures ?? 0) + 1,
     }));
   }
 }
@@ -731,10 +738,10 @@ export function reminderWorkerId(task: ReminderTask): string {
   return `reminder:${task.id}:${task.nextRunAt}`;
 }
 
-/** Saved reminders reject an empty `lastError`, and a thrown error may carry no message. */
-function startFailureReason(error: unknown): string {
+/** Saved fields reject an empty error message, and a thrown error may carry no message. */
+function failureReason(error: unknown, fallback: string): string {
   const message = error instanceof Error ? error.message : String(error);
-  return message.length > 0 ? message : "The worker failed to start.";
+  return message.length > 0 ? message : fallback;
 }
 
 function withoutReminderRun(task: ReminderTask): ReminderTask {
@@ -754,6 +761,11 @@ function clearRunningWorker(task: ReminderTask, reason: string): ReminderTask {
 
 function clearWatchError(watch: WatchTask): WatchTask {
   const { lastError: _lastError, ...rest } = watch;
+  return rest;
+}
+
+function clearWatchDeliveryError(watch: WatchTask): WatchTask {
+  const { lastDeliveryError: _lastDeliveryError, ...rest } = watch;
   return rest;
 }
 

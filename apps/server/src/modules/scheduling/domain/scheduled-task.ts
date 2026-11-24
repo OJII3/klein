@@ -45,11 +45,17 @@ export interface WatchTask extends ScheduledTaskBase {
   readonly ownerWorkerId?: string;
   readonly enabled: boolean;
   readonly state?: Readonly<Record<string, unknown>>;
+  /** Check health: whether the script's last run succeeded. */
   readonly lastCheckedAt?: string;
   readonly lastTriggeredAt?: string;
   readonly lastStatus?: WatchStatus;
   readonly lastError?: string;
   readonly consecutiveFailures: number;
+  /** Delivery health: whether the last wake reached its recipient. */
+  readonly lastDeliveryAt?: string;
+  readonly lastDeliveryStatus?: WatchStatus;
+  readonly lastDeliveryError?: string;
+  readonly consecutiveDeliveryFailures?: number;
 }
 
 export type ScheduledTask = ReminderTask | WatchTask;
@@ -127,6 +133,10 @@ export function parseScheduledTask(value: unknown): ScheduledTask {
       lastStatus,
       lastError,
       consecutiveFailures,
+      lastDeliveryAt,
+      lastDeliveryStatus,
+      lastDeliveryError,
+      consecutiveDeliveryFailures,
     } = value;
     const ownerWorkerId = storedOwnerWorkerId ?? legacyOwnerWorkerId;
     if (
@@ -151,7 +161,18 @@ export function parseScheduledTask(value: unknown): ScheduledTask {
       (lastError !== undefined && typeof lastError !== "string") ||
       typeof consecutiveFailures !== "number" ||
       !Number.isInteger(consecutiveFailures) ||
-      consecutiveFailures < 0
+      consecutiveFailures < 0 ||
+      (lastDeliveryAt !== undefined &&
+        (typeof lastDeliveryAt !== "string" || !Number.isFinite(Date.parse(lastDeliveryAt)))) ||
+      (lastDeliveryStatus !== undefined &&
+        lastDeliveryStatus !== "ok" &&
+        lastDeliveryStatus !== "error") ||
+      (lastDeliveryError !== undefined &&
+        (typeof lastDeliveryError !== "string" || lastDeliveryError.length === 0)) ||
+      (consecutiveDeliveryFailures !== undefined &&
+        (typeof consecutiveDeliveryFailures !== "number" ||
+          !Number.isInteger(consecutiveDeliveryFailures) ||
+          consecutiveDeliveryFailures < 0))
     ) {
       throw new Error("watch 設定の保存内容が不正です。");
     }
@@ -176,6 +197,10 @@ export function parseScheduledTask(value: unknown): ScheduledTask {
       ...(lastStatus !== undefined ? { lastStatus } : {}),
       ...(lastError !== undefined ? { lastError } : {}),
       consecutiveFailures,
+      ...(lastDeliveryAt !== undefined ? { lastDeliveryAt } : {}),
+      ...(lastDeliveryStatus !== undefined ? { lastDeliveryStatus } : {}),
+      ...(lastDeliveryError !== undefined ? { lastDeliveryError } : {}),
+      ...(consecutiveDeliveryFailures !== undefined ? { consecutiveDeliveryFailures } : {}),
     };
   }
 
