@@ -8,6 +8,7 @@ export function createDiscordVoiceTool(
   channelApi: Pick<DiscordChannelApi, "sendAudio" | "sendTyping">,
   channelId: Parameters<DiscordChannelApi["sendMessage"]>[0],
   tts: TextToSpeech,
+  onMessageSent?: () => void,
 ) {
   return defineSurfaceTool(
     {
@@ -20,6 +21,7 @@ export function createDiscordVoiceTool(
         await channelApi.sendTyping(channelId);
         const audio = await tts.synthesize(params.text);
         await channelApi.sendAudio(channelId, audio, "voice.wav");
+        onMessageSent?.();
         return {
           content: [{ type: "text", text: `Sent a voice message containing: ${params.text}` }],
           details: {},

@@ -4,6 +4,7 @@ import { defineSurfaceTool } from "./surface-tool";
 
 export function createDiscordSpeakTool(
   speak: (text: string, toolCallId?: string) => Promise<void>,
+  onMessageSent?: () => void,
 ) {
   return defineSurfaceTool(
     {
@@ -14,6 +15,7 @@ export function createDiscordSpeakTool(
       parameters: Type.Object({ text: Type.String({ minLength: 1 }) }),
       async execute(toolCallId, params) {
         await speak(params.text, toolCallId);
+        onMessageSent?.();
         return {
           content: [{ type: "text", text: `Started preparing a voice reply:\n${params.text}` }],
           details: {},

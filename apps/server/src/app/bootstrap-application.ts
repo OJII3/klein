@@ -423,7 +423,7 @@ export async function bootstrapApplication(): Promise<void> {
       ownerFeaturesAllowed,
       ownerUserId,
       sessionKey,
-      tools: (toolContext) =>
+      tools: (toolContext, hooks) =>
         createDiscordAgentTools({
           accessScope: scope,
           analyzeImage: toolContext.analyzeImage,
@@ -443,6 +443,7 @@ export async function bootstrapApplication(): Promise<void> {
           promiseGuard: { mode: proactivityConfig.promiseGuard, logger },
           ...(proactiveCoordinator ? { proactive: proactiveCoordinator } : {}),
           ...(initiativeCoordinator ? { initiative: initiativeCoordinator } : {}),
+          onMessageSent: hooks.onMessageSent,
         }),
     });
   };

@@ -65,6 +65,7 @@ function createHarness(
   > = {},
   watchCheckRunner?: WatchCheckRunner,
   workerSendResult = false,
+  replyWithMessage = false,
 ): TestHarness {
   const resolvedWatchCheckRunner: WatchCheckRunner = watchCheckRunner ?? {
     async run() {
@@ -93,8 +94,9 @@ function createHarness(
       return [];
     },
   };
+  const sentHooks = new Map<string, () => void>();
   const agentFactory: AgentFactory = {
-    async create(_definition, _tools, creationOptions): Promise<AgentRuntime> {
+    async create(_definition, createTools, creationOptions): Promise<AgentRuntime> {
       createdSessionKeys.push(creationOptions.sessionKey);
       ownerFeaturesAllowed.push(creationOptions.ownerFeaturesAllowed ?? false);
       if (createGate) await createGate;
@@ -102,10 +104,12 @@ function createHarness(
       const channelId = creationOptions.sessionKey.slice("discord-channel:".length);
       const channelPrompts: AgentTurn[] = [];
       prompts.set(channelId, channelPrompts);
+      createTools({ requesterId: () => undefined });
 
       return {
         async prompt(turn) {
           channelPrompts.push(turn);
+          if (replyWithMessage) sentHooks.get(channelId)?.();
         },
         async compactForHandoff() {
           return "previous conversation summary";
@@ -145,7 +149,10 @@ function createHarness(
           handoffContext,
           ownerFeaturesAllowed: isOwnerAccessScope(accessScope, options.ownerUserId),
           ownerUserId: options.ownerUserId,
-          tools: () => [],
+          tools: (_toolContext, hooks) => {
+            sentHooks.set(channelId, hooks.onMessageSent);
+            return [];
+          },
         }),
       channelApi,
       logger: pino({ level: "silent" }),
@@ -170,6 +177,7 @@ function createProactiveStub(
     async getContext() {
       return {};
     },
+    async markPendingSignalsSurfaced() {},
     async ingestWatchSignal() {
       throw new Error("Unexpected watch signal ingest");
     },
@@ -338,6 +346,92 @@ test("passes proactive preferences, waiting follow-ups, and pending signals to t
     await harness.agentCoordinator.dispose();
   }
 });
+
+test("does not surface attach signals when the turn stays silent", async () => {
+  const surfaced: ProactiveSignal[][] = [];
+  const signal = attachSignal();
+  const harness = createHarness(
+    undefined,
+    undefined,
+    {
+      proactive: createProactiveStub({
+        async getContext() {
+          return {
+            pendingSignals: "在庫が3個（在庫監視 / 今日中）",
+            pendingSignalsToSurface: [signal],
+          };
+        },
+        async markPendingSignalsSurfaced(signals) {
+          surfaced.push([...signals]);
+        },
+      }),
+    },
+    undefined,
+    false,
+    false,
+  );
+
+  try {
+    await harness.agentCoordinator.handleDiscordMessage(
+      createMessage("channel-a", "message-a", "こんにちは"),
+    );
+    assert.deepEqual(surfaced, []);
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+test("surfaces attach signals after the turn sends a reply", async () => {
+  const surfaced: ProactiveSignal[][] = [];
+  const signal = attachSignal();
+  const harness = createHarness(
+    undefined,
+    undefined,
+    {
+      proactive: createProactiveStub({
+        async getContext() {
+          return {
+            pendingSignals: "在庫が3個（在庫監視 / 今日中）",
+            pendingSignalsToSurface: [signal],
+          };
+        },
+        async markPendingSignalsSurfaced(signals) {
+          surfaced.push([...signals]);
+        },
+      }),
+    },
+    undefined,
+    false,
+    true,
+  );
+
+  try {
+    await harness.agentCoordinator.handleDiscordMessage(
+      createMessage("channel-a", "message-a", "こんにちは"),
+    );
+    assert.deepEqual(surfaced, [[signal]]);
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+function attachSignal(): ProactiveSignal {
+  return {
+    version: 1,
+    id: "attach-1",
+    channelId: "channel-a",
+    accessScope: "public",
+    audience: "public",
+    source: { kind: "watch", ref: "watch-1" },
+    topic: "在庫監視",
+    summary: "在庫が3個になりました",
+    urgency: "today",
+    dedupeKey: "dedupe-attach-1",
+    observedAt: "2026-11-19T23:00:00.000Z",
+    status: "queued",
+    delivery: { mode: "attach" },
+  };
+}
 
 const digestSignal: ProactiveSignal = {
   version: 1,

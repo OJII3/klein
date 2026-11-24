@@ -51,6 +51,8 @@ const SIGNAL_EVIDENCE_LIMIT = 2_000;
 const SIGNAL_LIFETIME_MS = 7 * 24 * 60 * 60 * 1_000;
 const DIGEST_INSTRUCTION =
   "There are collected signals you may report together. Pick only the ones worth mentioning and convey them briefly in your own words. You do not need to list them all. Stay silent if none is worth mentioning.";
+const PENDING_SIGNALS_INSTRUCTION =
+  "These topics were collected for you in earlier work. Bring up the ones that fit the current conversation naturally in your reply; do not force them or list them all.";
 
 export interface ProactiveCoordinatorOptions {
   readonly preferenceStore: ProactivePreferenceStore;
@@ -72,6 +74,8 @@ export interface ProactiveContext {
   readonly preferences?: string;
   readonly waitingOn?: string;
   readonly pendingSignals?: string;
+  /** Signals included in `pendingSignals`, to mark surfaced once the turn replies. */
+  readonly pendingSignalsToSurface?: readonly ProactiveSignal[];
 }
 
 export interface WatchSignalInput {
@@ -119,13 +123,31 @@ export class ProactiveCoordinator {
     const waitingOn = formatWaitingOn(
       await this.synchronizeFollowUps(input.channelId, input.accessScope),
     );
-    const pendingSignals = await this.consumePendingSignals(input.channelId, input.accessScope);
+    const pending = await this.collectPendingSignals(input.channelId, input.accessScope);
 
     return {
       ...(preferences !== undefined ? { preferences } : {}),
       ...(waitingOn !== undefined ? { waitingOn } : {}),
-      ...(pendingSignals !== undefined ? { pendingSignals } : {}),
+      ...(pending.text !== undefined ? { pendingSignals: pending.text } : {}),
+      ...(pending.signals.length > 0 ? { pendingSignalsToSurface: pending.signals } : {}),
     };
+  }
+
+  /** Marks the attach signals included in a turn as surfaced once that turn replies. */
+  async markPendingSignalsSurfaced(signals: readonly ProactiveSignal[]): Promise<void> {
+    if (signals.length === 0) return;
+    const now = this.now();
+    const queued: ProactiveSignal[] = [];
+    for (const signal of signals) {
+      const current = await this.options.signalStore.get(signal.id);
+      if (!current || current.status !== "queued" || current.delivery?.mode !== "attach") continue;
+      if (isSignalExpired(current, now)) {
+        await this.options.signalStore.update(markSignalExpired(current, now));
+        continue;
+      }
+      queued.push(current);
+    }
+    if (queued.length > 0) await this.markSignalsSurfaced(queued, "attach", now);
   }
 
   async ingestWatchSignal(input: WatchSignalInput): Promise<WatchSignalResult> {
@@ -439,10 +461,10 @@ export class ProactiveCoordinator {
     return true;
   }
 
-  private async consumePendingSignals(
+  private async collectPendingSignals(
     channelId: string,
     accessScope: AccessScope,
-  ): Promise<string | undefined> {
+  ): Promise<{ readonly text?: string; readonly signals: readonly ProactiveSignal[] }> {
     const now = this.now();
     const queued = await this.options.signalStore.listQueued(channelId, accessScope, "attach");
     const selected: ProactiveSignal[] = [];
@@ -455,9 +477,13 @@ export class ProactiveCoordinator {
       if (selected.length < MAX_PENDING_SIGNALS) selected.push(signal);
     }
 
-    if (selected.length === 0) return undefined;
-    await this.markSignalsSurfaced(selected, "attach", now);
-    return selected.map((signal) => formatSignal(signal)).join("\n");
+    if (selected.length === 0) return { signals: [] };
+    return {
+      signals: selected,
+      text: [PENDING_SIGNALS_INSTRUCTION, ...selected.map((signal) => formatSignal(signal))].join(
+        "\n",
+      ),
+    };
   }
 
   private async readPreferencesContext(
