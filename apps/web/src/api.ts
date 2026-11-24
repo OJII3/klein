@@ -30,6 +30,7 @@ import type {
   UserMemorySummary,
   ViewerLogQuery,
   ViewerPage,
+  ViewerSessionAgentRole,
   ViewerSessionDetail,
   ViewerSessionQuery,
   ViewerSessionSummary,
@@ -62,6 +63,7 @@ export type {
   UserMemory,
   UserMemorySectionKey,
   UserMemorySummary,
+  ViewerSessionAgentRole,
 };
 
 export type PinoLog = PinoViewerEvent;

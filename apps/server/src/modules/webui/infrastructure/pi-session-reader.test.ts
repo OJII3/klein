@@ -8,14 +8,31 @@ import { createPiSessionManager } from "@runtime/pi/pi-agent-runtime";
 import { PiSessionReader } from "./pi-session-reader";
 import { createTempDir } from "../../../testing/temp-dir";
 
-test("ignores non-conversation session directories when listing channel sessions", async () => {
+test("lists worker sessions and ignores standalone session directories", async () => {
   await using temp = await createTempDir("klein-pi-reader-");
-  await mkdir(resolve(temp.path, "sessions", "worker", "task-1"), { recursive: true });
+  const workerSession = createPiSessionManager(temp.path, "worker-1", "new", process.cwd(), {
+    kind: "worker",
+    workerId: "worker-1",
+  });
+  workerSession.appendMessage({ role: "user", content: "task", timestamp: Date.now() });
   await mkdir(resolve(temp.path, "sessions", "standalone", "user-memory-1"), { recursive: true });
 
-  const page = await new PiSessionReader(temp.path).list();
+  const reader = new PiSessionReader(temp.path);
+  const page = await reader.list();
 
-  assert.deepEqual(page, { items: [], nextCursor: null });
+  assert.equal(page.items.length, 1);
+  assert.equal(page.items[0]?.id, workerSession.getSessionId());
+  assert.equal(page.items[0]?.agentRole, "worker");
+  assert.equal(page.items[0]?.channelKey, "worker-1");
+  assert.equal(page.items[0]?.channelId, undefined);
+  assert.equal(page.items[0]?.channelName, undefined);
+
+  const detail = await reader.get(workerSession.getSessionId());
+  assert.equal(detail?.session.agentRole, "worker");
+  assert.deepEqual(
+    detail?.items.map((item) => item.summary),
+    ["task"],
+  );
 });
 
 test("lists and reads Pi sessions without exposing image data", async () => {
@@ -80,6 +97,7 @@ test("lists and reads Pi sessions without exposing image data", async () => {
     [secondSessionManager.getSessionId(), sessionManager.getSessionId()],
   );
   const sessionSummary = sessions.items.find((item) => item.id === sessionManager.getSessionId());
+  assert.equal(sessionSummary?.agentRole, "conversation");
   assert.equal(sessionSummary?.channelKey, "discord-channel:123");
   assert.equal(sessionSummary?.channelId, "123");
   assert.equal(sessionSummary?.channelName, undefined);

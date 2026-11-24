@@ -11,6 +11,7 @@ import {
 import type {
   DiscordNameReader,
   ViewerPage,
+  ViewerSessionAgentRole,
   ViewerSessionDetail,
   ViewerSessionQuery,
   ViewerSessionReader,
@@ -24,7 +25,7 @@ import {
   normalizeSessionLimit,
 } from "./pi-session-cursor";
 import { toViewerEvent, toViewerSessionSummary } from "./pi-session-event-mapper";
-import { listPiSessionDirectories } from "./pi-session-files";
+import { listViewableSessionDirectories } from "./pi-session-files";
 
 export class PiSessionReader implements ViewerSessionReader {
   constructor(
@@ -34,14 +35,16 @@ export class PiSessionReader implements ViewerSessionReader {
 
   async list(query: ViewerSessionQuery = {}): Promise<ViewerPage<ViewerSessionSummary>> {
     const [sessionDirectories, channelNames] = await Promise.all([
-      listPiSessionDirectories(this.agentDirectory),
+      listViewableSessionDirectories(this.agentDirectory),
       this.channelNames?.read(),
     ]);
     const sessions: ViewerSessionSummary[] = [];
 
-    for (const { channelKey, directory } of sessionDirectories) {
+    for (const { agentRole, sessionKey, directory } of sessionDirectories) {
       const infos = await SessionManager.listAll(directory);
-      sessions.push(...infos.map((info) => toViewerSessionSummary(info, channelKey, channelNames)));
+      sessions.push(
+        ...infos.map((info) => toViewerSessionSummary(info, sessionKey, agentRole, channelNames)),
+      );
     }
 
     sessions.sort(
@@ -99,7 +102,12 @@ export class PiSessionReader implements ViewerSessionReader {
     const pageEntries = sessionEntries.slice(pageStart, pageEnd);
 
     return {
-      session: toViewerSessionSummary(session.info, session.channelKey, channelNames),
+      session: toViewerSessionSummary(
+        session.info,
+        session.sessionKey,
+        session.agentRole,
+        channelNames,
+      ),
       items: pageEntries.map((entry) => toViewerEvent(entry, sessionId)),
       nextCursor:
         pageStart > 0
@@ -111,15 +119,20 @@ export class PiSessionReader implements ViewerSessionReader {
     };
   }
 
-  private async findSession(
-    sessionId: string,
-  ): Promise<{ readonly channelKey: string; readonly info: SessionInfo } | undefined> {
-    const sessionDirectories = await listPiSessionDirectories(this.agentDirectory);
+  private async findSession(sessionId: string): Promise<
+    | {
+        readonly agentRole: ViewerSessionAgentRole;
+        readonly sessionKey: string;
+        readonly info: SessionInfo;
+      }
+    | undefined
+  > {
+    const sessionDirectories = await listViewableSessionDirectories(this.agentDirectory);
 
-    for (const { channelKey, directory } of sessionDirectories) {
+    for (const { agentRole, sessionKey, directory } of sessionDirectories) {
       const infos = await SessionManager.listAll(directory);
       const info = infos.find((candidate) => candidate.id === sessionId);
-      if (info) return { channelKey, info };
+      if (info) return { agentRole, sessionKey, info };
     }
 
     return undefined;
