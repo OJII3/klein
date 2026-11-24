@@ -15,6 +15,8 @@ const PendingDiscordChannelLinkRequestSchema = Type.Object(
     channelName: Type.Optional(Type.String({ minLength: 1 })),
     requesterUserId: DiscordIdSchema,
     pendingMessageId: Type.Optional(Type.String({ minLength: 1 })),
+    ownerMessageId: Type.Optional(Type.String({ minLength: 1 })),
+    expiresAt: Type.Optional(Type.String({ minLength: 1 })),
   },
   { additionalProperties: false },
 );

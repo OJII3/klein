@@ -4,7 +4,7 @@ import pino from "pino";
 
 import { DiscordAgent } from "@agents/discord/discord-agent";
 import type { AgentFactory } from "@agents/core/agent-factory";
-import type { AgentRuntime } from "@agents/core/agent-runtime";
+import type { AgentRuntime, AgentTurnProgress } from "@agents/core/agent-runtime";
 import type { AgentEvent } from "@agents/core/agent-event";
 import type { AgentTurn } from "@agents/core/agent-turn";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
@@ -34,10 +34,13 @@ import { isOwnerAccessScope, parseAccessScope } from "@shared/access";
 import { TaskCoordinator } from "./task-coordinator";
 import { AgentCoordinator, type AgentCoordinatorDependencies } from "./agent-coordinator";
 import { ChannelSessionStateStore, getChannelRotationBucket } from "./channel-session-state-store";
+import { MemoryInbox } from "../testing/memory-inbox";
 import { createTempDir } from "../testing/temp-dir";
 
 interface TestHarness {
   readonly agentCoordinator: AgentCoordinator;
+  readonly inbox: MemoryInbox;
+  readonly taskCoordinator: TaskCoordinator;
   readonly workerStarts: WorkerStartInput[];
   readonly workerSends: {
     readonly scope: WorkerScope;
@@ -48,6 +51,7 @@ interface TestHarness {
   readonly createdSessionKeys: string[];
   readonly prompts: Map<string, AgentTurn[]>;
   readonly ownerFeaturesAllowed: boolean[];
+  readonly interruptedNotes: string[];
 }
 
 function createHarness(
@@ -62,26 +66,39 @@ function createHarness(
     | "userMemoryStore"
     | "proactive"
     | "initiative"
-  > = {},
+  > & {
+    readonly inbox?: MemoryInbox;
+    readonly operatingState?: DiscordOperatingState;
+  } = {},
   watchCheckRunner?: WatchCheckRunner,
   workerSendResult = false,
   replyWithMessage = false,
+  runtimeBehavior: {
+    readonly gate?: Promise<void>;
+    readonly error?: Error;
+    readonly turnProgress?:
+      AgentTurnProgress | ((eventId: string, sessionKey: string) => AgentTurnProgress);
+  } = {},
 ): TestHarness {
   const resolvedWatchCheckRunner: WatchCheckRunner = watchCheckRunner ?? {
     async run() {
       throw new Error("Unexpected watch check");
     },
   };
+  const inbox = options.inbox ?? new MemoryInbox();
+  const operatingState = options.operatingState ?? new DiscordOperatingState();
+  const taskCoordinator = new TaskCoordinator();
   const channelLocationCalls: string[] = [];
   const createdSessionKeys: string[] = [];
   const prompts = new Map<string, AgentTurn[]>();
   const ownerFeaturesAllowed: boolean[] = [];
+  const interruptedNotes: string[] = [];
   const workerStarts: WorkerStartInput[] = [];
   const workerSends: { scope: WorkerScope; workerId: string; message: string }[] = [];
   const workers: WorkerControl = {
     async start(input) {
       workerStarts.push(input);
-      return `worker-${workerStarts.length}`;
+      return input.id ?? `worker-${workerStarts.length}`;
     },
     async send(scope, workerId, message) {
       workerSends.push({ scope, workerId, message });
@@ -108,8 +125,18 @@ function createHarness(
 
       return {
         async prompt(turn) {
+          if (runtimeBehavior.gate) await runtimeBehavior.gate;
+          if (runtimeBehavior.error) throw runtimeBehavior.error;
           channelPrompts.push(turn);
           if (replyWithMessage) sentHooks.get(channelId)?.();
+        },
+        getTurnProgress(eventId) {
+          const progress = runtimeBehavior.turnProgress;
+          if (typeof progress === "function") return progress(eventId, creationOptions.sessionKey);
+          return progress ?? "none";
+        },
+        async markInterrupted(eventId) {
+          interruptedNotes.push(eventId);
         },
         async compactForHandoff() {
           return "previous conversation summary";
@@ -141,6 +168,8 @@ function createHarness(
   return {
     agentCoordinator: new AgentCoordinator({
       ...options,
+      inbox,
+      operatingState,
       workers,
       createDiscordAgent: (channelId, sessionKey, handoffContext, accessScope) =>
         DiscordAgent.create(agentFactory, channelId, "system prompt", {
@@ -156,17 +185,19 @@ function createHarness(
         }),
       channelApi,
       logger: pino({ level: "silent" }),
-      operatingState: new DiscordOperatingState(),
       scheduledTaskStore,
       watchCheckRunner: resolvedWatchCheckRunner,
-      taskCoordinator: new TaskCoordinator(),
+      taskCoordinator,
     }),
+    inbox,
+    taskCoordinator,
     workerStarts,
     workerSends,
     channelLocationCalls,
     createdSessionKeys,
     prompts,
     ownerFeaturesAllowed,
+    interruptedNotes,
   };
 }
 
@@ -235,6 +266,359 @@ test("reuses one Pi session for messages in the same Discord channel", async () 
       ),
       ["ユーザー (@user):\n最初のメッセージ", "ユーザー (@user):\n次のメッセージ"],
     );
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+test("prompts once when the same Discord message id arrives twice", async () => {
+  const harness = createHarness();
+
+  try {
+    const message = createMessage("channel-a", "message-a", "一度だけ");
+    await harness.agentCoordinator.handleDiscordMessage(message);
+    await harness.agentCoordinator.handleDiscordMessage(message);
+
+    assert.equal(harness.prompts.get("channel-a")?.length, 1);
+    assert.equal(harness.inbox.list().length, 1);
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+test("drains items that were already pending when the coordinator initializes", async () => {
+  const inbox = new MemoryInbox();
+  const message = createMessage("channel-a", "message-pending", "起動前のメッセージ");
+  const conversationKey = { kind: "discord", channelId: message.channelId } as const;
+  await inbox.enqueue({
+    kind: "discord.message",
+    id: message.id,
+    conversationKey,
+    enqueuedAt: "2026-10-14T09:30:42.123Z",
+    message,
+  });
+  const harness = createHarness(undefined, undefined, { inbox });
+
+  try {
+    await harness.agentCoordinator.initialize();
+
+    assert.equal(harness.prompts.get("channel-a")?.length, 1);
+    assert.equal(harness.inbox.get(conversationKey, message.id)?.status, "done");
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+test("keeps a message accepted before initialization pending until drains start", async () => {
+  const harness = createHarness();
+
+  try {
+    const message = createMessage("channel-a", "message-a", "起動中");
+    const conversationKey = { kind: "discord", channelId: message.channelId } as const;
+    await harness.agentCoordinator.acceptDiscordMessage(message);
+
+    assert.equal(harness.prompts.size, 0);
+    assert.equal(harness.inbox.get(conversationKey, message.id)?.status, "pending");
+
+    await harness.agentCoordinator.initialize();
+
+    assert.equal(harness.prompts.get("channel-a")?.length, 1);
+    assert.equal(harness.inbox.get(conversationKey, message.id)?.status, "done");
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+test("accepts a message without waiting for its gated turn", async () => {
+  let releasePrompt!: () => void;
+  const promptGate = new Promise<void>((resolve) => {
+    releasePrompt = resolve;
+  });
+  const harness = createHarness(undefined, undefined, {}, undefined, false, false, {
+    gate: promptGate,
+  });
+
+  try {
+    await harness.agentCoordinator.initialize();
+
+    let accepted = false;
+    const acceptance = (async () => {
+      await harness.agentCoordinator.acceptDiscordMessage(
+        createMessage("channel-a", "message-a", "急ぎ"),
+      );
+      accepted = true;
+    })();
+    await new Promise<void>((resolve) => {
+      setImmediate(resolve);
+    });
+
+    assert.equal(accepted, true);
+    assert.equal(harness.prompts.get("channel-a")?.length ?? 0, 0);
+
+    releasePrompt();
+    await acceptance;
+    await harness.taskCoordinator.waitForCompletion();
+
+    assert.equal(harness.prompts.get("channel-a")?.length, 1);
+  } finally {
+    releasePrompt();
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+test("marks an inbox item failed when its prompt fails", async () => {
+  const harness = createHarness(undefined, undefined, {}, undefined, false, false, {
+    error: new Error("prompt failed"),
+  });
+
+  try {
+    const message = createMessage("channel-a", "message-a", "失敗する");
+    await harness.agentCoordinator.handleDiscordMessage(message);
+
+    const item = harness.inbox.get({ kind: "discord", channelId: "channel-a" }, message.id);
+    assert.equal(item?.status, "failed");
+    assert.match(item?.error ?? "", /prompt failed/u);
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+test("finishes an inbox item whose turn completed without prompting again", async () => {
+  const inbox = new MemoryInbox();
+  const message = createMessage("channel-a", "message-a", "返信済み");
+  const conversationKey = { kind: "discord", channelId: message.channelId } as const;
+  await inbox.enqueue({
+    kind: "discord.message",
+    id: message.id,
+    conversationKey,
+    enqueuedAt: "2026-10-14T09:30:42.123Z",
+    message,
+  });
+  await inbox.claimNext(conversationKey);
+  await inbox.recoverClaims();
+  const progressReads: string[] = [];
+  const harness = createHarness(undefined, undefined, { inbox }, undefined, false, false, {
+    turnProgress(eventId) {
+      progressReads.push(eventId);
+      return "completed";
+    },
+  });
+
+  try {
+    await harness.agentCoordinator.initialize();
+
+    assert.deepEqual(progressReads, ["message-a"]);
+    assert.deepEqual(harness.createdSessionKeys, ["discord-channel:channel-a"]);
+    assert.equal(harness.prompts.get("channel-a")?.length ?? 0, 0);
+    assert.equal(harness.inbox.get(conversationKey, message.id)?.status, "done");
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+test("leaves an inbox item interrupted when its turn outcome is uncertain", async () => {
+  const inbox = new MemoryInbox();
+  const message = createMessage("channel-a", "message-a", "結果不明");
+  const conversationKey = { kind: "discord", channelId: message.channelId } as const;
+  await inbox.enqueue({
+    kind: "discord.message",
+    id: message.id,
+    conversationKey,
+    enqueuedAt: "2026-10-14T09:30:42.123Z",
+    message,
+  });
+  await inbox.claimNext(conversationKey);
+  await inbox.recoverClaims();
+  const harness = createHarness(undefined, undefined, { inbox }, undefined, false, false, {
+    turnProgress: "uncertain",
+  });
+
+  try {
+    await harness.agentCoordinator.initialize();
+
+    assert.equal(harness.prompts.get("channel-a")?.length ?? 0, 0);
+    assert.equal(harness.inbox.get(conversationKey, message.id)?.status, "interrupted");
+    assert.deepEqual(harness.interruptedNotes, ["message-a"]);
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+test("prompts an inbox item again when its turn started without an assistant message", async () => {
+  const inbox = new MemoryInbox();
+  const message = createMessage("channel-a", "message-a", "未返信");
+  const conversationKey = { kind: "discord", channelId: message.channelId } as const;
+  await inbox.enqueue({
+    kind: "discord.message",
+    id: message.id,
+    conversationKey,
+    enqueuedAt: "2026-10-14T09:30:42.123Z",
+    message,
+  });
+  await inbox.claimNext(conversationKey);
+  await inbox.recoverClaims();
+  const harness = createHarness(undefined, undefined, { inbox }, undefined, false, false, {
+    turnProgress: "started",
+  });
+
+  try {
+    await harness.agentCoordinator.initialize();
+
+    assert.equal(harness.prompts.get("channel-a")?.length, 1);
+    assert.equal(harness.inbox.get(conversationKey, message.id)?.status, "done");
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+test("interrupts an inbox item that exceeds the attempt limit without prompting", async () => {
+  const inbox = new MemoryInbox();
+  const message = createMessage("channel-a", "message-a", "毒メッセージ");
+  const conversationKey = { kind: "discord", channelId: message.channelId } as const;
+  await inbox.enqueue({
+    kind: "discord.message",
+    id: message.id,
+    conversationKey,
+    enqueuedAt: "2026-10-14T09:30:42.123Z",
+    message,
+  });
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    assert.ok(await inbox.claimNext(conversationKey));
+    await inbox.recoverClaims();
+  }
+  const harness = createHarness(undefined, undefined, { inbox });
+
+  try {
+    await harness.agentCoordinator.initialize();
+
+    const item = harness.inbox.get(conversationKey, message.id);
+    assert.equal(item?.status, "interrupted");
+    assert.match(item?.error ?? "", /3 attempts/u);
+    assert.equal(harness.prompts.size, 0);
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+test("reads turn progress before rotating a due conversation session", async () => {
+  const inbox = new MemoryInbox();
+  const message = createMessage("channel-a", "message-a", "返信済み");
+  const conversationKey = { kind: "discord", channelId: message.channelId } as const;
+  await inbox.enqueue({
+    kind: "discord.message",
+    id: message.id,
+    conversationKey,
+    enqueuedAt: "2026-10-14T09:30:42.123Z",
+    message,
+  });
+  await inbox.claimNext(conversationKey);
+  await inbox.recoverClaims();
+  const oldSessionKey = "discord-channel:channel-a:public:rotation:2000-01-01";
+  const channelSessionStateStore = {
+    async getOrCreate() {
+      return {
+        conversationKey,
+        accessScope: "public",
+        sessionKey: oldSessionKey,
+        lastActivityAt: Date.now() - 2 * 60 * 60 * 1000,
+        lastRotationDate: "2000-01-01",
+        hasActivitySinceRotation: true,
+      };
+    },
+    async list() {
+      return [];
+    },
+    async listChannelNames() {
+      return new Map();
+    },
+    async save() {},
+  };
+  const progressReads: { eventId: string; sessionKey: string }[] = [];
+  const harness = createHarness(
+    undefined,
+    undefined,
+    {
+      accessPolicy: createDiscordAccessPolicy({ default: "allow", directMessages: "allow" }),
+      channelSessionStateStore,
+      inbox,
+    },
+    undefined,
+    false,
+    false,
+    {
+      turnProgress(eventId, sessionKey) {
+        progressReads.push({ eventId, sessionKey });
+        return sessionKey === oldSessionKey ? "completed" : "none";
+      },
+    },
+  );
+
+  try {
+    await harness.agentCoordinator.initialize();
+
+    assert.deepEqual(progressReads, [{ eventId: "message-a", sessionKey: oldSessionKey }]);
+    assert.deepEqual(harness.createdSessionKeys, [oldSessionKey]);
+    assert.equal(harness.prompts.get("channel-a")?.length ?? 0, 0);
+    assert.equal(harness.inbox.get(conversationKey, message.id)?.status, "done");
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+test("finishes an agent event whose turn completed without prompting again", async () => {
+  const inbox = new MemoryInbox();
+  const event: AgentEvent = {
+    id: "event-1",
+    type: "reminder.due",
+    source: "reminder",
+    occurredAt: "2026-10-14T09:30:42.123Z",
+    content: [{ type: "text", text: "定例会の時間" }],
+  };
+  const conversationKey = { kind: "discord", channelId: "channel-a" } as const;
+  await inbox.enqueue({
+    kind: "agent.event",
+    id: event.id,
+    conversationKey,
+    enqueuedAt: "2026-10-14T09:30:42.123Z",
+    event,
+  });
+  await inbox.claimNext(conversationKey);
+  await inbox.recoverClaims();
+  const harness = createHarness(undefined, undefined, { inbox }, undefined, false, false, {
+    turnProgress: "completed",
+  });
+
+  try {
+    await harness.agentCoordinator.initialize();
+
+    assert.equal(harness.prompts.get("channel-a")?.length ?? 0, 0);
+    assert.equal(harness.inbox.get(conversationKey, event.id)?.status, "done");
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+test("leaves pending inbox items pending while Klein is paused", async () => {
+  const inbox = new MemoryInbox();
+  const message = createMessage("channel-a", "message-a", "停止中のメッセージ");
+  const conversationKey = { kind: "discord", channelId: message.channelId } as const;
+  await inbox.enqueue({
+    kind: "discord.message",
+    id: message.id,
+    conversationKey,
+    enqueuedAt: "2026-10-14T09:30:42.123Z",
+    message,
+  });
+  const harness = createHarness(undefined, undefined, {
+    inbox,
+    operatingState: new DiscordOperatingState("paused"),
+  });
+
+  try {
+    await harness.agentCoordinator.initialize();
+
+    assert.equal(harness.prompts.size, 0);
+    assert.equal(harness.inbox.get(conversationKey, message.id)?.status, "pending");
   } finally {
     await harness.agentCoordinator.dispose();
   }
@@ -864,7 +1248,6 @@ test("starts a reminder worker and keeps the conversation session for conversati
   try {
     await harness.agentCoordinator.deliverDueTasks(Date.parse("2026-10-14T00:02:00.000Z"));
     assert.deepEqual(harness.createdSessionKeys, []);
-    assert.equal(reminders.getStored(), undefined);
     assert.equal(harness.workerStarts.length, 1);
     assert.deepEqual(harness.workerStarts[0]?.conversationKey, {
       kind: "discord",
@@ -873,6 +1256,11 @@ test("starts a reminder worker and keeps the conversation session for conversati
     assert.equal(harness.workerStarts[0]?.accessScope, "public");
     assert.equal(harness.workerStarts[0]?.closeAfterResult, true);
     assert.match(harness.workerStarts[0]?.prompt ?? "", /定例会が始まります/u);
+    const stored = reminders.getStored();
+    assert.ok(stored?.kind === "reminder");
+    assert.match(stored.runningWorkerId ?? "", /^reminder:reminder-1:/u);
+    assert.equal(stored.runningWorkerId, harness.workerStarts[0]?.id);
+    assert.equal(stored.attempts, 1);
 
     await harness.agentCoordinator.handleDiscordMessage(
       createMessage("test-channel", "reply", "ありがとう"),
@@ -932,7 +1320,10 @@ test("starts a reminder worker without rotating the conversation session", async
     await harness.agentCoordinator.deliverDueTasks(Date.parse("2026-10-14T00:02:00.000Z"));
     assert.deepEqual(harness.createdSessionKeys, []);
     assert.equal(harness.workerStarts.length, 1);
-    assert.equal(reminders.getStored(), undefined);
+    const stored = reminders.getStored();
+    assert.ok(stored?.kind === "reminder");
+    assert.equal(stored.runningWorkerId, harness.workerStarts[0]?.id);
+    assert.equal(stored.attempts, 1);
     const state = await channelSessionStateStore.getOrCreate(
       { kind: "discord", channelId: dueReminder.channelId },
       getChannelRotationBucket(Date.now()),
@@ -958,7 +1349,10 @@ test("starts a reminder worker without prompting an active channel agent", async
       ["discord.message"],
     );
     assert.equal(harness.workerStarts.length, 1);
-    assert.equal(reminders.getStored(), undefined);
+    const stored = reminders.getStored();
+    assert.ok(stored?.kind === "reminder");
+    assert.equal(stored.runningWorkerId, harness.workerStarts[0]?.id);
+    assert.equal(stored.attempts, 1);
   } finally {
     await harness.agentCoordinator.dispose();
   }
@@ -990,8 +1384,12 @@ for (const { scope, access, owner, delivered } of [
       await harness.agentCoordinator.deliverDueTasks(Date.parse("2026-10-14T00:02:00.000Z"));
       assert.equal(harness.createdSessionKeys.length, 0);
       assert.equal(harness.workerStarts.length, delivered ? 1 : 0);
-      assert.equal(reminders.getStored() === undefined, delivered);
+      const stored = reminders.getStored();
+      assert.ok(stored?.kind === "reminder");
+      assert.equal(stored.runningWorkerId !== undefined, delivered);
       if (delivered) {
+        assert.equal(stored.runningWorkerId, harness.workerStarts[0]?.id);
+        assert.equal(stored.attempts, 1);
         assert.deepEqual(harness.workerStarts[0]?.conversationKey, {
           kind: "discord",
           channelId: "test-channel",
@@ -1027,7 +1425,7 @@ test("delivers a linked user's reminder while the channel link remains", async (
   }
 });
 
-test("advances a recurring reminder without changing its stable ownership", async () => {
+test("advances a recurring reminder when its worker result is delivered", async () => {
   const reminder: ReminderTask = {
     ...dueReminder,
     schedule: { type: "daily", time: "09:00" },
@@ -1035,15 +1433,92 @@ test("advances a recurring reminder without changing its stable ownership", asyn
   const reminders = createScheduledTaskStore(reminder);
   const harness = createHarness(undefined, reminders.store);
   try {
-    const before = Date.now();
     await harness.agentCoordinator.deliverDueTasks(Date.parse("2026-10-14T00:02:00.000Z"));
+    const running = reminders.getStored();
+    assert.ok(running?.kind === "reminder");
+    assert.equal(running.channelId, reminder.channelId);
+    assert.equal(running.accessScope, reminder.accessScope);
+    assert.equal(running.nextRunAt, reminder.nextRunAt);
+    assert.equal(running.runningWorkerId, harness.workerStarts[0]?.id);
+    assert.equal(running.attempts, 1);
+    assert.equal(harness.workerStarts.length, 1);
+
+    const before = Date.now();
+    const workerId = harness.workerStarts[0]?.id;
+    assert.ok(workerId);
+    await harness.agentCoordinator.deliverWorkerResult(
+      { kind: "discord", channelId: reminder.channelId },
+      reminder.accessScope,
+      { workerId, status: "completed", text: "定例会が始まります" },
+    );
+
     const stored = reminders.getStored();
-    assert.ok(stored);
+    assert.ok(stored?.kind === "reminder");
+    assert.ok(Date.parse(stored.nextRunAt) > before);
     assert.equal(stored.channelId, reminder.channelId);
     assert.equal(stored.accessScope, reminder.accessScope);
-    assert.ok(Date.parse(stored.nextRunAt) > before);
+    assert.equal(stored.runningWorkerId, undefined);
+    assert.equal(stored.attempts, undefined);
+    assert.equal(stored.lastError, undefined);
     assert.equal("sessionKey" in stored, false);
-    assert.equal(harness.workerStarts.length, 1);
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+test("completes a one-time reminder when its worker result is delivered", async () => {
+  const completedWatchers: { kind: string; id: string }[] = [];
+  const reminders = createScheduledTaskStore(dueReminder);
+  const harness = createHarness(undefined, reminders.store, {
+    proactive: createProactiveStub({
+      async markWatcherCompleted(kind, id) {
+        completedWatchers.push({ kind, id });
+      },
+    }),
+  });
+  try {
+    await harness.agentCoordinator.deliverDueTasks(Date.parse("2026-10-14T00:02:00.000Z"));
+    const workerId = harness.workerStarts[0]?.id;
+    assert.ok(workerId);
+    assert.match(workerId, /^reminder:reminder-1:/u);
+    assert.ok(reminders.getStored());
+
+    await harness.agentCoordinator.deliverWorkerResult(
+      { kind: "discord", channelId: dueReminder.channelId },
+      dueReminder.accessScope,
+      { workerId, status: "completed", text: "定例会が始まります" },
+    );
+
+    assert.equal(reminders.getStored(), undefined);
+    assert.deepEqual(
+      completedWatchers.filter((watcher) => watcher.kind === "reminder"),
+      [{ kind: "reminder", id: "reminder-1" }],
+    );
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+test("releases a reminder when its worker closes without a result", async () => {
+  const reminders = createScheduledTaskStore(dueReminder);
+  const harness = createHarness(undefined, reminders.store);
+  try {
+    await harness.agentCoordinator.deliverDueTasks(Date.parse("2026-10-14T00:02:00.000Z"));
+    const workerId = harness.workerStarts[0]?.id;
+    assert.ok(workerId);
+
+    await harness.agentCoordinator.releaseWorkerSchedules({
+      id: workerId,
+      conversationKey: { kind: "discord", channelId: dueReminder.channelId },
+      accessScope: dueReminder.accessScope,
+    });
+
+    const stored = reminders.getStored();
+    assert.ok(stored?.kind === "reminder");
+    assert.equal(stored.runningWorkerId, undefined);
+    assert.equal(stored.attempts, 1);
+    assert.match(stored.lastError ?? "", /closed/u);
+    assert.equal(stored.nextRunAt, dueReminder.nextRunAt);
   } finally {
     await harness.agentCoordinator.dispose();
   }
@@ -1075,6 +1550,7 @@ test("delivers a watch when the script calls wake()", async () => {
 
     decision = "wake";
     await harness.agentCoordinator.deliverDueTasks(Date.parse(silent.nextRunAt));
+    await harness.taskCoordinator.waitForCompletion();
     const first = watches.getStored();
     assert.ok(first?.kind === "watch");
     assert.ok(first.lastTriggeredAt);
@@ -1084,6 +1560,8 @@ test("delivers a watch when the script calls wake()", async () => {
     assert.equal(events?.[0]?.event.type, "watch.triggered");
     assert.equal(events?.[0]?.event.source, "watch");
     assert.match(eventText(events?.[0]?.event), /two/u);
+    const inboxItem = harness.inbox.list().find((item) => item.kind === "agent.event");
+    assert.equal(inboxItem?.status, "done");
   } finally {
     await harness.agentCoordinator.dispose();
   }
@@ -1148,6 +1626,7 @@ test("delivers a worker watch to the conversation when the worker is gone", asyn
   );
   try {
     await harness.agentCoordinator.deliverDueTasks(Date.parse("2026-10-14T00:05:00.000Z"));
+    await harness.taskCoordinator.waitForCompletion();
     assert.deepEqual(
       harness.workerSends.map((send) => send.workerId),
       ["worker-1"],
@@ -1203,6 +1682,7 @@ test("delivers a public watch without an access policy", async () => {
   const harness = createHarness(undefined, watches.store, {}, runner);
   try {
     await harness.agentCoordinator.deliverDueTasks(Date.now());
+    await harness.taskCoordinator.waitForCompletion();
     const events = harness.prompts.get("test-channel");
     assert.equal(events?.[0]?.event.type, "watch.triggered");
     assert.match(eventText(events?.[0]?.event), /hello/u);
@@ -1320,6 +1800,7 @@ test("delivers watch check failures to the agent as events", async () => {
   );
   try {
     await harness.agentCoordinator.deliverDueTasks(Date.now());
+    await harness.taskCoordinator.waitForCompletion();
     const stored = watches.getStored();
     assert.ok(stored?.kind === "watch");
     assert.equal(stored.lastStatus, "error");

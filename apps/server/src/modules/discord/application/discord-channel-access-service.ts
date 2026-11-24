@@ -27,6 +27,7 @@ export interface DiscordChannelAccessServiceDependencies {
   >;
   readonly ownerUserId?: string;
   readonly logger?: Logger;
+  readonly now?: () => number;
 }
 
 export class DiscordChannelAccessService {
@@ -39,6 +40,7 @@ export class DiscordChannelAccessService {
       createRequest: (draft, requestId) => ({ ...draft, requestId }),
       ownerUserId: dependencies.ownerUserId,
       logger: dependencies.logger,
+      now: dependencies.now,
       hooks: {
         onAllow: async (request) => {
           await dependencies.accessRuleStore.setAccess(
@@ -71,6 +73,10 @@ export class DiscordChannelAccessService {
     presentation: DiscordApprovalPresentation<PendingDiscordAccessRequest>,
   ): Promise<DiscordChannelAccessRequestOutcome> {
     return this.approval.request(request, presentation);
+  }
+
+  reconcile(presentation: DiscordApprovalPresentation<PendingDiscordAccessRequest>): Promise<void> {
+    return this.approval.reconcile(presentation);
   }
 
   handleButton(button: {

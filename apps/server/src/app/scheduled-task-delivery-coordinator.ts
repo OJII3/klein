@@ -14,6 +14,7 @@ import {
 import type {
   ReminderTask,
   ScheduledTask,
+  ScheduledTaskAccessScope,
   WatchTask,
 } from "@modules/scheduling/domain/scheduled-task";
 import { normalizeWatchOutput, truncateWatchOutput } from "@modules/scheduling/domain/watch-output";
@@ -21,16 +22,20 @@ import type {
   WatchCheckResult,
   WatchCheckRunner,
 } from "@modules/scheduling/ports/watch-check-runner";
-import { isOwnerAccessScope, PUBLIC_ACCESS_SCOPE } from "@shared/access";
+import { isOwnerAccessScope, PUBLIC_ACCESS_SCOPE, type AccessScope } from "@shared/access";
 import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
 import type { TaskCoordinator } from "./task-coordinator";
-import type { ChannelSessionManager } from "./channel-session-manager";
 import type { ConversationKey } from "./channel-session-state-store";
 
 export interface ScheduledTaskDeliveryCoordinatorDependencies {
   readonly accessPolicy?: DiscordAccessPolicy;
   readonly workers: WorkerControl;
   readonly channelApi: DiscordChannelApi;
+  readonly enqueueConversationEvent: (input: {
+    readonly event: AgentEvent;
+    readonly conversationKey: ConversationKey;
+    readonly accessScope: AccessScope;
+  }) => Promise<boolean>;
   readonly logger: Logger;
   readonly operatingState: DiscordOperatingState;
   readonly ownerUserId?: string;
@@ -40,7 +45,6 @@ export interface ScheduledTaskDeliveryCoordinatorDependencies {
   >;
   readonly scheduledTaskStore?: ScheduledTaskStore;
   readonly watchCheckRunner: WatchCheckRunner;
-  readonly sessionManager: ChannelSessionManager;
   readonly taskCoordinator: TaskCoordinator;
 }
 
@@ -65,6 +69,8 @@ type WatchCheckOutcome = TriggeredWatch | FailedWatch;
  * to repair or stop the watch.
  */
 const WATCH_FAILURE_REMINDER_AT = 3;
+
+export const MAX_REMINDER_WORKER_ATTEMPTS = 3;
 
 export class ScheduledTaskDeliveryCoordinator {
   private checkRunning = false;
@@ -231,20 +237,163 @@ export class ScheduledTaskDeliveryCoordinator {
     );
   }
 
+  /**
+   * Completes the reminder whose worker produced this result. The worker result is durable
+   * by the time it is delivered, so a crash before conversation delivery redelivers the
+   * result instead of losing the reminder. A worker that matches nothing is a no-op.
+   */
+  async completeReminderForWorker(
+    channelId: string,
+    accessScope: ScheduledTaskAccessScope,
+    workerId: string,
+  ): Promise<void> {
+    const store = this.dependencies.scheduledTaskStore;
+    if (!store) return;
+    const reminder = (await store.listForScope("reminder", channelId, accessScope)).find(
+      (candidate) => candidate.runningWorkerId === workerId,
+    );
+    if (!reminder) return;
+    await this.completeReminder(reminder);
+    this.dependencies.logger.info(
+      {
+        event: "scheduled_task_completed",
+        taskId: reminder.id,
+        taskKind: reminder.kind,
+        workerId,
+      },
+      "Completed a scheduled reminder after its worker recorded a result",
+    );
+  }
+
+  /** Leaves a reminder due for another attempt after its worker closed without a result. */
+  async releaseReminderWorker(
+    channelId: string,
+    accessScope: ScheduledTaskAccessScope,
+    workerId: string,
+  ): Promise<void> {
+    const store = this.dependencies.scheduledTaskStore;
+    if (!store) return;
+    const reminder = (await store.listForScope("reminder", channelId, accessScope)).find(
+      (candidate) => candidate.runningWorkerId === workerId,
+    );
+    if (!reminder) return;
+    await store.update(
+      clearRunningWorker(reminder, "The worker closed before recording a result."),
+    );
+    this.dependencies.logger.warn(
+      {
+        event: "scheduled_task_worker_released",
+        taskId: reminder.id,
+        taskKind: reminder.kind,
+        workerId,
+      },
+      "Released a reminder worker that closed without a result",
+    );
+  }
+
   private async deliverReminder(task: ReminderTask): Promise<void> {
     const store = this.dependencies.scheduledTaskStore;
     if (!store) return;
-    await this.dependencies.workers.start({
-      conversationKey: { kind: "discord", channelId: task.channelId },
-      accessScope: task.accessScope,
-      ownerFeaturesAllowed: isOwnerAccessScope(task.accessScope, this.dependencies.ownerUserId),
-      prompt: buildReminderPrompt(task),
-      closeAfterResult: true,
-    });
-    await this.completeReminder(task);
+    const current = (await store.listForScope("reminder", task.channelId, task.accessScope)).find(
+      (candidate) => candidate.id === task.id && candidate.nextRunAt === task.nextRunAt,
+    );
+    if (!current) return;
+
+    const scope = {
+      conversationKey: { kind: "discord", channelId: current.channelId },
+      accessScope: current.accessScope,
+    } as const;
+    const workerId = reminderWorkerId(current);
+
+    if (current.runningWorkerId !== undefined) {
+      if (
+        this.dependencies.workers
+          .list(scope)
+          .some((worker) => worker.id === current.runningWorkerId)
+      ) {
+        return;
+      }
+      const reason = `Worker ${current.runningWorkerId} disappeared before recording a result.`;
+      await store.update(clearRunningWorker(current, reason));
+      this.dependencies.logger.warn(
+        {
+          event: "scheduled_task_worker_lost",
+          taskId: current.id,
+          taskKind: current.kind,
+          workerId: current.runningWorkerId,
+        },
+        "Reminder worker disappeared before recording a result; retrying on the next tick",
+      );
+      return;
+    }
+
+    const attempts = current.attempts ?? 0;
+    if (attempts >= MAX_REMINDER_WORKER_ATTEMPTS) {
+      await this.failReminder(
+        current,
+        current.lastError ?? `No worker result after ${attempts} attempts.`,
+      );
+      return;
+    }
+
+    const running: ReminderTask = {
+      ...current,
+      runningWorkerId: workerId,
+      attempts: attempts + 1,
+    };
+    await store.update(running);
+
+    try {
+      await this.dependencies.workers.start({
+        id: workerId,
+        conversationKey: scope.conversationKey,
+        accessScope: current.accessScope,
+        ownerFeaturesAllowed: isOwnerAccessScope(
+          current.accessScope,
+          this.dependencies.ownerUserId,
+        ),
+        prompt: buildReminderPrompt(current),
+        closeAfterResult: true,
+      });
+    } catch (error) {
+      if (this.dependencies.workers.list(scope).some((worker) => worker.id === workerId)) {
+        this.dependencies.logger.info(
+          {
+            event: "scheduled_task_worker_adopted",
+            taskId: current.id,
+            taskKind: current.kind,
+            workerId,
+          },
+          "Adopted the reminder worker that was already running",
+        );
+        return;
+      }
+      await store.update(
+        clearRunningWorker(running, failureReason(error, "The worker failed to start.")),
+      );
+      this.dependencies.logger.warn(
+        {
+          err: error,
+          event: "scheduled_task_worker_start_failed",
+          taskId: current.id,
+          taskKind: current.kind,
+          workerId,
+          attempts: running.attempts,
+        },
+        "Failed to start a reminder worker; retrying on the next tick",
+      );
+      return;
+    }
+
     this.dependencies.logger.info(
-      { event: "scheduled_task_delivered", taskId: task.id, taskKind: task.kind },
-      "Delivered scheduled task",
+      {
+        event: "scheduled_task_worker_started",
+        taskId: current.id,
+        taskKind: current.kind,
+        workerId,
+        attempts: running.attempts,
+      },
+      "Started a worker for a scheduled reminder",
     );
   }
 
@@ -460,51 +609,48 @@ export class ScheduledTaskDeliveryCoordinator {
     return true;
   }
 
+  /**
+   * The inbox is the delivery point: an accepted enqueue survives a crash, and a
+   * duplicate enqueue means an earlier attempt already stored the event.
+   */
   private async deliverEvent(
     conversationKey: ConversationKey,
     task: WatchTask,
     event: AgentEvent,
     complete: boolean,
   ): Promise<boolean> {
-    const store = this.dependencies.scheduledTaskStore;
-    if (!store) return false;
-    let delivered = false;
-    await this.dependencies.sessionManager.runForConversation(conversationKey, async () => {
-      if (!this.dependencies.operatingState.isActive()) return;
-      await this.dependencies.sessionManager.runTurn(
+    try {
+      await this.dependencies.enqueueConversationEvent({
+        event,
         conversationKey,
-        task.accessScope,
-        async (agent) => {
-          try {
-            await agent.promptEvent(event);
-            if (complete) await this.completeWatch(task);
-            delivered = true;
-            this.dependencies.logger.info(
-              {
-                event: "scheduled_task_delivered",
-                taskId: task.id,
-                taskKind: task.kind,
-                eventId: event.id,
-              },
-              "Delivered scheduled task",
-            );
-          } catch (error) {
-            await this.failWatchDelivery(task, error);
-            this.dependencies.logger.warn(
-              {
-                err: error,
-                event: "scheduled_task_delivery_failed",
-                taskId: task.id,
-                taskKind: task.kind,
-                eventId: event.id,
-              },
-              "Failed to deliver scheduled task",
-            );
-          }
+        accessScope: task.accessScope,
+      });
+    } catch (error) {
+      await this.failWatchDelivery(task, error);
+      this.dependencies.logger.warn(
+        {
+          err: error,
+          event: "scheduled_task_delivery_failed",
+          taskId: task.id,
+          taskKind: task.kind,
+          eventId: event.id,
         },
+        "Failed to deliver scheduled task",
       );
-    });
-    return delivered;
+      return false;
+    }
+
+    if (complete) await this.completeWatch(task);
+    this.dependencies.logger.info(
+      {
+        event: "scheduled_task_delivered",
+        taskId: task.id,
+        taskKind: task.kind,
+        eventId: event.id,
+      },
+      "Delivered scheduled task to the conversation inbox",
+    );
+    return true;
   }
 
   private async completeReminder(task: ReminderTask): Promise<void> {
@@ -528,32 +674,51 @@ export class ScheduledTaskDeliveryCoordinator {
       await store.delete("reminder", task.channelId, task.accessScope, task.id);
       return;
     }
-    await store.update({ ...task, nextRunAt });
+    await store.update({ ...withoutReminderRun(task), nextRunAt });
+  }
+
+  private async failReminder(task: ReminderTask, reason: string): Promise<void> {
+    await this.completeReminder(task);
+    this.dependencies.logger.warn(
+      {
+        event: "scheduled_task_failed",
+        taskId: task.id,
+        taskKind: task.kind,
+        attempts: task.attempts ?? 0,
+        reason,
+      },
+      "Failed a scheduled reminder occurrence",
+    );
   }
 
   private async completeWatch(task: WatchTask): Promise<void> {
+    const deliveredAt = new Date().toISOString();
     await this.updateWatch(task, (current) =>
-      clearWatchError({
-        ...current,
-        state: task.state,
-        lastCheckedAt: task.lastCheckedAt,
-        nextRunAt: task.nextRunAt,
-        lastTriggeredAt: new Date().toISOString(),
-        lastStatus: "ok",
-        consecutiveFailures: 0,
-      }),
+      clearWatchDeliveryError(
+        clearWatchError({
+          ...current,
+          state: task.state,
+          lastCheckedAt: task.lastCheckedAt,
+          nextRunAt: task.nextRunAt,
+          lastTriggeredAt: deliveredAt,
+          lastStatus: "ok",
+          consecutiveFailures: 0,
+          lastDeliveryAt: deliveredAt,
+          lastDeliveryStatus: "ok",
+          consecutiveDeliveryFailures: 0,
+        }),
+      ),
     );
   }
 
   private async failWatchDelivery(task: WatchTask, error: unknown): Promise<void> {
+    const failedAt = new Date().toISOString();
     await this.updateWatch(task, (current) => ({
       ...current,
-      state: task.state,
-      lastCheckedAt: task.lastCheckedAt,
-      nextRunAt: task.nextRunAt,
-      lastStatus: "error",
-      lastError: error instanceof Error ? error.message : String(error),
-      consecutiveFailures: current.consecutiveFailures + 1,
+      lastDeliveryAt: failedAt,
+      lastDeliveryStatus: "error",
+      lastDeliveryError: failureReason(error, "The watch delivery failed."),
+      consecutiveDeliveryFailures: (current.consecutiveDeliveryFailures ?? 0) + 1,
     }));
   }
 }
@@ -568,8 +733,39 @@ function taskKey(task: ScheduledTask): string {
   return `${task.id}:${task.nextRunAt}`;
 }
 
+/** Stable across retries for one occurrence, new once `nextRunAt` advances. */
+export function reminderWorkerId(task: ReminderTask): string {
+  return `reminder:${task.id}:${task.nextRunAt}`;
+}
+
+/** Saved fields reject an empty error message, and a thrown error may carry no message. */
+function failureReason(error: unknown, fallback: string): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.length > 0 ? message : fallback;
+}
+
+function withoutReminderRun(task: ReminderTask): ReminderTask {
+  const {
+    runningWorkerId: _runningWorkerId,
+    attempts: _attempts,
+    lastError: _lastError,
+    ...rest
+  } = task;
+  return rest;
+}
+
+function clearRunningWorker(task: ReminderTask, reason: string): ReminderTask {
+  const { runningWorkerId: _runningWorkerId, ...rest } = task;
+  return { ...rest, lastError: reason };
+}
+
 function clearWatchError(watch: WatchTask): WatchTask {
   const { lastError: _lastError, ...rest } = watch;
+  return rest;
+}
+
+function clearWatchDeliveryError(watch: WatchTask): WatchTask {
+  const { lastDeliveryError: _lastDeliveryError, ...rest } = watch;
   return rest;
 }
 

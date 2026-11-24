@@ -14,6 +14,7 @@ import { isOwnerAccessScope, parseAccessScope } from "@shared/access";
 import { AgentCoordinator } from "./agent-coordinator";
 import { ChannelSessionStateStore, getChannelRotationBucket } from "./channel-session-state-store";
 import { TaskCoordinator } from "./task-coordinator";
+import { MemoryInbox } from "../testing/memory-inbox";
 import { createTempDir } from "../testing/temp-dir";
 
 const ownerId = "123";
@@ -125,6 +126,7 @@ function createHarness(
     },
     logger: pino({ level: "silent" }),
     operatingState: new DiscordOperatingState(),
+    inbox: new MemoryInbox(),
     taskCoordinator: new TaskCoordinator(),
     watchCheckRunner: {
       async run() {
@@ -149,10 +151,12 @@ test("only owner messages create private sessions and never enter shared memory"
   try {
     await harness.coordinator.handleDiscordMessage({
       ...message,
+      id: "message-other",
       author: { ...message.author, id: "other" },
     });
     await harness.coordinator.handleDiscordMessage({
       ...message,
+      id: "message-bot",
       author: { ...message.author, bot: true },
     });
     assert.equal(harness.creations.length, 0);
@@ -174,6 +178,7 @@ test("a linked non-owner user gets a private session without owner features", as
   try {
     await harness.coordinator.handleDiscordMessage({
       ...message,
+      id: "message-linked",
       author: { ...message.author, id: "linked-user" },
     });
     assert.equal(harness.creations[0].sessionKey, "discord-channel:channel:user:linked-user");
@@ -181,6 +186,7 @@ test("a linked non-owner user gets a private session without owner features", as
 
     await harness.coordinator.handleDiscordMessage({
       ...message,
+      id: "message-bystander",
       author: { ...message.author, id: "bystander" },
     });
     assert.equal(harness.creations.at(-1)?.sessionKey, "discord-channel:channel:public");
@@ -206,6 +212,7 @@ test("changing owner access to allow drops private history and handoff on restar
     await store.save({ ...state, handoffContext: "secret Obsidian note" });
     await publicHarness.coordinator.handleDiscordMessage({
       ...message,
+      id: "message-other",
       author: { ...message.author, id: "other" },
     });
     assert.equal(publicHarness.creations[0].sessionKey, "discord-channel:channel:public");
@@ -247,7 +254,7 @@ test("owner access changes replace cached agents and preserve private session sc
     await resumed.coordinator.handleDiscordMessage(message);
     const disposedBeforeSwitch = resumed.disposed();
     rule.ownerLinked = false;
-    await resumed.coordinator.handleDiscordMessage(message);
+    await resumed.coordinator.handleDiscordMessage({ ...message, id: "message-after-switch" });
     assert.equal(resumed.disposed(), disposedBeforeSwitch + 1);
     assert.equal(resumed.creations.at(-1)?.sessionKey, "discord-channel:channel:public");
     assert.equal(resumed.creations.at(-1)?.initialContext, undefined);

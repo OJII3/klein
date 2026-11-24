@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { writeFile } from "node:fs/promises";
+import { readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 
@@ -44,14 +44,17 @@ test("persists and removes pending link requests", async () => {
   assert.deepEqual(afterRemoval.list(), []);
 });
 
-test("rejects invalid pending link request files", async () => {
+test("quarantines invalid pending link request files", async () => {
   await using temp = await createTempDir("klein-discord-channel-link-requests-");
   const filePath = join(temp.path, "requests.json");
   const store = new FileDiscordChannelLinkRequestStore(filePath);
 
   await writeFile(filePath, "{");
-  await assert.rejects(store.load(), /not valid JSON/u);
+  await store.load();
+  assert.deepEqual(store.list(), []);
 
   await writeFile(filePath, JSON.stringify({ requests: [{ requestId: "request-1" }] }));
-  await assert.rejects(store.load(), /invalid/u);
+  await store.load();
+  assert.deepEqual(store.list(), []);
+  assert.equal((await readdir(join(temp.path, "corrupt"))).length, 2);
 });

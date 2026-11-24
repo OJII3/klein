@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { writeFile } from "node:fs/promises";
+import { readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 
@@ -75,7 +75,44 @@ test("persists tasks in a linked user scope", async () => {
   assert.deepEqual(await reopened.listForScope("watch", "channel-a", "user:456"), [userWatch]);
 });
 
-test("rejects the old reminder file shape", async () => {
+test("round-trips a reminder's running worker, attempts, and error", async () => {
+  await using temp = await createTempDir("klein-schedules-");
+  const store = new FileScheduledTaskStore(temp.path);
+  const running: ReminderTask = {
+    ...reminder,
+    runningWorkerId: "reminder:reminder-1:2026-10-14T00:01:00.000Z",
+    attempts: 2,
+    lastError: "worker start failed",
+  };
+  await store.create(running);
+  assert.deepEqual(await store.listForScope("reminder", "channel-a", "public"), [running]);
+});
+
+test("quarantines invalid reminder run fields and keeps valid tasks", async () => {
+  await using temp = await createTempDir("klein-schedules-");
+  const directory = temp.path;
+  const store = new FileScheduledTaskStore(directory);
+  await store.create(reminder);
+  const invalidFields = [
+    { runningWorkerId: "" },
+    { runningWorkerId: 1 },
+    { attempts: -1 },
+    { attempts: 1.5 },
+    { attempts: "1" },
+    { lastError: "" },
+    { lastError: 1 },
+  ];
+  for (const [index, fields] of invalidFields.entries()) {
+    await writeFile(
+      join(directory, `invalid-reminder-${index}.json`),
+      JSON.stringify({ ...reminder, ...fields }),
+    );
+  }
+  assert.deepEqual(await store.listForScope("reminder", "channel-a", "public"), [reminder]);
+  assert.equal((await readdir(join(directory, "corrupt"))).length, invalidFields.length);
+});
+
+test("quarantines the old reminder file shape", async () => {
   await using temp = await createTempDir("klein-schedules-");
   const directory = temp.path;
   const store = new FileScheduledTaskStore(directory);
@@ -90,8 +127,19 @@ test("rejects the old reminder file shape", async () => {
       dueAt: "2026-10-14T00:01:00.000Z",
     }),
   );
-  await assert.rejects(store.listForScope("reminder", "123", "public"), /旧形式/u);
-  await assert.rejects(store.listDue(Date.now()), /旧形式/u);
+  assert.deepEqual(await store.listForScope("reminder", "123", "public"), []);
+  assert.deepEqual(await store.listDue(Date.now()), []);
+  assert.equal((await readdir(join(directory, "corrupt"))).length, 1);
+});
+
+test("quarantines a corrupt task when deleting it", async () => {
+  await using temp = await createTempDir("klein-schedules-");
+  const directory = temp.path;
+  const store = new FileScheduledTaskStore(directory);
+  await writeFile(join(directory, "broken.json"), "{not json");
+
+  assert.equal(await store.delete("reminder", "channel-a", "public", "broken"), false);
+  assert.equal((await readdir(join(directory, "corrupt"))).length, 1);
 });
 
 test("accepts public watch records", async () => {
@@ -162,7 +210,7 @@ test("treats a watch without priority as normal", async () => {
   assert.equal(parsed[0]?.priority, "normal");
 });
 
-test("rejects an invalid watch priority", async () => {
+test("quarantines an invalid watch priority", async () => {
   await using temp = await createTempDir("klein-schedules-");
   const directory = temp.path;
   const store = new FileScheduledTaskStore(directory);
@@ -170,5 +218,44 @@ test("rejects an invalid watch priority", async () => {
     join(directory, "invalid-priority.json"),
     JSON.stringify({ ...watch, priority: "critical" }),
   );
-  await assert.rejects(store.listForScope("watch", "channel-a", "owner:123"), /watch 設定/u);
+  assert.deepEqual(await store.listForScope("watch", "channel-a", "owner:123"), []);
+  assert.equal((await readdir(join(directory, "corrupt"))).length, 1);
+});
+
+test("round-trips a watch's delivery state", async () => {
+  await using temp = await createTempDir("klein-schedules-");
+  const store = new FileScheduledTaskStore(temp.path);
+  const failed: WatchTask = {
+    ...watch,
+    lastDeliveryAt: "2026-10-14T00:05:00.000Z",
+    lastDeliveryStatus: "error",
+    lastDeliveryError: "prompt failed",
+    consecutiveDeliveryFailures: 2,
+  };
+  await store.create(failed);
+  assert.deepEqual(await store.listForScope("watch", "channel-a", "owner:123"), [failed]);
+});
+
+test("quarantines invalid watch delivery fields", async () => {
+  await using temp = await createTempDir("klein-schedules-");
+  const directory = temp.path;
+  const store = new FileScheduledTaskStore(directory);
+  const invalidFields = [
+    { lastDeliveryAt: "not-a-date" },
+    { lastDeliveryAt: 1 },
+    { lastDeliveryStatus: "unknown" },
+    { lastDeliveryError: "" },
+    { lastDeliveryError: 1 },
+    { consecutiveDeliveryFailures: -1 },
+    { consecutiveDeliveryFailures: 1.5 },
+    { consecutiveDeliveryFailures: "1" },
+  ];
+  for (const [index, fields] of invalidFields.entries()) {
+    await writeFile(
+      join(directory, `invalid-delivery-${index}.json`),
+      JSON.stringify({ ...watch, ...fields }),
+    );
+  }
+  assert.deepEqual(await store.listForScope("watch", "channel-a", "owner:123"), []);
+  assert.equal((await readdir(join(directory, "corrupt"))).length, invalidFields.length);
 });

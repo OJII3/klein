@@ -1,6 +1,7 @@
 import type { Logger } from "pino";
 
 import { DiscordChannelLinkService } from "../application/discord-channel-link-service";
+import type { DiscordApprovalNoticeOutcome } from "../domain/discord-approval-request";
 import type { DiscordChannelLink, DiscordChannelLinkTarget } from "../domain/discord-channel-link";
 import {
   DISCORD_CHANNEL_LINK_BUTTON_PREFIX,
@@ -98,12 +99,18 @@ const LINK_MESSAGES: DiscordApprovalMessages<PendingDiscordChannelLinkRequest> =
 
 function linkNotice(
   request: PendingDiscordChannelLinkRequest,
-  outcome: "allowed" | "denied" | "owner-unreachable",
+  outcome: DiscordApprovalNoticeOutcome,
 ): DiscordApprovalMessage {
   if (outcome === "owner-unreachable") {
     return {
       text: "### 確認できませんでした\nオーナーに確認できなかったため、このチャンネルは登録されませんでした。",
       tone: "danger",
+    };
+  }
+  if (outcome === "expired") {
+    return {
+      text: "### 期限切れです\nこの承認リクエストは期限切れになりました。もう一度 /link を実行してください。",
+      tone: "warning",
     };
   }
   const user = `<@${request.requesterUserId}>`;
@@ -162,6 +169,10 @@ export class DiscordChannelLinkRequester {
 
   handleButton(interaction: DiscordApprovalButtonInteraction): Promise<boolean> {
     return this.approval.handleButton(interaction);
+  }
+
+  reconcile(): Promise<void> {
+    return this.approval.reconcile();
   }
 
   async requestFromInteraction(interaction: DiscordChannelLinkCommandInteraction): Promise<void> {

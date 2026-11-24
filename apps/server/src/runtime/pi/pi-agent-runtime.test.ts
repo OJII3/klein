@@ -23,6 +23,8 @@ import pino from "pino";
 import { Type } from "typebox";
 
 import type { AgentEvent } from "@agents/core/agent-event";
+import type { AgentTurnProgress } from "@agents/core/agent-runtime";
+import { TURN_MARKER_CUSTOM_TYPE } from "@agents/core/agent-turn";
 import { ImageAnalysisError } from "@agents/core/image-analysis";
 import { isRecord, parseJson } from "@shared/type-guards";
 import { resolveUserEnvironment } from "@shared/user-environment";
@@ -407,6 +409,10 @@ test("records turn context as a custom entry before the prompt", async () => {
 
   assert.deepEqual(sessionManager.entries, [
     {
+      customType: TURN_MARKER_CUSTOM_TYPE,
+      data: { eventId: "context-event", phase: "started" },
+    },
+    {
       customType: "klein-turn-context",
       data: {
         content: [
@@ -414,6 +420,10 @@ test("records turn context as a custom entry before the prompt", async () => {
           "<channel-rule>\nchannel rule\n</channel-rule>",
         ].join("\n\n"),
       },
+    },
+    {
+      customType: TURN_MARKER_CUSTOM_TYPE,
+      data: { eventId: "context-event", phase: "completed" },
     },
   ]);
   assert.deepEqual(received, [
@@ -459,6 +469,150 @@ test("does not record turn context when steering a streaming session", async () 
 
   assert.deepEqual(sessionManager.entries, []);
   assert.deepEqual(received, [{ kind: "steer", value: createPiEventPrompt(event).text }]);
+  runtime.dispose();
+});
+
+test("reports no turn progress when the session has no marker", () => {
+  const runtime = new PiAgentRuntime(
+    createStubPiRuntimeSession({ sessionManager: SessionManager.inMemory() }),
+  );
+
+  assert.equal(runtime.getTurnProgress("event-1"), "none");
+  runtime.dispose();
+});
+
+test("reports a started turn before any assistant message", () => {
+  const sessionManager = SessionManager.inMemory();
+  sessionManager.appendCustomEntry(TURN_MARKER_CUSTOM_TYPE, {
+    eventId: "event-1",
+    phase: "started",
+  });
+  const runtime = new PiAgentRuntime(createStubPiRuntimeSession({ sessionManager }));
+
+  assert.equal(runtime.getTurnProgress("event-1"), "started");
+  assert.equal(runtime.getTurnProgress("event-2"), "none");
+  runtime.dispose();
+});
+
+test("reports an uncertain turn when an assistant message follows the started marker", () => {
+  const sessionManager = SessionManager.inMemory();
+  sessionManager.appendCustomEntry(TURN_MARKER_CUSTOM_TYPE, {
+    eventId: "event-1",
+    phase: "started",
+  });
+  sessionManager.appendMessage(createStubAssistantMessage());
+  const runtime = new PiAgentRuntime(createStubPiRuntimeSession({ sessionManager }));
+
+  assert.equal(runtime.getTurnProgress("event-1"), "uncertain");
+  runtime.dispose();
+});
+
+test("reports a completed turn when the newest marker is completed", () => {
+  const sessionManager = SessionManager.inMemory();
+  sessionManager.appendCustomEntry(TURN_MARKER_CUSTOM_TYPE, {
+    eventId: "event-1",
+    phase: "started",
+  });
+  sessionManager.appendMessage(createStubAssistantMessage());
+  sessionManager.appendCustomEntry(TURN_MARKER_CUSTOM_TYPE, {
+    eventId: "event-1",
+    phase: "completed",
+  });
+  const runtime = new PiAgentRuntime(createStubPiRuntimeSession({ sessionManager }));
+
+  assert.equal(runtime.getTurnProgress("event-1"), "completed");
+  runtime.dispose();
+});
+
+test("reports a retried turn as started despite assistant messages from the earlier attempt", () => {
+  const sessionManager = SessionManager.inMemory();
+  sessionManager.appendCustomEntry(TURN_MARKER_CUSTOM_TYPE, {
+    eventId: "event-1",
+    phase: "started",
+  });
+  sessionManager.appendMessage(createStubAssistantMessage());
+  sessionManager.appendCustomEntry(TURN_MARKER_CUSTOM_TYPE, {
+    eventId: "event-1",
+    phase: "started",
+  });
+  const runtime = new PiAgentRuntime(createStubPiRuntimeSession({ sessionManager }));
+
+  assert.equal(runtime.getTurnProgress("event-1"), "started");
+  runtime.dispose();
+});
+
+test("records started and completed turn markers around a prompt", async () => {
+  const sessionManager = SessionManager.inMemory();
+  const observedDuringPrompt: AgentTurnProgress[] = [];
+  const session = createStubPiRuntimeSession({ sessionManager });
+  const runtime = new PiAgentRuntime(session);
+  session.prompt = async () => {
+    observedDuringPrompt.push(runtime.getTurnProgress("marker-event"));
+    sessionManager.appendMessage(createStubAssistantMessage());
+  };
+
+  await runtime.prompt({
+    event: {
+      id: "marker-event",
+      type: "message",
+      source: "test",
+      occurredAt: "2026-10-14T09:30:42.123Z",
+      content: [{ type: "text", text: "本文" }],
+    },
+    context: {},
+  });
+
+  assert.deepEqual(observedDuringPrompt, ["started"]);
+  assert.equal(runtime.getTurnProgress("marker-event"), "completed");
+  runtime.dispose();
+});
+
+test("leaves a turn started when the prompt fails", async () => {
+  const sessionManager = SessionManager.inMemory();
+  const runtime = new PiAgentRuntime(
+    createStubPiRuntimeSession({
+      sessionManager,
+      async prompt() {
+        throw new Error("prompt failed");
+      },
+    }),
+  );
+
+  await assert.rejects(
+    runtime.prompt({
+      event: {
+        id: "marker-event",
+        type: "message",
+        source: "test",
+        occurredAt: "2026-10-14T09:30:42.123Z",
+        content: [{ type: "text", text: "本文" }],
+      },
+      context: {},
+    }),
+    /prompt failed/u,
+  );
+  assert.equal(runtime.getTurnProgress("marker-event"), "started");
+  runtime.dispose();
+});
+
+test("leaves a model-visible note when a turn is interrupted after partial output", async () => {
+  const sent: unknown[] = [];
+  const runtime = new PiAgentRuntime(
+    createStubPiRuntimeSession({
+      async sendCustomMessage(message) {
+        sent.push(message);
+      },
+    }),
+  );
+
+  await runtime.markInterrupted("event-1");
+
+  assert.equal(sent.length, 1);
+  const note = sent[0];
+  assert.ok(isRecord(note));
+  assert.equal(note.customType, "klein-turn-interrupted");
+  assert.equal(note.display, false);
+  assert.match(String(note.content), /interrupted/u);
   runtime.dispose();
 });
 

@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, rename, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import { parseAccessScope, type AccessScope } from "@shared/access";
-import { isFileNotFound, isRecord, parseJson } from "@shared/type-guards";
+import { readJsonRecord } from "@shared/record-file";
+import { isRecord } from "@shared/type-guards";
 
 import type { PlannerState, PlannerStateStore } from "../ports/planner-state-store";
 
@@ -15,15 +16,9 @@ export class FilePlannerStateStore implements PlannerStateStore {
   }
 
   async get(channelId: string, accessScope: AccessScope): Promise<PlannerState | undefined> {
-    const path = this.getFilePath(channelId, accessScope);
-    let raw: string;
-    try {
-      raw = await readFile(path, "utf8");
-    } catch (error) {
-      if (isFileNotFound(error)) return undefined;
-      throw error;
-    }
-    return parsePlannerState(parseJson(raw), channelId, accessScope);
+    return readJsonRecord(this.getFilePath(channelId, accessScope), (value) =>
+      parsePlannerState(value, channelId, accessScope),
+    );
   }
 
   async save(state: PlannerState): Promise<void> {

@@ -186,7 +186,7 @@ export interface DiscordServiceReadyClient {
 }
 
 export type DiscordServiceSendableUser = DiscordServiceProfileUser & {
-  send(payload: DiscordContainerMessage): Promise<unknown>;
+  send(payload: DiscordContainerMessage): Promise<{ readonly id: string }>;
 };
 
 export interface DiscordServiceClient extends DiscordChoiceClient, DiscordChannelAccessClient {
@@ -488,6 +488,13 @@ export class DiscordJsService
   requestSecret(draft: SecretRequestDraft): Promise<SecretRequestOutcome> {
     if (!this.secretRequester) return Promise.resolve({ kind: "unavailable" });
     return this.secretRequester.requestSecret(draft);
+  }
+
+  async reconcileApprovals(): Promise<void> {
+    await Promise.all([
+      this.channelAccessRequester?.reconcile(),
+      this.channelLinkRequester?.reconcile(),
+    ]);
   }
 
   async flush(): Promise<void> {

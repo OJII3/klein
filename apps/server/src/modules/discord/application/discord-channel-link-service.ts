@@ -29,6 +29,7 @@ export interface DiscordChannelLinkServiceDependencies {
   >;
   readonly ownerUserId?: string;
   readonly logger?: Logger;
+  readonly now?: () => number;
 }
 
 export class DiscordChannelLinkService {
@@ -41,6 +42,7 @@ export class DiscordChannelLinkService {
       createRequest: (draft, requestId) => ({ ...draft, requestId }),
       ownerUserId: dependencies.ownerUserId,
       logger: dependencies.logger,
+      now: dependencies.now,
       hooks: {
         onAllow: async (request) => {
           const current = dependencies.linkStore.getLink(request);
@@ -78,6 +80,12 @@ export class DiscordChannelLinkService {
     presentation: DiscordApprovalPresentation<PendingDiscordChannelLinkRequest>,
   ): Promise<DiscordApprovalRequestOutcome> {
     return this.approval.request(request, presentation);
+  }
+
+  reconcile(
+    presentation: DiscordApprovalPresentation<PendingDiscordChannelLinkRequest>,
+  ): Promise<void> {
+    return this.approval.reconcile(presentation);
   }
 
   handleButton(button: { readonly customId: string; readonly userId: string }) {

@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { chmod, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { Type } from "typebox";
 import { Check, Errors } from "typebox/value";
 
 import { parseAccessScope } from "@shared/access";
-import { isFileNotFound, parseJson } from "@shared/type-guards";
+import { readJsonRecord } from "@shared/record-file";
 
 import {
   SECRET_ENVIRONMENT_ALIAS_PATTERN,
@@ -62,35 +62,20 @@ export class FileSecretRequestStore implements SecretRequestStore {
   constructor(private readonly filePath: string) {}
 
   async load(): Promise<void> {
-    let content: string;
-    try {
-      content = await readFile(this.filePath, "utf8");
-    } catch (error) {
-      if (isFileNotFound(error)) {
-        this.requests = new Map();
-        return;
+    const requests = await readJsonRecord(this.filePath, (value) => {
+      if (!Check(fileSchema, value)) {
+        const errors = Errors(fileSchema, value)
+          .slice(0, 5)
+          .map((error) => `${error.instancePath || "$"}: ${error.message}`)
+          .join("; ");
+        throw new Error(`Secret requests are invalid: ${this.filePath}. ${errors}`);
       }
-      throw new Error(`Failed to read secret requests: ${this.filePath}`, { cause: error });
-    }
-
-    let value: unknown;
-    try {
-      value = parseJson(content);
-    } catch (error) {
-      throw new Error(`Secret requests are not valid JSON: ${this.filePath}`, { cause: error });
-    }
-    if (!Check(fileSchema, value)) {
-      const errors = Errors(fileSchema, value)
-        .slice(0, 5)
-        .map((error) => `${error.instancePath || "$"}: ${error.message}`)
-        .join("; ");
-      throw new Error(`Secret requests are invalid: ${this.filePath}. ${errors}`);
-    }
-    const requests = value.requests.flatMap((request) => {
-      const accessScope = parseAccessScope(request.accessScope);
-      return accessScope ? [{ ...request, accessScope }] : [];
+      return value.requests.flatMap((request) => {
+        const accessScope = parseAccessScope(request.accessScope);
+        return accessScope ? [{ ...request, accessScope }] : [];
+      });
     });
-    this.requests = new Map(requests.map((request) => [request.requestId, request]));
+    this.requests = new Map((requests ?? []).map((request) => [request.requestId, request]));
   }
 
   list(): readonly SecretRequest[] {

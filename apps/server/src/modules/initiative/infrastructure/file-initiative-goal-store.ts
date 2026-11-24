@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readdir, rename, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import type { AccessScope } from "@shared/access";
-import { isFileNotFound, parseJson } from "@shared/type-guards";
+import { readJsonRecord } from "@shared/record-file";
+import { isFileNotFound } from "@shared/type-guards";
 
 import { parseInitiativeGoal, type InitiativeGoal } from "../domain/initiative-goal";
 import type { InitiativeGoalStore } from "../ports/initiative-goal-store";
@@ -24,15 +25,7 @@ export class FileInitiativeGoalStore implements InitiativeGoalStore {
   }
 
   async get(id: string): Promise<InitiativeGoal | undefined> {
-    const path = this.getFilePath(id);
-    let raw: string;
-    try {
-      raw = await readFile(path, "utf8");
-    } catch (error) {
-      if (isFileNotFound(error)) return undefined;
-      throw error;
-    }
-    return parseInitiativeGoal(parseJson(raw));
+    return readJsonRecord(this.getFilePath(id), parseInitiativeGoal);
   }
 
   async listAll(): Promise<readonly InitiativeGoal[]> {
@@ -56,9 +49,8 @@ export class FileInitiativeGoalStore implements InitiativeGoalStore {
 
   private async readAll(): Promise<InitiativeGoal[]> {
     const paths = await this.getFiles();
-    return Promise.all(
-      paths.map(async (path) => parseInitiativeGoal(parseJson(await readFile(path, "utf8")))),
-    );
+    const goals = await Promise.all(paths.map((path) => readJsonRecord(path, parseInitiativeGoal)));
+    return goals.filter((goal): goal is InitiativeGoal => goal !== undefined);
   }
 
   private async getFiles(): Promise<string[]> {

@@ -230,19 +230,22 @@ test("encodes IDs in file names", async () => {
   });
 });
 
-test("raises for corrupt JSON instead of silently dropping a candidate", async () => {
+test("quarantines corrupt JSON instead of failing every read", async () => {
   await withTempDir(async (directory) => {
     const store = new FileProactiveSignalStore(directory);
+    await store.create(base);
     await writeFile(join(directory, "broken.json"), "not json", "utf8");
     await writeFile(join(directory, "notes.txt"), "ignored", "utf8");
 
-    await assert.rejects(store.get("broken"));
-    await assert.rejects(store.findActiveByDedupeKey("dedupe-1"));
-    await assert.rejects(store.listQueued("channel-a", "owner:123"));
-    await assert.rejects(store.listAllQueued());
-    await assert.rejects(
-      store.countSurfacedSince("channel-a", "owner:123", "2026-11-20T00:00:00.000Z"),
+    assert.deepEqual(await store.get("broken"), undefined);
+    assert.deepEqual(await store.findActiveByDedupeKey("dedupe-1"), base);
+    assert.deepEqual(await store.listQueued("channel-a", "owner:123"), [base]);
+    assert.deepEqual(await store.listAllQueued(), [base]);
+    assert.equal(
+      await store.countSurfacedSince("channel-a", "owner:123", "2026-11-20T00:00:00.000Z"),
+      0,
     );
+    assert.equal((await readdir(join(directory, "corrupt"))).length, 1);
   });
 });
 

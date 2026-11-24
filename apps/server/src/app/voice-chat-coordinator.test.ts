@@ -28,6 +28,10 @@ function createFakeVoiceAgent(
     async prompt() {},
     async promptEvent() {},
     async steer() {},
+    getTurnProgress() {
+      return "none";
+    },
+    async markInterrupted() {},
     compactForHandoff() {
       return undefined;
     },

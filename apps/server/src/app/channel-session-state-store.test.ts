@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { writeFile } from "node:fs/promises";
+import { readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 
@@ -9,6 +9,7 @@ import {
   createConversationSessionKey,
   getChannelRotationBucket,
   isChannelRotationDue,
+  serializeConversationKey,
   type ChannelSessionState,
 } from "./channel-session-state-store";
 import { createTempDir } from "../testing/temp-dir";
@@ -85,9 +86,15 @@ test("persists and reloads channel session state from disk", async () => {
   assert.deepEqual(await reopened.listChannelNames(), new Map([["42", "general"]]));
 });
 
-test("ignores legacy and malformed state files when listing", async () => {
+test("quarantines legacy and malformed state files and starts fresh", async () => {
   await using temp = await createTempDir("klein-channel-session-state-");
   const directory = temp.path;
+  const key = { kind: "discord" as const, channelId: "42" };
+  await writeFile(
+    join(directory, `${encodeURIComponent(serializeConversationKey(key))}.json`),
+    "{not json",
+    "utf8",
+  );
   await writeFile(
     join(directory, "legacy.json"),
     JSON.stringify({
@@ -99,8 +106,15 @@ test("ignores legacy and malformed state files when listing", async () => {
     }),
     "utf8",
   );
-  await writeFile(join(directory, "broken.json"), "{not json", "utf8");
 
   const store = new ChannelSessionStateStore(directory);
+  assert.deepEqual(await store.getOrCreate(key, "2026-10-25T12"), {
+    conversationKey: key,
+    sessionKey: "discord-channel:42",
+    lastActivityAt: null,
+    lastRotationDate: "2026-10-25T12",
+    hasActivitySinceRotation: true,
+  });
   assert.deepEqual(await store.list(), []);
+  assert.equal((await readdir(join(directory, "corrupt"))).length, 2);
 });

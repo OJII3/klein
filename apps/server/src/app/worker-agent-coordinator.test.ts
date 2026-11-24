@@ -48,12 +48,14 @@ function startInput(
 
 class MemoryWorkerStore implements WorkerStore {
   readonly workers = new Map<string, StoredWorker>();
+  readonly saves: StoredWorker[] = [];
 
   async list(): Promise<readonly StoredWorker[]> {
     return [...this.workers.values()];
   }
 
   async save(worker: StoredWorker): Promise<void> {
+    this.saves.push(worker);
     this.workers.set(worker.id, worker);
   }
 
@@ -353,7 +355,7 @@ test("aborts a running worker on dispose, marks it interrupted, and lets taskCoo
   assert.equal(harness.store.workers.get(workerId)?.status, "interrupted");
 });
 
-test("deletes closeAfterResult workers on dispose instead of keeping them interrupted", async () => {
+test("keeps an interrupted closeAfterResult worker on dispose for the next start", async () => {
   let promptStarted = false;
   let releasePrompt: (() => void) | undefined;
   const harness = createHarness(async () => ({
@@ -381,17 +383,14 @@ test("deletes closeAfterResult workers on dispose instead of keeping them interr
 
   await harness.coordinator.dispose();
 
-  assert.equal(harness.store.workers.has(workerId), false);
-  assert.deepEqual(harness.closedWorkers, [
-    {
-      id: workerId,
-      conversationKey: { kind: "discord", channelId: "channel-1" },
-      accessScope: "owner:123",
-    },
-  ]);
+  const stored = harness.store.workers.get(workerId);
+  assert.equal(stored?.status, "interrupted");
+  assert.equal(stored?.lastResult, undefined);
+  assert.equal(stored?.resultDeliveredAt, undefined);
+  assert.deepEqual(harness.closedWorkers, []);
 });
 
-test("cleans up leftover closeAfterResult workers during load", async () => {
+test("keeps a leftover closeAfterResult worker on load and resumes it on resumePendingWork", async () => {
   const store = new MemoryWorkerStore();
   await store.save({
     id: "worker-1",
@@ -408,8 +407,21 @@ test("cleans up leftover closeAfterResult workers during load", async () => {
   const harness = createHarness(undefined, store);
   await harness.coordinator.load();
 
-  assert.deepEqual(harness.coordinator.list(scope("channel-1")), []);
-  assert.equal(store.workers.has("worker-1"), false);
+  assert.deepEqual(
+    harness.coordinator.list(scope("channel-1")).map((worker) => worker.status),
+    ["interrupted"],
+  );
+  assert.equal(store.workers.get("worker-1")?.status, "interrupted");
+  assert.deepEqual(harness.prompts, []);
+  assert.deepEqual(harness.closedWorkers, []);
+
+  await harness.coordinator.resumePendingWork();
+
+  await waitFor(() => harness.deliveries.length === 1);
+  assert.deepEqual(harness.prompts, ["remind"]);
+  assert.deepEqual(harness.resumeSessions, [true]);
+  assert.equal(harness.deliveries[0]?.result.text, "result for remind");
+  await waitFor(() => !store.workers.has("worker-1"));
   assert.deepEqual(harness.closedWorkers, [
     {
       id: "worker-1",
@@ -417,6 +429,233 @@ test("cleans up leftover closeAfterResult workers during load", async () => {
       accessScope: "public",
     },
   ]);
+});
+
+test("persists a completed result before delivering it, then deletes a closeAfterResult worker", async () => {
+  const store = new MemoryWorkerStore();
+  const harness = createHarness(undefined, store);
+  const workerId = await harness.coordinator.start(
+    startInput("channel-1", "remind", { closeAfterResult: true }),
+  );
+
+  await waitFor(() => harness.deliveries.length === 1);
+  await waitFor(() => !store.workers.has(workerId));
+
+  assert.equal(harness.deliveries.length, 1);
+  assert.equal(harness.deliveries[0]?.result.text, "result for remind");
+
+  const saves = store.saves.filter((worker) => worker.id === workerId);
+  const resultIndex = saves.findIndex((worker) => worker.lastResult !== undefined);
+  const deliveryIndex = saves.findIndex((worker) => worker.resultDeliveredAt !== undefined);
+  assert.ok(resultIndex >= 0);
+  assert.ok(deliveryIndex > resultIndex);
+  assert.deepEqual(saves[resultIndex]?.lastResult, {
+    workerId,
+    status: "completed",
+    text: "result for remind",
+  });
+  assert.equal(saves[resultIndex]?.resultDeliveredAt, undefined);
+});
+
+test("delivers a stored result with no delivery time on resumePendingWork", async () => {
+  const store = new MemoryWorkerStore();
+  await store.save({
+    id: "worker-1",
+    conversationKey: { kind: "discord", channelId: "channel-1" },
+    accessScope: "public",
+    ownerFeaturesAllowed: false,
+    prompt: "remind",
+    status: "idle",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    closeAfterResult: true,
+    lastResult: { workerId: "worker-1", status: "completed", text: "stored result" },
+  });
+
+  const harness = createHarness(undefined, store);
+  await harness.coordinator.load();
+  await harness.coordinator.resumePendingWork();
+
+  assert.deepEqual(
+    harness.deliveries.map((delivery) => delivery.result),
+    [{ workerId: "worker-1", status: "completed", text: "stored result" }],
+  );
+  assert.equal(store.workers.has("worker-1"), false);
+  assert.equal(harness.closedWorkers.length, 1);
+});
+
+test("deletes a stored worker whose result was already delivered without delivering again", async () => {
+  const store = new MemoryWorkerStore();
+  await store.save({
+    id: "worker-1",
+    conversationKey: { kind: "discord", channelId: "channel-1" },
+    accessScope: "public",
+    ownerFeaturesAllowed: false,
+    prompt: "remind",
+    status: "idle",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:05:00.000Z",
+    closeAfterResult: true,
+    lastResult: { workerId: "worker-1", status: "completed", text: "stored result" },
+    resultDeliveredAt: "2026-01-01T00:05:00.000Z",
+  });
+
+  const harness = createHarness(undefined, store);
+  await harness.coordinator.load();
+  await harness.coordinator.resumePendingWork();
+
+  assert.deepEqual(harness.deliveries, []);
+  assert.equal(harness.prompts.length, 0);
+  assert.equal(store.workers.has("worker-1"), false);
+  assert.equal(harness.closedWorkers.length, 1);
+});
+
+test("re-prompts a stored interrupted closeAfterResult worker on resumePendingWork", async () => {
+  const store = new MemoryWorkerStore();
+  await store.save({
+    id: "worker-1",
+    conversationKey: { kind: "discord", channelId: "channel-1" },
+    accessScope: "public",
+    ownerFeaturesAllowed: false,
+    prompt: "remind",
+    status: "interrupted",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    closeAfterResult: true,
+  });
+
+  const harness = createHarness(undefined, store);
+  await harness.coordinator.load();
+  await harness.coordinator.resumePendingWork();
+
+  await waitFor(() => harness.deliveries.length === 1);
+  assert.deepEqual(harness.prompts, ["remind"]);
+  assert.deepEqual(harness.resumeSessions, [true]);
+  assert.equal(harness.deliveries[0]?.result.text, "result for remind");
+  await waitFor(() => !store.workers.has("worker-1"));
+});
+
+test("resumes the same interrupted worker only once", async () => {
+  const store = new MemoryWorkerStore();
+  await store.save({
+    id: "worker-1",
+    conversationKey: { kind: "discord", channelId: "channel-1" },
+    accessScope: "public",
+    ownerFeaturesAllowed: false,
+    prompt: "remind",
+    status: "interrupted",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    closeAfterResult: true,
+  });
+
+  const harness = createHarness(undefined, store);
+  await harness.coordinator.load();
+  await harness.coordinator.resumePendingWork();
+  await harness.coordinator.resumePendingWork();
+
+  await waitFor(() => harness.deliveries.length === 1);
+  await waitFor(() => !store.workers.has("worker-1"));
+  assert.deepEqual(harness.prompts, ["remind"]);
+});
+
+test("does not re-prompt a normal interrupted worker on resumePendingWork", async () => {
+  const store = new MemoryWorkerStore();
+  await store.save({
+    id: "worker-1",
+    conversationKey: { kind: "discord", channelId: "channel-1" },
+    accessScope: "public",
+    ownerFeaturesAllowed: false,
+    prompt: "restored",
+    status: "interrupted",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    closeAfterResult: false,
+  });
+
+  const harness = createHarness(undefined, store);
+  await harness.coordinator.load();
+  await harness.coordinator.resumePendingWork();
+  await harness.taskCoordinator.waitForCompletion();
+
+  assert.deepEqual(harness.prompts, []);
+  assert.deepEqual(harness.deliveries, []);
+  assert.equal(store.workers.get("worker-1")?.status, "interrupted");
+});
+
+test("clears a delivered result when a new prompt starts so a crash cannot redeliver it", async () => {
+  let promptCall = 0;
+  let secondPromptStarted = false;
+  let releaseSecondPrompt: (() => void) | undefined;
+  const store = new MemoryWorkerStore();
+  const harness = createHarness(
+    async () => ({
+      async prompt() {
+        promptCall += 1;
+        if (promptCall === 1) return "first result";
+        secondPromptStarted = true;
+        await new Promise<void>((resolve) => {
+          releaseSecondPrompt = resolve;
+        });
+        return "second result";
+      },
+      async abort() {
+        releaseSecondPrompt?.();
+      },
+      dispose() {},
+    }),
+    store,
+  );
+
+  const workerId = await harness.coordinator.start(startInput("channel-1", "first"));
+  await waitFor(() => harness.deliveries.length === 1);
+  await waitFor(() => harness.store.workers.get(workerId)?.resultDeliveredAt !== undefined);
+
+  assert.equal(await harness.coordinator.send(scope("channel-1"), workerId, "second"), true);
+  await waitFor(() => secondPromptStarted);
+
+  const running = harness.store.workers.get(workerId);
+  assert.equal(running?.status, "running");
+  assert.equal(running?.lastResult, undefined);
+  assert.equal(running?.resultDeliveredAt, undefined);
+
+  await harness.coordinator.dispose();
+  await harness.taskCoordinator.waitForCompletion();
+
+  const stored = harness.store.workers.get(workerId);
+  assert.equal(stored?.status, "interrupted");
+  assert.equal(stored?.lastResult, undefined);
+  assert.equal(stored?.resultDeliveredAt, undefined);
+});
+
+test("retries an undelivered result on closeIdleWorkers instead of deleting the worker", async () => {
+  let failDeliveries = true;
+  let deliveredCount = 0;
+  const harness = createHarness(undefined, new MemoryWorkerStore(), {
+    onResult: async () => {
+      if (failDeliveries) throw new Error("discord unavailable");
+      deliveredCount += 1;
+    },
+  });
+
+  const workerId = await harness.coordinator.start(startInput("channel-1", "investigate"));
+  await waitFor(() => harness.deliveries.length === 1);
+  await harness.taskCoordinator.waitForCompletion();
+
+  const stored = harness.store.workers.get(workerId);
+  assert.equal(stored?.lastResult?.text, "result for investigate");
+  assert.equal(stored?.resultDeliveredAt, undefined);
+
+  const futureNow = Date.now() + WORKER_IDLE_CLOSE_MS + 1_000;
+  assert.equal(await harness.coordinator.closeIdleWorkers(futureNow), 0);
+  assert.equal(harness.store.workers.has(workerId), true);
+  assert.equal(deliveredCount, 0);
+
+  failDeliveries = false;
+  assert.equal(await harness.coordinator.closeIdleWorkers(futureNow), 1);
+  assert.equal(deliveredCount, 1);
+  assert.equal(harness.store.workers.has(workerId), false);
+  assert.deepEqual(harness.coordinator.list(scope("channel-1")), []);
 });
 
 test("aborts a running worker on close, runs onWorkerClosed, and prevents stale persistence", async () => {

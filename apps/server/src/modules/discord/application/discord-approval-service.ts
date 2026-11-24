@@ -3,7 +3,9 @@ import { randomUUID } from "node:crypto";
 import type { Logger } from "pino";
 
 import {
+  DISCORD_APPROVAL_REQUEST_TTL_MS,
   discordApprovalLocationKey,
+  isDiscordApprovalExpired,
   parseDiscordApprovalButtonId,
   type DiscordApprovalNoticeOutcome,
   type DiscordApprovalRejection,
@@ -14,7 +16,7 @@ import type { DiscordApprovalRequestStore } from "../ports/discord-approval-requ
 
 export interface DiscordApprovalPresentation<R extends DiscordApprovalRequest> {
   postPendingNotice(request: R): Promise<{ messageId?: string }>;
-  sendOwnerRequest(request: R): Promise<void>;
+  sendOwnerRequest(request: R): Promise<{ messageId?: string }>;
   updatePendingNotice(request: R, outcome: DiscordApprovalNoticeOutcome): Promise<void>;
 }
 
@@ -39,6 +41,7 @@ export interface DiscordApprovalServiceDependencies<R extends DiscordApprovalReq
   readonly hooks: DiscordApprovalDecisionHooks<R>;
   readonly ownerUserId?: string;
   readonly logger?: Logger;
+  readonly now?: () => number;
 }
 
 /**
@@ -62,17 +65,30 @@ export class DiscordApprovalService<R extends DiscordApprovalRequest> {
   ): Promise<DiscordApprovalRequestOutcome> {
     if (!this.dependencies.ownerUserId) return "unavailable";
 
+    const now = this.currentTime();
     const key = discordApprovalLocationKey(draft);
-    if (this.pendingByLocation.has(key)) return "pending";
+    const current = this.pendingByLocation.get(key);
+    if (current && !isDiscordApprovalExpired(current, now)) return "pending";
+    if (current) await this.remove(current);
 
     let pending = this.dependencies.createRequest(draft, randomUUID());
+    pending = {
+      ...pending,
+      expiresAt: new Date(now + DISCORD_APPROVAL_REQUEST_TTL_MS).toISOString(),
+    };
     this.remember(pending);
+
+    if (!(await this.save(pending))) {
+      await this.remove(pending);
+      return "unavailable";
+    }
 
     try {
       const { messageId } = await presentation.postPendingNotice(pending);
       if (messageId) {
         pending = { ...pending, pendingMessageId: messageId };
         this.remember(pending);
+        await this.save(pending);
       }
     } catch (error) {
       this.dependencies.logger?.warn(
@@ -88,7 +104,12 @@ export class DiscordApprovalService<R extends DiscordApprovalRequest> {
     }
 
     try {
-      await presentation.sendOwnerRequest(pending);
+      const sent = await presentation.sendOwnerRequest(pending);
+      if (sent.messageId) {
+        pending = { ...pending, ownerMessageId: sent.messageId };
+        this.remember(pending);
+        await this.save(pending);
+      }
     } catch (error) {
       await this.remove(pending);
       this.dependencies.logger?.warn(
@@ -105,8 +126,71 @@ export class DiscordApprovalService<R extends DiscordApprovalRequest> {
       return "unavailable";
     }
 
-    await this.save(pending);
     return "requested";
+  }
+
+  /**
+   * Brings persisted requests back in line with Discord at startup. Requests
+   * older than their expiry leave the store and their notice says so, and a
+   * request whose owner message never went out asks the owner again.
+   */
+  async reconcile(presentation: DiscordApprovalPresentation<R>): Promise<void> {
+    const pendings = Array.from(this.pendingByRequestId.values());
+    for (const pending of pendings) {
+      if (isDiscordApprovalExpired(pending, this.currentTime())) {
+        await this.remove(pending);
+        this.dependencies.logger?.info(
+          {
+            event: "discord_approval_request_expired",
+            requestId: pending.requestId,
+            guildId: pending.guildId,
+            channelId: pending.channelId,
+            threadId: pending.threadId,
+          },
+          "Removed an expired Discord approval request",
+        );
+        await presentation.updatePendingNotice(pending, "expired");
+        continue;
+      }
+
+      if (pending.ownerMessageId) continue;
+
+      let ownerMessageId: string | undefined;
+      try {
+        ownerMessageId = (await presentation.sendOwnerRequest(pending)).messageId;
+      } catch (error) {
+        await this.remove(pending);
+        this.dependencies.logger?.warn(
+          {
+            err: error,
+            event: "discord_approval_owner_resend_failed",
+            requestId: pending.requestId,
+            guildId: pending.guildId,
+            channelId: pending.channelId,
+            threadId: pending.threadId,
+          },
+          "Failed to resend the owner request for a pending Discord approval",
+        );
+        await presentation.updatePendingNotice(pending, "owner-unreachable");
+        continue;
+      }
+
+      if (!ownerMessageId) continue;
+
+      const updated = { ...pending, ownerMessageId };
+      this.remember(updated);
+      await this.save(updated);
+      this.dependencies.logger?.info(
+        {
+          event: "discord_approval_owner_resent",
+          requestId: pending.requestId,
+          guildId: pending.guildId,
+          channelId: pending.channelId,
+          threadId: pending.threadId,
+        },
+        "Resent the owner request for a pending Discord approval",
+      );
+    }
   }
 
   async handleButton(button: {
@@ -122,6 +206,11 @@ export class DiscordApprovalService<R extends DiscordApprovalRequest> {
 
     const pending = this.pendingByRequestId.get(parsed.requestId);
     if (!pending) return { kind: "rejected", reason: "expired" };
+
+    if (isDiscordApprovalExpired(pending, this.currentTime())) {
+      await this.remove(pending);
+      return { kind: "rejected", reason: "expired" };
+    }
 
     const allowed = parsed.action === "allow";
     let failure: DiscordApprovalFailure | undefined;
@@ -161,14 +250,19 @@ export class DiscordApprovalService<R extends DiscordApprovalRequest> {
     await presentation.updatePendingNotice(pending, outcome);
   }
 
+  private currentTime(): number {
+    return this.dependencies.now?.() ?? Date.now();
+  }
+
   private remember(pending: R): void {
     this.pendingByLocation.set(discordApprovalLocationKey(pending), pending);
     this.pendingByRequestId.set(pending.requestId, pending);
   }
 
-  private async save(pending: R): Promise<void> {
+  private async save(pending: R): Promise<boolean> {
     try {
       await this.dependencies.store.save(pending);
+      return true;
     } catch (error) {
       this.dependencies.logger?.warn(
         {
@@ -178,14 +272,16 @@ export class DiscordApprovalService<R extends DiscordApprovalRequest> {
         },
         "Failed to persist a Discord approval request",
       );
+      return false;
     }
   }
 
-  private async remove(pending: R): Promise<void> {
+  private async remove(pending: R): Promise<boolean> {
     this.pendingByLocation.delete(discordApprovalLocationKey(pending));
     this.pendingByRequestId.delete(pending.requestId);
     try {
       await this.dependencies.store.remove(pending.requestId);
+      return true;
     } catch (error) {
       this.dependencies.logger?.warn(
         {
@@ -195,6 +291,7 @@ export class DiscordApprovalService<R extends DiscordApprovalRequest> {
         },
         "Failed to remove a persisted Discord approval request",
       );
+      return false;
     }
   }
 }

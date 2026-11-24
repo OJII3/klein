@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import type { AccessScope } from "@shared/access";
-import { isFileNotFound, parseJson } from "@shared/type-guards";
+import { readJsonRecord } from "@shared/record-file";
+import { isFileNotFound } from "@shared/type-guards";
 
 import { parseFollowUp, type FollowUp, type FollowUpWatcher } from "../domain/follow-up";
 import type { FollowUpStore } from "../ports/follow-up-store";
@@ -34,15 +35,7 @@ export class FileFollowUpStore implements FollowUpStore {
   }
 
   async get(id: string): Promise<FollowUp | undefined> {
-    const path = this.getFilePath(id);
-    let raw: string;
-    try {
-      raw = await readFile(path, "utf8");
-    } catch (error) {
-      if (isFileNotFound(error)) return undefined;
-      throw error;
-    }
-    return parseFollowUp(parseJson(raw));
+    return readJsonRecord(this.getFilePath(id), parseFollowUp);
   }
 
   async listForScope(channelId: string, accessScope: AccessScope): Promise<readonly FollowUp[]> {
@@ -67,9 +60,8 @@ export class FileFollowUpStore implements FollowUpStore {
 
   private async readAll(): Promise<FollowUp[]> {
     const paths = await this.getFiles();
-    return Promise.all(
-      paths.map(async (path) => parseFollowUp(parseJson(await readFile(path, "utf8")))),
-    );
+    const followUps = await Promise.all(paths.map((path) => readJsonRecord(path, parseFollowUp)));
+    return followUps.filter((followUp): followUp is FollowUp => followUp !== undefined);
   }
 
   private async getFiles(): Promise<string[]> {

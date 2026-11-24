@@ -74,6 +74,9 @@ interface Worker {
   /** Absent until the first prompt runs, so a restored worker does not build a Pi session eagerly. */
   runtime?: AgentRuntime;
   readonly closeAfterResult: boolean;
+  lastResult?: WorkerResult;
+  resultDeliveredAt?: string;
+  deliveringResult: boolean;
   queue: Promise<void>;
   pendingPrompts: number;
   /** Tracks runtime creation and prompt execution (excluding `onResult`), so close/dispose can abort without deadlocking on conversation locks. */
@@ -96,16 +99,6 @@ export class WorkerAgentCoordinator implements WorkerControl {
   /** Restores the workers saved by a previous process. Call once before serving prompts. */
   async load(): Promise<void> {
     for (const stored of await this.options.store.list()) {
-      if (stored.closeAfterResult) {
-        await this.deleteStoredWorker(stored.id);
-        await this.notifyWorkerClosed({
-          id: stored.id,
-          conversationKey: stored.conversationKey,
-          accessScope: stored.accessScope,
-        });
-        continue;
-      }
-
       const status: WorkerStatus = stored.status === "running" ? "interrupted" : stored.status;
       const worker: Worker = {
         id: stored.id,
@@ -117,6 +110,9 @@ export class WorkerAgentCoordinator implements WorkerControl {
         status,
         updatedAt: stored.updatedAt,
         closeAfterResult: stored.closeAfterResult,
+        lastResult: stored.lastResult,
+        resultDeliveredAt: stored.resultDeliveredAt,
+        deliveringResult: false,
         queue: Promise.resolve(),
         pendingPrompts: 0,
         storageQueue: Promise.resolve(),
@@ -126,6 +122,35 @@ export class WorkerAgentCoordinator implements WorkerControl {
       if (status !== stored.status) await this.persist(worker);
     }
     this.logger.info({ event: "workers_restored", count: this.workers.size }, "Restored workers");
+  }
+
+  /**
+   * Delivers results stored before the restart and resumes one-shot workers whose prompt was
+   * interrupted. Call after `load` and after the conversation sessions are loaded.
+   */
+  async resumePendingWork(): Promise<void> {
+    if (this.disposed) return;
+    for (const worker of Array.from(this.workers.values())) {
+      if (worker.closed || this.disposed) continue;
+      try {
+        if (worker.lastResult && worker.resultDeliveredAt === undefined) {
+          await this.deliverResult(worker);
+        } else if (worker.resultDeliveredAt !== undefined && worker.closeAfterResult) {
+          await this.closeWorker(worker, "after_result");
+        } else if (
+          worker.status === "interrupted" &&
+          worker.closeAfterResult &&
+          worker.pendingPrompts === 0
+        ) {
+          this.enqueue(worker, worker.prompt);
+        }
+      } catch (error) {
+        this.logger.warn(
+          { err: error, event: "worker_resume_failed", workerId: worker.id },
+          "Failed to resume a stored worker",
+        );
+      }
+    }
   }
 
   async start(input: WorkerStartInput): Promise<string> {
@@ -169,6 +194,7 @@ export class WorkerAgentCoordinator implements WorkerControl {
       updatedAt: now,
       runtime,
       closeAfterResult: input.closeAfterResult ?? false,
+      deliveringResult: false,
       queue: Promise.resolve(),
       pendingPrompts: 0,
       storageQueue: Promise.resolve(),
@@ -227,6 +253,7 @@ export class WorkerAgentCoordinator implements WorkerControl {
     let closedCount = 0;
 
     try {
+      await this.retryPendingResultDelivery();
       for (const worker of Array.from(this.workers.values())) {
         if (this.disposed || worker.closed) continue;
         if (!isIdleWorkerDue(worker, now, idleCloseMs)) continue;
@@ -265,6 +292,15 @@ export class WorkerAgentCoordinator implements WorkerControl {
     return this.disposePromise;
   }
 
+  /** Retries results whose `onResult` failed, once per worker on each cleanup tick. */
+  private async retryPendingResultDelivery(): Promise<void> {
+    for (const worker of Array.from(this.workers.values())) {
+      if (this.disposed || worker.closed) continue;
+      if (!worker.lastResult || worker.resultDeliveredAt !== undefined) continue;
+      await this.deliverResult(worker);
+    }
+  }
+
   private async performDispose(): Promise<void> {
     this.disposed = true;
     const workers = [...this.workers.values()];
@@ -281,14 +317,7 @@ export class WorkerAgentCoordinator implements WorkerControl {
 
     for (const worker of workers) {
       this.disposeRuntime(worker);
-      if (worker.closeAfterResult) {
-        await this.enqueueStorage(worker, () => this.deleteStoredWorker(worker.id));
-        await this.notifyWorkerClosed({
-          id: worker.id,
-          conversationKey: worker.conversationKey,
-          accessScope: worker.accessScope,
-        });
-      } else if (worker.status === "running") {
+      if (worker.status === "running") {
         worker.status = "interrupted";
         worker.updatedAt = new Date().toISOString();
         await this.enqueueStorage(worker, () => this.saveWorker(worker));
@@ -320,6 +349,9 @@ export class WorkerAgentCoordinator implements WorkerControl {
 
   private async runPrompt(worker: Worker, text: string): Promise<void> {
     if (worker.closed) return;
+    // A result from the previous prompt must not become this run's result after a crash.
+    worker.lastResult = undefined;
+    worker.resultDeliveredAt = undefined;
     worker.status = "running";
     worker.updatedAt = new Date().toISOString();
     await this.persist(worker);
@@ -356,25 +388,59 @@ export class WorkerAgentCoordinator implements WorkerControl {
     }
 
     if (worker.closed) return;
+    worker.lastResult = result;
     worker.status = result.status === "completed" ? "idle" : "failed";
     worker.updatedAt = new Date().toISOString();
     await this.persist(worker);
     if (worker.closed) return;
 
-    try {
-      await this.options.onResult({
-        conversationKey: worker.conversationKey,
-        accessScope: worker.accessScope,
-        result,
-      });
-    } catch (error) {
-      this.logger.warn(
-        { err: error, event: "worker_result_delivery_failed", workerId: worker.id },
-        "Failed to deliver worker result",
-      );
+    await this.deliverResult(worker);
+  }
+
+  /**
+   * Hands the stored result to the conversation and records the delivery. A failed delivery
+   * leaves `resultDeliveredAt` unset so a restart and the idle cleanup retry it.
+   */
+  private async deliverResult(worker: Worker): Promise<boolean> {
+    const result = worker.lastResult;
+    if (
+      !result ||
+      worker.resultDeliveredAt !== undefined ||
+      worker.closed ||
+      worker.deliveringResult
+    ) {
+      return false;
     }
 
-    if (worker.closeAfterResult && !worker.closed) await this.closeWorker(worker, "after_result");
+    worker.deliveringResult = true;
+    try {
+      try {
+        await this.options.onResult({
+          conversationKey: worker.conversationKey,
+          accessScope: worker.accessScope,
+          result,
+        });
+      } catch (error) {
+        this.logger.warn(
+          { err: error, event: "worker_result_delivery_failed", workerId: worker.id },
+          "Failed to deliver worker result",
+        );
+        return false;
+      }
+
+      // A new prompt started while the result was in flight; its state replaced the result.
+      if (worker.lastResult !== result) return true;
+
+      worker.resultDeliveredAt = new Date().toISOString();
+      if (worker.closed) return true;
+      const persisted = await this.persist(worker);
+      if (persisted && worker.closeAfterResult && !worker.closed) {
+        await this.closeWorker(worker, "after_result");
+      }
+      return true;
+    } finally {
+      worker.deliveringResult = false;
+    }
   }
 
   private async ensureRuntime(worker: Worker): Promise<AgentRuntime> {
@@ -433,14 +499,14 @@ export class WorkerAgentCoordinator implements WorkerControl {
     runtime.dispose();
   }
 
-  private async persist(worker: Worker): Promise<void> {
-    await this.enqueueStorage(worker, async () => {
-      if (worker.closed) return;
-      await this.saveWorker(worker);
+  private async persist(worker: Worker): Promise<boolean> {
+    return this.enqueueStorage(worker, async () => {
+      if (worker.closed) return true;
+      return this.saveWorker(worker);
     });
   }
 
-  private enqueueStorage(worker: Worker, operation: () => Promise<void>): Promise<void> {
+  private enqueueStorage<T>(worker: Worker, operation: () => Promise<T>): Promise<T> {
     const next = worker.storageQueue.then(operation, operation);
     worker.storageQueue = next.then(
       () => undefined,
@@ -449,7 +515,7 @@ export class WorkerAgentCoordinator implements WorkerControl {
     return next;
   }
 
-  private async saveWorker(worker: Worker): Promise<void> {
+  private async saveWorker(worker: Worker): Promise<boolean> {
     try {
       await this.options.store.save({
         id: worker.id,
@@ -461,12 +527,16 @@ export class WorkerAgentCoordinator implements WorkerControl {
         createdAt: worker.createdAt,
         updatedAt: worker.updatedAt,
         closeAfterResult: worker.closeAfterResult,
+        lastResult: worker.lastResult,
+        resultDeliveredAt: worker.resultDeliveredAt,
       });
+      return true;
     } catch (error) {
       this.logger.warn(
         { err: error, event: "worker_persist_failed", workerId: worker.id },
         "Failed to persist worker",
       );
+      return false;
     }
   }
 
@@ -506,7 +576,8 @@ function isIdleWorkerDue(worker: Worker, now: number, idleCloseMs: number): bool
     worker.closed ||
     worker.status === "running" ||
     worker.pendingPrompts > 0 ||
-    worker.activeExecution !== undefined
+    worker.activeExecution !== undefined ||
+    (worker.lastResult !== undefined && worker.resultDeliveredAt === undefined)
   ) {
     return false;
   }

@@ -13,10 +13,15 @@ export interface AgentPrompt {
   readonly eventId?: string;
 }
 
+export type AgentTurnProgress = "none" | "started" | "uncertain" | "completed";
+
 export interface AgentRuntime {
   prompt(turn: AgentTurn): Promise<string | undefined>;
   steer?(turn: AgentTurn): Promise<void>;
   abort?(): Promise<void>;
   compactForHandoff?(): Promise<string>;
+  getTurnProgress?(eventId: string): AgentTurnProgress;
+  /** Leaves a model-visible note that the turn was interrupted after partial output. */
+  markInterrupted?(eventId: string): Promise<void>;
   dispose(): void;
 }

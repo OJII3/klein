@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
+import { mkdir, readdir, rename, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import {
@@ -8,7 +8,8 @@ import {
   type ConversationKey,
 } from "@shared/conversation-key";
 import { DISCORD_CHANNEL_SESSION_KEY_PREFIX } from "@shared/discord-channel-session-key";
-import { isFileNotFound, isRecord, parseJson } from "@shared/type-guards";
+import { readJsonRecord } from "@shared/record-file";
+import { isFileNotFound, isRecord } from "@shared/type-guards";
 
 export { serializeConversationKey, type ConversationKey };
 
@@ -86,22 +87,10 @@ export class ChannelSessionStateStore {
       conversationKey: ConversationKey,
       rotationBucket: string,
     ): Promise<ChannelSessionState> => {
-      try {
-        const content = await readFile(getFilePath(conversationKey), "utf8");
-        const state = parseJson(content);
-        if (
-          !isChannelSessionState(state) ||
-          state.conversationKey.kind !== conversationKey.kind ||
-          state.conversationKey.channelId !== conversationKey.channelId
-        ) {
-          throw new Error(
-            `Invalid channel session state: ${serializeConversationKey(conversationKey)}`,
-          );
-        }
-        return state;
-      } catch (error) {
-        if (!isFileNotFound(error)) throw error;
-      }
+      const state = await readJsonRecord(getFilePath(conversationKey), (value) =>
+        parseChannelSessionState(value, conversationKey),
+      );
+      if (state !== undefined) return state;
 
       return {
         conversationKey,
@@ -126,16 +115,9 @@ export class ChannelSessionStateStore {
         .map((entry) => resolve(directory, entry.name));
 
       const states = await Promise.all(
-        paths.map(async (path) => {
-          const content = await readFile(path, "utf8");
-          try {
-            return parseJson(content);
-          } catch {
-            return undefined;
-          }
-        }),
+        paths.map((path) => readJsonRecord(path, parseChannelSessionState)),
       );
-      return states.filter((state) => isChannelSessionState(state));
+      return states.filter((state): state is ChannelSessionState => state !== undefined);
     };
 
     this.listChannelNames = async (): Promise<ReadonlyMap<string, string>> => {
@@ -172,4 +154,19 @@ function isChannelSessionState(value: unknown): value is ChannelSessionState {
     typeof value.hasActivitySinceRotation === "boolean" &&
     (value.handoffContext === undefined || typeof value.handoffContext === "string")
   );
+}
+
+function parseChannelSessionState(
+  value: unknown,
+  expectedKey?: ConversationKey,
+): ChannelSessionState {
+  if (!isChannelSessionState(value)) throw new Error("Invalid channel session state");
+  if (
+    expectedKey !== undefined &&
+    (value.conversationKey.kind !== expectedKey.kind ||
+      value.conversationKey.channelId !== expectedKey.channelId)
+  ) {
+    throw new Error(`Invalid channel session state: ${serializeConversationKey(expectedKey)}`);
+  }
+  return value;
 }

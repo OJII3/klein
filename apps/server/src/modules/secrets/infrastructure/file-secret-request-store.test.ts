@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile, stat } from "node:fs/promises";
+import { readFile, readdir, stat, writeFile } from "node:fs/promises";
 import test from "node:test";
 
 import { createTempDir } from "../../../testing/temp-dir";
@@ -66,4 +66,19 @@ test("treats a missing file as no pending requests", async () => {
 
   await store.load();
   assert.deepEqual(store.list(), []);
+});
+
+test("loads an empty list and quarantines a corrupt file", async () => {
+  await using temp = await createTempDir("klein-secret-requests-corrupt-");
+  const path = `${temp.path}/secret-requests.json`;
+  await writeFile(path, "{not json", "utf8");
+  const store = new FileSecretRequestStore(path);
+
+  await store.load();
+  assert.deepEqual(store.list(), []);
+
+  await writeFile(path, JSON.stringify({ requests: [{ requestId: "request-1" }] }), "utf8");
+  await store.load();
+  assert.deepEqual(store.list(), []);
+  assert.equal((await readdir(`${temp.path}/corrupt`)).length, 2);
 });

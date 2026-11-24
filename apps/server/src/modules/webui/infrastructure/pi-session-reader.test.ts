@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import test from "node:test";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 
+import { TURN_MARKER_CUSTOM_TYPE } from "@agents/core/agent-turn";
 import { createPiSessionManager } from "@runtime/pi/pi-agent-runtime";
 import { PiSessionReader } from "./pi-session-reader";
 import { createTempDir } from "../../../testing/temp-dir";
@@ -79,6 +80,10 @@ test("lists and reads Pi sessions without exposing image data", async () => {
     errorMessage: "403: RegionError",
     timestamp: Date.now(),
   });
+  sessionManager.appendCustomEntry(TURN_MARKER_CUSTOM_TYPE, {
+    eventId: "event-1",
+    phase: "started",
+  });
 
   const secondSessionManager = createPiSessionManager(
     agentDirectory,
@@ -129,6 +134,10 @@ test("lists and reads Pi sessions without exposing image data", async () => {
   assert.ok(detail);
   assert.equal(detail.session.channelKey, "discord-channel:123");
   assert.equal(detail.items.length, 3);
+  assert.equal(
+    detail.items.some((item) => item.summary === TURN_MARKER_CUSTOM_TYPE),
+    false,
+  );
   assert.equal(detail.items[0]?.role, "user");
   assert.equal(detail.items[0]?.summary, "hello");
   assert.deepEqual(detail.items[1]?.content, [
