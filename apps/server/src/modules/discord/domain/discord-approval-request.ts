@@ -10,12 +10,24 @@ export interface DiscordApprovalRequest extends DiscordApprovalLocation {
   readonly channelName?: string;
   readonly requesterUserId: string;
   readonly pendingMessageId?: string;
+  readonly expiresAt?: string;
 }
 
 export type DiscordApprovalRequestDraft<R extends DiscordApprovalRequest> = Omit<
   R,
-  "requestId" | "pendingMessageId"
+  "requestId" | "pendingMessageId" | "expiresAt"
 >;
+
+export const DISCORD_APPROVAL_REQUEST_TTL_MS = 24 * 60 * 60 * 1_000;
+
+export function isDiscordApprovalExpired(
+  request: Pick<DiscordApprovalRequest, "expiresAt">,
+  now: number,
+): boolean {
+  if (!request.expiresAt) return true;
+  const expiresAt = Date.parse(request.expiresAt);
+  return !Number.isFinite(expiresAt) || expiresAt <= now;
+}
 
 export type DiscordApprovalAction = "allow" | "deny";
 

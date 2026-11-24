@@ -55,6 +55,29 @@ test("persists and removes pending requests", async () => {
   assert.deepEqual(afterRemoval.list(), [requestWithoutThread]);
 });
 
+test("persists and restores the request expiry", async () => {
+  await using temp = await createTempDir("klein-discord-access-requests-");
+  const filePath = join(temp.path, "requests.json");
+  const store = new FileDiscordAccessRequestStore(filePath);
+  await store.load();
+
+  const expiring = { ...request, expiresAt: "2026-11-26T00:00:00.000Z" };
+  await store.save(expiring);
+
+  const reloaded = new FileDiscordAccessRequestStore(filePath);
+  await reloaded.load();
+  assert.deepEqual(reloaded.list(), [expiring]);
+});
+
+test("rejects an empty request expiry", async () => {
+  await using temp = await createTempDir("klein-discord-access-requests-");
+  const filePath = join(temp.path, "requests.json");
+  const store = new FileDiscordAccessRequestStore(filePath);
+  await writeFile(filePath, JSON.stringify({ requests: [{ ...request, expiresAt: "" }] }));
+
+  await assert.rejects(store.load(), /invalid/u);
+});
+
 test("rejects invalid pending request files", async () => {
   await using temp = await createTempDir("klein-discord-access-requests-");
   const filePath = join(temp.path, "requests.json");

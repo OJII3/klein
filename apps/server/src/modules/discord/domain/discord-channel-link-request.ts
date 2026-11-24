@@ -16,6 +16,7 @@ export interface DiscordChannelLinkRequest {
 export interface PendingDiscordChannelLinkRequest extends DiscordChannelLinkRequest {
   readonly requestId: string;
   readonly pendingMessageId?: string;
+  readonly expiresAt?: string;
 }
 
 const REQUEST_BUTTON_PREFIX = "channel-link";

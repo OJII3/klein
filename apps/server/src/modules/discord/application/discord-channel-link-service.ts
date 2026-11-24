@@ -29,6 +29,7 @@ export interface DiscordChannelLinkServiceDependencies {
   >;
   readonly ownerUserId?: string;
   readonly logger?: Logger;
+  readonly now?: () => number;
 }
 
 export class DiscordChannelLinkService {
@@ -41,6 +42,7 @@ export class DiscordChannelLinkService {
       createRequest: (draft, requestId) => ({ ...draft, requestId }),
       ownerUserId: dependencies.ownerUserId,
       logger: dependencies.logger,
+      now: dependencies.now,
       hooks: {
         onAllow: async (request) => {
           const current = dependencies.linkStore.getLink(request);
