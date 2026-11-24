@@ -21,6 +21,7 @@ test("renders browser, T3, and shell capabilities when enabled", () => {
   assert.match(section, /agent-browser/);
   assert.match(section, /t3_thread_start/);
   assert.match(section, /sandboxed shell/);
+  assert.match(section, /Missing CLI tools can be installed into the sandbox's `~\/\.local\/bin`/);
   assert.match(section, /secret_request/);
   assert.match(section, /Never ask the user to paste a password/);
   assert.match(section, /watch_add/);

@@ -66,7 +66,7 @@ export function renderWorkerDelegationSection(options: WorkerDelegationPromptOpt
   }
   if (options.shellAvailable) {
     workerOnlyCapabilities.push(
-      "- A sandboxed shell (`bash`): run commands in the linked user's private workspace, with other users' files and Klein's configuration hidden.",
+      "- A sandboxed shell (`bash`): run commands in the linked user's private workspace, with other users' files and Klein's configuration hidden. Missing CLI tools can be installed into the sandbox's `~/.local/bin`, which stays on `PATH`.",
     );
   }
   if (options.secretsAvailable) {

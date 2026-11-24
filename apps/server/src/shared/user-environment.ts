@@ -7,6 +7,8 @@ export interface UserEnvironment {
   readonly rootDirectory: string;
   readonly workspaceDirectory: string;
   readonly homeDirectory: string;
+  /** User-installed executables. The sandbox puts this first on `PATH`. */
+  readonly binDirectory: string;
   readonly credentialsDirectory: string;
   readonly temporaryDirectory: string;
 }
@@ -24,11 +26,13 @@ export function userEnvironmentKey(userId: string): string {
 
 export function resolveUserEnvironment(agentDir: string, userId: string): UserEnvironment {
   const rootDirectory = resolve(agentDir, "users", userEnvironmentKey(userId));
+  const homeDirectory = resolve(rootDirectory, "home");
   return {
     userId,
     rootDirectory,
     workspaceDirectory: resolve(rootDirectory, "workspace"),
-    homeDirectory: resolve(rootDirectory, "home"),
+    homeDirectory,
+    binDirectory: resolve(homeDirectory, ".local", "bin"),
     credentialsDirectory: resolve(rootDirectory, "credentials"),
     temporaryDirectory: resolve(rootDirectory, "tmp"),
   };
@@ -45,6 +49,7 @@ export function ensureUserEnvironment(environment: UserEnvironment): UserEnviron
     environment.rootDirectory,
     environment.workspaceDirectory,
     environment.homeDirectory,
+    environment.binDirectory,
     environment.credentialsDirectory,
     environment.temporaryDirectory,
   ];
