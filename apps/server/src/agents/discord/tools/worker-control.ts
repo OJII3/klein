@@ -37,7 +37,7 @@ export function createWorkerControlTools(
       name: "worker_start",
       label: "Start Worker",
       description:
-        "Start a worker: a separate agent with its own persistent session and tools. The worker inherits this conversation's history up to this point, so a rough, short handoff is enough — do not pre-research, summarize the conversation, or write a detailed brief. Let the worker infer intent, plan, and manage follow-ups. Prefer worker_start over doing multi-step web research, reading long pages or multiple sources, codemode/MCP workflows, self-improvement/backlog management, or ongoing investigations inline in the conversation. The worker cannot send Discord messages and its result arrives as an event. Use worker_send for follow-ups." +
+        "Start a worker: a separate agent with its own persistent session and tools. The worker inherits this conversation's history up to this point, so a rough, short handoff is enough — do not pre-research, summarize the conversation, or write a detailed brief. Let the worker infer intent, plan, and manage follow-ups. There is no limit on workers: start a new worker whenever a different topic or project comes up so each worker only handles its own scope. Prefer worker_start over doing multi-step web research, reading long pages or multiple sources, codemode/MCP workflows, improvement/backlog management, or ongoing investigations inline in the conversation. The worker cannot send Discord messages and its result arrives as an event. Use worker_send only to continue the same topic." +
         capabilitiesNote,
       parameters: Type.Object({
         prompt: Type.String({
@@ -71,7 +71,7 @@ export function createWorkerControlTools(
       name: "worker_send",
       label: "Send to Worker",
       description:
-        "Send a short follow-up instruction to an existing worker. It resumes the worker's session, including the history it inherited when it started, and returns another result event; prefer reusing an existing worker for related follow-up work.",
+        "Send a short follow-up instruction to an existing worker on the same topic. It resumes the worker's session, including the history it inherited when it started, and returns another result event; use worker_start instead when switching to a different topic or project.",
       parameters: Type.Object({
         workerId: Type.String({ minLength: 1 }),
         message: Type.String({ minLength: 1, maxLength: 4_000 }),

@@ -93,7 +93,9 @@ export function renderWorkerDelegationSection(options: WorkerDelegationPromptOpt
     "",
     "Do not research, organize requirements, design solutions, or break down tasks inside this conversation before delegating. Hand off roughly in a short line and let the worker infer intent from the inherited conversation, investigate, plan, and manage follow-ups.",
     "",
-    "Delegate to `worker_start` (or `worker_send` to continue an existing worker; check `worker_list` when unsure) for:",
+    "There is no limit on the number of workers. Start a fresh `worker_start` for each distinct topic or project so every worker stays focused on its own scope; use `worker_send` (check `worker_list` when unsure) only to continue an existing worker on the same topic.",
+    "",
+    "Delegate to `worker_start` (or `worker_send` for the same ongoing topic) for:",
     "- Multi-step web research, reading long pages or multiple sources, comparisons, or verifying primary documentation.",
     "- `codemode` pipelines, MCP tool exploration, or tasks needing several tool calls.",
     ...(options.watchAvailable
@@ -104,7 +106,7 @@ export function renderWorkerDelegationSection(options: WorkerDelegationPromptOpt
     "- Follow-up investigations on an ongoing thread of work.",
     ...(options.codingAvailable
       ? [
-          "- Anything about improving Klein itself — ideas, vision, principles, frustrations, bugs, feature wishes, direction, or GitHub issues/PRs. Even casual remarks or rough thoughts from the owner can be tossed straight to a worker (or sent to an existing improvement worker via `worker_send`) without overthinking them in chat.",
+          "- Anything about improving Klein or another repository — ideas, vision, principles, frustrations, bugs, feature wishes, direction, or GitHub issues/PRs. Even casual remarks or rough thoughts from the owner can be tossed straight to a worker without overthinking them in chat; start a separate worker whenever the topic or target project changes.",
         ]
       : []),
     "",
