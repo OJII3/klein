@@ -32,7 +32,7 @@ import { PiStandaloneSessionRunner } from "@runtime/pi/pi-standalone-session-run
 import { createPiMinimalAgentFactory } from "@runtime/pi/pi-minimal-agent-factory";
 import { resolveSkillAudienceCapabilities } from "@runtime/pi/skill-availability";
 import { createPiUsageReporterFromEnv } from "@runtime/pi/pi-usage-reporter";
-import { createT3CodingBackend } from "@modules/coding/infrastructure/t3/t3-coding-backend";
+import { createPiCodingBackend } from "@modules/coding/infrastructure/pi/pi-coding-backend";
 import { CodingBackendRegistry } from "@modules/coding/application/coding-backend-registry";
 import { createWatchFetchTool } from "@runtime/pi/watch-fetch-tool";
 import { createWatchGitHubApiTool } from "@runtime/pi/watch-github-tool";
@@ -273,7 +273,15 @@ export async function bootstrapApplication(): Promise<void> {
   let discordService!: DiscordJsService;
   let agentCoordinator!: AgentCoordinator;
   let sharedMemoryCoordinator: SharedMemoryCoordinator | undefined;
-  const codingBackends = new CodingBackendRegistry([createT3CodingBackend()]);
+  const codingBackends = new CodingBackendRegistry([
+    createPiCodingBackend({
+      agentDir,
+      logger,
+      runner: sessionRunner,
+      model: resolveConfiguredModel(config.llm.provider, config.llm.model, modelRuntime),
+      ...(config.llm.thinkingLevel ? { thinkingLevel: config.llm.thinkingLevel } : {}),
+    }),
+  ]);
   let workerAgentCoordinator!: WorkerAgentCoordinator;
   const secretService = new SecretService({
     secrets: new FileSecretStore(agentDir, logger),

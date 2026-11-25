@@ -201,7 +201,7 @@ export function createCodingSessionTools(
       name: "coding_session_show",
       label: "Show Coding Session",
       description:
-        "Show a coding session's status, link, branch, pull request, pending questions, and latest messages. " +
+        "Show a coding session's status, branch or worktree and pull request when the backend tracks them, pending questions, and latest messages. " +
         "Use this to check a session started with wait set to false, or to read a question when a run reports waiting.",
       promptSnippet: "Read a coding session's status and latest messages.",
       parameters: Type.Object({
@@ -278,7 +278,7 @@ function formatRun(
   } else if (!result.error && !result.reply && result.status === "running") {
     lines.push(
       "",
-      "The session is still running; use coding_session_show to check its status, link, and pull request, or coding_session_wait to wait for it.",
+      "The session is still running; use coding_session_show to check its status and latest messages, or coding_session_wait to wait for it.",
     );
   }
   return limitOutput(lines.join("\n"));
