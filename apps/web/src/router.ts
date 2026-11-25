@@ -5,6 +5,7 @@ export type Route =
   | { view: "sessions"; sessionId: string | null }
   | { view: "memory"; scopeKey: string | null }
   | { view: "proactivity" }
+  | { view: "skills"; skillName: string | null }
   | { view: "tools" };
 
 export type View = Route["view"];
@@ -52,6 +53,8 @@ function parseRoute(href: string): Route {
       return { scopeKey: url.searchParams.get("scope") || null, view: "memory" };
     case "proactivity":
       return { view: "proactivity" };
+    case "skills":
+      return { skillName: url.searchParams.get("skill") || null, view: "skills" };
     case "tools":
       return { view: "tools" };
     default:

@@ -6,6 +6,7 @@ import { useDisplayName } from "./hooks/use-meta";
 import { useGuilds } from "./hooks/use-guilds";
 import { useLogs } from "./hooks/use-logs";
 import { useSessions } from "./hooks/use-sessions";
+import { useSkills } from "./hooks/use-skills";
 import { useMemory } from "./hooks/use-memory";
 import { useProactivity } from "./hooks/use-proactivity";
 import { useToolUsage } from "./hooks/use-tool-usage";
@@ -13,6 +14,7 @@ import { LogsView } from "./features/logs/logs-view";
 import { MemoryView } from "./features/memory/memory-view";
 import { ProactivityView } from "./features/proactivity/proactivity-view";
 import { SessionsView } from "./features/sessions/sessions-view";
+import { SkillsView } from "./features/skills/skills-view";
 import { ToolsView } from "./features/tools/tools-view";
 import { memoryScopeKey, type MemorySelection } from "./api";
 import { navigate, useRoute } from "./router";
@@ -34,6 +36,11 @@ export default function App() {
     onUpdated,
     selectedScopeKey: route.view === "memory" ? route.scopeKey : null,
   });
+  const skills = useSkills({
+    active: route.view === "skills",
+    onUpdated,
+    selectedSkillName: route.view === "skills" ? route.skillName : null,
+  });
   const toolUsage = useToolUsage({ active: route.view === "tools", onUpdated });
   const proactivity = useProactivity({
     active: route.view === "proactivity",
@@ -48,9 +55,16 @@ export default function App() {
   const selectScope = useCallback((scope: MemorySelection) => {
     navigate(`/memory?scope=${encodeURIComponent(memoryScopeKey(scope))}`);
   }, []);
+  const selectSkill = useCallback((skillName: string) => {
+    navigate(`/skills?skill=${encodeURIComponent(skillName)}`);
+  }, []);
+  const clearSelectedSkill = useCallback(() => {
+    navigate("/skills");
+  }, []);
 
   const { reload: reloadLogs } = logs;
   const { reload: reloadSessions } = sessions;
+  const { reload: reloadSkills } = skills;
   const { reload: reloadMemory } = memory;
   const { reload: reloadToolUsage } = toolUsage;
   const { reload: reloadProactivity } = proactivity;
@@ -59,9 +73,18 @@ export default function App() {
     if (route.view === "logs") reloadLogs();
     else if (route.view === "sessions") void reloadSessions();
     else if (route.view === "tools") void reloadToolUsage();
+    else if (route.view === "skills") void reloadSkills();
     else if (route.view === "proactivity") void reloadProactivity();
     else reloadMemory();
-  }, [reloadLogs, reloadMemory, reloadProactivity, reloadSessions, reloadToolUsage, route.view]);
+  }, [
+    reloadLogs,
+    reloadMemory,
+    reloadProactivity,
+    reloadSessions,
+    reloadSkills,
+    reloadToolUsage,
+    route.view,
+  ]);
 
   return (
     <AppShell
@@ -100,6 +123,23 @@ export default function App() {
           selectedSession={sessions.selectedSession}
           sessionsNextCursor={sessions.sessionsNextCursor}
           sessions={sessions.sessions}
+        />
+      ) : route.view === "skills" ? (
+        <SkillsView
+          error={skills.error}
+          fileContent={skills.fileContent}
+          fileError={skills.fileError}
+          fileLoading={skills.fileLoading}
+          loading={skills.loading}
+          onBack={clearSelectedSkill}
+          onRetry={() => void skills.reload()}
+          onRetryFile={skills.retryFile}
+          onSelectFile={skills.selectFile}
+          onSelectSkill={selectSkill}
+          report={skills.report}
+          selectedPath={skills.selectedPath}
+          selectedSkill={skills.selectedSkill}
+          selectedSkillName={route.skillName}
         />
       ) : route.view === "tools" ? (
         <ToolsView

@@ -23,6 +23,13 @@ import type {
   ProactiveTopicMode,
   ProactiveUrgency,
   ProactivityReport,
+  SkillAvailability,
+  SkillDiagnostic,
+  SkillFileContent,
+  SkillFileSummary,
+  SkillRequirement,
+  SkillSummary,
+  SkillsReport,
   ToolUsageReport,
   ToolUsageStat,
   UserMemory,
@@ -58,6 +65,13 @@ export type {
   ProactiveTopicMode,
   ProactiveUrgency,
   ProactivityReport,
+  SkillAvailability,
+  SkillDiagnostic,
+  SkillFileContent,
+  SkillFileSummary,
+  SkillRequirement,
+  SkillSummary,
+  SkillsReport,
   ToolUsageReport,
   ToolUsageStat,
   UserMemory,
@@ -217,6 +231,14 @@ export function listMemoryScopes(): Promise<MemoryScopesResponse> {
 
 export function getToolUsage(): Promise<ToolUsageReport> {
   return unwrap<ToolUsageReport>(client.api.tools.get());
+}
+
+export function getSkills(): Promise<SkillsReport> {
+  return unwrap<SkillsReport>(client.api.skills.get());
+}
+
+export function getSkillFile(name: string, path: string): Promise<SkillFileContent> {
+  return unwrap<SkillFileContent>(client.api.skills({ name }).file.get({ query: { path } }));
 }
 
 export function getProactivity(): Promise<ProactivityReport> {
