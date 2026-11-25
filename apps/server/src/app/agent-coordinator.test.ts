@@ -1838,8 +1838,14 @@ test("delivers a worker result to the conversation agent", async () => {
 
 test("delivers an initiative result as an interrupt event", async () => {
   const delivered: string[] = [];
+  const surfaced: { readonly ids: readonly string[]; readonly mode: string }[] = [];
   const initiativeResult = createInitiativeResult();
   const harness = createHarness(undefined, undefined, {
+    proactive: createProactiveStub({
+      async markSignalsSurfaced(signals, mode) {
+        surfaced.push({ ids: signals.map((signal) => signal.id), mode });
+      },
+    }),
     initiative: {
       async handleWorkerResult() {
         return initiativeResult;
@@ -1864,6 +1870,7 @@ test("delivers an initiative result as an interrupt event", async () => {
     assert.equal(turns.length, 2);
     assert.equal(turns[1]?.event.type, "initiative.result");
     assert.match(eventText(turns[1]?.event), /店を3軒見つけた/u);
+    assert.deepEqual(surfaced, [{ ids: ["signal-1"], mode: "interrupt" }]);
     assert.deepEqual(delivered, ["goal-1"]);
   } finally {
     await harness.agentCoordinator.dispose();

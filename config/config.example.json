@@ -85,13 +85,13 @@
         "maxGoalsPerPlan": 2,
         "approval": "auto"
       },
-      "defaultMode": "attach",
+      "defaultMode": "interrupt",
       "quietHours": {
         "start": "23:00",
         "end": "08:00"
       },
       "digestAt": "09:00",
-      "maxPerDay": 3,
+      "maxPerDay": 8,
       "publicChannels": false,
       "promiseGuard": "log"
     },

@@ -65,8 +65,7 @@ export function decideDelivery(input: {
       : { mode, reason };
 
   if (signal.urgency === "today") {
-    const preferredMode = preferences.delivery.defaultMode ?? defaults.defaultMode;
-    const mode = preferredMode === "interrupt" ? "attach" : preferredMode;
+    const mode = preferences.delivery.defaultMode ?? defaults.defaultMode;
     return withDigestAvailability(mode, "default-mode");
   }
 
