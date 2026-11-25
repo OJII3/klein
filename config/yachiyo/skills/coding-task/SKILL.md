@@ -18,7 +18,7 @@ Coding tasks are not limited to Klein's own repository. Pass a project id or a p
 - State the goal, repository, constraints, non-goals, and acceptance checks.
 - Split the work into independent workstreams. Start one task per workstream.
 - Call `coding_backend_list` to see the available backends and their capabilities. Omit `backend` to use the default.
-- Call `coding_project_list` when the target project is unclear.
+- Call `coding_project_list` when the target project is unclear. Local repositories are also organized under `$(ghq root)` (`ghq root` / `ghq list -p`), so look there if a repository is not yet registered in `coding_project_list`.
 - Do not assume a capability the backend does not advertise.
 
 ## Start the task
@@ -64,3 +64,4 @@ Report the backend, task id, branch, pull request, verification commands and res
 - Make every task message self-contained; include all necessary context rather than raw conversation snippets.
 - When a task fails, include the actual `error` and `status` in your result rather than reporting success.
 - Keep the backend and task id from the tool output, and pass the full task reference to `coding_task_send`, `coding_task_wait`, and `coding_task_show`.
+- Do not let coding tasks write design docs, specs, plans, or notes as `.md` files inside the repository (unless explicitly asked or adding an external wire protocol doc). Encode invariants and constraints in types, lint rules, and static tests instead of compensating with Markdown prose.

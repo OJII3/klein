@@ -11,8 +11,12 @@ test("excludes a skill only while its required tool is unavailable", () => {
   assert.deepEqual([...excludedSkillNamesFor({ browser: false, coding: false })].toSorted(), [
     "browser-use",
     "coding-task",
+    "self-improvement",
   ]);
-  assert.deepEqual([...excludedSkillNamesFor({ browser: true, coding: false })], ["coding-task"]);
+  assert.deepEqual([...excludedSkillNamesFor({ browser: true, coding: false })].toSorted(), [
+    "coding-task",
+    "self-improvement",
+  ]);
   assert.deepEqual([...excludedSkillNamesFor({ browser: false, coding: true })], ["browser-use"]);
   assert.deepEqual([...excludedSkillNamesFor({ browser: true, coding: true })], []);
 });
@@ -51,5 +55,6 @@ test("keeps the built-in browser server available to linked users by default", (
 test("lists the requirement for a known skill and none for a shared skill", () => {
   assert.deepEqual(skillRequirements("browser-use"), ["browser"]);
   assert.deepEqual(skillRequirements("coding-task"), ["coding"]);
+  assert.deepEqual(skillRequirements("self-improvement"), ["coding"]);
   assert.deepEqual(skillRequirements("shared"), []);
 });

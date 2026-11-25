@@ -1313,7 +1313,7 @@ test("loads skills from the default profile directory", async () => {
       .getSkills()
       .skills.map((skill) => skill.name)
       .toSorted(),
-    ["browser-use", "coding-task", "honkai-character-dialogue"],
+    ["browser-use", "coding-task", "honkai-character-dialogue", "self-improvement"],
   );
   assert.deepEqual(loader.getSkills().diagnostics, []);
 });
@@ -1968,20 +1968,24 @@ test("appends worker delegation guidance to text conversation prompts based on o
     assert.match(ownerPrompt, /coding_task_start/);
     assert.match(ownerPrompt, /coding_project_list/);
     assert.match(ownerPrompt, /unsandboxed shell/);
-    assert.doesNotMatch(ownerPrompt, /browser-use|coding-task/);
+    assert.doesNotMatch(ownerPrompt, /<name>(?:browser-use|coding-task|self-improvement)<\/name>/);
     assert.match(publicPrompt, /## Workers \(`worker_start`\)/);
     assert.match(publicPrompt, /This conversation does not have/);
-    assert.doesNotMatch(publicPrompt, /browser-use|coding-task/);
+    assert.doesNotMatch(publicPrompt, /<name>(?:browser-use|coding-task|self-improvement)<\/name>/);
     assert.doesNotMatch(voicePrompt, /## Workers \(`worker_start`\)/);
-    assert.doesNotMatch(voicePrompt, /browser-use|coding-task/);
+    assert.doesNotMatch(voicePrompt, /<name>(?:browser-use|coding-task|self-improvement)<\/name>/);
     assert.match(restrictedOwnerPrompt, /This conversation does not have/);
     assert.match(ownerWorkerPrompt, /<name>browser-use<\/name>/);
     assert.match(ownerWorkerPrompt, /<name>coding-task<\/name>/);
+    assert.match(ownerWorkerPrompt, /<name>self-improvement<\/name>/);
     assert.match(ownerWorkerPrompt, /Use when a task needs repository work/);
     assert.doesNotMatch(ownerWorkerPrompt, /## Coding tasks/);
-    assert.doesNotMatch(publicWorkerPrompt, /browser-use|coding-task|## Coding tasks/);
+    assert.doesNotMatch(
+      publicWorkerPrompt,
+      /browser-use|coding-task|self-improvement|## Coding tasks/,
+    );
     assert.match(linkedWorkerPrompt, /<name>browser-use<\/name>/);
-    assert.doesNotMatch(linkedWorkerPrompt, /coding-task|## Coding tasks/);
+    assert.doesNotMatch(linkedWorkerPrompt, /coding-task|self-improvement|## Coding tasks/);
   } finally {
     if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
     else process.env.PI_CODING_AGENT_DIR = previousAgentDir;

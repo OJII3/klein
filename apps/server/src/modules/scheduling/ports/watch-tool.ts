@@ -4,6 +4,8 @@ export interface WatchToolExecutionContext {
   readonly signal: AbortSignal;
 }
 
+export type WatchToolAudience = "all" | "owner";
+
 /**
  * A tool a watch script can call as `tools.<name>(args)`.
  *
@@ -16,6 +18,7 @@ export interface WatchTool {
   readonly description: string;
   readonly inputSchema: CodemodeJsonSchema;
   readonly outputSchema?: CodemodeJsonSchema;
+  readonly audience?: WatchToolAudience;
   execute(args: unknown, context: WatchToolExecutionContext): Promise<unknown>;
 }
 

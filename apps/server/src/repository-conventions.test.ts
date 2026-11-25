@@ -11,6 +11,17 @@ const commentBaselinePath = join(repositoryRoot, "apps/server/src/testing/commen
 
 const JAPANESE = /[\u3040-\u30ff\u3400-\u9fff\uff66-\uff9f]/u;
 
+const ALLOWED_MARKDOWN_PATTERNS = [
+  /^README\.md$/u,
+  /^AGENTS\.md$/u,
+  /^config\/.+\.md$/u,
+  /^\.agents\/.+\.md$/u,
+  /^docs\/[^/]+-protocol\.md$/u,
+  /^apps\/server\/src\/modules\/vad\/infrastructure\/[^/]+\/README\.md$/u,
+] as const;
+
+const IGNORED_DIRECTORIES = new Set([".direnv", ".git", ".runtime", "dist", "node_modules"]);
+
 test("keeps the web UI in English", () => {
   const files = [
     join(repositoryRoot, "apps/web/index.html"),
@@ -76,6 +87,25 @@ test("requires new comments to justify themselves", () => {
   );
 });
 
+test("prevents stray markdown docs in the repository", () => {
+  const markdownFiles = listMarkdownFiles(repositoryRoot).map((file) =>
+    relative(repositoryRoot, file).split("\\").join("/"),
+  );
+  const violations = markdownFiles.filter(
+    (file) => !ALLOWED_MARKDOWN_PATTERNS.some((pattern) => pattern.test(file)),
+  );
+
+  assert.deepEqual(
+    violations,
+    [],
+    [
+      "Do not add design docs, specs, plans, or notes as .md files in the repository.",
+      "Encode invariants and constraints in types, lint rules, and tests instead.",
+      ...violations,
+    ].join("\n"),
+  );
+});
+
 function readCommentBaseline(): ReadonlySet<string> {
   const value: unknown = JSON.parse(readFileSync(commentBaselinePath, "utf8"));
   if (!Array.isArray(value)) throw new TypeError("comment-baseline.json must be an array");
@@ -92,5 +122,16 @@ function listFiles(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const path = join(directory, entry.name);
     return entry.isDirectory() ? listFiles(path) : [path];
+  });
+}
+
+function listMarkdownFiles(directory: string): string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    if (entry.isDirectory()) {
+      return IGNORED_DIRECTORIES.has(entry.name)
+        ? []
+        : listMarkdownFiles(join(directory, entry.name));
+    }
+    return entry.name.endsWith(".md") ? [join(directory, entry.name)] : [];
   });
 }

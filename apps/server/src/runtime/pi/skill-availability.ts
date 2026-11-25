@@ -17,6 +17,7 @@ export interface SkillAudienceCapabilities {
 const SKILL_REQUIREMENTS: Readonly<Record<string, SkillToolRequirement>> = {
   "browser-use": "browser",
   "coding-task": "coding",
+  "self-improvement": "coding",
 };
 
 export function skillRequirements(name: string): readonly SkillToolRequirement[] {
