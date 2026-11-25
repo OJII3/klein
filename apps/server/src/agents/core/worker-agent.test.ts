@@ -27,7 +27,7 @@ test("renders browser, coding, and shell capabilities when enabled", () => {
   assert.match(section, /do not call it just to prepare a handoff/);
   assert.match(section, /Hand off roughly in a short line/);
   assert.match(section, /no limit on the number of workers/i);
-  assert.match(section, /improving Klein or another repository/);
+  assert.match(section, /improving Klein itself/);
   assert.match(section, /stay silent if it only reports background bookkeeping/);
   assert.match(section, /can act on this machine through its shell or a coding backend/);
   assert.doesNotMatch(section, /not available in this conversation/);

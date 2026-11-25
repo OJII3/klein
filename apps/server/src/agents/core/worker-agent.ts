@@ -106,7 +106,7 @@ export function renderWorkerDelegationSection(options: WorkerDelegationPromptOpt
     "- Follow-up investigations on an ongoing thread of work.",
     ...(options.codingAvailable
       ? [
-          "- Anything about improving Klein or another repository — ideas, vision, principles, frustrations, bugs, feature wishes, direction, or GitHub issues/PRs. Even casual remarks or rough thoughts from the owner can be tossed straight to a worker without overthinking them in chat; start a separate worker whenever the topic or target project changes.",
+          "- Anything about improving Klein itself — ideas, vision, principles, frustrations, bugs, feature wishes, direction, or GitHub issues/PRs. Even casual remarks or rough thoughts from the owner can be tossed straight to a worker without overthinking them in chat; start a new worker whenever the topic changes.",
         ]
       : []),
     "",
