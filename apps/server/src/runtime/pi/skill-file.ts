@@ -58,8 +58,6 @@ async function resolveSkillPath(root: string, input: string): Promise<string> {
     });
   }
 
-  // The model normally receives absolute skill paths, but accept paths relative to the
-  // skills root or the working directory as well.
   const candidates = isAbsolute(input)
     ? [resolve(input)]
     : [resolve(realRoot, input), resolve(process.cwd(), input)];

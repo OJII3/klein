@@ -101,7 +101,7 @@ export function SkillsView(props: SkillsViewProps) {
         <div className="card border border-base-300 bg-base-100">
           <LoadingState />
         </div>
-      ) : !report || !report.directoryExists ? (
+      ) : error && !report ? null : !report || !report.directoryExists ? (
         <div className="card border border-base-300 bg-base-100">
           <EmptyState>No skills directory found</EmptyState>
         </div>
