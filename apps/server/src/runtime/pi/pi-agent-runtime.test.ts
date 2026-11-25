@@ -1977,8 +1977,8 @@ test("appends worker delegation guidance to text conversation prompts based on o
     assert.match(restrictedOwnerPrompt, /This conversation does not have/);
     assert.match(ownerWorkerPrompt, /<name>browser-use<\/name>/);
     assert.match(ownerWorkerPrompt, /<name>coding-task<\/name>/);
-    assert.match(ownerWorkerPrompt, /## Coding tasks/);
-    assert.match(ownerWorkerPrompt, /Repository work can run directly in your shell/);
+    assert.match(ownerWorkerPrompt, /Use when a task needs repository work/);
+    assert.doesNotMatch(ownerWorkerPrompt, /## Coding tasks/);
     assert.doesNotMatch(publicWorkerPrompt, /browser-use|coding-task|## Coding tasks/);
     assert.match(linkedWorkerPrompt, /<name>browser-use<\/name>/);
     assert.doesNotMatch(linkedWorkerPrompt, /coding-task|## Coding tasks/);

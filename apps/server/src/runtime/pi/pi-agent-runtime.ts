@@ -48,7 +48,6 @@ import { toImageAnalysisFailure } from "@agents/core/image-analysis";
 import {
   renderWorkerSecretsSection,
   renderWorkerDelegationSection,
-  renderWorkerCodingSection,
 } from "@agents/core/worker-agent";
 import type { SessionMode } from "@app/cli-options";
 import { renderWatchToolSection } from "@modules/scheduling/application/watch-tool";
@@ -983,14 +982,10 @@ export function createPiAgentFactory({
             })
           : undefined;
       const workerSecretsSection = hasSecretRequest ? renderWorkerSecretsSection() : undefined;
-      const workerCodingSection = sessionCodingAvailable
-        ? renderWorkerCodingSection(workerShell?.kind === "host" ? "host" : "sandbox")
-        : undefined;
       const systemPrompt = [
         definition.systemPrompt,
         ...(workerDelegationSection ? [workerDelegationSection] : []),
         ...(workerSecretsSection ? [workerSecretsSection] : []),
-        ...(workerCodingSection ? [workerCodingSection] : []),
         ...(hasWatchAdd && watchToolCatalog ? [renderWatchToolSection(watchToolCatalog)] : []),
       ]
         .filter(Boolean)

@@ -140,26 +140,6 @@ export function renderWorkerDelegationSection(options: WorkerDelegationPromptOpt
   return lines.join("\n");
 }
 
-export function renderWorkerCodingSection(shell: "host" | "sandbox" = "sandbox"): string {
-  return [
-    "## Coding tasks (`coding_task_*`)",
-    "",
-    shell === "host"
-      ? "Repository work can run directly in your shell, in the host home. Use a coding task when you want a separate agent to carry a longer task, run tests, or open a pull request, and when the work should continue after this turn."
-      : "Repository work belongs in a coding task: hand code edits, tests, builds, commits, and PR creation to `coding_task_start` instead of doing them in your own session.",
-    "",
-    "You are the delivery lead. Use `coding_backend_list` to see the available backends and what each supports. The default backend is used when you omit `backend`. Start one task per independent workstream, and use the same task for iteration rather than starting a new one.",
-    "",
-    "Give `coding_task_start` a self-contained message with the goal, repository, acceptance checks, and constraints. The task runs with the backend's default provider, model, and permissions. Use `worktree` and `branch` when the backend supports worktrees and the work should be isolated.",
-    "",
-    "For a long run, start with `wait: false`, then call `coding_task_wait` or `coding_task_show`. A task reported as `waiting` is asking a question: read it with `coding_task_show` and answer it with `coding_task_send`, or report the question. If `coding_task_wait` times out, the run is still going; call it again or report the current state.",
-    "",
-    "Require the task to run the repository's own checks (format, lint, tests, typecheck) and report the commands and results. If a check fails, send the failure back to the same task and continue until it passes or the task explains why it cannot.",
-    "",
-    "Review the reply, branch, pull request, and verification before you report success. If the task is incomplete, send a precise follow-up to the same task. Do not trust a claim of success without evidence. Report the backend, task id, branch, pull request, verification, and any remaining risk.",
-  ].join("\n");
-}
-
 export function renderWorkerSecretsSection(): string {
   return [
     "## Secrets (`secret_*`)",
