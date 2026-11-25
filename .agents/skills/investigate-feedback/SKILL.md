@@ -63,7 +63,7 @@ bun run inspect:context replay --case <caseId> --mode turn-start --judge --judge
 - `Token & Cache Reference`（および複数ターン・複数ステップ時の `Prefix Cache Stability`）で、System Prompt セクションやツール定義、会話履歴のトークン配分が膨らみすぎていないか、先頭プレフィックスが途中で崩れてキャッシュ効率を落としていないかを参考情報として確認する。
 - `Recorded Turn Trace` で、ユーザーが実際に送った発言、`klein-turn-context` の内容、モデルが途中で呼んだツールと返り値、および `discord_send` 呼び出し直前の思考やテキストを読む。ツールが想定外の結果を返していないか、検索・読み込みを怠って推測で答えていないかを見る。
 - `Transcript Messages Sent to Model` で、直前までの会話履歴・過去の完了ターン要約・別ユーザーの発言や `<event-metadata>` の並び順が、モデルに文脈や宛先を取り違えさせる形になっていないか確かめる。
-- `System Prompt` と `Declared Tools` で、`SOUL.md`・スキル・ツール説明の間に相反する指示や誤解を招く表現がないか確かめる。
+- `System Prompt` と `Declared Tools` で、`SOUL.md`・スキル・ツール説明の間に相反する指示や誤解を招く表現がないか確かめる。あわせて `.agents/skills/llm-ux/SKILL.md` の観点（対象エージェントの目標との適合、英語/日本語の使い分け、量と順番、唐突な未知の前提、直感的でない命名や `toolResult`/エラー文言）で違和感がないか点検する。
 
 ### 3. 現在の設定での変化確認と実 API 再現・Judge 補助
 
@@ -79,4 +79,4 @@ bun run inspect:context replay --case <caseId> --mode turn-start --judge --judge
 2. 生コンテキスト上の原因（どの記憶・ルール・過去履歴・ツール結果・`SOUL.md` の記述がどの振る舞いを誘発したか）
 3. 参考メトリクス・Judge 所見（トークン配分や Prefix Cache の崩れ、あるいは `--judge` を実行した場合の評価結果）
 4. 実 API 再現の結果（実行した場合のみ、元の発言と再現結果の違い）
-5. 修正案（`SOUL.md`、スキル、ツール説明、メモリ運用、`klein-turn-context` のどこを見直すべきか）
+5. 修正案（`SOUL.md`、スキル、ツール説明・`toolResult`・エラー文言、メモリ運用、イベント、`klein-turn-context` のどこを見直すべきかを `.agents/skills/llm-ux/SKILL.md` に沿って提案する）

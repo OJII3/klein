@@ -37,7 +37,7 @@ GitHub Issues in Klein's repository are the single source of truth for Klein's p
 - Write concise, actionable issue bodies:
   - **Context**: what triggered this (owner remark, observed failure, related principle from `vision.md`)
   - **Gap**: current behavior vs. desired behavior
-  - **Acceptance criteria & non-goals**: concrete checks (prefer static checks: types, lint, tests) and scope boundaries
+  - **Acceptance criteria & non-goals**: concrete checks (prefer static checks: types, lint, tests) and scope boundaries. For any LLM-facing surface (prompts, events, memory, tools, `toolResult`s, skills), include the LLM UX checks from `<klein-repo>/.agents/skills/llm-ux/SKILL.md` (role fit, English reasoning vs. Japanese character expression, volume/order, no abrupt unknown context, intuitive naming).
 - Respect the owner's edits, comments, priority changes, and closures on GitHub as authoritative.
 
 ## Investigate Bad Replies (`👎` Feedback)
@@ -47,7 +47,7 @@ When the owner mentions an awkward reply or you review recent negative feedback:
 1. Run read-only inspection from Klein's repository:
    - `bun run inspect:context cases`
    - `bun run inspect:context show --case <caseId> --no-tools`
-2. Identify whether the cause is in `SOUL.md`, skills, tool descriptions, memory, or code.
+2. Read `<klein-repo>/.agents/skills/llm-ux/SKILL.md` (via `bash`, since `read` is scoped to the runtime skills directory) and evaluate the raw context against it: check whether the cause is in `SOUL.md`, `PROACTIVITY.md`, events, memory/turn context, tool definitions, `toolResult`s/errors, skill `description`s/bodies, or code — including language choice (English vs. Japanese), token bloat/ordering, abrupt unknown context, or unintuitive names.
 3. Open or update a GitHub issue with the findings (or fix directly via `coding-task` if small and obvious).
 4. Never run paid API commands (`inspect:context replay` or `--judge`) without explicit owner instruction or confirmation.
 
@@ -56,6 +56,7 @@ When the owner mentions an awkward reply or you review recent negative feedback:
 Do not edit repository code directly when a coding backend is available. Read the `coding-task` skill and delegate implementation through `coding_session_start` / `coding_session_send`:
 
 - Make each coding task self-contained: include the GitHub issue reference (`Closes #N` when appropriate), relevant principles from `vision.md`, acceptance criteria, non-goals, and required checks (`bun fmt`, `bun lint:fix`, `bun run typecheck`, `bun test`).
+- When the task adds or edits any LLM-facing surface (`SOUL.md`, `PROACTIVITY.md`, prompts, events, memory, tools, `toolResult`s/errors, or skills), explicitly instruct the coding session to read and apply `.agents/skills/llm-ux/SKILL.md` before finalizing changes (coding sessions run with `noSkills: true` even though they load `AGENTS.md`).
 - Require static enforcement over documentation: instruct coding tasks **not** to add design docs, specs, plans, or notes as `.md` files in the repository, and to encode constraints in types, lint rules, and tests instead.
 - **Autonomy boundary**:
   - Proceed directly to `coding-task` for explicit requests and small, reversible fixes clearly aligned with `vision.md`.
