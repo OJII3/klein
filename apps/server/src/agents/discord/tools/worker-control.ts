@@ -25,7 +25,7 @@ export function createWorkerControlTools(
         ]
       : []),
     ...(ownerFeaturesAllowed
-      ? ["T3 Code thread creation and follow-ups (t3_thread_start, t3_thread_send)"]
+      ? ["coding task delegation (coding_task_start, coding_task_send)"]
       : []),
   ];
   const capabilitiesNote =
