@@ -6,8 +6,7 @@ import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-tas
 import type { WatchCheckRunner } from "@modules/scheduling/ports/watch-check-runner";
 import type { AccessScope } from "@shared/access";
 import type { CodingBackendRegistry } from "@modules/coding/application/coding-backend-registry";
-import { createCodingProjectListTool } from "@agents/tools/coding-project";
-import { createCodingTaskTools } from "@agents/tools/coding-task";
+import { createCodingSessionTools } from "@agents/tools/coding-session";
 import { createWatchTools } from "@agents/tools/watch";
 import { createDiscordImageAnalysis, createDiscordReadTool } from "./discord-read";
 import {
@@ -42,8 +41,6 @@ export function createWorkerTools(
       watchCheckRunner,
       ownerWorkerId,
     ),
-    ...(codingBackends
-      ? [createCodingProjectListTool(codingBackends), ...createCodingTaskTools(codingBackends)]
-      : []),
+    ...(codingBackends ? createCodingSessionTools(codingBackends) : []),
   ];
 }

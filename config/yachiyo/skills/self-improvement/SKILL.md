@@ -11,7 +11,7 @@ You are the product and engineering manager for **this topic about improving Kle
 
 Do not assume a hardcoded path, and do not worry about other repositories:
 
-1. Find Klein's repository path via `coding_project_list` or `ghq list -p` (`$(ghq root)/<host>/<owner>/<repo>`), then inspect `gh repo view --json nameWithOwner,defaultBranchRef` from inside Klein's repository.
+1. Find Klein's repository path via `ghq list -p` (`$(ghq root)/<host>/<owner>/<repo>`), then inspect `gh repo view --json nameWithOwner,defaultBranchRef` from inside Klein's repository.
 2. Check `config/config.jsonc` (if present) for `runtime.stateDir` (default: `<klein-repo>/.runtime/state`).
 3. Keep at most one concise local file outside the git tree at `<stateDir>/self-improvement/vision.md` for Klein's enduring principles, taste, and non-goals that are not yet encoded in code, tests, or `AGENTS.md`.
    - Do not create `inbox.md`, `decisions.md`, or sprawling note piles. Track concrete tasks, rough ideas, decisions, and rejected alternatives in Klein's GitHub Issues so they have one canonical home and can be closed cleanly.
@@ -53,14 +53,14 @@ When the owner mentions an awkward reply or you review recent negative feedback:
 
 ## Delegate Implementation via `coding-task`
 
-Do not edit repository code directly when a coding backend is available. Read the `coding-task` skill and delegate implementation through `coding_task_start` / `coding_task_send`:
+Do not edit repository code directly when a coding backend is available. Read the `coding-task` skill and delegate implementation through `coding_session_start` / `coding_session_send`:
 
 - Make each coding task self-contained: include the GitHub issue reference (`Closes #N` when appropriate), relevant principles from `vision.md`, acceptance criteria, non-goals, and required checks (`bun fmt`, `bun lint:fix`, `bun run typecheck`, `bun test`).
 - Require static enforcement over documentation: instruct coding tasks **not** to add design docs, specs, plans, or notes as `.md` files in the repository, and to encode constraints in types, lint rules, and tests instead.
 - **Autonomy boundary**:
   - Proceed directly to `coding-task` for explicit requests and small, reversible fixes clearly aligned with `vision.md`.
   - Stop and ask via the conversation agent (with an issue drafted or linked) before major architectural shifts, breaking behavior changes, or ambiguous trade-offs.
-- Track the resulting PR and checks; iterate with `coding_task_send` on the same task when checks fail or review comments arrive.
+- Track the resulting PR and checks; iterate with `coding_session_send` on the same session when checks fail or review comments arrive.
 
 ## Link with GitHub Activity (Watch Loop)
 
@@ -77,9 +77,9 @@ When this topic involves ongoing GitHub work on Klein (or when setting up Klein'
    - On the first run (dry run / bootstrap when no baseline is stored yet), save the current watermarks and call `silent()` so initial setup does not spam a wake.
    - On subsequent runs, when any new/updated item appears past the watermark, print a short structured summary with `text()` and call `wake()`; otherwise call `silent()`.
 3. When the watch wakes this worker:
-   - Inspect full details with `gh` (`gh issue view`, `gh pr view`, `gh pr checks`) and `coding_task_list`.
+   - Inspect full details with `gh` (`gh issue view`, `gh pr view`, `gh pr checks`) and `coding_session_list`.
    - **Owner opened/edited/commented on an issue**: infer intent, align with `vision.md`, update issue triage, and decide whether to clarify, queue, or start a `coding-task`.
-   - **Review comment or failing CI on an open PR**: if a matching coding task exists, send the feedback with `coding_task_send`; otherwise summarize the finding and next step.
+   - **Review comment or failing CI on an open PR**: if a matching coding session exists, send the feedback with `coding_session_send`; otherwise summarize the finding and next step.
    - **PR merged or issue closed**: prune any superseded entries in `vision.md`, and if this was a single-issue/PR watch with nothing left for this topic, delete the watch with `watch_delete`.
    - **Self-triggered echo or noise**: ignore it and finish silently (`No user-facing reply needed.`).
 

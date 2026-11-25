@@ -46,7 +46,6 @@ export interface WorkerControl {
 export interface WorkerDelegationPromptOptions {
   readonly browserAvailable: boolean;
   readonly codingAvailable: boolean;
-  readonly codingProjectAvailable: boolean;
   readonly shell?: "host" | "sandbox";
   readonly secretsAvailable: boolean;
   readonly watchAvailable: boolean;
@@ -61,7 +60,7 @@ export function renderWorkerDelegationSection(options: WorkerDelegationPromptOpt
   }
   if (options.codingAvailable) {
     workerOnlyCapabilities.push(
-      "- Coding tasks (`coding_task_start`, `coding_task_send`): hand repository edits, coding, tests, and PR creation to a coding backend, in any repository on this machine, including Klein's own code, dotfiles, and machine settings.",
+      "- Coding sessions (`coding_session_start`, `coding_session_send`): hand repository edits, coding, tests, and PR creation to a coding backend, in any repository on this machine, including Klein's own code, dotfiles, and machine settings.",
     );
   }
   if (options.shell === "host") {
@@ -81,7 +80,7 @@ export function renderWorkerDelegationSection(options: WorkerDelegationPromptOpt
 
   const unavailableCapabilities = [
     ...(options.browserAvailable ? [] : ["real browser use via `agent-browser`"]),
-    ...(options.codingAvailable ? [] : ["coding task delegation via `coding_task_start`"]),
+    ...(options.codingAvailable ? [] : ["coding session delegation via `coding_session_start`"]),
     ...(options.shell ? [] : ["a shell"]),
     ...(options.secretsAvailable ? [] : ["asking the linked user for secrets"]),
   ];
@@ -112,12 +111,6 @@ export function renderWorkerDelegationSection(options: WorkerDelegationPromptOpt
     "",
     "Keep only trivial single-step checks (such as one quick `web_search`, `fetch_content`, or `discord_read`) inline.",
     "",
-    ...(options.codingProjectAvailable
-      ? [
-          "You can list coding projects directly with `coding_project_list` when asked in conversation, but do not call it just to prepare a handoff — workers can look up projects themselves.",
-          "",
-        ]
-      : []),
     ...(workerOnlyCapabilities.length > 0
       ? [
           "Workers in this conversation also have capabilities you do NOT have directly:",

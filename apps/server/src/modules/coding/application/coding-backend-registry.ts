@@ -1,9 +1,9 @@
-import { parseCodingTaskRef } from "../domain/coding-task";
+import { parseCodingSessionRef } from "../domain/coding-session";
 import type { CodingBackend } from "../ports/coding-backend";
 
-export interface ResolvedCodingTask {
+export interface ResolvedCodingSession {
   readonly backend: CodingBackend;
-  readonly taskId: string;
+  readonly sessionId: string;
 }
 
 export class CodingBackendRegistry {
@@ -49,11 +49,11 @@ export class CodingBackendRegistry {
     return backend;
   }
 
-  resolve(taskRef: string): ResolvedCodingTask {
-    const parsed = parseCodingTaskRef(taskRef);
+  resolve(sessionRef: string): ResolvedCodingSession {
+    const parsed = parseCodingSessionRef(sessionRef);
     if (parsed && this.backends.has(parsed.backendId)) {
-      return { backend: this.get(parsed.backendId), taskId: parsed.taskId };
+      return { backend: this.get(parsed.backendId), sessionId: parsed.sessionId };
     }
-    return { backend: this.get(), taskId: taskRef };
+    return { backend: this.get(), sessionId: sessionRef };
   }
 }

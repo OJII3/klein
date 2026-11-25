@@ -45,11 +45,15 @@ export interface PiSessionOptions {
   readonly cwd: string;
   readonly model: Model<Api>;
   readonly sessionId: string;
-  readonly systemPrompt: string;
+  readonly systemPrompt?: string;
   readonly thinkingLevel?: ThinkingLevel;
   readonly toolNames: readonly string[];
   readonly tools: readonly PiTool[];
   readonly extensions?: readonly ExtensionFactory[];
+  readonly sessionDir?: string;
+  readonly sessionFile?: string;
+  readonly projectContext?: boolean;
+  readonly sessionName?: string;
 }
 
 export interface PiSessionPromptOptions {
@@ -58,6 +62,7 @@ export interface PiSessionPromptOptions {
 }
 
 export interface PiSession {
+  readonly sessionFile?: string;
   prompt(text: string, options?: PiSessionPromptOptions): Promise<string | undefined>;
   dispose(): void;
 }
@@ -89,15 +94,26 @@ export class PiStandaloneSessionRunner {
       noSkills: true,
       noPromptTemplates: true,
       noThemes: true,
-      noContextFiles: true,
+      noContextFiles: options.projectContext !== true,
       systemPrompt: options.systemPrompt,
     });
     await resourceLoader.reload();
 
-    const sessionManager = SessionManager.create(
-      options.cwd,
-      standaloneSessionDir(this.options.agentDir, options.sessionId),
-    );
+    const sessionDir =
+      options.sessionDir ?? standaloneSessionDir(this.options.agentDir, options.sessionId);
+    const sessionManager = options.sessionFile
+      ? SessionManager.open(options.sessionFile, sessionDir, options.cwd)
+      : SessionManager.create(
+          options.cwd,
+          sessionDir,
+          /*
+           * Why: standalone callers use display keys such as "shared-memory-x:guild-a" that pi
+           * rejects as session ids, and they relied on a generated file id. Only the coding
+           * backend passes a sessionDir and needs the persisted id to match what it resumes by.
+           */
+          options.sessionDir ? { id: options.sessionId } : undefined,
+        );
+    if (options.sessionName) sessionManager.appendSessionInfo(options.sessionName);
     const model = withOpenCodeSessionHeader(options.model, options.sessionId);
     const { session } = await createAgentSession({
       cwd: options.cwd,
@@ -123,6 +139,7 @@ export class PiStandaloneSessionRunner {
     trace.attach(session);
 
     return {
+      sessionFile: sessionManager.getSessionFile(),
       prompt: (text, promptOptions) => promptSession(session, text, promptOptions),
       dispose: () => {
         trace.dispose();

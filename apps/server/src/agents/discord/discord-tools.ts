@@ -3,8 +3,6 @@ import type { Logger } from "pino";
 
 import type { AgentImageAnalyzer } from "@agents/core/agent-factory";
 import type { WorkerControl } from "@agents/core/worker-agent";
-import type { CodingBackendRegistry } from "@modules/coding/application/coding-backend-registry";
-import { createCodingProjectListTool } from "@agents/tools/coding-project";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
 import type { DiscordUserResolver } from "@modules/discord/ports/discord-user-resolver";
 import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
@@ -48,7 +46,6 @@ export interface DiscordAgentToolsOptions {
   readonly userMemoryStore?: UserMemoryStore;
   readonly discordUserDirectory?: DiscordUserResolver;
   readonly workers?: WorkerControl;
-  readonly codingBackends?: CodingBackendRegistry;
   readonly sessionFilePath?: () => string | undefined;
   readonly proactive?: ProactiveToolCoordinator;
   readonly initiative?: InitiativeToolCoordinator;
@@ -143,9 +140,6 @@ export function createDiscordAgentTools(
           ownerFeaturesAllowed,
           options.sessionFilePath,
         )
-      : []),
-    ...(ownerFeaturesAllowed && options.codingBackends
-      ? [createCodingProjectListTool(options.codingBackends)]
       : []),
     ...(options.userMemoryStore && options.discordUserDirectory
       ? createUserMemoryTools(options.userMemoryStore, options.discordUserDirectory)

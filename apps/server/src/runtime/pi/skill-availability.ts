@@ -48,7 +48,7 @@ export function resolveSkillAudienceCapabilities(
     conversation: { browser: false, coding: false },
     ownerWorker: {
       browser: ownerConfigured && owner.allowsServer(AGENT_BROWSER_MCP_SERVER_NAME),
-      coding: ownerConfigured && owner.allowsTool("coding_task_start"),
+      coding: ownerConfigured && owner.allowsTool("coding_session_start"),
     },
     linkedUserWorker: {
       browser: linkedUser.allowsServer(AGENT_BROWSER_MCP_SERVER_NAME),

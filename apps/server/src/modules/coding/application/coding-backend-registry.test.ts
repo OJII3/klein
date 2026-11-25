@@ -9,10 +9,7 @@ function createBackend(id: string): CodingBackend {
     id,
     label: id,
     capabilities: {
-      projects: false,
       worktree: false,
-      questions: false,
-      pullRequest: false,
     },
     async list() {
       return [];
@@ -54,25 +51,25 @@ test("rejects an unknown default", () => {
   );
 });
 
-test("resolves a task reference to its backend", () => {
+test("resolves a session reference to its backend", () => {
   const registry = new CodingBackendRegistry([createBackend("first"), createBackend("second")]);
 
-  assert.deepEqual(registry.resolve("task-1"), {
+  assert.deepEqual(registry.resolve("session-1"), {
     backend: registry.get("first"),
-    taskId: "task-1",
+    sessionId: "session-1",
   });
-  assert.deepEqual(registry.resolve("second:task-1"), {
+  assert.deepEqual(registry.resolve("second:session-1"), {
     backend: registry.get("second"),
-    taskId: "task-1",
+    sessionId: "session-1",
   });
 });
 
-test("keeps colons in a task id when the prefix is not a backend", () => {
+test("keeps colons in a session id when the prefix is not a backend", () => {
   const registry = new CodingBackendRegistry([createBackend("first")]);
 
   assert.deepEqual(registry.resolve("mcp:thread-1"), {
     backend: registry.get("first"),
-    taskId: "mcp:thread-1",
+    sessionId: "mcp:thread-1",
   });
 });
 

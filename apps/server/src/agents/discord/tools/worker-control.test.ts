@@ -234,13 +234,13 @@ test("describes worker capabilities that the conversation scope grants", () => {
   assert.match(publicTools.workerStart.description, /no limit on workers/i);
   assert.doesNotMatch(
     publicTools.workerStart.description,
-    /agent-browser|coding_task_start|sandboxed shell|unsandboxed shell/,
+    /agent-browser|coding_session_start|sandboxed shell|unsandboxed shell/,
   );
   assert.match(ownerTools.workerStart.description, /agent-browser/);
-  assert.match(ownerTools.workerStart.description, /coding_task_start, coding_task_send/);
+  assert.match(ownerTools.workerStart.description, /coding_session_start, coding_session_send/);
   assert.match(ownerTools.workerStart.description, /unsandboxed shell \(bash\) on the host/);
   assert.doesNotMatch(ownerTools.workerStart.description, /a sandboxed shell/);
   assert.match(linkedTools.workerStart.description, /agent-browser/);
   assert.match(linkedTools.workerStart.description, /sandboxed shell/);
-  assert.doesNotMatch(linkedTools.workerStart.description, /coding_task_start/);
+  assert.doesNotMatch(linkedTools.workerStart.description, /coding_session_start/);
 });

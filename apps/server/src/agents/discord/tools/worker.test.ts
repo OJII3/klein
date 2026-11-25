@@ -115,33 +115,27 @@ test("adds coding tools only when a backend registry is supplied", () => {
     id: "stub",
     label: "Stub",
     capabilities: {
-      projects: true,
       worktree: false,
-      questions: false,
-      pullRequest: false,
-    },
-    async listProjects() {
-      return [];
     },
     async list() {
       return [];
     },
     async start() {
-      return { taskId: "task-1", status: "completed" };
+      return { sessionId: "session-1", status: "completed" };
     },
     async send() {
-      return { taskId: "task-1", status: "completed" };
+      return { sessionId: "session-1", status: "completed" };
     },
     async wait() {
       return {
-        task: { id: "task-1", title: "T", status: "completed" },
+        session: { id: "session-1", title: "T", status: "completed" },
         messages: [],
         timedOut: false,
       };
     },
     async show() {
       return {
-        task: { id: "task-1", title: "T", status: "completed" },
+        session: { id: "session-1", title: "T", status: "completed" },
         messages: [],
       };
     },
@@ -175,13 +169,11 @@ test("adds coding tools only when a backend registry is supplied", () => {
   assert.deepEqual(
     withCoding.filter((tool) => tool.name.startsWith("coding_")).map((tool) => tool.name),
     [
-      "coding_project_list",
-      "coding_backend_list",
-      "coding_task_start",
-      "coding_task_send",
-      "coding_task_wait",
-      "coding_task_show",
-      "coding_task_list",
+      "coding_session_start",
+      "coding_session_send",
+      "coding_session_wait",
+      "coding_session_show",
+      "coding_session_list",
     ],
   );
 });
