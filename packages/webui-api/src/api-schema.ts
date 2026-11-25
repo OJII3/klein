@@ -18,6 +18,14 @@ export const SessionQuerySchema = t.Object({
   cursor: t.Optional(t.String({ minLength: 1, maxLength: 4096 })),
 });
 
+export const SkillParamsSchema = t.Object({
+  name: t.String({ minLength: 1, maxLength: 200 }),
+});
+
+export const SkillFileQuerySchema = t.Object({
+  path: t.String({ minLength: 1, maxLength: 4096 }),
+});
+
 export const MemoryGuildParamsSchema = t.Object({
   guildId: t.String({
     minLength: 1,
