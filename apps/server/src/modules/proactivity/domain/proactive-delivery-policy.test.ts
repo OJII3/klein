@@ -80,11 +80,25 @@ test("uses the default delivery mode for today's signals", () => {
   assert.deepEqual(preference("attach"), { mode: "attach", reason: "default-mode" });
   assert.deepEqual(preference("digest"), { mode: "digest", reason: "default-mode" });
   assert.deepEqual(preference("silent"), { mode: "silent", reason: "default-mode" });
-  assert.deepEqual(preference("interrupt"), { mode: "attach", reason: "default-mode" });
+  assert.deepEqual(preference("interrupt"), { mode: "interrupt", reason: "default-mode" });
   assert.deepEqual(decide("today", { defaults: { ...defaults, defaultMode: "interrupt" } }), {
-    mode: "attach",
+    mode: "interrupt",
     reason: "default-mode",
   });
+  assert.deepEqual(
+    decide("today", {
+      defaults: { ...defaults, defaultMode: "interrupt" },
+      now: japanTime(2026, 11, 20, 23, 30),
+    }),
+    { mode: "attach", reason: "quiet-hours" },
+  );
+  assert.deepEqual(
+    decide("today", {
+      defaults: { ...defaults, defaultMode: "interrupt" },
+      deliveredToday: 3,
+    }),
+    { mode: "attach", reason: "daily-limit" },
+  );
 });
 
 test("falls back to attach when a digest time is not configured", () => {

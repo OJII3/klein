@@ -4,8 +4,8 @@ import type { AppConfig } from "@app/config-schema";
 
 import type { ProactivePolicyDefaults } from "../domain/proactive-delivery-policy";
 
-const DEFAULT_PROACTIVE_DELIVERY_MODE = "attach";
-const DEFAULT_PROACTIVE_MAX_PER_DAY = 3;
+const DEFAULT_PROACTIVE_DELIVERY_MODE = "interrupt";
+const DEFAULT_PROACTIVE_MAX_PER_DAY = 8;
 const DEFAULT_PROACTIVE_PUBLIC_CHANNELS = false;
 const DEFAULT_PROMISE_GUARD = "log";
 

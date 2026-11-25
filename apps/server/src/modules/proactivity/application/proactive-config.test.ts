@@ -30,8 +30,8 @@ test("returns disabled defaults when proactivity is not configured", () => {
     followUpDirectory: resolve("/tmp/klein-agent", "proactive/follow-ups"),
     signalDirectory: resolve("/tmp/klein-agent", "proactive/signals"),
     defaults: {
-      defaultMode: "attach",
-      maxPerDay: 3,
+      defaultMode: "interrupt",
+      maxPerDay: 8,
       publicChannels: false,
     },
     promiseGuard: "log",

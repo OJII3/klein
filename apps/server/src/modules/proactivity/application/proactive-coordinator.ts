@@ -50,9 +50,9 @@ const MAX_PENDING_SIGNALS = 5;
 const SIGNAL_EVIDENCE_LIMIT = 2_000;
 const SIGNAL_LIFETIME_MS = 7 * 24 * 60 * 60 * 1_000;
 const DIGEST_INSTRUCTION =
-  "There are collected signals you may report together. Pick only the ones worth mentioning and convey them briefly in your own words. You do not need to list them all. Stay silent if none is worth mentioning.";
+  "There are collected signals you may report together. Share the 1 or 2 most relevant items briefly in your own character's voice rather than listing them all. Stay silent only if none is worth mentioning.";
 const PENDING_SIGNALS_INSTRUCTION =
-  "These topics were collected for you in earlier work. Bring up the ones that fit the current conversation naturally in your reply; do not force them or list them all.";
+  "These topics were collected for you in earlier work. When replying, weave in a relevant item naturally—or add one brief follow-up note if helpful—without dumping them all at once.";
 
 export interface ProactiveCoordinatorOptions {
   readonly preferenceStore: ProactivePreferenceStore;
