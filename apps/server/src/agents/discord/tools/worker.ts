@@ -7,7 +7,7 @@ import type { WatchCheckRunner } from "@modules/scheduling/ports/watch-check-run
 import type { AccessScope } from "@shared/access";
 import type { CodingBackendRegistry } from "@modules/coding/application/coding-backend-registry";
 import { createCodingProjectListTool } from "@agents/tools/coding-project";
-import { createCodingTaskTools } from "@agents/tools/coding-task";
+import { createCodingSessionTools } from "@agents/tools/coding-session";
 import { createWatchTools } from "@agents/tools/watch";
 import { createDiscordImageAnalysis, createDiscordReadTool } from "./discord-read";
 import {
@@ -43,7 +43,7 @@ export function createWorkerTools(
       ownerWorkerId,
     ),
     ...(codingBackends
-      ? [createCodingProjectListTool(codingBackends), ...createCodingTaskTools(codingBackends)]
+      ? [createCodingProjectListTool(codingBackends), ...createCodingSessionTools(codingBackends)]
       : []),
   ];
 }

@@ -15,7 +15,7 @@ test("renders browser, coding, and shell capabilities when enabled", () => {
 
   assert.match(section, /worker_start/);
   assert.match(section, /agent-browser/);
-  assert.match(section, /coding_task_start/);
+  assert.match(section, /coding_session_start/);
   assert.match(section, /sandboxed shell/);
   assert.match(section, /Missing CLI tools can be installed into the sandbox's `~\/\.local\/bin`/);
   assert.match(section, /secret_request/);
@@ -76,10 +76,10 @@ test("mentions only the capabilities that are unavailable", () => {
   });
 
   assert.match(section, /agent-browser/);
-  assert.match(section, /does not have coding task delegation via `coding_task_start`/);
+  assert.match(section, /does not have coding session delegation via `coding_session_start`/);
   assert.match(
     section,
-    /does not have coding task delegation via `coding_task_start` or a shell or asking the linked user for secrets/,
+    /does not have coding session delegation via `coding_session_start` or a shell or asking the linked user for secrets/,
   );
   assert.match(section, /list coding projects directly with `coding_project_list`/);
   assert.doesNotMatch(section, /does not have real browser use via `agent-browser`/);

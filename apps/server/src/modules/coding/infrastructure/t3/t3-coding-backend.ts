@@ -1,13 +1,13 @@
 import type {
-  CodingTaskDetail,
-  CodingTaskRun,
-  CodingTaskSendInput,
-  CodingTaskStartInput,
-  CodingTaskStatus,
-  CodingTaskSummary,
-  CodingTaskWaitInput,
-  CodingTaskWaitResult,
-} from "../../domain/coding-task";
+  CodingSessionDetail,
+  CodingSessionRun,
+  CodingSessionSendInput,
+  CodingSessionStartInput,
+  CodingSessionStatus,
+  CodingSessionSummary,
+  CodingSessionWaitInput,
+  CodingSessionWaitResult,
+} from "../../domain/coding-session";
 import type { CodingBackend } from "../../ports/coding-backend";
 import {
   createT3CliThreadRunner,
@@ -25,7 +25,7 @@ export interface T3CodingBackendOptions
   readonly projectLister?: T3ProjectLister;
 }
 
-const STATUSES: Readonly<Record<string, CodingTaskStatus>> = {
+const STATUSES: Readonly<Record<string, CodingSessionStatus>> = {
   running: "running",
   waiting: "waiting",
   idle: "idle",
@@ -51,9 +51,9 @@ export function createT3CodingBackend(options: T3CodingBackendOptions = {}): Cod
     },
     listProjects: (signal) => projectLister.list(signal),
     async list(project, signal) {
-      return (await runner.list(project, signal)).map((thread) => toTaskSummary(thread));
+      return (await runner.list(project, signal)).map((thread) => toSessionSummary(thread));
     },
-    async start(input: CodingTaskStartInput, signal) {
+    async start(input: CodingSessionStartInput, signal) {
       const result = await runner.start(
         {
           ...(input.project ? { project: input.project } : {}),
@@ -65,46 +65,46 @@ export function createT3CodingBackend(options: T3CodingBackendOptions = {}): Cod
         },
         signal,
       );
-      return toTaskRun(result);
+      return toSessionRun(result);
     },
-    async send(input: CodingTaskSendInput, signal) {
+    async send(input: CodingSessionSendInput, signal) {
       const result = await runner.send(
-        { threadId: input.taskId, message: input.message, wait: input.wait },
+        { threadId: input.sessionId, message: input.message, wait: input.wait },
         signal,
       );
-      return toTaskRun(result);
+      return toSessionRun(result);
     },
-    async wait(input: CodingTaskWaitInput, signal): Promise<CodingTaskWaitResult> {
+    async wait(input: CodingSessionWaitInput, signal): Promise<CodingSessionWaitResult> {
       const result = await runner.wait(
-        { threadId: input.taskId, messages: input.messages, timeoutMs: input.timeoutMs },
+        { threadId: input.sessionId, messages: input.messages, timeoutMs: input.timeoutMs },
         signal,
       );
       return {
-        task: toTaskSummary(result.thread),
+        session: toSessionSummary(result.thread),
         messages: result.messages,
         timedOut: result.timedOut,
       };
     },
-    async show(taskId, messages, signal): Promise<CodingTaskDetail> {
-      const result = await runner.show(taskId, messages, signal);
+    async show(sessionId, messages, signal): Promise<CodingSessionDetail> {
+      const result = await runner.show(sessionId, messages, signal);
       return {
-        task: toTaskSummary(result.thread),
+        session: toSessionSummary(result.thread),
         messages: result.messages,
       };
     },
   };
 }
 
-function toTaskStatus(status: string): CodingTaskStatus {
+function toSessionStatus(status: string): CodingSessionStatus {
   return STATUSES[status] ?? "unknown";
 }
 
-function toTaskSummary(thread: T3ThreadSummary): CodingTaskSummary {
+function toSessionSummary(thread: T3ThreadSummary): CodingSessionSummary {
   const linkedPullRequest = thread.linkedPullRequest;
   return {
     id: thread.id,
     title: thread.title,
-    status: toTaskStatus(thread.status),
+    status: toSessionStatus(thread.status),
     ...(thread.link ? { link: thread.link } : {}),
     ...(thread.updatedAt ? { updatedAt: thread.updatedAt } : {}),
     ...(thread.branch ? { branch: thread.branch } : {}),
@@ -120,16 +120,16 @@ function toTaskSummary(thread: T3ThreadSummary): CodingTaskSummary {
   };
 }
 
-function toTaskRun(result: {
+function toSessionRun(result: {
   readonly threadId: string;
   readonly status: string;
   readonly link?: string;
   readonly reply?: string;
   readonly error?: string;
-}): CodingTaskRun {
+}): CodingSessionRun {
   return {
-    taskId: result.threadId,
-    status: toTaskStatus(result.status),
+    sessionId: result.threadId,
+    status: toSessionStatus(result.status),
     ...(result.link ? { link: result.link } : {}),
     ...(result.reply ? { reply: result.reply } : {}),
     ...(result.error ? { error: result.error } : {}),

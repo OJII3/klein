@@ -4,23 +4,25 @@ import { Type } from "typebox";
 import type { CodingBackendRegistry } from "@modules/coding/application/coding-backend-registry";
 import type { CodingBackend } from "@modules/coding/ports/coding-backend";
 import {
-  formatCodingTaskRef,
-  isCodingTaskWaiting,
-  type CodingTaskRun,
-  type CodingTaskSummary,
-  type CodingTaskWaitResult,
-} from "@modules/coding/domain/coding-task";
+  formatCodingSessionRef,
+  isCodingSessionWaiting,
+  type CodingSessionRun,
+  type CodingSessionSummary,
+  type CodingSessionWaitResult,
+} from "@modules/coding/domain/coding-session";
 
 const MAX_MESSAGE_LENGTH = 8_000;
 const MAX_PROJECT_LENGTH = 1_000;
-const MAX_TASK_REF_LENGTH = 500;
+const MAX_SESSION_REF_LENGTH = 500;
 const MAX_TITLE_LENGTH = 200;
-const MAX_LISTED_TASKS = 50;
+const MAX_LISTED_SESSIONS = 50;
 const MAX_TOOL_OUTPUT_CHARS = 20_000;
 const DEFAULT_WAIT_SECONDS = 300;
 const MAX_WAIT_SECONDS = 1_800;
 
-export function createCodingTaskTools(registry: CodingBackendRegistry): readonly ToolDefinition[] {
+export function createCodingSessionTools(
+  registry: CodingBackendRegistry,
+): readonly ToolDefinition[] {
   const backendSchema = Type.Optional(
     Type.String({
       minLength: 1,
@@ -28,10 +30,10 @@ export function createCodingTaskTools(registry: CodingBackendRegistry): readonly
       description: `Coding backend id. Defaults to "${registry.defaultId}". Use coding_backend_list to see the available backends.`,
     }),
   );
-  const taskSchema = Type.String({
+  const sessionSchema = Type.String({
     minLength: 1,
-    maxLength: MAX_TASK_REF_LENGTH,
-    description: "Task reference returned by coding_task_start or coding_task_list.",
+    maxLength: MAX_SESSION_REF_LENGTH,
+    description: "Session reference returned by coding_session_start or coding_session_list.",
   });
   const projectSchema = Type.Optional(
     Type.String({
@@ -65,14 +67,14 @@ export function createCodingTaskTools(registry: CodingBackendRegistry): readonly
       },
     }),
     defineTool({
-      name: "coding_task_start",
-      label: "Start Coding Task",
+      name: "coding_session_start",
+      label: "Start Coding Session",
       description:
-        "Start a coding task: a persistent session with a coding agent for repository work such as code edits, tests, builds, commits, branches, and pull requests. " +
-        "Use one task per independent workstream. The task runs with the backend's default provider, model, and permissions. " +
-        "By default this waits for the run to finish and includes the reply; set wait to false to return as soon as the task starts.",
+        "Start a coding session: a persistent agent session for repository work such as code edits, tests, builds, commits, branches, and pull requests. " +
+        "Use one session per independent workstream. The session runs with the backend's default provider, model, and permissions. " +
+        "By default this waits for the run to finish and includes the reply; set wait to false to return as soon as the session starts.",
       promptSnippet:
-        "Delegate repository work to a coding task; coding_task_start returns the task's reply.",
+        "Delegate repository work to a coding session; coding_session_start returns the session's reply.",
       parameters: Type.Object({
         message: Type.String({
           minLength: 1,
@@ -128,14 +130,14 @@ export function createCodingTaskTools(registry: CodingBackendRegistry): readonly
       },
     }),
     defineTool({
-      name: "coding_task_send",
-      label: "Send to Coding Task",
+      name: "coding_session_send",
+      label: "Send to Coding Session",
       description:
-        "Send a follow-up message to a coding task and return its result. " +
-        "Use the same task for iteration instead of starting a new one. By default this waits for the run to finish and includes the reply.",
-      promptSnippet: "Send a follow-up to a coding task and return its reply.",
+        "Send a follow-up message to a coding session and return its result. " +
+        "Use the same session for iteration instead of starting a new one. By default this waits for the run to finish and includes the reply.",
+      promptSnippet: "Send a follow-up to a coding session and return its reply.",
       parameters: Type.Object({
-        task: taskSchema,
+        session: sessionSchema,
         message: Type.String({ minLength: 1, maxLength: MAX_MESSAGE_LENGTH }),
         wait: Type.Optional(
           Type.Boolean({
@@ -145,9 +147,9 @@ export function createCodingTaskTools(registry: CodingBackendRegistry): readonly
         ),
       }),
       async execute(_toolCallId, params, signal) {
-        const { backend, taskId } = registry.resolve(params.task);
+        const { backend, sessionId } = registry.resolve(params.session);
         const result = await backend.send(
-          { taskId, message: params.message, wait: params.wait ?? true },
+          { sessionId, message: params.message, wait: params.wait ?? true },
           signal,
         );
         return {
@@ -157,15 +159,15 @@ export function createCodingTaskTools(registry: CodingBackendRegistry): readonly
       },
     }),
     defineTool({
-      name: "coding_task_wait",
-      label: "Wait for Coding Task",
+      name: "coding_session_wait",
+      label: "Wait for Coding Session",
       description:
-        "Wait for a coding task's latest run to finish or ask for input, polling its state. " +
-        "Returns the task state and latest messages. Use this after starting with wait set to false, or to follow a task from an earlier session. " +
+        "Wait for a coding session's latest run to finish or ask for input, polling its state. " +
+        "Returns the session state and latest messages. Use this after starting with wait set to false, or to follow a session started in an earlier turn. " +
         "When the timeout expires it returns timedOut with the current state; call it again to keep waiting.",
-      promptSnippet: "Wait for a coding task to finish or ask for input.",
+      promptSnippet: "Wait for a coding session to finish or ask for input.",
       parameters: Type.Object({
-        task: taskSchema,
+        session: sessionSchema,
         timeoutSeconds: Type.Optional(
           Type.Integer({
             minimum: 1,
@@ -180,10 +182,10 @@ export function createCodingTaskTools(registry: CodingBackendRegistry): readonly
       }),
       async execute(_toolCallId, params, signal) {
         const timeoutSeconds = params.timeoutSeconds ?? DEFAULT_WAIT_SECONDS;
-        const { backend, taskId } = registry.resolve(params.task);
+        const { backend, sessionId } = registry.resolve(params.session);
         const result = await backend.wait(
           {
-            taskId,
+            sessionId,
             messages: params.messages ?? 10,
             timeoutMs: timeoutSeconds * 1_000,
           },
@@ -196,39 +198,41 @@ export function createCodingTaskTools(registry: CodingBackendRegistry): readonly
       },
     }),
     defineTool({
-      name: "coding_task_show",
-      label: "Show Coding Task",
+      name: "coding_session_show",
+      label: "Show Coding Session",
       description:
-        "Show a coding task's status, link, branch, pull request, pending questions, and latest messages. " +
-        "Use this to check a task started with wait set to false, or to read a question when a run reports waiting.",
-      promptSnippet: "Read a coding task's status and latest messages.",
+        "Show a coding session's status, link, branch, pull request, pending questions, and latest messages. " +
+        "Use this to check a session started with wait set to false, or to read a question when a run reports waiting.",
+      promptSnippet: "Read a coding session's status and latest messages.",
       parameters: Type.Object({
-        task: taskSchema,
+        session: sessionSchema,
         messages: Type.Optional(
           Type.Integer({ minimum: 1, maximum: 50, default: 10, description: "Defaults to 10." }),
         ),
       }),
       async execute(_toolCallId, params, signal) {
-        const { backend, taskId } = registry.resolve(params.task);
-        const detail = await backend.show(taskId, params.messages ?? 10, signal);
+        const { backend, sessionId } = registry.resolve(params.session);
+        const detail = await backend.show(sessionId, params.messages ?? 10, signal);
         return {
-          content: [{ type: "text", text: formatDetail(backend.id, detail.task, detail.messages) }],
+          content: [
+            { type: "text", text: formatDetail(backend.id, detail.session, detail.messages) },
+          ],
           details: { backend: backend.id, ...detail },
         };
       },
     }),
     defineTool({
-      name: "coding_task_list",
-      label: "List Coding Tasks",
-      description: "List coding tasks in a project, newest first.",
-      promptSnippet: "List coding tasks in a project.",
+      name: "coding_session_list",
+      label: "List Coding Sessions",
+      description: "List coding sessions in a project, newest first.",
+      promptSnippet: "List coding sessions in a project.",
       parameters: Type.Object({ backend: backendSchema, project: projectSchema }),
       async execute(_toolCallId, params, signal) {
         const backend = registry.get(params.backend);
-        const tasks = await backend.list(params.project, signal);
+        const sessions = await backend.list(params.project, signal);
         return {
-          content: [{ type: "text", text: formatTaskList(backend.id, tasks) }],
-          details: { backend: backend.id, tasks },
+          content: [{ type: "text", text: formatSessionList(backend.id, sessions) }],
+          details: { backend: backend.id, sessions },
         };
       },
     }),
@@ -256,21 +260,25 @@ function capabilityNotes(backend: CodingBackend): string[] {
   ];
 }
 
-function formatRun(verb: "Started" | "Sent to", backendId: string, result: CodingTaskRun): string {
-  const ref = formatCodingTaskRef(backendId, result.taskId);
-  const lines = [`${verb} coding task ${ref} (${result.status}).`];
+function formatRun(
+  verb: "Started" | "Sent to",
+  backendId: string,
+  result: CodingSessionRun,
+): string {
+  const ref = formatCodingSessionRef(backendId, result.sessionId);
+  const lines = [`${verb} coding session ${ref} (${result.status}).`];
   if (result.link) lines.push(result.link);
   if (result.error) lines.push(`Error: ${result.error}`);
   if (result.reply) lines.push("", result.reply);
   if (result.status === "waiting") {
     lines.push(
       "",
-      "The task is waiting for an answer. Read the question with coding_task_show, answer it with coding_task_send, or report the question.",
+      "The session is waiting for an answer. Read the question with coding_session_show, answer it with coding_session_send, or report the question.",
     );
   } else if (!result.error && !result.reply && result.status === "running") {
     lines.push(
       "",
-      "The task is still running; use coding_task_show to check its status, link, and pull request, or coding_task_wait to wait for it.",
+      "The session is still running; use coding_session_show to check its status, link, and pull request, or coding_session_wait to wait for it.",
     );
   }
   return limitOutput(lines.join("\n"));
@@ -278,49 +286,49 @@ function formatRun(verb: "Started" | "Sent to", backendId: string, result: Codin
 
 function formatWait(
   backendId: string,
-  result: CodingTaskWaitResult,
+  result: CodingSessionWaitResult,
   timeoutSeconds: number,
 ): string {
-  const { task, timedOut } = result;
-  const ref = formatCodingTaskRef(backendId, task.id);
+  const { session, timedOut } = result;
+  const ref = formatCodingSessionRef(backendId, session.id);
   const headline = timedOut
-    ? `Coding task ${ref} is still ${task.status} after ${timeoutSeconds}s. Call coding_task_wait again to keep waiting.`
-    : isCodingTaskWaiting(task)
-      ? `Coding task ${ref} is waiting for an answer. Read the question, then answer it with coding_task_send.`
-      : `Coding task ${ref} finished (${task.status}).`;
-  return limitOutput([headline, "", ...detailLines(ref, task, result.messages)].join("\n"));
+    ? `Coding session ${ref} is still ${session.status} after ${timeoutSeconds}s. Call coding_session_wait again to keep waiting.`
+    : isCodingSessionWaiting(session)
+      ? `Coding session ${ref} is waiting for an answer. Read the question, then answer it with coding_session_send.`
+      : `Coding session ${ref} finished (${session.status}).`;
+  return limitOutput([headline, "", ...detailLines(ref, session, result.messages)].join("\n"));
 }
 
 function formatDetail(
   backendId: string,
-  task: CodingTaskSummary,
+  session: CodingSessionSummary,
   messages: readonly { readonly role: string; readonly text: string }[],
 ): string {
-  const ref = formatCodingTaskRef(backendId, task.id);
-  return limitOutput(detailLines(ref, task, messages).join("\n"));
+  const ref = formatCodingSessionRef(backendId, session.id);
+  return limitOutput(detailLines(ref, session, messages).join("\n"));
 }
 
 function detailLines(
   ref: string,
-  task: CodingTaskSummary,
+  session: CodingSessionSummary,
   messages: readonly { readonly role: string; readonly text: string }[],
 ): string[] {
-  const lines = [`${task.title || "(untitled)"} — ${ref} (${task.status})`];
-  if (task.link) lines.push(task.link);
-  if (task.branch || task.worktreePath) {
+  const lines = [`${session.title || "(untitled)"} — ${ref} (${session.status})`];
+  if (session.link) lines.push(session.link);
+  if (session.branch || session.worktreePath) {
     lines.push(
-      `branch: ${task.branch ?? "(detached)"}${
-        task.worktreePath ? ` (worktree ${task.worktreePath})` : ""
+      `branch: ${session.branch ?? "(detached)"}${
+        session.worktreePath ? ` (worktree ${session.worktreePath})` : ""
       }`,
     );
   }
-  if (task.pendingQuestionCount && task.pendingQuestionCount > 0) {
-    lines.push(`Waiting for ${task.pendingQuestionCount} answer(s).`);
+  if (session.pendingQuestionCount && session.pendingQuestionCount > 0) {
+    lines.push(`Waiting for ${session.pendingQuestionCount} answer(s).`);
   }
-  if (task.pullRequest) {
-    lines.push(`PR: ${task.pullRequest.url}`);
-  } else if (task.pullRequestCount && task.pullRequestCount > 0) {
-    lines.push(`PRs: ${task.pullRequestCount} (${task.openPullRequestCount ?? 0} open)`);
+  if (session.pullRequest) {
+    lines.push(`PR: ${session.pullRequest.url}`);
+  } else if (session.pullRequestCount && session.pullRequestCount > 0) {
+    lines.push(`PRs: ${session.pullRequestCount} (${session.openPullRequestCount ?? 0} open)`);
   }
   for (const message of messages) {
     lines.push("", `[${message.role}]`, message.text);
@@ -328,27 +336,27 @@ function detailLines(
   return lines;
 }
 
-function formatTaskList(backendId: string, tasks: readonly CodingTaskSummary[]): string {
-  if (tasks.length === 0) return "No coding tasks in this project.";
+function formatSessionList(backendId: string, sessions: readonly CodingSessionSummary[]): string {
+  if (sessions.length === 0) return "No coding sessions in this project.";
   return limitOutput(
-    tasks
-      .slice(0, MAX_LISTED_TASKS)
-      .map((task) => formatTaskLine(backendId, task))
+    sessions
+      .slice(0, MAX_LISTED_SESSIONS)
+      .map((session) => formatSessionLine(backendId, session))
       .join("\n"),
   );
 }
 
-function formatTaskLine(backendId: string, task: CodingTaskSummary): string {
+function formatSessionLine(backendId: string, session: CodingSessionSummary): string {
   const notes: string[] = [];
-  if (task.pendingQuestionCount && task.pendingQuestionCount > 0) {
-    notes.push(`waiting ${task.pendingQuestionCount}`);
+  if (session.pendingQuestionCount && session.pendingQuestionCount > 0) {
+    notes.push(`waiting ${session.pendingQuestionCount}`);
   }
-  if (task.openPullRequestCount && task.openPullRequestCount > 0) {
-    notes.push(`${task.openPullRequestCount} open PR`);
+  if (session.openPullRequestCount && session.openPullRequestCount > 0) {
+    notes.push(`${session.openPullRequestCount} open PR`);
   }
   const suffix = notes.length > 0 ? `  [${notes.join(", ")}]` : "";
-  const ref = formatCodingTaskRef(backendId, task.id);
-  return `- ${ref}  ${task.status}  ${task.title || "(untitled)"}${suffix}`;
+  const ref = formatCodingSessionRef(backendId, session.id);
+  return `- ${ref}  ${session.status}  ${session.title || "(untitled)"}${suffix}`;
 }
 
 function limitOutput(text: string): string {

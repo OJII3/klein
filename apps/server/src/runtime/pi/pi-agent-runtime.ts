@@ -951,14 +951,14 @@ export function createPiAgentFactory({
         enablesAgentBrowser({ kind: "worker", workerId: "" }, linkedUserId) &&
         authorization.allowsServer(AGENT_BROWSER_MCP_SERVER_NAME);
       const workerCodingAvailable =
-        options.ownerFeaturesAllowed === true && authorization.allowsTool("coding_task_start");
+        options.ownerFeaturesAllowed === true && authorization.allowsTool("coding_session_start");
       const workerSecretsAvailable = linkedUserId !== undefined;
       const sessionBrowserAvailable =
         enablesAgentBrowser(options.role, linkedUserId) &&
         authorization.allowsServer(AGENT_BROWSER_MCP_SERVER_NAME);
       const sessionCodingAvailable =
         options.role.kind === "worker" &&
-        customTools.some((tool) => tool.name === "coding_task_start");
+        customTools.some((tool) => tool.name === "coding_session_start");
       const sessionCodingProjectAvailable = customTools.some(
         (tool) => tool.name === "coding_project_list",
       );

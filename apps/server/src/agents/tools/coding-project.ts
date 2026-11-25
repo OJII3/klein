@@ -2,7 +2,7 @@ import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent
 import { Type } from "typebox";
 
 import type { CodingBackendRegistry } from "@modules/coding/application/coding-backend-registry";
-import type { CodingProject } from "@modules/coding/domain/coding-task";
+import type { CodingProject } from "@modules/coding/domain/coding-session";
 
 const MAX_PROJECTS = 100;
 const MAX_TOOL_OUTPUT_CHARS = 20_000;
@@ -13,7 +13,7 @@ export function createCodingProjectListTool(registry: CodingBackendRegistry): To
     label: "List Coding Projects",
     description:
       "List projects known to a coding backend, with their ids, titles, and workspace paths. " +
-      "Use a project id or a path inside the workspace as the project for a coding task.",
+      "Use a project id or a path inside the workspace as the project for a coding session.",
     promptSnippet: "List coding projects and their workspace paths.",
     parameters: Type.Object({
       backend: Type.Optional(

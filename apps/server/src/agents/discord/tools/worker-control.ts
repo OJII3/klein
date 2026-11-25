@@ -25,7 +25,7 @@ export function createWorkerControlTools(
         ]
       : []),
     ...(ownerFeaturesAllowed
-      ? ["coding task delegation (coding_task_start, coding_task_send)"]
+      ? ["coding session delegation (coding_session_start, coding_session_send)"]
       : []),
   ];
   const capabilitiesNote =

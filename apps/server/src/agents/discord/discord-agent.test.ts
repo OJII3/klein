@@ -691,21 +691,21 @@ test("exposes the coding project list only to the owner conversation", () => {
       return [];
     },
     async start() {
-      return { taskId: "task-1", status: "completed" };
+      return { sessionId: "session-1", status: "completed" };
     },
     async send() {
-      return { taskId: "task-1", status: "completed" };
+      return { sessionId: "session-1", status: "completed" };
     },
     async wait() {
       return {
-        task: { id: "task-1", title: "T", status: "completed" },
+        session: { id: "session-1", title: "T", status: "completed" },
         messages: [],
         timedOut: false,
       };
     },
     async show() {
       return {
-        task: { id: "task-1", title: "T", status: "completed" },
+        session: { id: "session-1", title: "T", status: "completed" },
         messages: [],
       };
     },

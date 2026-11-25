@@ -61,7 +61,7 @@ export function renderWorkerDelegationSection(options: WorkerDelegationPromptOpt
   }
   if (options.codingAvailable) {
     workerOnlyCapabilities.push(
-      "- Coding tasks (`coding_task_start`, `coding_task_send`): hand repository edits, coding, tests, and PR creation to a coding backend, in any repository on this machine, including Klein's own code, dotfiles, and machine settings.",
+      "- Coding sessions (`coding_session_start`, `coding_session_send`): hand repository edits, coding, tests, and PR creation to a coding backend, in any repository on this machine, including Klein's own code, dotfiles, and machine settings.",
     );
   }
   if (options.shell === "host") {
@@ -81,7 +81,7 @@ export function renderWorkerDelegationSection(options: WorkerDelegationPromptOpt
 
   const unavailableCapabilities = [
     ...(options.browserAvailable ? [] : ["real browser use via `agent-browser`"]),
-    ...(options.codingAvailable ? [] : ["coding task delegation via `coding_task_start`"]),
+    ...(options.codingAvailable ? [] : ["coding session delegation via `coding_session_start`"]),
     ...(options.shell ? [] : ["a shell"]),
     ...(options.secretsAvailable ? [] : ["asking the linked user for secrets"]),
   ];

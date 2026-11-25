@@ -2,7 +2,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-import type { CodingProject } from "../../domain/coding-task";
+import type { CodingProject } from "../../domain/coding-session";
 
 export interface T3ProjectLister {
   list(signal?: AbortSignal): Promise<readonly CodingProject[]>;

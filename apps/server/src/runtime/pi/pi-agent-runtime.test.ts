@@ -1896,7 +1896,7 @@ test("appends worker delegation guidance to text conversation prompts based on o
     voiceRuntime.dispose();
 
     const restrictedOwnerRuntime = await createFactory({
-      tools: { overrides: { coding_task_start: "deny" } },
+      tools: { overrides: { coding_session_start: "deny" } },
       mcp: { servers: { agent_browser: "deny" } },
     }).create(
       { systemPrompt: "Base prompt." },
@@ -1912,7 +1912,7 @@ test("appends worker delegation guidance to text conversation prompts based on o
 
     const ownerWorkerRuntime = await createFactory().create(
       { systemPrompt: "Worker prompt." },
-      () => [makeCodingTaskStart()],
+      () => [makeCodingSessionStart()],
       {
         role: { kind: "worker", workerId: "task-owner" },
         sessionKey: "owner-worker",
@@ -1965,7 +1965,7 @@ test("appends worker delegation guidance to text conversation prompts based on o
     );
     assert.match(ownerPrompt, /## Workers \(`worker_start`\)/);
     assert.match(ownerPrompt, /agent-browser/);
-    assert.match(ownerPrompt, /coding_task_start/);
+    assert.match(ownerPrompt, /coding_session_start/);
     assert.match(ownerPrompt, /coding_project_list/);
     assert.match(ownerPrompt, /unsandboxed shell/);
     assert.doesNotMatch(ownerPrompt, /<name>(?:browser-use|coding-task|self-improvement)<\/name>/);
@@ -1979,13 +1979,13 @@ test("appends worker delegation guidance to text conversation prompts based on o
     assert.match(ownerWorkerPrompt, /<name>coding-task<\/name>/);
     assert.match(ownerWorkerPrompt, /<name>self-improvement<\/name>/);
     assert.match(ownerWorkerPrompt, /Use when a task needs repository work/);
-    assert.doesNotMatch(ownerWorkerPrompt, /## Coding tasks/);
+    assert.doesNotMatch(ownerWorkerPrompt, /## Coding sessions/);
     assert.doesNotMatch(
       publicWorkerPrompt,
-      /browser-use|coding-task|self-improvement|## Coding tasks/,
+      /browser-use|coding-task|self-improvement|## Coding sessions/,
     );
     assert.match(linkedWorkerPrompt, /<name>browser-use<\/name>/);
-    assert.doesNotMatch(linkedWorkerPrompt, /coding-task|self-improvement|## Coding tasks/);
+    assert.doesNotMatch(linkedWorkerPrompt, /coding-task|self-improvement|## Coding sessions/);
   } finally {
     if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
     else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
@@ -2004,11 +2004,11 @@ function makeWorkerStart() {
   });
 }
 
-function makeCodingTaskStart() {
+function makeCodingSessionStart() {
   return defineTool({
-    name: "coding_task_start",
-    label: "Start Coding Task",
-    description: "Start a coding task",
+    name: "coding_session_start",
+    label: "Start Coding Session",
+    description: "Start a coding session",
     parameters: Type.Object({ message: Type.String() }),
     async execute() {
       return { content: [{ type: "text", text: "ok" }], details: {} };
