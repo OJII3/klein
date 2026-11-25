@@ -6,6 +6,8 @@ import {
   createStubDiscordChannelApi,
   createStubExtensionToolContext,
 } from "@agents/testing/test-stubs";
+import type { CodingBackend } from "@modules/coding/ports/coding-backend";
+import { CodingBackendRegistry } from "@modules/coding/application/coding-backend-registry";
 import type { DiscordUserProfile } from "@modules/discord/domain/discord-user-profile";
 import type { WatchCheckRunner } from "@modules/scheduling/ports/watch-check-runner";
 import { createWorkerTools } from "./worker";
@@ -49,7 +51,6 @@ test("adds the Discord user profile tool when profile dependencies are supplied"
     "worker-1",
     new InMemoryScheduledTaskStore(),
     runner,
-    undefined,
     undefined,
     undefined,
     undefined,
@@ -108,39 +109,46 @@ test("registers a worker watch with the worker id", async () => {
   assert.equal(watch?.kind === "watch" ? watch.ownerWorkerId : undefined, "worker-1");
 });
 
-test("adds the T3 project and thread tools only when they are supplied", () => {
+test("adds coding tools only when a backend registry is supplied", () => {
   const store = new InMemoryScheduledTaskStore();
-  const t3Runner = {
+  const codingBackend: CodingBackend = {
+    id: "stub",
+    label: "Stub",
+    capabilities: {
+      projects: true,
+      worktree: false,
+      questions: false,
+      pullRequest: false,
+    },
+    async listProjects() {
+      return [];
+    },
     async list() {
       return [];
     },
     async start() {
-      return { threadId: "mcp:1", status: "completed" };
+      return { taskId: "task-1", status: "completed" };
     },
     async send() {
-      return { threadId: "mcp:1", status: "completed" };
+      return { taskId: "task-1", status: "completed" };
     },
     async wait() {
       return {
-        thread: { id: "mcp:1", title: "T", status: "completed" },
+        task: { id: "task-1", title: "T", status: "completed" },
         messages: [],
         timedOut: false,
       };
     },
     async show() {
       return {
-        thread: { id: "mcp:1", title: "T", status: "completed" },
+        task: { id: "task-1", title: "T", status: "completed" },
         messages: [],
       };
     },
   };
-  const t3ProjectLister = {
-    async list() {
-      return [];
-    },
-  };
+  const codingBackends = new CodingBackendRegistry([codingBackend]);
 
-  const withoutT3 = createWorkerTools(
+  const withoutCoding = createWorkerTools(
     createStubDiscordChannelApi(),
     "channel-a",
     "public",
@@ -148,7 +156,7 @@ test("adds the T3 project and thread tools only when they are supplied", () => {
     store,
     runner,
   );
-  const withT3 = createWorkerTools(
+  const withCoding = createWorkerTools(
     createStubDiscordChannelApi(),
     "channel-a",
     "owner:1",
@@ -157,23 +165,23 @@ test("adds the T3 project and thread tools only when they are supplied", () => {
     runner,
     undefined,
     undefined,
-    t3Runner,
-    t3ProjectLister,
+    codingBackends,
   );
 
   assert.equal(
-    withoutT3.some((tool) => tool.name.startsWith("t3_")),
+    withoutCoding.some((tool) => tool.name.startsWith("coding_")),
     false,
   );
   assert.deepEqual(
-    withT3.filter((tool) => tool.name.startsWith("t3_")).map((tool) => tool.name),
+    withCoding.filter((tool) => tool.name.startsWith("coding_")).map((tool) => tool.name),
     [
-      "t3_project_list",
-      "t3_thread_start",
-      "t3_thread_send",
-      "t3_thread_wait",
-      "t3_thread_show",
-      "t3_thread_list",
+      "coding_project_list",
+      "coding_backend_list",
+      "coding_task_start",
+      "coding_task_send",
+      "coding_task_wait",
+      "coding_task_show",
+      "coding_task_list",
     ],
   );
 });

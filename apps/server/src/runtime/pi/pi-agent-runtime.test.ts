@@ -1313,7 +1313,7 @@ test("loads skills from the default profile directory", async () => {
       .getSkills()
       .skills.map((skill) => skill.name)
       .toSorted(),
-    ["browser-use", "honkai-character-dialogue", "t3-thread"],
+    ["browser-use", "coding-task", "honkai-character-dialogue"],
   );
   assert.deepEqual(loader.getSkills().diagnostics, []);
 });
@@ -1871,7 +1871,7 @@ test("appends worker delegation guidance to text conversation prompts based on o
   try {
     const ownerRuntime = await createFactory().create(
       { systemPrompt: "Base prompt." },
-      () => [makeSurfaceTool("discord_send"), makeWorkerStart(), makeT3ProjectList()],
+      () => [makeSurfaceTool("discord_send"), makeWorkerStart(), makeCodingProjectList()],
       {
         role: { kind: "conversation" },
         sessionKey: "owner-conv",
@@ -1896,7 +1896,7 @@ test("appends worker delegation guidance to text conversation prompts based on o
     voiceRuntime.dispose();
 
     const restrictedOwnerRuntime = await createFactory({
-      tools: { overrides: { t3_thread_start: "deny" } },
+      tools: { overrides: { coding_task_start: "deny" } },
       mcp: { servers: { agent_browser: "deny" } },
     }).create(
       { systemPrompt: "Base prompt." },
@@ -1912,7 +1912,7 @@ test("appends worker delegation guidance to text conversation prompts based on o
 
     const ownerWorkerRuntime = await createFactory().create(
       { systemPrompt: "Worker prompt." },
-      () => [makeT3ThreadStart()],
+      () => [makeCodingTaskStart()],
       {
         role: { kind: "worker", workerId: "task-owner" },
         sessionKey: "owner-worker",
@@ -1965,23 +1965,23 @@ test("appends worker delegation guidance to text conversation prompts based on o
     );
     assert.match(ownerPrompt, /## Workers \(`worker_start`\)/);
     assert.match(ownerPrompt, /agent-browser/);
-    assert.match(ownerPrompt, /t3_thread_start/);
-    assert.match(ownerPrompt, /t3_project_list/);
+    assert.match(ownerPrompt, /coding_task_start/);
+    assert.match(ownerPrompt, /coding_project_list/);
     assert.match(ownerPrompt, /unsandboxed shell/);
-    assert.doesNotMatch(ownerPrompt, /browser-use|t3-thread/);
+    assert.doesNotMatch(ownerPrompt, /browser-use|coding-task/);
     assert.match(publicPrompt, /## Workers \(`worker_start`\)/);
     assert.match(publicPrompt, /This conversation does not have/);
-    assert.doesNotMatch(publicPrompt, /browser-use|t3-thread/);
+    assert.doesNotMatch(publicPrompt, /browser-use|coding-task/);
     assert.doesNotMatch(voicePrompt, /## Workers \(`worker_start`\)/);
-    assert.doesNotMatch(voicePrompt, /browser-use|t3-thread/);
+    assert.doesNotMatch(voicePrompt, /browser-use|coding-task/);
     assert.match(restrictedOwnerPrompt, /This conversation does not have/);
     assert.match(ownerWorkerPrompt, /<name>browser-use<\/name>/);
-    assert.match(ownerWorkerPrompt, /<name>t3-thread<\/name>/);
-    assert.match(ownerWorkerPrompt, /## T3 Code threads/);
-    assert.match(ownerWorkerPrompt, /Repository work can run directly in your shell/);
-    assert.doesNotMatch(publicWorkerPrompt, /browser-use|t3-thread|## T3 Code threads/);
+    assert.match(ownerWorkerPrompt, /<name>coding-task<\/name>/);
+    assert.match(ownerWorkerPrompt, /Use when a task needs repository work/);
+    assert.doesNotMatch(ownerWorkerPrompt, /## Coding tasks/);
+    assert.doesNotMatch(publicWorkerPrompt, /browser-use|coding-task|## Coding tasks/);
     assert.match(linkedWorkerPrompt, /<name>browser-use<\/name>/);
-    assert.doesNotMatch(linkedWorkerPrompt, /t3-thread|## T3 Code threads/);
+    assert.doesNotMatch(linkedWorkerPrompt, /coding-task|## Coding tasks/);
   } finally {
     if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
     else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
@@ -2000,11 +2000,11 @@ function makeWorkerStart() {
   });
 }
 
-function makeT3ThreadStart() {
+function makeCodingTaskStart() {
   return defineTool({
-    name: "t3_thread_start",
-    label: "Start T3 Thread",
-    description: "Start a T3 thread",
+    name: "coding_task_start",
+    label: "Start Coding Task",
+    description: "Start a coding task",
     parameters: Type.Object({ message: Type.String() }),
     async execute() {
       return { content: [{ type: "text", text: "ok" }], details: {} };
@@ -2012,11 +2012,11 @@ function makeT3ThreadStart() {
   });
 }
 
-function makeT3ProjectList() {
+function makeCodingProjectList() {
   return defineTool({
-    name: "t3_project_list",
-    label: "List T3 Projects",
-    description: "List T3 projects",
+    name: "coding_project_list",
+    label: "List Coding Projects",
+    description: "List coding projects",
     parameters: Type.Object({}),
     async execute() {
       return { content: [{ type: "text", text: "ok" }], details: {} };

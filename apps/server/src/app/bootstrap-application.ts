@@ -31,8 +31,8 @@ import {
 import { PiStandaloneSessionRunner } from "@runtime/pi/pi-standalone-session-runner";
 import { createPiMinimalAgentFactory } from "@runtime/pi/pi-minimal-agent-factory";
 import { createPiUsageReporterFromEnv } from "@runtime/pi/pi-usage-reporter";
-import { createT3CliThreadRunner } from "@runtime/t3/t3-cli-thread-runner";
-import { createT3SqliteProjectLister } from "@runtime/t3/t3-sqlite-project-lister";
+import { createT3CodingBackend } from "@modules/coding/infrastructure/t3/t3-coding-backend";
+import { CodingBackendRegistry } from "@modules/coding/application/coding-backend-registry";
 import { createWatchFetchTool } from "@runtime/pi/watch-fetch-tool";
 import { runSandboxedCommand } from "@runtime/pi/user-shell-sandbox";
 import { hostHomeDirectory, resolveWorkerShell, runHostCommand } from "@runtime/pi/worker-shell";
@@ -262,8 +262,7 @@ export async function bootstrapApplication(): Promise<void> {
   let discordService!: DiscordJsService;
   let agentCoordinator!: AgentCoordinator;
   let sharedMemoryCoordinator: SharedMemoryCoordinator | undefined;
-  const t3ThreadRunner = createT3CliThreadRunner();
-  const t3ProjectLister = createT3SqliteProjectLister();
+  const codingBackends = new CodingBackendRegistry([createT3CodingBackend()]);
   let workerAgentCoordinator!: WorkerAgentCoordinator;
   const secretService = new SecretService({
     secrets: new FileSecretStore(agentDir, logger),
@@ -325,8 +324,7 @@ export async function bootstrapApplication(): Promise<void> {
         watchCheckRunner,
         ownerRequester,
         toolContext.analyzeImage,
-        ownerRequester ? t3ThreadRunner : undefined,
-        ownerRequester ? t3ProjectLister : undefined,
+        ownerRequester ? codingBackends : undefined,
         { users: discordUserDirectory, profiles: discordService },
       );
       const workerUserId = accessScopeUserId(accessScope);
@@ -466,7 +464,7 @@ export async function bootstrapApplication(): Promise<void> {
           userMemoryStore,
           watchCheckRunner,
           workers: workerAgentCoordinator,
-          ...(ownerFeaturesAllowed ? { t3ProjectLister } : {}),
+          ...(ownerFeaturesAllowed ? { codingBackends } : {}),
           promiseGuard: { mode: proactivityConfig.promiseGuard, logger },
           ...(proactiveCoordinator ? { proactive: proactiveCoordinator } : {}),
           ...(initiativeCoordinator ? { initiative: initiativeCoordinator } : {}),

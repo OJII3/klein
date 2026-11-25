@@ -2,7 +2,11 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-import type { T3Project, T3ProjectLister } from "@agents/tools/t3-project";
+import type { CodingProject } from "../../domain/coding-task";
+
+export interface T3ProjectLister {
+  list(signal?: AbortSignal): Promise<readonly CodingProject[]>;
+}
 
 const MAX_PROJECTS = 100;
 const BUSY_TIMEOUT_MS = 1_000;
@@ -39,7 +43,7 @@ export function createT3SqliteProjectLister(
              LIMIT ?`,
           )
           .all(MAX_PROJECTS) as readonly Record<string, unknown>[];
-        return rows.map((row): T3Project => ({
+        return rows.map((row): CodingProject => ({
           id: String(row.id),
           title: String(row.title),
           workspaceRoot: String(row.workspaceRoot),

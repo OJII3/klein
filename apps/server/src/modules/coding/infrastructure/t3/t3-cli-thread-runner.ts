@@ -1,16 +1,95 @@
 import { spawn } from "node:child_process";
 
-import {
-  isT3ThreadSettled,
-  type T3ThreadDetail,
-  type T3ThreadMessage,
-  type T3ThreadPullRequest,
-  type T3ThreadRun,
-  type T3ThreadRunner,
-  type T3ThreadSummary,
-  type T3ThreadWaitResult,
-} from "@agents/tools/t3-thread";
 import { isRecord } from "@shared/type-guards";
+
+export interface T3ThreadMessage {
+  readonly role: string;
+  readonly text: string;
+}
+
+export interface T3ThreadPullRequest {
+  readonly repository: string;
+  readonly number: number;
+  readonly url: string;
+}
+
+export interface T3ThreadSummary {
+  readonly id: string;
+  readonly title: string;
+  readonly status: string;
+  readonly link?: string;
+  readonly updatedAt?: string;
+  readonly branch?: string;
+  readonly worktreePath?: string;
+  readonly pendingRequestCount?: number;
+  readonly pullRequestCount?: number;
+  readonly openPullRequestCount?: number;
+  readonly linkedPullRequest?: T3ThreadPullRequest;
+}
+
+export interface T3ThreadRun {
+  readonly threadId: string;
+  readonly status: string;
+  readonly link?: string;
+  readonly reply?: string;
+  readonly error?: string;
+}
+
+/** Run statuses that end the run. `waiting` is the CLI's request-for-input status. */
+const TERMINAL_RUN_STATUSES = new Set([
+  "completed",
+  "failed",
+  "cancelled",
+  "interrupted",
+  "rolled_back",
+]);
+
+function isT3ThreadSettled(thread: T3ThreadSummary): boolean {
+  return (
+    thread.status === "waiting" ||
+    thread.status === "idle" ||
+    (thread.pendingRequestCount ?? 0) > 0 ||
+    TERMINAL_RUN_STATUSES.has(thread.status)
+  );
+}
+
+export interface T3ThreadDetail {
+  readonly thread: T3ThreadSummary;
+  readonly messages: readonly T3ThreadMessage[];
+}
+
+export interface T3ThreadWaitInput {
+  readonly threadId: string;
+  readonly messages: number;
+  readonly timeoutMs: number;
+}
+
+export interface T3ThreadWaitResult extends T3ThreadDetail {
+  readonly timedOut: boolean;
+}
+
+export interface T3ThreadStartInput {
+  readonly project?: string;
+  readonly message: string;
+  readonly title?: string;
+  readonly wait: boolean;
+  readonly worktree?: string;
+  readonly branch?: string;
+}
+
+export interface T3ThreadSendInput {
+  readonly threadId: string;
+  readonly message: string;
+  readonly wait: boolean;
+}
+
+export interface T3ThreadRunner {
+  list(project: string | undefined, signal?: AbortSignal): Promise<readonly T3ThreadSummary[]>;
+  start(input: T3ThreadStartInput, signal?: AbortSignal): Promise<T3ThreadRun>;
+  send(input: T3ThreadSendInput, signal?: AbortSignal): Promise<T3ThreadRun>;
+  wait(input: T3ThreadWaitInput, signal?: AbortSignal): Promise<T3ThreadWaitResult>;
+  show(threadId: string, messages: number, signal?: AbortSignal): Promise<T3ThreadDetail>;
+}
 
 const DEFAULT_MAX_OUTPUT_CHARS = 1_000_000;
 const MAX_ERROR_CHARS = 2_000;

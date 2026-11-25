@@ -3,7 +3,8 @@ import type { Logger } from "pino";
 
 import type { AgentImageAnalyzer } from "@agents/core/agent-factory";
 import type { WorkerControl } from "@agents/core/worker-agent";
-import { createT3ProjectListTool, type T3ProjectLister } from "@agents/tools/t3-project";
+import type { CodingBackendRegistry } from "@modules/coding/application/coding-backend-registry";
+import { createCodingProjectListTool } from "@agents/tools/coding-project";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
 import type { DiscordUserResolver } from "@modules/discord/ports/discord-user-resolver";
 import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
@@ -47,7 +48,7 @@ export interface DiscordAgentToolsOptions {
   readonly userMemoryStore?: UserMemoryStore;
   readonly discordUserDirectory?: DiscordUserResolver;
   readonly workers?: WorkerControl;
-  readonly t3ProjectLister?: T3ProjectLister;
+  readonly codingBackends?: CodingBackendRegistry;
   readonly sessionFilePath?: () => string | undefined;
   readonly proactive?: ProactiveToolCoordinator;
   readonly initiative?: InitiativeToolCoordinator;
@@ -143,8 +144,8 @@ export function createDiscordAgentTools(
           options.sessionFilePath,
         )
       : []),
-    ...(ownerFeaturesAllowed && options.t3ProjectLister
-      ? [createT3ProjectListTool(options.t3ProjectLister)]
+    ...(ownerFeaturesAllowed && options.codingBackends
+      ? [createCodingProjectListTool(options.codingBackends)]
       : []),
     ...(options.userMemoryStore && options.discordUserDirectory
       ? createUserMemoryTools(options.userMemoryStore, options.discordUserDirectory)

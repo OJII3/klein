@@ -48,7 +48,6 @@ import { toImageAnalysisFailure } from "@agents/core/image-analysis";
 import {
   renderWorkerSecretsSection,
   renderWorkerDelegationSection,
-  renderWorkerT3ThreadSection,
 } from "@agents/core/worker-agent";
 import type { SessionMode } from "@app/cli-options";
 import { renderWatchToolSection } from "@modules/scheduling/application/watch-tool";
@@ -950,19 +949,21 @@ export function createPiAgentFactory({
       const workerBrowserAvailable =
         enablesAgentBrowser({ kind: "worker", workerId: "" }, linkedUserId) &&
         authorization.allowsServer(AGENT_BROWSER_MCP_SERVER_NAME);
-      const workerT3Available =
-        options.ownerFeaturesAllowed === true && authorization.allowsTool("t3_thread_start");
+      const workerCodingAvailable =
+        options.ownerFeaturesAllowed === true && authorization.allowsTool("coding_task_start");
       const workerSecretsAvailable = linkedUserId !== undefined;
       const sessionBrowserAvailable =
         enablesAgentBrowser(options.role, linkedUserId) &&
         authorization.allowsServer(AGENT_BROWSER_MCP_SERVER_NAME);
-      const sessionT3Available =
+      const sessionCodingAvailable =
         options.role.kind === "worker" &&
-        customTools.some((tool) => tool.name === "t3_thread_start");
-      const sessionT3ProjectAvailable = customTools.some((tool) => tool.name === "t3_project_list");
+        customTools.some((tool) => tool.name === "coding_task_start");
+      const sessionCodingProjectAvailable = customTools.some(
+        (tool) => tool.name === "coding_project_list",
+      );
       const excludedSkillNames = new Set<string>([
         ...(sessionBrowserAvailable ? [] : ["browser-use"]),
-        ...(sessionT3Available ? [] : ["t3-thread"]),
+        ...(sessionCodingAvailable ? [] : ["coding-task"]),
       ]);
       const delegatedWorkerShell = userEnvironment
         ? options.ownerFeaturesAllowed === true
@@ -973,22 +974,18 @@ export function createPiAgentFactory({
         hasWorkerStart && !hasVoiceSpeak
           ? renderWorkerDelegationSection({
               browserAvailable: workerBrowserAvailable,
-              t3Available: workerT3Available,
-              t3ProjectAvailable: sessionT3ProjectAvailable,
+              codingAvailable: workerCodingAvailable,
+              codingProjectAvailable: sessionCodingProjectAvailable,
               shell: delegatedWorkerShell,
               secretsAvailable: workerSecretsAvailable,
               watchAvailable: hasWatchAdd,
             })
           : undefined;
       const workerSecretsSection = hasSecretRequest ? renderWorkerSecretsSection() : undefined;
-      const workerT3ThreadSection = sessionT3Available
-        ? renderWorkerT3ThreadSection(workerShell?.kind === "host" ? "host" : "sandbox")
-        : undefined;
       const systemPrompt = [
         definition.systemPrompt,
         ...(workerDelegationSection ? [workerDelegationSection] : []),
         ...(workerSecretsSection ? [workerSecretsSection] : []),
-        ...(workerT3ThreadSection ? [workerT3ThreadSection] : []),
         ...(hasWatchAdd && watchToolCatalog ? [renderWatchToolSection(watchToolCatalog)] : []),
       ]
         .filter(Boolean)

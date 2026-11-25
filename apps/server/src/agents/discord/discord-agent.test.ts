@@ -10,7 +10,8 @@ import {
   createStubExtensionToolContext,
   createStubTextToSpeech,
 } from "@agents/testing/test-stubs";
-import type { T3ProjectLister } from "@agents/tools/t3-project";
+import { CodingBackendRegistry } from "@modules/coding/application/coding-backend-registry";
+import type { CodingBackend } from "@modules/coding/ports/coding-backend";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
 import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
@@ -61,7 +62,7 @@ function createToolsFor(
     readonly accessScope?: AccessScope;
     readonly scheduledTaskStore?: ScheduledTaskStore;
     readonly speak?: (text: string, toolCallId?: string) => Promise<void>;
-    readonly t3ProjectLister?: T3ProjectLister;
+    readonly codingBackends?: CodingBackendRegistry;
   } = {},
 ) {
   return (toolContext: AgentToolContext) =>
@@ -75,7 +76,7 @@ function createToolsFor(
       requesterUserId: toolContext.requesterId,
       scheduledTaskStore: options.scheduledTaskStore,
       speak: options.speak,
-      t3ProjectLister: options.t3ProjectLister,
+      codingBackends: options.codingBackends,
       watchCheckRunner: silentWatchCheckRunner,
     });
 }
@@ -111,8 +112,8 @@ function requireStringField(details: unknown, key: string): string {
   return value;
 }
 
-function t3ToolNames(tools: readonly ToolDefinition[]): string[] {
-  return tools.map((tool) => tool.name).filter((name) => name.startsWith("t3_"));
+function codingToolNames(tools: readonly ToolDefinition[]): string[] {
+  return tools.map((tool) => tool.name).filter((name) => name.startsWith("coding_"));
 }
 
 test("routes voice replies through discord_speak using the existing runtime prompt", async () => {
@@ -673,23 +674,54 @@ test("exposes watch tools in every session with the session scope", async () => 
   assert.equal(store.created.at(-1)?.accessScope, "public");
 });
 
-test("exposes the T3 project list only to the owner conversation", () => {
-  const lister: T3ProjectLister = {
+test("exposes the coding project list only to the owner conversation", () => {
+  const backend: CodingBackend = {
+    id: "stub",
+    label: "Stub",
+    capabilities: {
+      projects: true,
+      worktree: false,
+      questions: false,
+      pullRequest: false,
+    },
+    async listProjects() {
+      return [];
+    },
     async list() {
       return [];
     },
+    async start() {
+      return { taskId: "task-1", status: "completed" };
+    },
+    async send() {
+      return { taskId: "task-1", status: "completed" };
+    },
+    async wait() {
+      return {
+        task: { id: "task-1", title: "T", status: "completed" },
+        messages: [],
+        timedOut: false,
+      };
+    },
+    async show() {
+      return {
+        task: { id: "task-1", title: "T", status: "completed" },
+        messages: [],
+      };
+    },
   };
+  const codingBackends = new CodingBackendRegistry([backend]);
   const ownerTools = createToolsFor(createStubDiscordChannelApi(), "channel-a", {
     ownerFeaturesAllowed: true,
     ownerUserId: "123",
-    t3ProjectLister: lister,
+    codingBackends,
   })(createStubAgentToolContext());
   const publicTools = createToolsFor(createStubDiscordChannelApi(), "channel-a", {
     ownerFeaturesAllowed: false,
     ownerUserId: "123",
-    t3ProjectLister: lister,
+    codingBackends,
   })(createStubAgentToolContext());
 
-  assert.deepEqual(t3ToolNames(ownerTools), ["t3_project_list"]);
-  assert.deepEqual(t3ToolNames(publicTools), []);
+  assert.deepEqual(codingToolNames(ownerTools), ["coding_project_list"]);
+  assert.deepEqual(codingToolNames(publicTools), []);
 });

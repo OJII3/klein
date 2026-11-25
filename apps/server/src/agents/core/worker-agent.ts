@@ -45,8 +45,8 @@ export interface WorkerControl {
 
 export interface WorkerDelegationPromptOptions {
   readonly browserAvailable: boolean;
-  readonly t3Available: boolean;
-  readonly t3ProjectAvailable: boolean;
+  readonly codingAvailable: boolean;
+  readonly codingProjectAvailable: boolean;
   readonly shell?: "host" | "sandbox";
   readonly secretsAvailable: boolean;
   readonly watchAvailable: boolean;
@@ -59,9 +59,9 @@ export function renderWorkerDelegationSection(options: WorkerDelegationPromptOpt
       "- Real headless browser use (`agent-browser`): open JavaScript-rendered pages, click, fill forms, wait for dynamic content, and take screenshots.",
     );
   }
-  if (options.t3Available) {
+  if (options.codingAvailable) {
     workerOnlyCapabilities.push(
-      "- T3 Code threads (`t3_thread_start`, `t3_thread_send`): hand repository edits, coding, tests, and PR creation to a T3 Code agent, in any repository on this machine, including Klein's own code, dotfiles, and machine settings.",
+      "- Coding tasks (`coding_task_start`, `coding_task_send`): hand repository edits, coding, tests, and PR creation to a coding backend, in any repository on this machine, including Klein's own code, dotfiles, and machine settings.",
     );
   }
   if (options.shell === "host") {
@@ -81,9 +81,7 @@ export function renderWorkerDelegationSection(options: WorkerDelegationPromptOpt
 
   const unavailableCapabilities = [
     ...(options.browserAvailable ? [] : ["real browser use via `agent-browser`"]),
-    ...(options.t3Available
-      ? []
-      : ["T3 Code thread creation and follow-ups via `t3_thread_start`"]),
+    ...(options.codingAvailable ? [] : ["coding task delegation via `coding_task_start`"]),
     ...(options.shell ? [] : ["a shell"]),
     ...(options.secretsAvailable ? [] : ["asking the linked user for secrets"]),
   ];
@@ -105,9 +103,9 @@ export function renderWorkerDelegationSection(options: WorkerDelegationPromptOpt
     "",
     "Keep only trivial single-step checks (such as one quick `web_search`, `fetch_content`, or `discord_read`) inline.",
     "",
-    ...(options.t3ProjectAvailable
+    ...(options.codingProjectAvailable
       ? [
-          "You can list T3 Code projects directly with `t3_project_list` to choose the project id or workspace path for a worker.",
+          "You can list coding projects directly with `coding_project_list` to choose the project id or workspace path for a worker.",
           "",
         ]
       : []),
@@ -116,9 +114,9 @@ export function renderWorkerDelegationSection(options: WorkerDelegationPromptOpt
           "Workers in this conversation also have capabilities you do NOT have directly:",
           ...workerOnlyCapabilities,
           "Whenever a request needs these capabilities, delegate with `worker_start` instead of declining or falling back to static `fetch_content`.",
-          ...(options.t3Available
+          ...(options.codingAvailable
             ? [
-                "An owner worker can act on this machine through its shell or T3 Code, not just look things up: it can change any repository, dotfiles, or machine settings. Delegate such requests instead of treating them as out of scope.",
+                "An owner worker can act on this machine through its shell or a coding backend, not just look things up: it can change any repository, dotfiles, or machine settings. Delegate such requests instead of treating them as out of scope.",
               ]
             : []),
         ]
@@ -140,22 +138,6 @@ export function renderWorkerDelegationSection(options: WorkerDelegationPromptOpt
   ];
 
   return lines.join("\n");
-}
-
-export function renderWorkerT3ThreadSection(shell: "host" | "sandbox" = "sandbox"): string {
-  return [
-    "## T3 Code threads (`t3_thread_*`)",
-    "",
-    shell === "host"
-      ? "Repository work can run directly in your shell, in the host home. Use a T3 Code thread when you want a separate agent to carry a longer task, run tests, or open a pull request, and when the work should continue after this turn."
-      : "Repository work belongs in a T3 Code thread: hand code edits, tests, builds, commits, and PR creation to `t3_thread_start` instead of doing them in your own session.",
-    "",
-    "Threads are not limited to Klein's own repository. Pass a project id or a path inside any existing repository in `project` to work on that repository, including Klein's source code. Use `t3_project_list` when you need to find the right project. A thread runs directly on this machine, so it can also edit dotfiles and change machine settings.",
-    "",
-    "Continue the same thread with `t3_thread_send` for follow-ups, and check a long run with `t3_thread_show`. To wait for an existing thread to finish, call `t3_thread_wait`; it returns when the latest run ends, asks for an answer, or the timeout expires. Report the thread's status and result, and include the thread link and any pull request from `t3_thread_show` in your result.",
-    "",
-    "A thread reported as `waiting` is asking a question. Read it with `t3_thread_show`, answer it with `t3_thread_send`, or report the question instead of waiting for the run to finish. If `t3_thread_wait` times out, the run is still going: call it again or report the current state.",
-  ].join("\n");
 }
 
 export function renderWorkerSecretsSection(): string {
