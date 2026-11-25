@@ -14,7 +14,12 @@ import type {
   DiscordChoiceRequest,
 } from "../domain/discord-choice";
 import type { DiscordMessage } from "../domain/discord-message";
-import { createTextContainer, type DiscordContainerMessage } from "./discord-component-message";
+import {
+  createEphemeralTextContainerMessage,
+  createTextContainer,
+  type DiscordContainerMessage,
+  type DiscordEphemeralContainerMessage,
+} from "./discord-component-message";
 
 const REJECTION_MESSAGES: Readonly<Record<DiscordChoiceRejection, string>> = {
   expired: "この質問は既に回答済みか、期限切れです。",
@@ -66,7 +71,7 @@ export interface DiscordChoiceButtonInteraction {
       readonly displayName: string;
     } | null;
   };
-  reply(options: { content: string; flags: MessageFlags.Ephemeral }): Promise<unknown>;
+  reply(options: DiscordEphemeralContainerMessage): Promise<unknown>;
   update(options: DiscordContainerMessage): Promise<unknown>;
 }
 
@@ -129,10 +134,9 @@ export class DiscordChoiceRequester {
       case "ignored":
         return false;
       case "rejected":
-        await interaction.reply({
-          content: REJECTION_MESSAGES[result.reason],
-          flags: MessageFlags.Ephemeral,
-        });
+        await interaction.reply(
+          createEphemeralTextContainerMessage(REJECTION_MESSAGES[result.reason], "danger"),
+        );
         return true;
       case "answered":
         await this.markAnswered(interaction, result.view);

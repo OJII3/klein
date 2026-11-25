@@ -8,6 +8,7 @@ import type {
   VoiceChatConversationContext,
   VoiceChatConversationFactory,
 } from "../ports/voice-chat-conversation";
+import { containerMessageText } from "../../../testing/discord-container";
 import {
   DiscordVoiceChatController,
   type VoiceCaptureSession,
@@ -52,7 +53,7 @@ function createInteraction(
     channel,
     channelId: options.channelId ?? "channel-123",
     deferReply: async () => undefined,
-    editReply: async (content: string) => replies.push(content),
+    editReply: async (message) => replies.push(containerMessageText(message)),
     guild: {
       members: {
         fetch: async () => ({
@@ -66,7 +67,7 @@ function createInteraction(
     guildId: "guild-123",
     inGuild: () => true,
     options: { getSubcommand: () => subcommand },
-    reply: async ({ content }: { content: string }) => replies.push(content),
+    reply: async (message) => replies.push(containerMessageText(message)),
     user: { id: options.userId ?? "user-123", bot: options.userIsBot ?? false },
   };
   return { interaction, replies, sentMessages };

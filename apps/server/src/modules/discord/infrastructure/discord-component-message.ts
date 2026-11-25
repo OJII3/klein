@@ -28,6 +28,8 @@ export interface DiscordEphemeralContainerMessage {
   readonly flags: NonNullable<InteractionReplyOptions["flags"]>;
 }
 
+export type DiscordInteractionMessage = DiscordContainerMessage | DiscordEphemeralContainerMessage;
+
 export function createTextContainer(text: string, tone?: DiscordMessageTone): ContainerBuilder {
   const container = new ContainerBuilder().addTextDisplayComponents(
     new TextDisplayBuilder().setContent(text),

@@ -21,9 +21,11 @@ import {
   type DiscordApprovalRequestDraft,
 } from "../domain/discord-approval-request";
 import {
+  createEphemeralTextContainerMessage,
   createTextContainer,
   createTextContainerMessage,
   type DiscordContainerMessage,
+  type DiscordEphemeralContainerMessage,
   type DiscordMessageTone,
 } from "./discord-component-message";
 
@@ -112,7 +114,7 @@ export interface DiscordApprovalClient {
 export interface DiscordApprovalButtonInteraction {
   readonly customId: string;
   readonly user: { readonly id: string };
-  reply(options: { content: string; flags: MessageFlags.Ephemeral }): Promise<unknown>;
+  reply(options: DiscordEphemeralContainerMessage): Promise<unknown>;
   update(options: DiscordContainerMessage): Promise<unknown>;
 }
 
@@ -156,10 +158,12 @@ export class DiscordApprovalRequester<
       case "ignored":
         return false;
       case "rejected":
-        await interaction.reply({
-          content: this.dependencies.messages.rejection(result.reason),
-          flags: MessageFlags.Ephemeral,
-        });
+        await interaction.reply(
+          createEphemeralTextContainerMessage(
+            this.dependencies.messages.rejection(result.reason),
+            "danger",
+          ),
+        );
         return true;
       case "decided": {
         const allowed = result.allowed;

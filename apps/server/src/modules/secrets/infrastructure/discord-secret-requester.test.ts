@@ -132,18 +132,18 @@ function createButtonInteraction(
 ): {
   interaction: DiscordSecretButtonInteraction;
   modals: { toJSON(): unknown }[];
-  replies: { content: string; flags: MessageFlags.Ephemeral }[];
+  replies: string[];
   updates: unknown[];
 } {
   const modals: { toJSON(): unknown }[] = [];
-  const replies: { content: string; flags: MessageFlags.Ephemeral }[] = [];
+  const replies: string[] = [];
   const updates: unknown[] = [];
   return {
     interaction: {
       customId,
       user: { id: userId },
       async reply(reply) {
-        replies.push(reply);
+        replies.push(JSON.stringify(reply));
         return undefined;
       },
       async update(payload) {
@@ -230,7 +230,7 @@ test("refuses a button press from another user", async () => {
 
   assert.equal(await harness.requester.handleButton(button.interaction), true);
   assert.equal(button.modals.length, 0);
-  assert.match(button.replies[0]?.content ?? "", /本人だけ/u);
+  assert.match(button.replies[0] ?? "", /本人だけ/u);
 });
 
 test("saves modal values and updates the direct message", async () => {
