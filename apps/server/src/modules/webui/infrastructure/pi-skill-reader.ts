@@ -1,4 +1,4 @@
-import { readdir, stat } from "node:fs/promises";
+import { readdir, realpath, stat } from "node:fs/promises";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import {
@@ -20,7 +20,7 @@ import type {
 } from "@klein/webui-api";
 
 import { skillRequirements, type SkillAudienceCapabilities } from "@runtime/pi/skill-availability";
-import { SkillFileError, readSkillFile } from "@runtime/pi/skill-file";
+import { SkillFileError, readSkillFile, resolveSkillPath } from "@runtime/pi/skill-file";
 
 export interface PiSkillReaderOptions {
   readonly profile: string;
@@ -43,22 +43,32 @@ export class PiSkillReader implements SkillReader {
     const loaded = this.load();
     const directoryStat = await stat(loaded.root).catch(() => undefined);
     const directoryExists = directoryStat?.isDirectory() === true;
-    const skills = directoryExists
-      ? await Promise.all(
-          loaded.skills.map((skill) => this.toSummary(skill, loaded.root, loaded.directory)),
-        )
-      : [];
+    const diagnostics: SkillDiagnostic[] = [];
+    const skills: SkillSummary[] = [];
+
+    if (directoryExists) {
+      for (const diagnostic of loaded.diagnostics) {
+        diagnostics.push(toWireDiagnostic(diagnostic, loaded.root, loaded.directory));
+      }
+      for (const skill of loaded.skills) {
+        try {
+          skills.push(await this.toSummary(skill, loaded.root, loaded.directory));
+        } catch (error) {
+          diagnostics.push({
+            type: "warning",
+            message: error instanceof Error ? error.message : String(error),
+            path: displayPath(skill.filePath, loaded.root, loaded.directory),
+          });
+        }
+      }
+    }
 
     return {
       profile: this.options.profile,
       directory: loaded.directory,
       directoryExists,
       skills: skills.toSorted((left, right) => left.name.localeCompare(right.name)),
-      diagnostics: directoryExists
-        ? loaded.diagnostics.map((diagnostic) =>
-            toWireDiagnostic(diagnostic, loaded.root, loaded.directory),
-          )
-        : [],
+      diagnostics,
     };
   }
 
@@ -67,6 +77,16 @@ export class PiSkillReader implements SkillReader {
     if (!skill) return undefined;
 
     try {
+      if (isFlatSkill(skill)) {
+        const target = await resolveSkillPath(skill.baseDir, path);
+        const expected = await realpath(skill.filePath);
+        if (target !== expected) {
+          throw new Error(`Skill file path is outside the skill directory: ${path}`);
+        }
+        const file = await readSkillFile(skill.baseDir, path);
+        return { path: basename(file.path), content: file.content };
+      }
+
       const file = await readSkillFile(skill.baseDir, path);
       return { path: toPosixPath(relative(skill.baseDir, file.path)), content: file.content };
     } catch (error) {
@@ -100,18 +120,30 @@ export class PiSkillReader implements SkillReader {
 
   private async toSummary(skill: Skill, root: string, directory: string): Promise<SkillSummary> {
     const requirements = skillRequirements(skill.name);
+    const flat = isFlatSkill(skill);
 
     return {
       name: skill.name,
       description: skill.description,
-      directory: join(directory, toPosixPath(relative(root, skill.baseDir))),
-      files: await listSkillFiles(skill.baseDir),
+      source: flat
+        ? displayPath(skill.filePath, root, directory)
+        : join(directory, toPosixPath(relative(root, skill.baseDir))),
+      files: flat ? await flatSkillFiles(skill) : await listSkillFiles(skill.baseDir),
       modelInvocable: !skill.disableModelInvocation,
       requirements,
       availability: availabilityFor(requirements, this.options.capabilities),
       promptEntry: promptEntryFor(skill),
     };
   }
+}
+
+function isFlatSkill(skill: Skill): boolean {
+  return basename(skill.filePath) !== "SKILL.md";
+}
+
+async function flatSkillFiles(skill: Skill): Promise<SkillFileSummary[]> {
+  const fileStat = await stat(skill.filePath);
+  return [{ path: basename(skill.filePath), size: fileStat.size }];
 }
 
 function displayDirectory(root: string): string {
@@ -145,6 +177,7 @@ async function listSkillFiles(directory: string): Promise<SkillFileSummary[]> {
   const walk = async (current: string): Promise<void> => {
     const entries = await readdir(current, { withFileTypes: true });
     for (const entry of entries) {
+      if (entry.name.startsWith(".")) continue;
       const path = join(current, entry.name);
       if (entry.isDirectory()) {
         await walk(path);

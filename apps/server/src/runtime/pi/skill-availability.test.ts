@@ -25,6 +25,13 @@ test("maps each audience to the tools it receives by default", () => {
   });
 });
 
+test("keeps owner-worker tools unavailable when no owner is configured", () => {
+  assert.deepEqual(resolveSkillAudienceCapabilities(undefined, false).ownerWorker, {
+    browser: false,
+    coding: false,
+  });
+});
+
 test("honors explicit tool and server denials", () => {
   const capabilities = resolveSkillAudienceCapabilities({
     mcp: { servers: { agent_browser: "deny" } },

@@ -25,7 +25,6 @@ interface FileFailure extends FileSelection {
 
 export function useSkills({ active, onUpdated, selectedSkillName }: UseSkillsOptions) {
   const [report, setReport] = useState<SkillsReport | null>(null);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fileSelection, setFileSelection] = useState<FileSelection | null>(null);
   const [fileResult, setFileResult] = useState<FileResult | null>(null);
@@ -34,10 +33,11 @@ export function useSkills({ active, onUpdated, selectedSkillName }: UseSkillsOpt
   const [fileReloadKey, setFileReloadKey] = useState(0);
 
   const selectedSkill = report?.skills.find((skill) => skill.name === selectedSkillName) ?? null;
+  const defaultPath = selectedSkill?.files[0]?.path ?? DEFAULT_SKILL_FILE;
   const selectedPath =
     selectedSkill && fileSelection?.skillName === selectedSkill.name
       ? fileSelection.path
-      : DEFAULT_SKILL_FILE;
+      : defaultPath;
   const fileContent =
     fileResult && fileResult.skillName === selectedSkill?.name && fileResult.path === selectedPath
       ? fileResult.content
@@ -50,15 +50,12 @@ export function useSkills({ active, onUpdated, selectedSkillName }: UseSkillsOpt
       : null;
 
   const load = useCallback(async () => {
-    setLoading(true);
     setError(null);
     try {
       setReport(await getSkills());
       onUpdated();
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Failed to load skills");
-    } finally {
-      setLoading(false);
     }
   }, [onUpdated]);
 
@@ -127,7 +124,6 @@ export function useSkills({ active, onUpdated, selectedSkillName }: UseSkillsOpt
     fileContent,
     fileError,
     fileLoading,
-    loading,
     reload: load,
     report,
     retryFile,

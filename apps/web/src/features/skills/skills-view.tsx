@@ -7,7 +7,6 @@ import { ViewHeader } from "../../components/view-header";
 
 interface SkillsViewProps {
   report: SkillsReport | null;
-  loading: boolean;
   error: string | null;
   selectedSkillName: string | null;
   selectedSkill: SkillSummary | null;
@@ -42,7 +41,6 @@ const GROUPS: readonly { key: SkillGroupKey; title: string }[] = [
 export function SkillsView(props: SkillsViewProps) {
   const {
     report,
-    loading,
     error,
     selectedSkillName,
     selectedSkill,
@@ -97,7 +95,7 @@ export function SkillsView(props: SkillsViewProps) {
         <DiagnosticsBanner diagnostics={report.diagnostics} />
       )}
 
-      {loading && !report ? (
+      {!report && !error ? (
         <div className="card border border-base-300 bg-base-100">
           <LoadingState />
         </div>
@@ -275,10 +273,10 @@ function SkillDetail({
 
         <div className="flex flex-col gap-1">
           <span className="text-[0.65rem] font-medium uppercase tracking-wide text-ink-faint">
-            Directory
+            Source
           </span>
           <code className="break-all rounded bg-surface-muted px-2 py-1 font-mono text-[0.7rem] text-ink-soft">
-            {skill.directory}
+            {skill.source}
           </code>
         </div>
 

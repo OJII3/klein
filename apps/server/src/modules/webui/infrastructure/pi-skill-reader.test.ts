@@ -16,6 +16,7 @@ const CAPABILITIES: SkillAudienceCapabilities = {
 };
 
 const SHARED_SKILL = "---\nname: shared\ndescription: A shared skill.\n---\n\n# Shared\n";
+const FLAT_SKILL = "---\nname: flat\ndescription: A flat skill.\n---\n\n# Flat\n";
 
 async function withSkillsDirectory(
   run: (directory: string, reader: PiSkillReader) => Promise<void>,
@@ -27,6 +28,7 @@ async function withSkillsDirectory(
   await writeFile(join(directory, "shared", "SKILL.md"), SHARED_SKILL, "utf8");
   await writeFile(join(directory, "shared", "references", "notes.md"), "notes", "utf8");
   await writeFile(join(directory, "shared", "binary.bin"), Buffer.from([0, 1, 2]));
+  await writeFile(join(directory, "flat.md"), FLAT_SKILL, "utf8");
 
   await mkdir(join(directory, "browser-use"));
   await writeFile(
@@ -80,12 +82,12 @@ test("lists loaded skills with files, requirements, and availability", async () 
     assert.equal(report.directoryExists, true);
     assert.deepEqual(
       report.skills.map((skill) => skill.name),
-      ["browser-use", "coding-task", "manual", "shared"],
+      ["browser-use", "coding-task", "flat", "manual", "shared"],
     );
 
     const shared = skillNamed(report.skills, "shared");
     assert.equal(shared.description, "A shared skill.");
-    assert.equal(shared.directory, join(directory, "skills", "shared"));
+    assert.equal(shared.source, join(directory, "skills", "shared"));
     assert.deepEqual(
       shared.files.map((file) => file.path),
       ["SKILL.md", "binary.bin", "references/notes.md"],
@@ -115,6 +117,18 @@ test("lists loaded skills with files, requirements, and availability", async () 
     const manual = skillNamed(report.skills, "manual");
     assert.equal(manual.modelInvocable, false);
     assert.equal(manual.promptEntry, null);
+
+    const flat = skillNamed(report.skills, "flat");
+    assert.match(flat.source, /flat\.md$/u);
+    assert.deepEqual(
+      flat.files.map((file) => file.path),
+      ["flat.md"],
+    );
+    assert.deepEqual(flat.availability, {
+      conversation: true,
+      ownerWorker: true,
+      linkedUserWorker: true,
+    });
   });
 });
 
@@ -158,6 +172,10 @@ test("reads files inside a skill directory", async () => {
       ),
       { path: "references/notes.md", content: "notes" },
     );
+    assert.deepEqual(await reader.readFile("flat", "flat.md"), {
+      path: "flat.md",
+      content: FLAT_SKILL,
+    });
   });
 });
 
@@ -176,6 +194,10 @@ test("rejects paths outside the skill directory", async () => {
     );
     await assert.rejects(
       reader.readFile("shared", join(directory, "secret.md")),
+      /outside the skill directory/u,
+    );
+    await assert.rejects(
+      reader.readFile("flat", "shared/SKILL.md"),
       /outside the skill directory/u,
     );
   });

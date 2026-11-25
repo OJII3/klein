@@ -14,7 +14,7 @@ export interface SkillAvailability {
 export interface SkillSummary {
   readonly name: string;
   readonly description: string;
-  readonly directory: string;
+  readonly source: string;
   readonly files: readonly SkillFileSummary[];
   readonly modelInvocable: boolean;
   readonly requirements: readonly SkillRequirement[];

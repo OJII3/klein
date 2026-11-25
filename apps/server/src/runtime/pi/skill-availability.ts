@@ -34,6 +34,7 @@ export function excludedSkillNamesFor(availability: SkillToolAvailability): Read
 
 export function resolveSkillAudienceCapabilities(
   permissions: ToolPermissions = {},
+  ownerConfigured = true,
 ): SkillAudienceCapabilities {
   const owner = new ToolAuthorization("owner", permissions, undefined, {
     [AGENT_BROWSER_MCP_SERVER_NAME]: "user",
@@ -45,8 +46,8 @@ export function resolveSkillAudienceCapabilities(
   return {
     conversation: { browser: false, coding: false },
     ownerWorker: {
-      browser: owner.allowsServer(AGENT_BROWSER_MCP_SERVER_NAME),
-      coding: owner.allowsTool("coding_task_start"),
+      browser: ownerConfigured && owner.allowsServer(AGENT_BROWSER_MCP_SERVER_NAME),
+      coding: ownerConfigured && owner.allowsTool("coding_task_start"),
     },
     linkedUserWorker: {
       browser: linkedUser.allowsServer(AGENT_BROWSER_MCP_SERVER_NAME),

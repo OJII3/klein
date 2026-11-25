@@ -645,7 +645,10 @@ export async function bootstrapApplication(): Promise<void> {
           profile: config.profile ?? DEFAULT_PROFILE,
           skillsDirectory: profile.skillsDirectory,
           agentDirectory: agentDir,
-          capabilities: resolveSkillAudienceCapabilities(config.permissions),
+          capabilities: resolveSkillAudienceCapabilities(
+            config.permissions,
+            ownerUserId !== undefined,
+          ),
         }),
         ...(proactivityConfig.enabled
           ? {

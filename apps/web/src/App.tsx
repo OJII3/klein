@@ -130,7 +130,6 @@ export default function App() {
           fileContent={skills.fileContent}
           fileError={skills.fileError}
           fileLoading={skills.fileLoading}
-          loading={skills.loading}
           onBack={clearSelectedSkill}
           onRetry={() => void skills.reload()}
           onRetryFile={skills.retryFile}

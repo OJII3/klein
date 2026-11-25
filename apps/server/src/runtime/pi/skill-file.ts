@@ -48,7 +48,7 @@ export async function readSkillFile(root: string, input: string): Promise<SkillF
   return { path: target, content, totalLines: content.split("\n").length };
 }
 
-async function resolveSkillPath(root: string, input: string): Promise<string> {
+export async function resolveSkillPath(root: string, input: string): Promise<string> {
   let realRoot: string;
   try {
     realRoot = await realpath(root);
