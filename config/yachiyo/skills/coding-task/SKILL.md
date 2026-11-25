@@ -17,27 +17,24 @@ Coding sessions are not limited to Klein's own repository. Pass a repository pat
 
 - State the goal, repository, constraints, non-goals, and acceptance checks.
 - Split the work into independent workstreams. Start one session per workstream.
-- Call `coding_backend_list` to see the available backends and their capabilities. Omit `backend` to use the default.
-- Do not assume a capability the backend does not advertise.
+- Omit `backend` to use the default backend.
 
-## Backends and projects
+## Projects
 
-A backend exposes only the capabilities it reports in `coding_backend_list`.
-
-- The `pi` backend runs sessions in a repository path on this machine. It does not list projects, create worktrees, pause for questions, or track pull requests. For this backend, a repository path or a path inside the repository is the project; when `project` is omitted, it uses the process working directory.
-- Other backends may list projects, create worktrees, pause for questions, or track pull requests. Call `coding_project_list` only when the backend reports project support.
-- When a repository path is unclear, local repositories are also organized under `$(ghq root)` (`ghq root` / `ghq list -p`), so look there.
+- A repository path or a path inside the repository is the project; when `project` is omitted, the current working directory is used.
+- The session runs in the repository's git root, so a path inside the repository is enough.
+- When a repository path is unclear, local repositories are organized under `$(ghq root)` (`ghq root` / `ghq list -p`), so look there.
 
 ## Start the session
 
 Pass a self-contained `message` to `coding_session_start` with:
 
 - the goal and the current state
-- the repository and the branch or worktree requirement
+- the repository and the branch requirement
 - the acceptance checks and the commands that prove them
 - constraints and non-goals
 
-The session runs with the backend's default provider, model, and permissions. Use `worktree` and `branch` only when the backend supports worktrees and the work should be isolated. A `branch` without `worktree` is rejected.
+The session runs with the backend's default provider, model, and permissions. The default `pi` backend does not support `worktree` or `branch`; omit them.
 
 By default `wait: true` waits for the run and returns the reply. For long work, start with `wait: false` and call `coding_session_wait` or `coding_session_show`.
 

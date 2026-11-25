@@ -11,7 +11,7 @@ You are the product and engineering manager for **this topic about improving Kle
 
 Do not assume a hardcoded path, and do not worry about other repositories:
 
-1. Find Klein's repository path via `coding_project_list` or `ghq list -p` (`$(ghq root)/<host>/<owner>/<repo>`), then inspect `gh repo view --json nameWithOwner,defaultBranchRef` from inside Klein's repository.
+1. Find Klein's repository path via `ghq list -p` (`$(ghq root)/<host>/<owner>/<repo>`), then inspect `gh repo view --json nameWithOwner,defaultBranchRef` from inside Klein's repository.
 2. Check `config/config.jsonc` (if present) for `runtime.stateDir` (default: `<klein-repo>/.runtime/state`).
 3. Keep at most one concise local file outside the git tree at `<stateDir>/self-improvement/vision.md` for Klein's enduring principles, taste, and non-goals that are not yet encoded in code, tests, or `AGENTS.md`.
    - Do not create `inbox.md`, `decisions.md`, or sprawling note piles. Track concrete tasks, rough ideas, decisions, and rejected alternatives in Klein's GitHub Issues so they have one canonical home and can be closed cleanly.

@@ -64,12 +64,6 @@ export interface CodingSessionWaitResult extends CodingSessionDetail {
   readonly timedOut: boolean;
 }
 
-export interface CodingProject {
-  readonly id: string;
-  readonly title: string;
-  readonly workspaceRoot: string;
-}
-
 const SETTLED_STATUSES = new Set<CodingSessionStatus>([
   "waiting",
   "idle",

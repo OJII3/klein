@@ -115,13 +115,7 @@ test("adds coding tools only when a backend registry is supplied", () => {
     id: "stub",
     label: "Stub",
     capabilities: {
-      projects: true,
       worktree: false,
-      questions: false,
-      pullRequest: false,
-    },
-    async listProjects() {
-      return [];
     },
     async list() {
       return [];
@@ -175,8 +169,6 @@ test("adds coding tools only when a backend registry is supplied", () => {
   assert.deepEqual(
     withCoding.filter((tool) => tool.name.startsWith("coding_")).map((tool) => tool.name),
     [
-      "coding_project_list",
-      "coding_backend_list",
       "coding_session_start",
       "coding_session_send",
       "coding_session_wait",

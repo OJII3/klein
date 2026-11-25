@@ -124,10 +124,7 @@ export function createPiCodingBackend(options: PiCodingBackendOptions): CodingBa
     id: "pi",
     label: "Pi",
     capabilities: {
-      projects: false,
       worktree: false,
-      questions: false,
-      pullRequest: false,
     },
     async list(project, _signal) {
       const resolvedProject = project ? await resolveCodingProject(project) : undefined;

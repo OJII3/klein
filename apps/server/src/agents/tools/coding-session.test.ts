@@ -15,23 +15,17 @@ import { createCodingSessionTools } from "./coding-session";
 function createStubRegistry() {
   const startInputs: CodingSessionStartInput[] = [];
   const sendInputs: CodingSessionSendInput[] = [];
-  const listProjects: (string | undefined)[] = [];
+  const listedProjects: (string | undefined)[] = [];
   const showInputs: { sessionId: string; messages: number }[] = [];
 
   const backend: CodingBackend = {
     id: "stub",
     label: "Stub",
     capabilities: {
-      projects: true,
       worktree: true,
-      questions: true,
-      pullRequest: true,
-    },
-    async listProjects() {
-      return [];
     },
     async list(project) {
-      listProjects.push(project);
+      listedProjects.push(project);
       return [
         {
           id: "session-1",
@@ -98,7 +92,7 @@ function createStubRegistry() {
     backend,
     startInputs,
     sendInputs,
-    listProjects,
+    listedProjects,
     showInputs,
   };
 }
@@ -117,34 +111,12 @@ test("registers the coding session tools", () => {
   assert.deepEqual(
     tools.map((tool) => tool.name),
     [
-      "coding_backend_list",
       "coding_session_start",
       "coding_session_send",
       "coding_session_wait",
       "coding_session_show",
       "coding_session_list",
     ],
-  );
-});
-
-test("lists backends and their capabilities", async () => {
-  const { registry } = createStubRegistry();
-  const tool = createCodingSessionTools(registry).find(
-    (candidate) => candidate.name === "coding_backend_list",
-  );
-  assert.ok(tool);
-
-  const result = await tool.execute(
-    "tool-call",
-    {},
-    undefined,
-    undefined,
-    await createStubExtensionToolContext(),
-  );
-
-  assert.equal(
-    textOf(result),
-    "- stub: Stub (projects, worktrees, pull requests, questions) — default",
   );
 });
 
@@ -263,10 +235,7 @@ test("rejects worktree options on a backend without worktree support", async () 
     {
       ...backend,
       capabilities: {
-        projects: true,
         worktree: false,
-        questions: true,
-        pullRequest: true,
       },
     },
   ]);
@@ -425,7 +394,7 @@ test("shows the session link and latest messages", async () => {
 });
 
 test("lists sessions and defaults the project to the backend", async () => {
-  const { registry, listProjects } = createStubRegistry();
+  const { registry, listedProjects } = createStubRegistry();
   const tool = createCodingSessionTools(registry).find(
     (candidate) => candidate.name === "coding_session_list",
   );
@@ -439,7 +408,7 @@ test("lists sessions and defaults the project to the backend", async () => {
     await createStubExtensionToolContext(),
   );
 
-  assert.deepEqual(listProjects, [undefined]);
+  assert.deepEqual(listedProjects, [undefined]);
   assert.equal(
     textOf(result),
     "- stub:session-1  completed  Fix the parser  [waiting 2, 1 open PR]",

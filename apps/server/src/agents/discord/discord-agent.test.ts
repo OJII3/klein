@@ -10,8 +10,6 @@ import {
   createStubExtensionToolContext,
   createStubTextToSpeech,
 } from "@agents/testing/test-stubs";
-import { CodingBackendRegistry } from "@modules/coding/application/coding-backend-registry";
-import type { CodingBackend } from "@modules/coding/ports/coding-backend";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
 import type { ScheduledTaskStore } from "@modules/scheduling/ports/scheduled-task-store";
@@ -62,7 +60,6 @@ function createToolsFor(
     readonly accessScope?: AccessScope;
     readonly scheduledTaskStore?: ScheduledTaskStore;
     readonly speak?: (text: string, toolCallId?: string) => Promise<void>;
-    readonly codingBackends?: CodingBackendRegistry;
   } = {},
 ) {
   return (toolContext: AgentToolContext) =>
@@ -76,7 +73,6 @@ function createToolsFor(
       requesterUserId: toolContext.requesterId,
       scheduledTaskStore: options.scheduledTaskStore,
       speak: options.speak,
-      codingBackends: options.codingBackends,
       watchCheckRunner: silentWatchCheckRunner,
     });
 }
@@ -110,10 +106,6 @@ function requireStringField(details: unknown, key: string): string {
     assert.fail(`Expected string field '${key}' in tool result details`);
   }
   return value;
-}
-
-function codingToolNames(tools: readonly ToolDefinition[]): string[] {
-  return tools.map((tool) => tool.name).filter((name) => name.startsWith("coding_"));
 }
 
 test("routes voice replies through discord_speak using the existing runtime prompt", async () => {
@@ -672,56 +664,4 @@ test("exposes watch tools in every session with the session scope", async () => 
     await createStubExtensionToolContext(),
   );
   assert.equal(store.created.at(-1)?.accessScope, "public");
-});
-
-test("exposes the coding project list only to the owner conversation", () => {
-  const backend: CodingBackend = {
-    id: "stub",
-    label: "Stub",
-    capabilities: {
-      projects: true,
-      worktree: false,
-      questions: false,
-      pullRequest: false,
-    },
-    async listProjects() {
-      return [];
-    },
-    async list() {
-      return [];
-    },
-    async start() {
-      return { sessionId: "session-1", status: "completed" };
-    },
-    async send() {
-      return { sessionId: "session-1", status: "completed" };
-    },
-    async wait() {
-      return {
-        session: { id: "session-1", title: "T", status: "completed" },
-        messages: [],
-        timedOut: false,
-      };
-    },
-    async show() {
-      return {
-        session: { id: "session-1", title: "T", status: "completed" },
-        messages: [],
-      };
-    },
-  };
-  const codingBackends = new CodingBackendRegistry([backend]);
-  const ownerTools = createToolsFor(createStubDiscordChannelApi(), "channel-a", {
-    ownerFeaturesAllowed: true,
-    ownerUserId: "123",
-    codingBackends,
-  })(createStubAgentToolContext());
-  const publicTools = createToolsFor(createStubDiscordChannelApi(), "channel-a", {
-    ownerFeaturesAllowed: false,
-    ownerUserId: "123",
-    codingBackends,
-  })(createStubAgentToolContext());
-
-  assert.deepEqual(codingToolNames(ownerTools), ["coding_project_list"]);
-  assert.deepEqual(codingToolNames(publicTools), []);
 });

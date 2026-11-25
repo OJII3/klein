@@ -9,10 +9,7 @@ function createBackend(id: string): CodingBackend {
     id,
     label: id,
     capabilities: {
-      projects: false,
       worktree: false,
-      questions: false,
-      pullRequest: false,
     },
     async list() {
       return [];

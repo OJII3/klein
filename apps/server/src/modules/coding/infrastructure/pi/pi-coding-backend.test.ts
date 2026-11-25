@@ -112,12 +112,8 @@ test("describes the backend with no optional capabilities", async () => {
   assert.equal(backend.id, "pi");
   assert.equal(backend.label, "Pi");
   assert.deepEqual(backend.capabilities, {
-    projects: false,
     worktree: false,
-    questions: false,
-    pullRequest: false,
   });
-  assert.equal(Object.hasOwn(backend, "listProjects"), false);
 });
 
 test("starts a session and waits for its reply", async () => {

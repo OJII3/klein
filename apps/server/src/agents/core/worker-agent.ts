@@ -46,7 +46,6 @@ export interface WorkerControl {
 export interface WorkerDelegationPromptOptions {
   readonly browserAvailable: boolean;
   readonly codingAvailable: boolean;
-  readonly codingProjectAvailable: boolean;
   readonly shell?: "host" | "sandbox";
   readonly secretsAvailable: boolean;
   readonly watchAvailable: boolean;
@@ -112,12 +111,6 @@ export function renderWorkerDelegationSection(options: WorkerDelegationPromptOpt
     "",
     "Keep only trivial single-step checks (such as one quick `web_search`, `fetch_content`, or `discord_read`) inline.",
     "",
-    ...(options.codingProjectAvailable
-      ? [
-          "You can list coding projects directly with `coding_project_list` when asked in conversation, but do not call it just to prepare a handoff — workers can look up projects themselves.",
-          "",
-        ]
-      : []),
     ...(workerOnlyCapabilities.length > 0
       ? [
           "Workers in this conversation also have capabilities you do NOT have directly:",

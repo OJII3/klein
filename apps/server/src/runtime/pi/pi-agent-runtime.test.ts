@@ -1871,7 +1871,7 @@ test("appends worker delegation guidance to text conversation prompts based on o
   try {
     const ownerRuntime = await createFactory().create(
       { systemPrompt: "Base prompt." },
-      () => [makeSurfaceTool("discord_send"), makeWorkerStart(), makeCodingProjectList()],
+      () => [makeSurfaceTool("discord_send"), makeWorkerStart()],
       {
         role: { kind: "conversation" },
         sessionKey: "owner-conv",
@@ -1966,7 +1966,6 @@ test("appends worker delegation guidance to text conversation prompts based on o
     assert.match(ownerPrompt, /## Workers \(`worker_start`\)/);
     assert.match(ownerPrompt, /agent-browser/);
     assert.match(ownerPrompt, /coding_session_start/);
-    assert.match(ownerPrompt, /coding_project_list/);
     assert.match(ownerPrompt, /unsandboxed shell/);
     assert.doesNotMatch(ownerPrompt, /<name>(?:browser-use|coding-task|self-improvement)<\/name>/);
     assert.match(publicPrompt, /## Workers \(`worker_start`\)/);
@@ -2010,18 +2009,6 @@ function makeCodingSessionStart() {
     label: "Start Coding Session",
     description: "Start a coding session",
     parameters: Type.Object({ message: Type.String() }),
-    async execute() {
-      return { content: [{ type: "text", text: "ok" }], details: {} };
-    },
-  });
-}
-
-function makeCodingProjectList() {
-  return defineTool({
-    name: "coding_project_list",
-    label: "List Coding Projects",
-    description: "List coding projects",
-    parameters: Type.Object({}),
     async execute() {
       return { content: [{ type: "text", text: "ok" }], details: {} };
     },

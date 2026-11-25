@@ -2,7 +2,6 @@ import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent
 import { Type } from "typebox";
 
 import type { CodingBackendRegistry } from "@modules/coding/application/coding-backend-registry";
-import type { CodingBackend } from "@modules/coding/ports/coding-backend";
 import {
   formatCodingSessionRef,
   isCodingSessionWaiting,
@@ -27,7 +26,7 @@ export function createCodingSessionTools(
     Type.String({
       minLength: 1,
       maxLength: 100,
-      description: `Coding backend id. Defaults to "${registry.defaultId}". Use coding_backend_list to see the available backends.`,
+      description: `Coding backend id. Defaults to "${registry.defaultId}".`,
     }),
   );
   const sessionSchema = Type.String({
@@ -45,27 +44,6 @@ export function createCodingSessionTools(
   );
 
   return [
-    defineTool({
-      name: "coding_backend_list",
-      label: "List Coding Backends",
-      description:
-        "List the coding backends available for repository work, their ids, and what each supports.",
-      promptSnippet: "List coding backends and their capabilities.",
-      parameters: Type.Object({}),
-      async execute() {
-        return {
-          content: [{ type: "text", text: formatBackends(registry) }],
-          details: {
-            default: registry.defaultId,
-            backends: registry.list().map((backend) => ({
-              id: backend.id,
-              label: backend.label,
-              capabilities: backend.capabilities,
-            })),
-          },
-        };
-      },
-    }),
     defineTool({
       name: "coding_session_start",
       label: "Start Coding Session",
@@ -237,27 +215,6 @@ export function createCodingSessionTools(
       },
     }),
   ] as const;
-}
-
-function formatBackends(registry: CodingBackendRegistry): string {
-  return registry
-    .list()
-    .map((backend) => {
-      const notes = capabilityNotes(backend);
-      const suffix = notes.length > 0 ? ` (${notes.join(", ")})` : "";
-      const isDefault = backend.id === registry.defaultId ? " — default" : "";
-      return `- ${backend.id}: ${backend.label}${suffix}${isDefault}`;
-    })
-    .join("\n");
-}
-
-function capabilityNotes(backend: CodingBackend): string[] {
-  return [
-    ...(backend.capabilities.projects ? ["projects"] : []),
-    ...(backend.capabilities.worktree ? ["worktrees"] : []),
-    ...(backend.capabilities.pullRequest ? ["pull requests"] : []),
-    ...(backend.capabilities.questions ? ["questions"] : []),
-  ];
 }
 
 function formatRun(

@@ -959,9 +959,6 @@ export function createPiAgentFactory({
       const sessionCodingAvailable =
         options.role.kind === "worker" &&
         customTools.some((tool) => tool.name === "coding_session_start");
-      const sessionCodingProjectAvailable = customTools.some(
-        (tool) => tool.name === "coding_project_list",
-      );
       const excludedSkillNames = excludedSkillNamesFor({
         browser: sessionBrowserAvailable,
         coding: sessionCodingAvailable,
@@ -976,7 +973,6 @@ export function createPiAgentFactory({
           ? renderWorkerDelegationSection({
               browserAvailable: workerBrowserAvailable,
               codingAvailable: workerCodingAvailable,
-              codingProjectAvailable: sessionCodingProjectAvailable,
               shell: delegatedWorkerShell,
               secretsAvailable: workerSecretsAvailable,
               watchAvailable: hasWatchAdd,
