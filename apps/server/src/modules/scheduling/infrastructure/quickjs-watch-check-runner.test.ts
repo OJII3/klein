@@ -123,3 +123,45 @@ test("rejects output over the byte limit", async () => {
     /exceeded the .* byte limit/u,
   );
 });
+
+test("exposes owner-only watch tools only to matching owner watches", async () => {
+  const ownerTool: WatchTool = {
+    name: "github_api",
+    audience: "owner",
+    description: "Owner-only GitHub API.",
+    inputSchema: {
+      type: "object",
+      properties: { path: { type: "string" } },
+      required: ["path"],
+    },
+    outputSchema: {
+      type: "object",
+      properties: { ok: { type: "boolean" } },
+      required: ["ok"],
+    },
+    async execute() {
+      return { ok: true };
+    },
+  };
+  const runner = new QuickJsWatchCheckRunner({
+    tools: [fetchTool, ownerTool],
+    ownerUserId: "100",
+    timeoutMs: 5_000,
+  });
+  const script =
+    'const r = await tools.github_api({ path: "/repos/o/r" }); text(String(r.ok)); silent();';
+
+  const ownerResult = await runner.run({ script, args: [], accessScope: "owner:100" });
+  assert.equal(ownerResult.output, "true");
+
+  for (const accessScope of ["public", "user:100", "owner:999", undefined] as const) {
+    await assert.rejects(
+      runner.run({
+        script,
+        args: [],
+        ...(accessScope !== undefined ? { accessScope } : {}),
+      }),
+      /github_api/u,
+    );
+  }
+});

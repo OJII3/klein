@@ -35,6 +35,7 @@ import { createPiUsageReporterFromEnv } from "@runtime/pi/pi-usage-reporter";
 import { createT3CodingBackend } from "@modules/coding/infrastructure/t3/t3-coding-backend";
 import { CodingBackendRegistry } from "@modules/coding/application/coding-backend-registry";
 import { createWatchFetchTool } from "@runtime/pi/watch-fetch-tool";
+import { createWatchGitHubApiTool } from "@runtime/pi/watch-github-tool";
 import { runSandboxedCommand } from "@runtime/pi/user-shell-sandbox";
 import { hostHomeDirectory, resolveWorkerShell, runHostCommand } from "@runtime/pi/worker-shell";
 import { PiSharedMemoryAgent } from "@runtime/pi/pi-shared-memory-agent";
@@ -150,8 +151,16 @@ export async function bootstrapApplication(): Promise<void> {
     resolve(stateDir, "channel-sessions"),
   );
   const scheduledTaskStore = new FileScheduledTaskStore(resolve(stateDir, "schedules"));
-  const watchToolCatalog = { tools: [createWatchFetchTool({ agentDir })] };
-  const watchCheckRunner = new QuickJsWatchCheckRunner({ tools: watchToolCatalog.tools });
+  const watchToolCatalog = {
+    tools: [
+      createWatchFetchTool({ agentDir }),
+      ...(ownerUserId ? [createWatchGitHubApiTool()] : []),
+    ],
+  };
+  const watchCheckRunner = new QuickJsWatchCheckRunner({
+    tools: watchToolCatalog.tools,
+    ...(ownerUserId ? { ownerUserId } : {}),
+  });
   const channelRuleStore = new FileDiscordChannelRuleStore(resolve(stateDir, "channel-rules"));
   const discordAccessRuleStore = new FileDiscordAccessRuleStore(
     resolve(stateDir, "discord-access.json"),

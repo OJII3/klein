@@ -35,3 +35,34 @@ test("renders watch tool declarations as TypeScript", () => {
 test("returns undefined without watch tools", () => {
   assert.equal(renderWatchToolSection({ tools: [] }), undefined);
 });
+
+test("exposes owner-only watch tools only when ownerFeaturesAllowed is true", () => {
+  const ownerTool: WatchTool = {
+    name: "github_api",
+    audience: "owner",
+    description: "Read-only GitHub API.",
+    inputSchema: {
+      type: "object",
+      properties: { path: { type: "string" } },
+      required: ["path"],
+    },
+    async execute() {
+      return {};
+    },
+  };
+
+  const publicSection = renderWatchToolSection({ tools: [fetchTool, ownerTool] });
+  assert.ok(publicSection);
+  assert.match(publicSection, /fetch_content/u);
+  assert.doesNotMatch(publicSection, /github_api/u);
+
+  const ownerSection = renderWatchToolSection(
+    { tools: [fetchTool, ownerTool] },
+    { ownerFeaturesAllowed: true },
+  );
+  assert.ok(ownerSection);
+  assert.match(ownerSection, /fetch_content/u);
+  assert.match(ownerSection, /github_api/u);
+
+  assert.equal(renderWatchToolSection({ tools: [ownerTool] }), undefined);
+});

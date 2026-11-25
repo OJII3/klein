@@ -987,7 +987,13 @@ export function createPiAgentFactory({
         definition.systemPrompt,
         ...(workerDelegationSection ? [workerDelegationSection] : []),
         ...(workerSecretsSection ? [workerSecretsSection] : []),
-        ...(hasWatchAdd && watchToolCatalog ? [renderWatchToolSection(watchToolCatalog)] : []),
+        ...(hasWatchAdd && watchToolCatalog
+          ? [
+              renderWatchToolSection(watchToolCatalog, {
+                ownerFeaturesAllowed: options.ownerFeaturesAllowed === true,
+              }),
+            ]
+          : []),
       ]
         .filter(Boolean)
         .join("\n\n");

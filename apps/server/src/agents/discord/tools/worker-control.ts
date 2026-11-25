@@ -37,14 +37,14 @@ export function createWorkerControlTools(
       name: "worker_start",
       label: "Start Worker",
       description:
-        "Start a worker: a separate agent with its own persistent session and tools. The worker inherits this conversation's history up to this point, so give only the specific goal or next step instead of a self-contained brief. Prefer worker_start over doing multi-step web research, reading long pages or multiple sources, codemode/MCP workflows, or ongoing investigations inline in the conversation. The worker cannot send Discord messages and its result arrives as an event. Use worker_send for follow-ups." +
+        "Start a worker: a separate agent with its own persistent session and tools. The worker inherits this conversation's history up to this point, so a rough, short handoff is enough — do not pre-research, summarize the conversation, or write a detailed brief. Let the worker infer intent, plan, and manage follow-ups. Prefer worker_start over doing multi-step web research, reading long pages or multiple sources, codemode/MCP workflows, self-improvement/backlog management, or ongoing investigations inline in the conversation. The worker cannot send Discord messages and its result arrives as an event. Use worker_send for follow-ups." +
         capabilitiesNote,
       parameters: Type.Object({
         prompt: Type.String({
           minLength: 1,
           maxLength: 4_000,
           description:
-            "The specific task for the worker. Do not repeat background, URLs, or message IDs that are already in this conversation.",
+            "A brief, rough handoff for the worker (goal or next step). Do not repeat background, URLs, or message IDs that are already in this conversation.",
         }),
       }),
       exposure: "deferred",

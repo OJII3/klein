@@ -5,7 +5,9 @@ import {
   type CodemodeTool,
 } from "@earendil-works/pi-codemode";
 import { resolveQuickJsWasmPath } from "@runtime/pi/quickjs-wasm";
+import { isOwnerAccessScope } from "@shared/access";
 
+import { filterWatchToolsForAudience } from "../application/watch-tool";
 import type { WatchTask } from "../domain/scheduled-task";
 import {
   WatchCheckError,
@@ -20,6 +22,7 @@ const DEFAULT_MEMORY_LIMIT_BYTES = 64 * 1_024 * 1_024;
 
 export interface QuickJsWatchCheckRunnerOptions {
   readonly tools: readonly WatchTool[];
+  readonly ownerUserId?: string;
   readonly timeoutMs?: number;
   readonly maxOutputBytes?: number;
   readonly memoryLimitBytes?: number;
@@ -29,27 +32,28 @@ export class QuickJsWatchCheckRunner implements WatchCheckRunner {
   private readonly timeoutMs: number;
   private readonly maxOutputBytes: number;
   private readonly memoryLimitBytes: number;
-  private readonly sandboxTools: CodemodeTool[];
+  private readonly ownerUserId: string | undefined;
+  private readonly publicSandboxTools: CodemodeTool[];
+  private readonly ownerSandboxTools: CodemodeTool[];
 
   constructor(options: QuickJsWatchCheckRunnerOptions) {
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.maxOutputBytes = options.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES;
     this.memoryLimitBytes = options.memoryLimitBytes ?? DEFAULT_MEMORY_LIMIT_BYTES;
-    this.sandboxTools = options.tools.map((tool) => ({
-      name: tool.name,
-      description: tool.description,
-      inputSchema: tool.inputSchema,
-      outputSchema: tool.outputSchema,
-      execute: (args, { signal }) => tool.execute(args, { signal }),
-    }));
+    this.ownerUserId = options.ownerUserId;
+    this.publicSandboxTools = toSandboxTools(filterWatchToolsForAudience(options.tools, false));
+    this.ownerSandboxTools = toSandboxTools(filterWatchToolsForAudience(options.tools, true));
   }
 
-  async run(watch: Pick<WatchTask, "script" | "args" | "state">): Promise<WatchCheckResult> {
+  async run(
+    watch: Pick<WatchTask, "script" | "args" | "state"> & Partial<Pick<WatchTask, "accessScope">>,
+  ): Promise<WatchCheckResult> {
     const startedAt = Date.now();
+    const isOwner = isOwnerAccessScope(watch.accessScope, this.ownerUserId);
     const sandbox = new CodemodeSandbox({
       timeoutMs: this.timeoutMs,
       memoryLimitBytes: this.memoryLimitBytes,
-      tools: this.sandboxTools,
+      tools: isOwner ? this.ownerSandboxTools : this.publicSandboxTools,
       wasm: loadQuickJSWasm(resolveQuickJsWasmPath()),
     });
     try {
@@ -92,6 +96,16 @@ export class QuickJsWatchCheckRunner implements WatchCheckRunner {
       await sandbox.close();
     }
   }
+}
+
+function toSandboxTools(tools: readonly WatchTool[]): CodemodeTool[] {
+  return tools.map((tool) => ({
+    name: tool.name,
+    description: tool.description,
+    inputSchema: tool.inputSchema,
+    outputSchema: tool.outputSchema,
+    execute: (args, { signal }) => tool.execute(args, { signal }),
+  }));
 }
 
 function collectOutput(output: readonly CodemodeOutputItem[]): string {

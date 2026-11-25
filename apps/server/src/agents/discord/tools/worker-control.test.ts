@@ -230,6 +230,7 @@ test("describes worker capabilities that the conversation scope grants", () => {
   );
 
   assert.match(publicTools.workerStart.description, /Prefer worker_start/);
+  assert.match(publicTools.workerStart.description, /rough, short handoff/);
   assert.doesNotMatch(
     publicTools.workerStart.description,
     /agent-browser|coding_task_start|sandboxed shell|unsandboxed shell/,
