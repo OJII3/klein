@@ -95,6 +95,7 @@ import {
 import type { PiTool } from "./pi-tool";
 import { PiRuntimeTrace } from "./pi-runtime-trace";
 import type { PiUsageReporter } from "./pi-usage-reporter";
+import { excludedSkillNamesFor } from "./skill-availability";
 import { createSkillReadTool } from "./skill-read-tool";
 import { ToolAuthorization, type ToolPermissions } from "./tool-permissions";
 import {
@@ -961,10 +962,10 @@ export function createPiAgentFactory({
       const sessionCodingProjectAvailable = customTools.some(
         (tool) => tool.name === "coding_project_list",
       );
-      const excludedSkillNames = new Set<string>([
-        ...(sessionBrowserAvailable ? [] : ["browser-use"]),
-        ...(sessionCodingAvailable ? [] : ["coding-task"]),
-      ]);
+      const excludedSkillNames = excludedSkillNamesFor({
+        browser: sessionBrowserAvailable,
+        coding: sessionCodingAvailable,
+      });
       const delegatedWorkerShell = userEnvironment
         ? options.ownerFeaturesAllowed === true
           ? "host"

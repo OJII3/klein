@@ -12,7 +12,7 @@ import { resolveCredentials } from "./credentials";
 import { createLogFilePath, createLogger, flushLogger } from "./logger";
 import { collectModelsInUse } from "./model-configuration";
 import { loadConversationSystemPrompt, loadPromptFile, PROACTIVITY_PROMPT_PATH } from "./prompt";
-import { loadProfile } from "./profile";
+import { DEFAULT_PROFILE, loadProfile } from "./profile";
 import { resolveStateDir } from "./runtime-paths";
 import { createShutdownRunner } from "./shutdown";
 import { migrateStateDirectories } from "./state-migration";
@@ -30,6 +30,7 @@ import {
 } from "@runtime/pi/pi-agent-runtime";
 import { PiStandaloneSessionRunner } from "@runtime/pi/pi-standalone-session-runner";
 import { createPiMinimalAgentFactory } from "@runtime/pi/pi-minimal-agent-factory";
+import { resolveSkillAudienceCapabilities } from "@runtime/pi/skill-availability";
 import { createPiUsageReporterFromEnv } from "@runtime/pi/pi-usage-reporter";
 import { createT3CodingBackend } from "@modules/coding/infrastructure/t3/t3-coding-backend";
 import { CodingBackendRegistry } from "@modules/coding/application/coding-backend-registry";
@@ -80,6 +81,7 @@ import {
 import { startWebUi } from "@modules/webui/infrastructure/elysia-webui-app";
 import { PinoJsonlReader } from "@modules/webui/infrastructure/pino-jsonl-reader";
 import { PiSessionReader } from "@modules/webui/infrastructure/pi-session-reader";
+import { PiSkillReader } from "@modules/webui/infrastructure/pi-skill-reader";
 import { PiToolUsageReader } from "@modules/webui/infrastructure/pi-tool-usage-reader";
 import { ProactivityStoreReader } from "@modules/webui/infrastructure/proactivity-store-reader";
 import { Sbv2Tts } from "@modules/tts/infrastructure/sbv2-tts";
@@ -639,6 +641,15 @@ export async function bootstrapApplication(): Promise<void> {
         }),
         pinoLogs: new PinoJsonlReader(logDirectory),
         toolUsage: new PiToolUsageReader(agentDir),
+        skills: new PiSkillReader({
+          profile: config.profile ?? DEFAULT_PROFILE,
+          skillsDirectory: profile.skillsDirectory,
+          agentDirectory: agentDir,
+          capabilities: resolveSkillAudienceCapabilities(
+            config.permissions,
+            ownerUserId !== undefined,
+          ),
+        }),
         ...(proactivityConfig.enabled
           ? {
               proactivity: new ProactivityStoreReader({

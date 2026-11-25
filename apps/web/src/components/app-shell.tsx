@@ -15,6 +15,7 @@ interface AppShellProps {
 const VIEWS: { value: View; label: string }[] = [
   { value: "logs", label: "Logs" },
   { value: "sessions", label: "Sessions" },
+  { value: "skills", label: "Skills" },
   { value: "proactivity", label: "Proactivity" },
   { value: "tools", label: "Tools" },
   { value: "memory", label: "Memory" },
@@ -28,7 +29,7 @@ interface NavLinksProps {
 function NavLinks({ view, className }: NavLinksProps) {
   return (
     <nav aria-label="Views" className={className}>
-      <ul className="menu menu-horizontal menu-sm gap-0.5 p-0 [--menu-active-bg:var(--color-green-soft)] [--menu-active-fg:var(--color-green-strong)]">
+      <ul className="menu menu-horizontal menu-sm flex-nowrap gap-0.5 p-0 [--menu-active-bg:var(--color-green-soft)] [--menu-active-fg:var(--color-green-strong)]">
         {VIEWS.map((item) => {
           const active = view === item.value;
           return (

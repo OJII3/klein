@@ -8,7 +8,10 @@ import {
   MemoryUserParamsSchema,
   SessionParamsSchema,
   SessionQuerySchema,
+  SkillFileQuerySchema,
+  SkillParamsSchema,
 } from "./api-schema";
+import type { SkillsReport } from "./skills";
 import type { ViewerLogQuery } from "./viewer-readers";
 import type { WebUiDependencies, WebUiLogger } from "./webui";
 
@@ -49,6 +52,34 @@ export function createWebUiApp(dependencies: WebUiDependencies) {
         return handleRouteError(set, dependencies.logger, error, "Failed to aggregate tool usage");
       }
     })
+    .get("/api/skills", async ({ set }) => {
+      try {
+        return await (dependencies.skills?.list() ?? emptySkillsReport());
+      } catch (error) {
+        return handleRouteError(set, dependencies.logger, error, "Failed to list skills");
+      }
+    })
+    .get(
+      "/api/skills/:name/file",
+      async ({ params, query, set }) => {
+        if (!dependencies.skills) {
+          set.status = 404;
+          return { error: "Skills are not available" };
+        }
+
+        try {
+          const file = await dependencies.skills.readFile(params.name, query.path);
+          if (!file) {
+            set.status = 404;
+            return { error: "Skill file not found" };
+          }
+          return file;
+        } catch (error) {
+          return handleRouteError(set, dependencies.logger, error, "Failed to read skill file");
+        }
+      },
+      { params: SkillParamsSchema, query: SkillFileQuerySchema },
+    )
     .get("/api/proactivity", async ({ set }) => {
       try {
         if (!dependencies.proactivity) {
@@ -241,6 +272,16 @@ function validateLogQuery(query: ViewerLogQuery): void {
   }
 }
 
+function emptySkillsReport(): SkillsReport {
+  return {
+    profile: "",
+    directory: "",
+    directoryExists: false,
+    skills: [],
+    diagnostics: [],
+  };
+}
+
 function parseLimit(value: number | string | undefined): number | undefined {
   if (value === undefined) return undefined;
   const limit = Number(value);
@@ -276,7 +317,10 @@ function isClientError(error: unknown): error is Error {
       error.message.startsWith("Unknown session cursor") ||
       error.message.startsWith("Session event limit") ||
       error.message.startsWith("Invalid session list cursor") ||
-      error.message.startsWith("Unknown session list cursor"))
+      error.message.startsWith("Unknown session list cursor") ||
+      error.message.startsWith("Skill file path") ||
+      error.message.startsWith("Skill file is too large") ||
+      error.message.startsWith("Skill file is not text"))
   );
 }
 
