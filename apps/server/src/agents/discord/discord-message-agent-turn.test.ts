@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createDiscordMessageAgentTurn } from "./discord-message-agent-turn";
+import { BYSTANDER_MESSAGE_CONTENT_LIMIT } from "./prompt-policy";
 import type { DiscordMessage } from "@modules/discord/domain/discord-message";
 
 const message: DiscordMessage = {
@@ -91,4 +92,72 @@ test("validates owner messages during conversion when configured", () => {
       ),
     /Only the owner/,
   );
+});
+
+test("skips owner validation only for a non-bot bystander", () => {
+  const ownerValidation = { userId: "user-123", channelId: "channel-123" };
+  const otherUser = { ...message, author: { ...message.author, id: "other-user" } };
+
+  assert.doesNotThrow(() =>
+    createDiscordMessageAgentTurn(otherUser, { audience: "bystander" }, { ownerValidation }),
+  );
+  assert.throws(
+    () => createDiscordMessageAgentTurn(otherUser, { audience: "owner" }, { ownerValidation }),
+    /Only the owner/,
+  );
+  assert.throws(
+    () =>
+      createDiscordMessageAgentTurn(
+        { ...otherUser, author: { ...otherUser.author, bot: true } },
+        { audience: "bystander" },
+        { ownerValidation },
+      ),
+    /Only the owner/,
+  );
+});
+
+test("keeps a bystander body at the limit and truncates only beyond it", () => {
+  const atLimit = "あ".repeat(BYSTANDER_MESSAGE_CONTENT_LIMIT);
+  const atLimitTurn = createDiscordMessageAgentTurn(
+    { ...message, content: atLimit, images: [] },
+    { audience: "bystander" },
+    { bystanderMessageGuidance: "" },
+  );
+  const overLimitTurn = createDiscordMessageAgentTurn(
+    { ...message, content: `${atLimit}い`, images: [] },
+    { audience: "bystander" },
+    { bystanderMessageGuidance: "" },
+  );
+  const atLimitBlock = atLimitTurn.event.content[0];
+  const overLimitBlock = overLimitTurn.event.content[0];
+
+  assert.equal(
+    atLimitBlock?.type === "text" ? atLimitBlock.text : "",
+    `ユーザー (@user):\n${atLimit}`,
+  );
+  assert.equal(
+    overLimitBlock?.type === "text" ? overLimitBlock.text : "",
+    `ユーザー (@user):\n${atLimit}…`,
+  );
+});
+
+test("applies bystander guidance instead of bot guidance", () => {
+  const turn = createDiscordMessageAgentTurn(
+    message,
+    { audience: "bystander" },
+    { botMessageGuidance: "Bot guidance", bystanderMessageGuidance: "Bystander guidance" },
+  );
+  const ownerTurn = createDiscordMessageAgentTurn(
+    message,
+    { audience: "owner" },
+    { botMessageGuidance: "Bot guidance", bystanderMessageGuidance: "Bystander guidance" },
+  );
+  const textOf = (candidate: typeof turn) => {
+    const block = candidate.event.content[0];
+    return block?.type === "text" ? block.text : "";
+  };
+
+  assert.equal(textOf(turn).endsWith("Bystander guidance"), true);
+  assert.equal(textOf(ownerTurn).endsWith("Bystander guidance"), false);
+  assert.equal(textOf(ownerTurn).endsWith("Bot guidance"), false);
 });

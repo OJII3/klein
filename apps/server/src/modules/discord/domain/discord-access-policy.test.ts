@@ -204,3 +204,97 @@ test("unlinked locations still use the access rules", () => {
     false,
   );
 });
+
+test("admits a non-owner human in an owner channel as a bystander", () => {
+  const target = { guildId: "guild", channelId: "owner-channel" };
+
+  assert.equal(linkedPolicy.resolveAdmission({ ...target, userId: "owner-user" }), "owner");
+  assert.equal(linkedPolicy.resolveAdmission({ ...target, userId: "member-user" }), "bystander");
+  assert.equal(linkedPolicy.canReceiveMessage({ ...target, userId: "member-user" }), true);
+  assert.equal(linkedPolicy.canReceive({ ...target, userId: "member-user" }), false);
+});
+
+test("keeps bots and deny rules out on the message path", () => {
+  assert.equal(
+    linkedPolicy.resolveAdmission({
+      guildId: "guild",
+      channelId: "owner-channel",
+      userId: "member-user",
+      userIsBot: true,
+    }),
+    "denied",
+  );
+  assert.equal(
+    linkedPolicy.canReceiveMessage({
+      guildId: "guild",
+      channelId: "owner-channel",
+      userId: "member-user",
+      userIsBot: true,
+    }),
+    false,
+  );
+  assert.equal(
+    linkedPolicy.resolveAdmission({
+      guildId: "guild",
+      channelId: "unknown",
+      userId: "member-user",
+    }),
+    "denied",
+  );
+  assert.equal(
+    linkedPolicy.canReceiveMessage({
+      guildId: "guild",
+      channelId: "unknown",
+      userId: "member-user",
+    }),
+    false,
+  );
+});
+
+test("keeps non-owner direct messages denied on the message path", () => {
+  const ownerDmPolicy = createDiscordAccessPolicy(
+    { default: "deny", directMessages: "owner" },
+    "owner-user",
+  );
+
+  assert.equal(ownerDmPolicy.resolveAdmission({ channelId: "dm", userId: "owner-user" }), "owner");
+  assert.equal(ownerDmPolicy.resolveAdmission({ channelId: "dm", userId: "other-user" }), "denied");
+  assert.equal(ownerDmPolicy.canReceiveMessage({ channelId: "dm", userId: "other-user" }), false);
+  assert.equal(ownerDmPolicy.canReceive({ channelId: "dm", userId: "other-user" }), false);
+});
+
+test("resolves linked and public admissions without changing their access", () => {
+  assert.equal(
+    linkedPolicy.resolveAdmission({
+      guildId: "guild",
+      channelId: "member-channel",
+      userId: "member-user",
+    }),
+    "linked",
+  );
+  assert.equal(
+    linkedPolicy.resolveAdmission({
+      guildId: "guild",
+      channelId: "member-channel",
+      userId: "stranger",
+    }),
+    "public",
+  );
+  assert.equal(
+    linkedPolicy.canReceiveMessage({ guildId: "guild", channelId: "member-channel" }),
+    true,
+  );
+});
+
+test("denies owner access on the message path when no owner is configured", () => {
+  const unconfigured = createDiscordAccessPolicy({ default: "owner", directMessages: "owner" });
+
+  assert.equal(
+    unconfigured.resolveAdmission({ guildId: "guild", channelId: "channel", userId: "user-1" }),
+    "denied",
+  );
+  assert.equal(
+    unconfigured.canReceiveMessage({ guildId: "guild", channelId: "channel", userId: "user-1" }),
+    false,
+  );
+});

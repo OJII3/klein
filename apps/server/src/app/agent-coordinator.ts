@@ -472,17 +472,18 @@ export class AgentCoordinator {
       userId: message.author.id,
       userIsBot: message.author.bot,
     };
-    if (this.dependencies.accessPolicy && !this.dependencies.accessPolicy.canReceive(target)) {
-      return "done";
-    }
+    const admission = this.dependencies.accessPolicy?.resolveAdmission(target);
+    if (admission === "denied") return "done";
 
+    const bystander = admission === "bystander";
     const ownerFeaturesAllowed =
       this.dependencies.accessPolicy?.canUseOwnerFeatures(target) ?? false;
-    const linkedUser = ownerFeaturesAllowed
-      ? undefined
-      : this.dependencies.accessPolicy?.resolveLinkedUser(target);
+    const linkedUser =
+      ownerFeaturesAllowed || bystander
+        ? undefined
+        : this.dependencies.accessPolicy?.resolveLinkedUser(target);
     const accessScope =
-      ownerFeaturesAllowed && this.dependencies.ownerUserId
+      (ownerFeaturesAllowed || bystander) && this.dependencies.ownerUserId
         ? ownerAccessScope(this.dependencies.ownerUserId)
         : linkedUser
           ? userAccessScope(linkedUser)
@@ -504,7 +505,7 @@ export class AgentCoordinator {
     if (message.replyTo?.author) {
       this.dependencies.discordUserDirectory?.remember(message.replyTo.author);
     }
-    await this.dependencies.userMemoryCoordinator?.observe(message);
+    if (!bystander) await this.dependencies.userMemoryCoordinator?.observe(message);
 
     const startedAt = Date.now();
     logger.debug({ event: "discord_message_processing_started" }, "Processing Discord message");
@@ -513,7 +514,9 @@ export class AgentCoordinator {
         conversationKey,
         accessScope,
         async (agent, state) => {
-          const userMemory = await this.resolveFirstSpeakerMemory(message, state.sessionKey);
+          const userMemory = bystander
+            ? undefined
+            : await this.resolveFirstSpeakerMemory(message, state.sessionKey);
           const sharedMemory = message.guildId
             ? await this.dependencies.sharedMemoryCoordinator?.getContext({
                 channelId: message.parentChannelId ?? message.channelId,
@@ -524,16 +527,17 @@ export class AgentCoordinator {
           const channelRule = message.guildId
             ? await this.dependencies.channelRuleStore?.get(message.guildId, message.channelId)
             : undefined;
-          const proactive = await this.resolveProactiveContext(
-            message.channelId,
-            accessScope,
-            logger,
-          );
+          const proactive = bystander
+            ? undefined
+            : await this.resolveProactiveContext(message.channelId, accessScope, logger);
           const sentBefore = agent.getSentMessageCount?.();
           await agent.promptMessage(message, {
             userMemory,
             sharedMemory,
             channelRule,
+            ...(bystander || admission === "owner"
+              ? { audience: bystander ? "bystander" : "owner" }
+              : {}),
             ...(proactive?.preferences ? { proactivePreferences: proactive.preferences } : {}),
             ...(proactive?.waitingOn ? { waitingOn: proactive.waitingOn } : {}),
             ...(proactive?.pendingSignals ? { pendingSignals: proactive.pendingSignals } : {}),
@@ -571,7 +575,9 @@ export class AgentCoordinator {
       );
       throw error;
     } finally {
-      if (!ownerFeaturesAllowed) this.dependencies.sharedMemoryCoordinator?.enqueue(message);
+      if (!ownerFeaturesAllowed && !bystander) {
+        this.dependencies.sharedMemoryCoordinator?.enqueue(message);
+      }
     }
   }
 

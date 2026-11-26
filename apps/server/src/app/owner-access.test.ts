@@ -146,12 +146,16 @@ function createHarness(
   };
 }
 
-test("only owner messages create private sessions and never enter shared memory", async () => {
+test("bystander messages join the owner session and never enter shared memory", async () => {
   await using temp = await createTempDir("klein-owner-");
   const directory = temp.path;
   const store = new ChannelSessionStateStore(directory);
   const harness = createHarness(store, true);
   try {
+    await harness.coordinator.handleDiscordMessage(message);
+    assert.equal(harness.creations.length, 1);
+    assert.equal(harness.creations[0].sessionKey, "discord-channel:channel:owner:123");
+    assert.equal(harness.creations[0].ownerFeaturesAllowed, true);
     await harness.coordinator.handleDiscordMessage({
       ...message,
       id: "message-other",
@@ -162,11 +166,8 @@ test("only owner messages create private sessions and never enter shared memory"
       id: "message-bot",
       author: { ...message.author, bot: true },
     });
-    assert.equal(harness.creations.length, 0);
-    assert.equal(harness.remembered.length, 0);
-    await harness.coordinator.handleDiscordMessage(message);
-    assert.equal(harness.creations[0].sessionKey, "discord-channel:channel:owner:123");
-    assert.equal(harness.creations[0].ownerFeaturesAllowed, true);
+    assert.equal(harness.creations.length, 1);
+    assert.equal(harness.prompts.length, 2);
     assert.equal(harness.remembered.length, 0);
   } finally {
     await harness.coordinator.dispose();

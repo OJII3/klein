@@ -10,7 +10,7 @@ import {
   createDiscordMessageAgentTurn,
   type DiscordTurnContext,
 } from "./discord-message-agent-turn";
-import { BOT_MESSAGE_GUIDANCE } from "./prompt-policy";
+import { BOT_MESSAGE_GUIDANCE, BYSTANDER_MESSAGE_GUIDANCE } from "./prompt-policy";
 import type { AccessScope } from "@shared/access";
 
 export interface DiscordAgentToolHooks {
@@ -127,6 +127,7 @@ export class DiscordAgent implements DiscordConversationAgent {
   private createMessageTurn(message: DiscordMessage, context: DiscordTurnContext): AgentTurn {
     return createDiscordMessageAgentTurn(message, context, {
       botMessageGuidance: BOT_MESSAGE_GUIDANCE,
+      bystanderMessageGuidance: BYSTANDER_MESSAGE_GUIDANCE,
       ownerValidation:
         this.ownerFeaturesAllowed && this.ownerUserId
           ? { userId: this.ownerUserId, channelId: this.channelId }

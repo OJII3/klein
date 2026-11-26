@@ -8,7 +8,10 @@ import type {
 } from "../ports/discord-gateway-message";
 
 export interface DiscordMessageIngestDependencies {
-  readonly accessPolicy: Pick<DiscordAccessPolicy, "canReceive" | "resolveAccess">;
+  readonly accessPolicy: Pick<
+    DiscordAccessPolicy,
+    "canReceiveMessage" | "resolveAccess" | "resolveAdmission"
+  >;
   readonly reader: DiscordGatewayMessageReader;
   readonly selfUserId: () => string | undefined;
   readonly canAccept: () => boolean;
@@ -47,7 +50,7 @@ export class DiscordMessageIngest {
       userIsBot: message.author.bot,
     };
 
-    if (!this.dependencies.accessPolicy.canReceive(accessTarget)) {
+    if (!this.dependencies.accessPolicy.canReceiveMessage(accessTarget)) {
       if (this.dependencies.accessPolicy.resolveAccess(accessTarget) === "deny") {
         await this.requestAccessWhenMentioned(message, normalizedMessage);
       }
@@ -56,8 +59,9 @@ export class DiscordMessageIngest {
 
     if (!this.dependencies.canAccept()) return false;
 
+    const bystander = this.dependencies.accessPolicy.resolveAdmission(accessTarget) === "bystander";
     const [images, replyTo] = await Promise.all([
-      this.dependencies.reader.fetchImages(message),
+      bystander ? Promise.resolve([]) : this.dependencies.reader.fetchImages(message),
       this.dependencies.reader.fetchReplyReference(message),
     ]);
 

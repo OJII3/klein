@@ -40,8 +40,17 @@ export interface DiscordAccessTarget {
   readonly userIsBot?: boolean;
 }
 
+/**
+ * Why: the message path admits a non-owner human into an owner channel, while interaction,
+ * reaction, choice, and voice paths keep using `canReceive` and deny that sender.
+ */
+export type DiscordAdmission = "owner" | "linked" | "public" | "bystander" | "denied";
+
 export interface DiscordAccessPolicy {
   canReceive(target: DiscordAccessTarget): boolean;
+  /** Why: the message path needs a separate gate so bystanders reach only the owner session. */
+  canReceiveMessage(target: DiscordAccessTarget): boolean;
+  resolveAdmission(target: DiscordAccessTarget): DiscordAdmission;
   resolveAccess(target: DiscordAccessTarget): DiscordAccess;
   canUseOwnerFeatures(target: DiscordAccessTarget): boolean;
   resolveLinkedUser(target: DiscordAccessTarget): string | undefined;
@@ -98,6 +107,19 @@ export function createDiscordAccessPolicy(
     return linkedUser === target.userId ? linkedUser : undefined;
   };
 
+  const resolveAdmission = (target: DiscordAccessTarget): DiscordAdmission => {
+    const access = resolveAccess(configuration, rules, ownerUserId, resolveChannelOwner, target);
+    if (access === "deny") return "denied";
+    if (access === "allow") return resolveLinkedUser(target) ? "linked" : "public";
+
+    // Why: without a configured owner there is no way to tell the owner from a bystander.
+    if (!ownerUserId) return "denied";
+    if (isOwner(ownerUserId, target)) return "owner";
+    // Security: a non-owner DM stays denied because folding it into the owner session would expose owner context.
+    if (!target.guildId || !target.userId || target.userIsBot) return "denied";
+    return "bystander";
+  };
+
   return {
     canReceive(target) {
       return isAccessAllowed(
@@ -105,6 +127,10 @@ export function createDiscordAccessPolicy(
         canUseOwnerFeatures(target),
       );
     },
+    canReceiveMessage(target) {
+      return resolveAdmission(target) !== "denied";
+    },
+    resolveAdmission,
     resolveAccess: (target) =>
       resolveAccess(configuration, rules, ownerUserId, resolveChannelOwner, target),
     canUseOwnerFeatures,
