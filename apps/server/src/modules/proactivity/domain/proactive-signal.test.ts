@@ -35,6 +35,7 @@ test("parses a stored signal with optional evidence and delivery", () => {
   const stored = {
     ...signal,
     expiresAt: "2026-11-21T00:00:00.000Z",
+    requestedMode: "attach",
     delivery: {
       mode: "attach",
       surfacedAt: "2026-11-20T01:00:00.000Z",
@@ -70,6 +71,7 @@ test("rejects malformed signal records", () => {
   assert.throws(() => parseProactiveSignal({ ...signal, status: "waiting" }), /保存内容/u);
   assert.throws(() => parseProactiveSignal({ ...signal, evidence: { url: "" } }), /根拠/u);
   assert.throws(() => parseProactiveSignal({ ...signal, evidence: { text: 1 } }), /根拠/u);
+  assert.throws(() => parseProactiveSignal({ ...signal, requestedMode: "shout" }), /要求配信方法/u);
   assert.throws(
     () => parseProactiveSignal({ ...signal, delivery: { mode: "shout" } }),
     /配信内容/u,

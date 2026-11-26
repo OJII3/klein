@@ -200,6 +200,7 @@ export class ProactiveCoordinator {
       topic: input.topic,
       summary,
       urgency,
+      ...(input.delivery !== undefined ? { requestedMode: input.delivery } : {}),
       dedupeKey: createSignalDedupeKey({
         sourceKind: "goal",
         sourceRef: input.goalId,

@@ -121,6 +121,7 @@ const InitiativeConfigurationSchema = Type.Object(
     maxGoalsPerDay: Type.Optional(Type.Integer({ minimum: 0, maximum: 100 })),
     maxActiveGoals: Type.Optional(Type.Integer({ minimum: 0, maximum: 100 })),
     maxGoalsPerPlan: Type.Optional(Type.Integer({ minimum: 0, maximum: 10 })),
+    startLeadMinutes: Type.Optional(Type.Integer({ minimum: 0, maximum: 60 })),
     approval: Type.Optional(
       Type.Union([Type.Literal("auto"), Type.Literal("propose"), Type.Literal("off")]),
     ),

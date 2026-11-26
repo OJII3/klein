@@ -99,6 +99,118 @@ test("starts a worker for a due goal and records its id", async () => {
   assert.equal(started.closeAfterResult, true);
 });
 
+test("starts a goal inside its lead window but not before it", async () => {
+  await using temp = await createTempDir("klein-initiative-");
+  const harness = await createHarness(temp.path, {
+    channelState: makeChannelState(NOW),
+    messages: [],
+    proposals: [],
+  });
+  await harness.goalStore.create(
+    makeGoal({
+      id: "goal-1",
+      dueAt: new Date(NOW + 60 * 1_000).toISOString(),
+      expiresAt: new Date(NOW + 60 * 60 * 1_000).toISOString(),
+    }),
+  );
+
+  await harness.coordinator.deliverDueGoals(NOW);
+
+  assert.equal(harness.startedWorkers.length, 1);
+  assert.equal((await harness.goalStore.get("goal-1"))?.status, "running");
+});
+
+test("waits for the lead window before starting a goal", async () => {
+  await using temp = await createTempDir("klein-initiative-");
+  const harness = await createHarness(temp.path, {
+    channelState: makeChannelState(NOW),
+    messages: [],
+    proposals: [],
+  });
+  await harness.goalStore.create(
+    makeGoal({
+      id: "goal-1",
+      dueAt: new Date(NOW + 3 * 60 * 1_000).toISOString(),
+      expiresAt: new Date(NOW + 60 * 60 * 1_000).toISOString(),
+    }),
+  );
+
+  await harness.coordinator.deliverDueGoals(NOW);
+  assert.equal(harness.startedWorkers.length, 0);
+
+  await harness.coordinator.deliverDueGoals(NOW + 60 * 1_000);
+  assert.equal(harness.startedWorkers.length, 1);
+});
+
+test("does not start a second worker on another tick inside the lead window", async () => {
+  await using temp = await createTempDir("klein-initiative-");
+  const harness = await createHarness(temp.path, {
+    channelState: makeChannelState(NOW),
+    messages: [],
+    proposals: [],
+  });
+  await harness.goalStore.create(
+    makeGoal({
+      id: "goal-1",
+      dueAt: new Date(NOW + 60 * 1_000).toISOString(),
+      expiresAt: new Date(NOW + 60 * 60 * 1_000).toISOString(),
+    }),
+  );
+
+  await harness.coordinator.deliverDueGoals(NOW);
+  await harness.coordinator.deliverDueGoals(NOW + 10 * 1_000);
+
+  assert.equal(harness.startedWorkers.length, 1);
+});
+
+test("never starts an expired goal", async () => {
+  await using temp = await createTempDir("klein-initiative-");
+  const harness = await createHarness(temp.path, {
+    channelState: makeChannelState(NOW),
+    messages: [],
+    proposals: [],
+  });
+  await harness.goalStore.create(
+    makeGoal({
+      id: "goal-1",
+      dueAt: new Date(NOW - 30 * 1_000).toISOString(),
+      expiresAt: new Date(NOW).toISOString(),
+    }),
+  );
+
+  await harness.coordinator.deliverDueGoals(NOW);
+
+  assert.equal(harness.startedWorkers.length, 0);
+  assert.equal((await harness.goalStore.get("goal-1"))?.status, "expired");
+});
+
+test("includes the premise and execution time in the goal worker prompt", async () => {
+  await using temp = await createTempDir("klein-initiative-");
+  const harness = await createHarness(temp.path, {
+    channelState: makeChannelState(NOW),
+    messages: [],
+    proposals: [],
+  });
+  await harness.goalStore.create(
+    makeGoal({
+      id: "goal-1",
+      createdAt: "2026-11-20T09:00:00.000Z",
+      updatedAt: "2026-11-20T09:00:00.000Z",
+      dueAt: new Date(NOW - 1_000).toISOString(),
+      expiresAt: new Date(NOW + 60 * 60 * 1_000).toISOString(),
+    }),
+  );
+
+  await harness.coordinator.deliverDueGoals(NOW);
+
+  const prompt = harness.startedWorkers[0]?.prompt ?? "";
+  assert.match(prompt, /Premise captured at: 2026-11-20T09:00:00\.000Z \(JST: /u);
+  assert.match(prompt, new RegExp(`Current time: ${new Date(NOW).toISOString()} \\(JST: `, "u"));
+  assert.match(prompt, /Elapsed since premise capture: 18\.0 hours/u);
+  assert.match(prompt, /Premise: invalidated \(<reason>\)/u);
+  assert.match(prompt, /Premise: valid \(<what you checked>\)/u);
+});
+
 test("requeues a running goal whose worker is missing", async () => {
   await using temp = await createTempDir("klein-initiative-");
   const harness = await createHarness(temp.path, {
@@ -246,6 +358,7 @@ async function createHarness(
     readonly messages: readonly ReturnType<typeof makeMessage>[];
     readonly proposals: readonly ReturnType<typeof makeProposal>[];
     readonly approval?: ResolvedInitiativeConfig["approval"];
+    readonly startLeadMs?: number;
   },
 ): Promise<Harness> {
   const goalStore = new FileInitiativeGoalStore(join(directory, "goals"));
@@ -255,7 +368,7 @@ async function createHarness(
   let plannerCalls = 0;
 
   const options: InitiativeCoordinatorOptions = {
-    config: makeConfig(directory, input.approval),
+    config: makeConfig(directory, input.approval, input.startLeadMs),
     goalStore,
     plannerStateStore,
     channelStateStore: {
@@ -336,6 +449,7 @@ async function createHarness(
 function makeConfig(
   directory: string,
   approval: ResolvedInitiativeConfig["approval"] = "auto",
+  startLeadMs = 2 * 60 * 1_000,
 ): ResolvedInitiativeConfig {
   return {
     enabled: true,
@@ -349,6 +463,7 @@ function makeConfig(
     maxGoalsPerDay: 4,
     maxActiveGoals: 3,
     maxGoalsPerPlan: 2,
+    startLeadMs,
     approval,
   };
 }

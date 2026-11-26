@@ -83,6 +83,7 @@
         "maxGoalsPerDay": 4,
         "maxActiveGoals": 3,
         "maxGoalsPerPlan": 2,
+        "startLeadMinutes": 2,
         "approval": "auto"
       },
       "defaultMode": "interrupt",

@@ -1873,6 +1873,13 @@ test("delivers an initiative result as an interrupt event", async () => {
     assert.equal(turns.length, 2);
     assert.equal(turns[1]?.event.type, "initiative.result");
     assert.match(eventText(turns[1]?.event), /店を3軒見つけた/u);
+    assert.match(
+      eventText(turns[1]?.event),
+      /Premise captured at: 2026-11-21T12:00:00\+09:00 \(JST: /u,
+    );
+    assert.match(eventText(turns[1]?.event), /Executed at: 2026-11-22T12:00:00\+09:00 \(JST: /u);
+    assert.match(eventText(turns[1]?.event), /Elapsed since premise capture: 24\.0 hours/u);
+    assert.match(eventText(turns[1]?.event), /say the situation changed/u);
     assert.deepEqual(surfaced, [{ ids: ["signal-1"], mode: "interrupt" }]);
     assert.deepEqual(delivered, ["goal-1"]);
   } finally {
@@ -1907,7 +1914,7 @@ function makeInitiativeGoal(): InitiativeGoal {
     dedupeKey: "goal-dedupe",
     createdBy: "planner",
     createdAt: "2026-11-21T12:00:00+09:00",
-    updatedAt: "2026-11-21T12:00:00+09:00",
+    updatedAt: "2026-11-22T12:00:00+09:00",
   };
 }
 

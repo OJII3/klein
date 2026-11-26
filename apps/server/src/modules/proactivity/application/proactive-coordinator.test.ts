@@ -463,6 +463,36 @@ test("keeps urgent wakes interruptible and holds normal wakes as attach", async 
   });
 });
 
+test("round-trips a goal's requested attach mode through signal persistence", async () => {
+  await withCoordinator(async ({ coordinator, signalStore }) => {
+    const result = await coordinator.ingestGoalResult({
+      goalId: "goal-1",
+      channelId: "channel-a",
+      accessScope: "owner:123",
+      topic: "映画",
+      summary: "映画の時間を確認した",
+      delivery: "attach",
+      now: NOW,
+    });
+
+    assert.deepEqual(result.decision, { mode: "attach", reason: "requested-attach" });
+    assert.equal(result.signal.requestedMode, "attach");
+    assert.deepEqual(result.signal.delivery, { mode: "attach" });
+    assert.deepEqual(await signalStore.get(result.signal.id), result.signal);
+
+    const withoutDelivery = await coordinator.ingestGoalResult({
+      goalId: "goal-2",
+      channelId: "channel-a",
+      accessScope: "owner:123",
+      topic: "買い物",
+      summary: "買い物の結果",
+      now: NOW,
+    });
+    assert.equal(withoutDelivery.signal.requestedMode, undefined);
+    assert.deepEqual(withoutDelivery.decision, { mode: "attach", reason: "default-mode" });
+  });
+});
+
 test("delivers a public watch signal even when public channels are disabled", async () => {
   await withCoordinator(async ({ coordinator, signalStore, followUpStore }) => {
     await followUpStore.create(followUp({ id: "public-follow-up" }));

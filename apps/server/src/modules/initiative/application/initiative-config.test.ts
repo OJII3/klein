@@ -35,6 +35,7 @@ test("returns disabled defaults when initiative is not configured", () => {
     maxGoalsPerDay: 4,
     maxActiveGoals: 3,
     maxGoalsPerPlan: 2,
+    startLeadMs: 2 * 60 * 1_000,
     approval: "auto",
   });
 });
@@ -54,6 +55,7 @@ test("keeps explicit values and enables initiative only with proactivity", () =>
       maxGoalsPerDay: 2,
       maxActiveGoals: 5,
       maxGoalsPerPlan: 1,
+      startLeadMinutes: 45,
       approval: "off" as const,
     },
   };
@@ -75,6 +77,7 @@ test("keeps explicit values and enables initiative only with proactivity", () =>
   assert.equal(config.maxGoalsPerDay, 2);
   assert.equal(config.maxActiveGoals, 5);
   assert.equal(config.maxGoalsPerPlan, 1);
+  assert.equal(config.startLeadMs, 45 * 60 * 1_000);
   assert.equal(config.approval, "off");
 });
 

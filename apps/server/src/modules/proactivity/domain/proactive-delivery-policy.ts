@@ -48,14 +48,37 @@ export function decideDelivery(input: {
     return { mode: "silent", reason: "urgent-only" };
   }
 
+  const requestedMode = signal.requestedMode;
+  const baseMode =
+    requestedMode ??
+    (signal.urgency === "today"
+      ? (preferences.delivery.defaultMode ?? defaults.defaultMode)
+      : MODE_BY_URGENCY[signal.urgency]);
+  const baseReason =
+    requestedMode !== undefined
+      ? `requested-${requestedMode}`
+      : signal.urgency === "today"
+        ? "default-mode"
+        : `urgency-${signal.urgency}`;
+
+  if (baseMode === "silent") {
+    return { mode: "silent", reason: baseReason };
+  }
+
   const quietHours = preferences.delivery.quietHours ?? defaults.quietHours;
   if (quietHours && isWithinQuietHours(quietHours, now)) {
-    return { mode: "attach", reason: "quiet-hours" };
+    return {
+      mode: "attach",
+      reason: requestedMode === "attach" ? "requested-attach" : "quiet-hours",
+    };
   }
 
   const maxPerDay = preferences.delivery.maxPerDay ?? defaults.maxPerDay;
   if (signal.urgency !== "now" && deliveredToday >= maxPerDay) {
-    return { mode: "attach", reason: "daily-limit" };
+    return {
+      mode: "attach",
+      reason: requestedMode === "attach" ? "requested-attach" : "daily-limit",
+    };
   }
 
   const digestAt = preferences.delivery.digestAt ?? defaults.digestAt;
@@ -64,12 +87,7 @@ export function decideDelivery(input: {
       ? { mode: "attach", reason: "digest-unconfigured" }
       : { mode, reason };
 
-  if (signal.urgency === "today") {
-    const mode = preferences.delivery.defaultMode ?? defaults.defaultMode;
-    return withDigestAvailability(mode, "default-mode");
-  }
-
-  return withDigestAvailability(MODE_BY_URGENCY[signal.urgency], `urgency-${signal.urgency}`);
+  return withDigestAvailability(baseMode, baseReason);
 }
 
 function findTopicPreference(
