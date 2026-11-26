@@ -50,7 +50,7 @@ test("serves the skills report and confined skill files", async () => {
     ...stubDependencies(),
     skills: new PiSkillReader({
       profile: "klein",
-      skillsDirectory,
+      skillsDirectories: [skillsDirectory],
       agentDirectory: join(temp.path, "pi"),
       capabilities: CAPABILITIES,
     }),

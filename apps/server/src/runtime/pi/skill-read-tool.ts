@@ -10,21 +10,21 @@ const DEFAULT_MAX_LINES = 2_000;
  * SKILL.md through that tool. Klein excludes the built-in filesystem tools, so this tool
  * replaces `read` with a reader restricted to the configured skills directory.
  */
-export function createSkillReadTool(skillsDirectory: string) {
+export function createSkillReadTool(skillsDirectories: string | readonly string[]) {
   return defineTool({
     name: "read",
     label: "Read Skill File",
     description:
-      "Read a text file from the configured skills directory. Use this to load a skill's SKILL.md and its references. Paths outside the skills directory are rejected.",
-    promptSnippet: "Read a skill's SKILL.md and references from the configured skills directory.",
-    promptGuidelines: ["Use read only for files under the configured skills directory."],
+      "Read a text file from the configured skills directories. Use this to load a skill's SKILL.md and its references. Paths outside the skills directories are rejected.",
+    promptSnippet: "Read a skill's SKILL.md and references from the configured skills directories.",
+    promptGuidelines: ["Use read only for files under the configured skills directories."],
     parameters: Type.Object({
       path: Type.String({ minLength: 1 }),
       offset: Type.Optional(Type.Integer({ minimum: 1 })),
       limit: Type.Optional(Type.Integer({ minimum: 1 })),
     }),
     async execute(_toolCallId, params) {
-      const file = await readSkillFile(skillsDirectory, params.path);
+      const file = await readSkillFile(skillsDirectories, params.path);
       const lines = file.content.split("\n");
       const start = (params.offset ?? 1) - 1;
       if (start >= lines.length) {

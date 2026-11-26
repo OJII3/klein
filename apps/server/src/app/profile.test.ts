@@ -13,7 +13,7 @@ test("resolves the Klein profile by default", () => {
     profileFile: resolve("config/klein/profile.json"),
     systemPromptFile: resolve("config/klein/SOUL.md"),
     voiceSystemPromptFile: resolve("config/klein/SOUL.voice.md"),
-    skillsDirectory: resolve("config/klein/skills"),
+    skillsDirectories: [resolve("config/klein/skills"), resolve("config/skills")],
   });
 });
 
@@ -23,7 +23,7 @@ test("resolves a named profile", () => {
     profileFile: resolve("config/elysia/profile.json"),
     systemPromptFile: resolve("config/elysia/SOUL.md"),
     voiceSystemPromptFile: resolve("config/elysia/SOUL.voice.md"),
-    skillsDirectory: resolve("config/elysia/skills"),
+    skillsDirectories: [resolve("config/elysia/skills"), resolve("config/skills")],
   });
 });
 

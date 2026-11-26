@@ -60,7 +60,7 @@ async function withSkillsDirectory(
     temp.path,
     new PiSkillReader({
       profile: "test",
-      skillsDirectory: directory,
+      skillsDirectories: [directory],
       agentDirectory: join(temp.path, "pi"),
       capabilities: CAPABILITIES,
     }),
@@ -213,7 +213,7 @@ test("reports a missing skills directory without diagnostics", async () => {
   await using temp = await createTempDir("klein-skills-missing-");
   const reader = new PiSkillReader({
     profile: "test",
-    skillsDirectory: join(temp.path, "skills"),
+    skillsDirectories: [join(temp.path, "skills")],
     agentDirectory: join(temp.path, "pi"),
     capabilities: CAPABILITIES,
   });
@@ -222,4 +222,51 @@ test("reports a missing skills directory without diagnostics", async () => {
   assert.equal(report.directoryExists, false);
   assert.deepEqual(report.skills, []);
   assert.deepEqual(report.diagnostics, []);
+});
+
+test("lists skills across profile and shared directories including nested references", async () => {
+  await using temp = await createTempDir("klein-skills-multi-");
+  const profileDir = join(temp.path, "profile", "skills");
+  const sharedDir = join(temp.path, "shared", "skills");
+  await mkdir(join(profileDir, "voice"), { recursive: true });
+  await mkdir(join(sharedDir, "coding-task", "playbooks"), { recursive: true });
+  await mkdir(join(sharedDir, "coding-task", "principles"), { recursive: true });
+  await writeFile(
+    join(profileDir, "voice", "SKILL.md"),
+    "---\nname: voice\ndescription: Profile voice skill.\n---\n",
+    "utf8",
+  );
+  await writeFile(
+    join(sharedDir, "coding-task", "SKILL.md"),
+    "---\nname: coding-task\ndescription: Shared coding skill.\n---\n",
+    "utf8",
+  );
+  await writeFile(join(sharedDir, "coding-task", "playbooks", "bug-fix.md"), "bug fix", "utf8");
+  await writeFile(join(sharedDir, "coding-task", "principles", "core.md"), "core", "utf8");
+
+  const reader = new PiSkillReader({
+    profile: "test",
+    skillsDirectories: [join(temp.path, "missing"), profileDir, sharedDir],
+    agentDirectory: join(temp.path, "pi"),
+    capabilities: CAPABILITIES,
+  });
+
+  const report = await reader.list();
+  assert.equal(report.directoryExists, true);
+  assert.deepEqual(report.diagnostics, []);
+  assert.deepEqual(
+    report.skills.map((skill) => skill.name),
+    ["coding-task", "voice"],
+  );
+  assert.equal(skillNamed(report.skills, "voice").source, join(profileDir, "voice"));
+  const codingTask = skillNamed(report.skills, "coding-task");
+  assert.equal(codingTask.source, join(sharedDir, "coding-task"));
+  assert.deepEqual(
+    codingTask.files.map((file) => file.path),
+    ["SKILL.md", "playbooks/bug-fix.md", "principles/core.md"],
+  );
+  assert.deepEqual(await reader.readFile("coding-task", "playbooks/bug-fix.md"), {
+    path: "playbooks/bug-fix.md",
+    content: "bug fix",
+  });
 });

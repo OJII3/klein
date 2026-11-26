@@ -107,3 +107,50 @@ test("reports a missing skills directory", async () => {
     /Skills directory is not available/u,
   );
 });
+
+test("reads skill files across multiple directories and rejects outside files", async () => {
+  await using temp = await createTempDir("klein-multi-skill-read-");
+  const profileDir = join(temp.path, "profile-skills");
+  const sharedDir = join(temp.path, "shared-skills");
+  const outsideFile = join(temp.path, "outside.md");
+  await mkdir(join(profileDir, "voice"), { recursive: true });
+  await mkdir(join(sharedDir, "coding-task", "playbooks"), { recursive: true });
+  await writeFile(join(profileDir, "voice", "SKILL.md"), "profile", "utf8");
+  await writeFile(join(sharedDir, "coding-task", "playbooks", "bug-fix.md"), "playbook", "utf8");
+  await writeFile(outsideFile, "secret", "utf8");
+
+  const tool = createSkillReadTool([join(temp.path, "missing-skills"), profileDir, sharedDir]);
+  const ctx = createStubExtensionToolContext();
+
+  const fromProfile = await tool.execute(
+    "call",
+    { path: "voice/SKILL.md" },
+    undefined,
+    undefined,
+    ctx,
+  );
+  assert.equal(textOf(fromProfile), "profile");
+
+  const fromSharedRelative = await tool.execute(
+    "call",
+    { path: "coding-task/playbooks/bug-fix.md" },
+    undefined,
+    undefined,
+    ctx,
+  );
+  assert.equal(textOf(fromSharedRelative), "playbook");
+
+  const fromSharedAbsolute = await tool.execute(
+    "call",
+    { path: join(sharedDir, "coding-task", "playbooks", "bug-fix.md") },
+    undefined,
+    undefined,
+    ctx,
+  );
+  assert.equal(textOf(fromSharedAbsolute), "playbook");
+
+  await assert.rejects(
+    tool.execute("call", { path: outsideFile }, undefined, undefined, ctx),
+    /not readable/u,
+  );
+});

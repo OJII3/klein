@@ -23,8 +23,11 @@ export interface SkillFileRead {
   readonly totalLines: number;
 }
 
-export async function readSkillFile(root: string, input: string): Promise<SkillFileRead> {
-  const target = await resolveSkillPath(resolve(root), input);
+export async function readSkillFile(
+  roots: string | readonly string[],
+  input: string,
+): Promise<SkillFileRead> {
+  const target = await resolveSkillPath(roots, input);
 
   let fileStat;
   try {
@@ -48,38 +51,66 @@ export async function readSkillFile(root: string, input: string): Promise<SkillF
   return { path: target, content, totalLines: content.split("\n").length };
 }
 
-export async function resolveSkillPath(root: string, input: string): Promise<string> {
-  let realRoot: string;
-  try {
-    realRoot = await realpath(root);
-  } catch (error) {
-    throw new SkillFileError("unavailable", `Skills directory is not available: ${root}`, {
-      cause: error,
-    });
-  }
-
-  const candidates = isAbsolute(input)
-    ? [resolve(input)]
-    : [resolve(realRoot, input), resolve(process.cwd(), input)];
-
-  let escapedRoot = false;
-  for (const candidate of candidates) {
-    let target: string;
+export async function resolveSkillPath(
+  roots: string | readonly string[],
+  input: string,
+): Promise<string> {
+  const rootList = typeof roots === "string" ? [roots] : roots;
+  const realRoots: string[] = [];
+  for (const root of rootList) {
     try {
-      target = await realpath(candidate);
+      realRoots.push(await realpath(resolve(root)));
     } catch {
       continue;
     }
+  }
+  if (realRoots.length === 0) {
+    throw new SkillFileError(
+      "unavailable",
+      `Skills directory is not available: ${rootList.join(", ")}`,
+    );
+  }
 
-    const relativePath = relative(realRoot, target);
-    const escapesRoot =
-      relativePath === ".." || relativePath.startsWith(`..${sep}`) || isAbsolute(relativePath);
-    if (!escapesRoot) return target;
+  if (isAbsolute(input)) {
+    let target: string;
+    try {
+      target = await realpath(resolve(input));
+    } catch {
+      throw new SkillFileError("missing", `Skill file is not readable: ${input}`);
+    }
+    if (realRoots.some((realRoot) => isWithinRoot(realRoot, target))) return target;
+    throw new SkillFileError("unsafe", `Skill file is not readable: ${input}`);
+  }
+
+  let escapedRoot = false;
+  for (const realRoot of realRoots) {
+    let target: string;
+    try {
+      target = await realpath(resolve(realRoot, input));
+    } catch {
+      continue;
+    }
+    if (isWithinRoot(realRoot, target)) return target;
+    escapedRoot = true;
+  }
+
+  const cwdTarget = await realpath(resolve(process.cwd(), input)).catch(() => undefined);
+  if (cwdTarget) {
+    if (realRoots.some((realRoot) => isWithinRoot(realRoot, cwdTarget))) return cwdTarget;
     escapedRoot = true;
   }
 
   throw new SkillFileError(
     escapedRoot ? "unsafe" : "missing",
     `Skill file is not readable: ${input}`,
+  );
+}
+
+function isWithinRoot(realRoot: string, target: string): boolean {
+  const relativePath = relative(realRoot, target);
+  return !(
+    relativePath === ".." ||
+    relativePath.startsWith(`..${sep}`) ||
+    isAbsolute(relativePath)
   );
 }
