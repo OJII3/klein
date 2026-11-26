@@ -26,6 +26,7 @@ import type { AgentEvent } from "@agents/core/agent-event";
 import type { AgentTurnProgress } from "@agents/core/agent-runtime";
 import { TURN_MARKER_CUSTOM_TYPE } from "@agents/core/agent-turn";
 import { ImageAnalysisError } from "@agents/core/image-analysis";
+import { resolveProfile } from "@app/profile";
 import { isRecord, parseJson } from "@shared/type-guards";
 import { resolveUserEnvironment } from "@shared/user-environment";
 import { createTempDir } from "../../testing/temp-dir";
@@ -1334,7 +1335,7 @@ test("loads skills from a selected profile directory", async () => {
     "Test system prompt",
     SettingsManager.inMemory(),
     undefined,
-    skillDirectory,
+    [skillDirectory],
   );
 
   await loader.reload();
@@ -1343,6 +1344,34 @@ test("loads skills from a selected profile directory", async () => {
     loader.getSkills().skills.map((skill) => skill.name),
     ["selected-skill"],
   );
+});
+
+test("loads yachiyo profile and shared skills without diagnostics", async () => {
+  const loader = createResourceLoader(
+    resolvePath(".runtime/pi"),
+    "Test system prompt",
+    SettingsManager.inMemory(),
+    undefined,
+    resolveProfile("yachiyo").skillsDirectories,
+  );
+
+  await loader.reload();
+
+  assert.deepEqual(
+    loader
+      .getSkills()
+      .skills.map((skill) => skill.name)
+      .toSorted(),
+    [
+      "browser-use",
+      "coding-task",
+      "discord-conversation",
+      "grounded-research",
+      "self-improvement",
+      "tsukuyomi-context",
+    ],
+  );
+  assert.deepEqual(loader.getSkills().diagnostics, []);
 });
 
 test("loads Pi web access tools", async () => {

@@ -1,3 +1,4 @@
+import { statSync } from "node:fs";
 import { readdir, realpath, stat } from "node:fs/promises";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 
@@ -24,14 +25,15 @@ import { SkillFileError, readSkillFile, resolveSkillPath } from "@runtime/pi/ski
 
 export interface PiSkillReaderOptions {
   readonly profile: string;
-  readonly skillsDirectory: string;
+  readonly skillsDirectories: readonly string[];
   readonly agentDirectory: string;
   readonly capabilities: SkillAudienceCapabilities;
 }
 
 interface LoadedSkills {
-  readonly root: string;
+  readonly root: string | undefined;
   readonly directory: string;
+  readonly existingRoots: readonly string[];
   readonly skills: readonly Skill[];
   readonly diagnostics: readonly ResourceDiagnostic[];
 }
@@ -41,23 +43,30 @@ export class PiSkillReader implements SkillReader {
 
   async list(): Promise<SkillsReport> {
     const loaded = this.load();
-    const directoryStat = await stat(loaded.root).catch(() => undefined);
-    const directoryExists = directoryStat?.isDirectory() === true;
+    const directoryExists = loaded.existingRoots.length > 0;
     const diagnostics: SkillDiagnostic[] = [];
     const skills: SkillSummary[] = [];
 
     if (directoryExists) {
       for (const diagnostic of loaded.diagnostics) {
-        diagnostics.push(toWireDiagnostic(diagnostic, loaded.root, loaded.directory));
+        const ownerRoot =
+          (diagnostic.path ? findOwnerRoot(diagnostic.path, loaded.existingRoots) : undefined) ??
+          loaded.root;
+        const ownerDirectory = ownerRoot ? displayDirectory(ownerRoot) : "";
+        diagnostics.push(toWireDiagnostic(diagnostic, ownerRoot, ownerDirectory));
       }
       for (const skill of loaded.skills) {
+        const ownerRoot = findOwnerRoot(skill.filePath, loaded.existingRoots) ?? loaded.root;
+        const ownerDirectory = ownerRoot ? displayDirectory(ownerRoot) : "";
         try {
-          skills.push(await this.toSummary(skill, loaded.root, loaded.directory));
+          skills.push(await this.toSummary(skill, ownerRoot, ownerDirectory));
         } catch (error) {
           diagnostics.push({
             type: "warning",
             message: error instanceof Error ? error.message : String(error),
-            path: displayPath(skill.filePath, loaded.root, loaded.directory),
+            path: ownerRoot
+              ? displayPath(skill.filePath, ownerRoot, ownerDirectory)
+              : basename(skill.filePath),
           });
         }
       }
@@ -102,23 +111,41 @@ export class PiSkillReader implements SkillReader {
   }
 
   private load(): LoadedSkills {
-    const root = resolve(this.options.skillsDirectory);
+    const roots = [...new Set(this.options.skillsDirectories.map((dir) => resolve(dir)))];
+    const primaryRoot = roots[0];
+    const directory = primaryRoot ? displayDirectory(primaryRoot) : "";
+    const existingRoots = roots.filter((root) => isExistingDirectory(root));
+    if (existingRoots.length === 0) {
+      return {
+        root: primaryRoot,
+        directory,
+        existingRoots,
+        skills: [],
+        diagnostics: [],
+      };
+    }
+
     const result = loadSkills({
       cwd: process.cwd(),
       agentDir: this.options.agentDirectory,
-      skillPaths: [root],
+      skillPaths: existingRoots,
       includeDefaults: false,
     });
 
     return {
-      root,
-      directory: displayDirectory(root),
+      root: primaryRoot,
+      directory,
+      existingRoots,
       skills: result.skills,
       diagnostics: result.diagnostics,
     };
   }
 
-  private async toSummary(skill: Skill, root: string, directory: string): Promise<SkillSummary> {
+  private async toSummary(
+    skill: Skill,
+    ownerRoot: string | undefined,
+    ownerDirectory: string,
+  ): Promise<SkillSummary> {
     const requirements = skillRequirements(skill.name);
     const flat = isFlatSkill(skill);
 
@@ -126,8 +153,12 @@ export class PiSkillReader implements SkillReader {
       name: skill.name,
       description: skill.description,
       source: flat
-        ? displayPath(skill.filePath, root, directory)
-        : join(directory, toPosixPath(relative(root, skill.baseDir))),
+        ? ownerRoot
+          ? displayPath(skill.filePath, ownerRoot, ownerDirectory)
+          : basename(skill.filePath)
+        : ownerRoot
+          ? toPosixPath(join(ownerDirectory, toPosixPath(relative(ownerRoot, skill.baseDir))))
+          : toPosixPath(skill.baseDir),
       files: flat ? await flatSkillFiles(skill) : await listSkillFiles(skill.baseDir),
       modelInvocable: !skill.disableModelInvocation,
       requirements,
@@ -135,6 +166,21 @@ export class PiSkillReader implements SkillReader {
       promptEntry: promptEntryFor(skill),
     };
   }
+}
+
+function isExistingDirectory(path: string): boolean {
+  try {
+    return statSync(path).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function findOwnerRoot(path: string, roots: readonly string[]): string | undefined {
+  const resolved = resolve(path);
+  return [...roots]
+    .toSorted((left, right) => right.length - left.length)
+    .find((root) => !isOutside(relative(root, resolved)));
 }
 
 function isFlatSkill(skill: Skill): boolean {
@@ -153,13 +199,17 @@ function displayDirectory(root: string): string {
 
 function toWireDiagnostic(
   diagnostic: ResourceDiagnostic,
-  root: string,
+  root: string | undefined,
   directory: string,
 ): SkillDiagnostic {
   return {
     type: diagnostic.type === "error" ? "error" : "warning",
     message: diagnostic.message,
-    ...(diagnostic.path ? { path: displayPath(diagnostic.path, root, directory) } : {}),
+    ...(diagnostic.path
+      ? {
+          path: root ? displayPath(diagnostic.path, root, directory) : basename(diagnostic.path),
+        }
+      : {}),
   };
 }
 

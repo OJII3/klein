@@ -17,7 +17,7 @@ export interface ProfilePaths {
   readonly profileFile: string;
   readonly systemPromptFile: string;
   readonly voiceSystemPromptFile: string;
-  readonly skillsDirectory: string;
+  readonly skillsDirectories: readonly string[];
 }
 
 export interface LoadedProfile extends ProfilePaths {
@@ -45,7 +45,10 @@ export function resolveProfile(
     profileFile: resolve(profileDirectory, "profile.json"),
     systemPromptFile: resolve(profileDirectory, "SOUL.md"),
     voiceSystemPromptFile: resolve(profileDirectory, "SOUL.voice.md"),
-    skillsDirectory: resolve(profileDirectory, "skills"),
+    skillsDirectories: [
+      resolve(profileDirectory, "skills"),
+      resolve(baseDirectory, "config", "skills"),
+    ],
   };
 }
 

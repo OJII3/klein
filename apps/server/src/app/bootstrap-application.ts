@@ -245,7 +245,7 @@ export async function bootstrapApplication(): Promise<void> {
     agentDir,
     characterName: profile.characterName,
     llm: config.llm,
-    skillsDirectory: profile.skillsDirectory,
+    skillsDirectories: profile.skillsDirectories,
     logger,
     modelRuntime,
     sessionMode,
@@ -262,7 +262,7 @@ export async function bootstrapApplication(): Promise<void> {
         agentDir,
         characterName: profile.characterName,
         llm: voiceChatConfig.llm,
-        skillsDirectory: profile.skillsDirectory,
+        skillsDirectories: profile.skillsDirectories,
         logger,
         modelRuntime,
         sessionMode,
@@ -659,7 +659,7 @@ export async function bootstrapApplication(): Promise<void> {
         toolUsage: new PiToolUsageReader(agentDir),
         skills: new PiSkillReader({
           profile: config.profile ?? DEFAULT_PROFILE,
-          skillsDirectory: profile.skillsDirectory,
+          skillsDirectories: profile.skillsDirectories,
           agentDirectory: agentDir,
           capabilities: resolveSkillAudienceCapabilities(
             config.permissions,

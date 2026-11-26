@@ -238,7 +238,7 @@ export interface InspectSessionOptions {
   readonly thinkingLevel?: NonNullable<CreateAgentSessionOptions["thinkingLevel"]>;
   readonly ownerFeaturesAllowed?: boolean;
   readonly ownerUserId?: string;
-  readonly skillsDirectory?: string;
+  readonly skillsDirectories?: readonly string[];
   readonly systemPromptFile?: string;
   readonly systemPromptOverride?: string;
   readonly sessionKey?: string;
@@ -1213,7 +1213,7 @@ async function executeSessionSlice(
   const systemPrompt =
     options.systemPromptOverride ??
     (await loadPromptFile(options.systemPromptFile ?? profileConfig.systemPromptFile));
-  const skillsDirectory = options.skillsDirectory ?? profileConfig.skillsDirectory;
+  const skillsDirectories = options.skillsDirectories ?? profileConfig.skillsDirectories;
 
   const sessionKey = options.sessionKey ?? "discord-channel:inspect";
   const channelId = parseDiscordChannelId(sessionKey) ?? "ch-inspect";
@@ -1404,7 +1404,7 @@ async function executeSessionSlice(
         model: resolvedModel.id,
         thinkingLevel: options.thinkingLevel ?? "low",
       },
-      skillsDirectory,
+      skillsDirectories,
       logger: pino({ level: "silent" }),
       modelRuntime: activeRuntime,
       sessionMode: "resume",

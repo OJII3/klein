@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Logger } from "pino";
 
@@ -117,7 +118,7 @@ export interface PiAgentFactoryOptions {
   readonly agentDir: string;
   readonly characterName: string;
   readonly permissions?: ToolPermissions;
-  readonly skillsDirectory?: string;
+  readonly skillsDirectories?: readonly string[];
   readonly modelRuntime: ModelRuntime;
   readonly sessionMode: SessionMode;
   readonly llm: {
@@ -144,7 +145,10 @@ export interface PiAgentFactoryOptions {
   ) => (() => void) | void;
 }
 
-export const DEFAULT_SKILLS_DIRECTORY = "config/klein/skills";
+export const DEFAULT_SKILLS_DIRECTORIES: readonly string[] = [
+  "config/klein/skills",
+  "config/skills",
+];
 const HANDOFF_COMPACTION_INSTRUCTIONS =
   "Create the concise Japanese handoff summary requested by Klein's handoff extension.";
 const HANDOFF_CUSTOM_MESSAGE_TYPE = "klein-context-handoff";
@@ -618,7 +622,7 @@ export function createResourceLoader(
   systemPrompt: string,
   settingsManager: SettingsManager,
   logger?: Logger,
-  skillsDirectory = DEFAULT_SKILLS_DIRECTORY,
+  skillsDirectories: readonly string[] = DEFAULT_SKILLS_DIRECTORIES,
   trace?: PiRuntimeTrace,
   authorization?: ToolAuthorization,
   options?: {
@@ -634,6 +638,9 @@ export function createResourceLoader(
   const wrap = (factory: ExtensionFactory) =>
     authorization ? authorization.wrap(factory) : factory;
   const excludedSkillNames = options?.excludedSkillNames;
+  const additionalSkillPaths = skillsDirectories
+    .map((directory) => resolve(process.cwd(), directory))
+    .filter((directory) => existsSync(directory));
   return new DefaultResourceLoader({
     cwd: process.cwd(),
     agentDir,
@@ -681,7 +688,7 @@ export function createResourceLoader(
       ...(options?.extraExtensions ?? []),
     ],
     settingsManager,
-    additionalSkillPaths: [resolve(process.cwd(), skillsDirectory)],
+    additionalSkillPaths,
     ...(excludedSkillNames && excludedSkillNames.size > 0
       ? {
           skillsOverride: (base) => ({
@@ -812,7 +819,7 @@ export function createPiAgentFactory({
   logger,
   modelRuntime,
   sessionMode,
-  skillsDirectory = DEFAULT_SKILLS_DIRECTORY,
+  skillsDirectories = DEFAULT_SKILLS_DIRECTORIES,
   permissions,
   watchToolCatalog,
   usageReporter,
@@ -830,7 +837,8 @@ export function createPiAgentFactory({
   const imageModel = llm.image
     ? resolveConfiguredImageModel(llm.image.provider, llm.image.model, modelRuntime)
     : undefined;
-  const skillReadTool = skillsDirectory ? createSkillReadTool(skillsDirectory) : undefined;
+  const skillReadTool =
+    skillsDirectories.length > 0 ? createSkillReadTool(skillsDirectories) : undefined;
 
   return {
     async create(
@@ -1003,7 +1011,7 @@ export function createPiAgentFactory({
         systemPrompt,
         settingsManager,
         logger,
-        skillsDirectory,
+        skillsDirectories,
         trace,
         authorization,
         {
