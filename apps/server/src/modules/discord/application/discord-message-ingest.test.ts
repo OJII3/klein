@@ -71,7 +71,7 @@ function createMessage(
   };
 }
 
-function createReader(hasImage = false): DiscordGatewayMessageReader {
+function createReader(hasImage = false, onFetchImages?: () => void): DiscordGatewayMessageReader {
   return {
     hasSupportedImageAttachment: (message) =>
       [...message.attachments.values()].some((attachment) =>
@@ -89,8 +89,9 @@ function createReader(hasImage = false): DiscordGatewayMessageReader {
       content: message.content.trim(),
       images: [],
     }),
-    fetchImages: async () =>
-      hasImage
+    fetchImages: async () => {
+      onFetchImages?.();
+      return hasImage
         ? [
             {
               id: "attachment-123",
@@ -99,7 +100,8 @@ function createReader(hasImage = false): DiscordGatewayMessageReader {
               data: "base64",
             },
           ]
-        : [],
+        : [];
+    },
     fetchReplyReference: async () => undefined,
   };
 }
@@ -113,6 +115,7 @@ function createIngest(
     onMessage?: (message: DiscordMessage) => Promise<void>;
     requestAccess?: (request: DiscordChannelAccessRequest) => Promise<void>;
     selfUserId?: string;
+    onFetchImages?: () => void;
   } = {},
 ) {
   const delivered: DiscordMessage[] = [];
@@ -125,7 +128,7 @@ function createIngest(
       },
       options.ownerUserId,
     ),
-    reader: createReader(options.hasImage),
+    reader: createReader(options.hasImage, options.onFetchImages),
     selfUserId: () => options.selfUserId ?? "bot-123",
     canAccept: options.canAccept ?? (() => true),
     onMessage:
@@ -189,12 +192,12 @@ test("asks the owner when the bot is mentioned in a denied thread", async () => 
   ]);
 });
 
-test("does not ask the owner when the bot is mentioned in an owner-only channel", async () => {
+test("does not ask the owner when a bystander mentions the bot in an owner-only channel", async () => {
   const harness = createIngest({ access: "owner", ownerUserId: "owner-123" });
 
   const delivered = await harness.ingest.handle(createMessage({ mentionsBot: true }));
 
-  assert.equal(delivered, false);
+  assert.equal(delivered, true);
   assert.equal(harness.requests.length, 0);
 });
 
@@ -204,6 +207,43 @@ test("delivers the owner's messages in an owner-only channel", async () => {
   const delivered = await harness.ingest.handle(createMessage({ authorId: "owner-123" }));
 
   assert.equal(delivered, true);
+});
+
+test("delivers a bystander's owner-channel message without its images", async () => {
+  let imageFetches = 0;
+  const harness = createIngest({
+    access: "owner",
+    ownerUserId: "owner-123",
+    hasImage: true,
+    onFetchImages: () => {
+      imageFetches += 1;
+    },
+  });
+
+  const delivered = await harness.ingest.handle(
+    createMessage({ authorId: "user-456", hasImage: true }),
+  );
+
+  assert.equal(delivered, true);
+  assert.equal(harness.delivered.length, 1);
+  assert.equal(harness.delivered[0]?.images.length, 0);
+  assert.equal(imageFetches, 0);
+});
+
+test("drops image-only bystander messages and keeps bots out of owner channels", async () => {
+  const harness = createIngest({ access: "owner", ownerUserId: "owner-123", hasImage: true });
+
+  assert.equal(
+    await harness.ingest.handle(
+      createMessage({ authorId: "user-456", content: "", hasImage: true }),
+    ),
+    false,
+  );
+  assert.equal(
+    await harness.ingest.handle(createMessage({ authorId: "owner-123", authorBot: true })),
+    false,
+  );
+  assert.equal(harness.delivered.length, 0);
 });
 
 test("does not ask the owner without a mention and stops when acceptance is closed", async () => {

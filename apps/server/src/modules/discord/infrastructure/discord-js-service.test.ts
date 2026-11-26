@@ -937,7 +937,7 @@ test("removes a channel link through /unlink for the bot owner", async () => {
   }
 });
 
-test("owner channels only forward real owner messages", async () => {
+test("owner channels forward the owner and bystanders but never bots", async () => {
   const fakeClient = new FakeDiscordClient();
   const service = new DiscordJsService(
     "token",
@@ -961,9 +961,10 @@ test("owner channels only forward real owner messages", async () => {
     fakeClient.emit(Events.MessageCreate, createMessage());
     await service.flush();
 
-    assert.equal(received.length, 1);
-    assert.equal(received[0]?.author.id, "user-123");
-    assert.equal(received[0]?.author.bot, false);
+    assert.equal(received.length, 2);
+    assert.equal(received[0]?.author.id, "other-user");
+    assert.equal(received[1]?.author.id, "user-123");
+    assert.equal(received[1]?.author.bot, false);
   } finally {
     await service.stop();
   }

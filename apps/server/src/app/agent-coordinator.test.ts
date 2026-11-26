@@ -1937,3 +1937,146 @@ function eventText(event: AgentEvent | undefined): string {
       .join("\n\n") ?? ""
   );
 }
+
+test("admits a bystander into the owner session without owner-only context", async () => {
+  const observed: string[] = [];
+  const proactiveChannels: string[] = [];
+  let memoryReads = 0;
+  const harness = createHarness(undefined, undefined, {
+    accessPolicy: createDiscordAccessPolicy(
+      { default: "owner", directMessages: "deny" },
+      "owner-123",
+    ),
+    ownerUserId: "owner-123",
+    userMemoryCoordinator: {
+      async observe(message) {
+        observed.push(message.id);
+      },
+    },
+    userMemoryStore: {
+      async read() {
+        memoryReads += 1;
+        return undefined;
+      },
+    },
+    proactive: createProactiveStub({
+      async getContext(input) {
+        proactiveChannels.push(input.channelId);
+        return {};
+      },
+    }),
+  });
+
+  try {
+    await harness.agentCoordinator.handleDiscordMessage(
+      createMessage("channel-a", "message-a", "オーナー以外の雑談", {
+        guildId: "guild-123",
+        author: {
+          bot: false,
+          id: "user-456",
+          username: "guest",
+          displayName: "ゲスト",
+        },
+      }),
+    );
+
+    assert.deepEqual(observed, []);
+    assert.deepEqual(proactiveChannels, []);
+    assert.equal(memoryReads, 0);
+    assert.deepEqual(harness.createdSessionKeys, ["discord-channel:channel-a:owner:owner-123"]);
+    const turn = harness.prompts.get("channel-a:owner:owner-123")?.[0];
+    assert.ok(turn);
+    assert.match(eventText(turn.event), /someone other than your owner/u);
+    assert.match(eventText(turn.event), /オーナー以外の雑談/u);
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+test("keeps owner-channel messages from the owner on the existing path", async () => {
+  const observed: string[] = [];
+  const proactiveChannels: string[] = [];
+  const harness = createHarness(undefined, undefined, {
+    accessPolicy: createDiscordAccessPolicy(
+      { default: "owner", directMessages: "deny" },
+      "owner-123",
+    ),
+    ownerUserId: "owner-123",
+    userMemoryCoordinator: {
+      async observe(message) {
+        observed.push(message.id);
+      },
+    },
+    proactive: createProactiveStub({
+      async getContext(input) {
+        proactiveChannels.push(input.channelId);
+        return {};
+      },
+    }),
+  });
+
+  try {
+    await harness.agentCoordinator.handleDiscordMessage(
+      createMessage("channel-a", "message-a", "オーナーの発言", {
+        guildId: "guild-123",
+        author: {
+          bot: false,
+          id: "owner-123",
+          username: "owner",
+          displayName: "オーナー",
+        },
+      }),
+    );
+
+    assert.deepEqual(observed, ["message-a"]);
+    assert.deepEqual(proactiveChannels, ["channel-a"]);
+    assert.deepEqual(harness.createdSessionKeys, ["discord-channel:channel-a:owner:owner-123"]);
+    const turn = harness.prompts.get("channel-a:owner:owner-123")?.[0];
+    assert.ok(turn);
+    assert.doesNotMatch(eventText(turn.event), /someone other than your owner/u);
+  } finally {
+    await harness.agentCoordinator.dispose();
+  }
+});
+
+test("keeps bots and denied messages out of owner-channel message processing", async () => {
+  const ownerChannel = createHarness(undefined, undefined, {
+    accessPolicy: createDiscordAccessPolicy(
+      { default: "owner", directMessages: "deny" },
+      "owner-123",
+    ),
+    ownerUserId: "owner-123",
+  });
+  const deniedChannel = createHarness(undefined, undefined, {
+    accessPolicy: createDiscordAccessPolicy(
+      { default: "deny", directMessages: "deny" },
+      "owner-123",
+    ),
+    ownerUserId: "owner-123",
+  });
+
+  try {
+    await ownerChannel.agentCoordinator.handleDiscordMessage(
+      createMessage("channel-a", "message-bot", "bot", {
+        guildId: "guild-123",
+        author: {
+          bot: true,
+          id: "owner-123",
+          username: "owner-bot",
+          displayName: "オーナーBot",
+        },
+      }),
+    );
+    await deniedChannel.agentCoordinator.handleDiscordMessage(
+      createMessage("channel-a", "message-denied", "拒否", { guildId: "guild-123" }),
+    );
+
+    assert.equal(ownerChannel.prompts.size, 0);
+    assert.equal(ownerChannel.createdSessionKeys.length, 0);
+    assert.equal(deniedChannel.prompts.size, 0);
+    assert.equal(deniedChannel.createdSessionKeys.length, 0);
+  } finally {
+    await ownerChannel.agentCoordinator.dispose();
+    await deniedChannel.agentCoordinator.dispose();
+  }
+});

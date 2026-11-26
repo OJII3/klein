@@ -1,5 +1,6 @@
 import { formatDiscordMessage, type DiscordMessage } from "@modules/discord/domain/discord-message";
 import type { AgentTurn } from "../core/agent-turn";
+import { BYSTANDER_MESSAGE_CONTENT_LIMIT } from "./prompt-policy";
 
 export interface DiscordTurnContext {
   readonly userMemory?: string;
@@ -8,13 +9,25 @@ export interface DiscordTurnContext {
   readonly proactivePreferences?: string;
   readonly waitingOn?: string;
   readonly pendingSignals?: string;
+  /** Why: the owner session must tell its owner apart from an admitted non-owner speaker. */
+  readonly audience?: "owner" | "bystander";
 }
 
 export interface DiscordMessageAgentTurnOptions {
   readonly botMessageGuidance?: string;
+  readonly bystanderMessageGuidance?: string;
   readonly ownerValidation?: {
     readonly userId: string;
     readonly channelId: string;
+  };
+}
+
+function truncateForBystander(message: DiscordMessage): DiscordMessage {
+  const characters = Array.from(message.content);
+  if (characters.length <= BYSTANDER_MESSAGE_CONTENT_LIMIT) return message;
+  return {
+    ...message,
+    content: `${characters.slice(0, BYSTANDER_MESSAGE_CONTENT_LIMIT).join("")}…`,
   };
 }
 
@@ -23,8 +36,10 @@ export function createDiscordMessageAgentTurn(
   context: DiscordTurnContext = {},
   options: DiscordMessageAgentTurnOptions = {},
 ): AgentTurn {
+  const bystander = context.audience === "bystander" && !message.author.bot;
   if (
     options.ownerValidation &&
+    !bystander &&
     (message.author.bot ||
       message.author.id !== options.ownerValidation.userId ||
       message.channelId !== options.ownerValidation.channelId)
@@ -32,8 +47,15 @@ export function createDiscordMessageAgentTurn(
     throw new Error("Only the owner can use this Discord agent in its configured channel");
   }
 
-  const formattedMessage = formatDiscordMessage(message);
-  const text = `${formattedMessage}${message.author.bot ? (options.botMessageGuidance ?? "") : ""}`;
+  const formattedMessage = formatDiscordMessage(
+    bystander ? truncateForBystander(message) : message,
+  );
+  const guidance = message.author.bot
+    ? (options.botMessageGuidance ?? "")
+    : bystander
+      ? (options.bystanderMessageGuidance ?? "")
+      : "";
+  const text = `${formattedMessage}${guidance}`;
 
   return {
     event: {
