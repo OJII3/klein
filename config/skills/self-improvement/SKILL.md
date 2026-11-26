@@ -53,7 +53,7 @@ When the owner mentions an awkward reply or you review recent negative feedback:
 
 ## Delegate Implementation via `coding-task`
 
-Do not edit repository code directly when a coding backend is available. Read the `coding-task` skill and delegate implementation through `coding_session_start` / `coding_session_send`:
+Do not edit repository code directly when a coding backend is available. Read the `coding-task` skill (and its matching playbook) and delegate through `coding_session_start`:
 
 - Make each coding task self-contained: include the GitHub issue reference (`Closes #N` when appropriate), relevant principles from `vision.md`, acceptance criteria, non-goals, and required checks (`bun fmt`, `bun lint:fix`, `bun run typecheck`, `bun test`).
 - When the task adds or edits any LLM-facing surface (`SOUL.md`, `PROACTIVITY.md`, prompts, events, memory, tools, `toolResult`s/errors, or skills), explicitly instruct the coding session to read and apply `.agents/skills/llm-ux/SKILL.md` before finalizing changes (coding sessions run with `noSkills: true` even though they load `AGENTS.md`).
@@ -61,7 +61,7 @@ Do not edit repository code directly when a coding backend is available. Read th
 - **Autonomy boundary**:
   - Proceed directly to `coding-task` for explicit requests and small, reversible fixes clearly aligned with `vision.md`.
   - Stop and ask via the conversation agent (with an issue drafted or linked) before major architectural shifts, breaking behavior changes, or ambiguous trade-offs.
-- Track the resulting PR and checks; iterate with `coding_session_send` on the same session when checks fail or review comments arrive.
+- Track the resulting PR and checks using the `coding-task` skill's `babysit` playbook; start a fresh `coding_session_start` by default for fix rounds (reusing an active session with `coding_session_send` only when answering a `waiting` question or making a small immediate follow-up on clean context).
 
 ## Link with GitHub Activity (Watch Loop)
 
@@ -80,7 +80,7 @@ When this topic involves ongoing GitHub work on Klein (or when setting up Klein'
 3. When the watch wakes this worker:
    - Inspect full details with `gh` (`gh issue view`, `gh pr view`, `gh pr checks`) and `coding_session_list`.
    - **Owner opened/edited/commented on an issue**: infer intent, align with `vision.md`, update issue triage, and decide whether to clarify, queue, or start a `coding-task`.
-   - **Review comment or failing CI on an open PR**: if a matching coding session exists, send the feedback with `coding_session_send`; otherwise summarize the finding and next step.
+   - **Review comment or failing CI on an open PR**: follow the `coding-task` skill's `babysit` playbook — verify each comment against the actual code, fix confirmed issues in a fresh `coding_session_start` (or `coding_session_send` only for a small immediate tweak on an active clean session), push, and reply citing the commit; otherwise summarize the finding and next step.
    - **PR merged or issue closed**: prune any superseded entries in `vision.md`, and if this was a single-issue/PR watch with nothing left for this topic, delete the watch with `watch_delete`.
    - **Self-triggered echo or noise**: ignore it and finish silently (`No user-facing reply needed.`).
 
