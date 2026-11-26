@@ -28,6 +28,12 @@ export interface DiscordChannelApi {
   sendMessage(channelId: string, content: string): Promise<readonly string[] | void>;
   sendChoices(channelId: string, request: DiscordChoiceRequest): Promise<string>;
   sendAudio(channelId: string, audio: Uint8Array, filename: string): Promise<void>;
+  sendImage(
+    channelId: string,
+    image: Uint8Array,
+    filename: string,
+    caption?: string,
+  ): Promise<readonly string[]>;
   readMessage(
     locator: DiscordMessageLocator,
     requester?: DiscordMessageRequester,

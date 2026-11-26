@@ -101,6 +101,9 @@ async function withIntegration(
       throw new Error("Unexpected choice send");
     },
     async sendAudio() {},
+    async sendImage() {
+      return [];
+    },
     async readMessage() {
       throw new Error("Unexpected read");
     },

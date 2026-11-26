@@ -23,6 +23,7 @@ import {
   DiscordChannelHistoryStore,
 } from "./tools/discord-channel-history";
 import { createDiscordImageAnalysis, createDiscordReadTool } from "./tools/discord-read";
+import { createDiscordSendImageTool } from "./tools/discord-send-image";
 import { createDiscordSendTool } from "./tools/discord-send";
 import { createDiscordSpeakTool } from "./tools/discord-speak";
 import { createDiscordVoiceTool } from "./tools/discord-voice";
@@ -32,7 +33,13 @@ export interface DiscordAgentToolsOptions {
   readonly analyzeImage?: AgentImageAnalyzer;
   readonly channelApi: Pick<
     DiscordChannelApi,
-    "readMessage" | "readMessages" | "sendMessage" | "sendChoices" | "sendTyping" | "sendAudio"
+    | "readMessage"
+    | "readMessages"
+    | "sendMessage"
+    | "sendChoices"
+    | "sendTyping"
+    | "sendAudio"
+    | "sendImage"
   >;
   readonly channelId: string;
   readonly requesterUserId?: () => string | undefined;
@@ -121,6 +128,12 @@ export function createDiscordAgentTools(
           ),
         ]
       : []),
+    createDiscordSendImageTool(
+      options.channelApi,
+      options.channelId,
+      promiseGuard,
+      options.onMessageSent,
+    ),
     ...(options.scheduledTaskStore
       ? createReminderTools(options.scheduledTaskStore, options.channelId, accessScope)
       : []),

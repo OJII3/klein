@@ -40,6 +40,12 @@ interface FakeDiscordChannel extends DiscordServiceChannel {
   send?(payload: unknown): Promise<unknown>;
 }
 
+function attachmentName(payload: unknown): unknown {
+  if (!isRecord(payload) || !Array.isArray(payload.files)) return undefined;
+  const file: unknown = payload.files[0];
+  return isRecord(file) ? file.name : undefined;
+}
+
 function createProfileUser(
   overrides: Partial<DiscordServiceSendableUser> = {},
 ): DiscordServiceSendableUser {
@@ -1571,6 +1577,61 @@ test("returns sent message IDs from sendMessage", async () => {
   try {
     const ids = await service.sendMessage("channel-123", `${"a".repeat(2_000)}b`);
     assert.deepEqual(ids, ["sent-1", "sent-2"]);
+  } finally {
+    await service.stop();
+  }
+});
+
+test("sends an image attachment with an optional caption and returns its message ID", async () => {
+  const fakeClient = new FakeDiscordClient();
+  const payloads: unknown[] = [];
+  let counter = 0;
+  fakeClient.channels.fetch = async () => ({
+    isTextBased: () => true,
+    send: async (payload) => {
+      payloads.push(payload);
+      return { id: `image-${++counter}` };
+    },
+  });
+  const service = new DiscordJsService(
+    "token",
+    createDiscordAccessPolicy({ default: "allow", directMessages: "allow" }),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    { createClient: () => fakeClient },
+  );
+
+  try {
+    const withCaption = await service.sendImage(
+      "channel-123",
+      Uint8Array.from([1, 2, 3]),
+      "photo.png",
+      "caption text",
+    );
+    const withoutCaption = await service.sendImage(
+      "channel-123",
+      Uint8Array.from([4]),
+      "icon.webp",
+    );
+
+    assert.deepEqual(withCaption, ["image-1"]);
+    assert.deepEqual(withoutCaption, ["image-2"]);
+    const [withCaptionPayload, withoutCaptionPayload] = payloads;
+    assert.equal(
+      isRecord(withCaptionPayload) ? withCaptionPayload.content : undefined,
+      "caption text",
+    );
+    assert.equal(attachmentName(withCaptionPayload), "photo.png");
+    assert.equal(
+      isRecord(withoutCaptionPayload) ? withoutCaptionPayload.content : undefined,
+      undefined,
+    );
+    assert.equal(attachmentName(withoutCaptionPayload), "icon.webp");
   } finally {
     await service.stop();
   }
