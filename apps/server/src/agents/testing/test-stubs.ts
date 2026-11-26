@@ -71,6 +71,9 @@ export function createStubDiscordChannelApi(
       throw new Error("Unexpected sendChoices call in test stub");
     },
     async sendAudio() {},
+    async sendImage() {
+      return [];
+    },
     async readMessage() {
       throw new Error("Unexpected readMessage call in test stub");
     },

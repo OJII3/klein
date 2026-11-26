@@ -153,6 +153,9 @@ function createHarness(
       throw new Error("Unexpected choice send");
     },
     async sendAudio() {},
+    async sendImage() {
+      return [];
+    },
     async readMessage() {
       return message;
     },

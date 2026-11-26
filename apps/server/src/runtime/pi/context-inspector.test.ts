@@ -158,7 +158,13 @@ test("inspects turns and raw context from a persisted session JSONL in turn-star
 
   const channelApi: Pick<
     DiscordChannelApi,
-    "readMessage" | "readMessages" | "sendMessage" | "sendChoices" | "sendTyping" | "sendAudio"
+    | "readMessage"
+    | "readMessages"
+    | "sendMessage"
+    | "sendChoices"
+    | "sendTyping"
+    | "sendAudio"
+    | "sendImage"
   > = {
     async readMessage(target) {
       return createDiscordMessage({ id: target.messageId, content: "参照メッセージ内容" });
@@ -187,6 +193,9 @@ test("inspects turns and raw context from a persisted session JSONL in turn-star
     },
     async sendTyping() {},
     async sendAudio() {},
+    async sendImage() {
+      return [];
+    },
   };
 
   const agent = await DiscordAgent.create(
@@ -346,7 +355,13 @@ test("records a 👎 feedback case, inspects original trace + raw context, and r
 
   const channelApi: Pick<
     DiscordChannelApi,
-    "readMessage" | "readMessages" | "sendMessage" | "sendChoices" | "sendTyping" | "sendAudio"
+    | "readMessage"
+    | "readMessages"
+    | "sendMessage"
+    | "sendChoices"
+    | "sendTyping"
+    | "sendAudio"
+    | "sendImage"
   > = {
     async readMessage(target) {
       return createDiscordMessage({ id: target.messageId, content: "元の文脈メッセージ" });
@@ -375,6 +390,9 @@ test("records a 👎 feedback case, inspects original trace + raw context, and r
     },
     async sendTyping() {},
     async sendAudio() {},
+    async sendImage() {
+      return [];
+    },
   };
 
   const factory = createPiAgentFactory({

@@ -1345,7 +1345,13 @@ async function executeSessionSlice(
     const sentMessages: string[] = [];
     const channelApi: Pick<
       DiscordChannelApi,
-      "readMessage" | "readMessages" | "sendMessage" | "sendChoices" | "sendTyping" | "sendAudio"
+      | "readMessage"
+      | "readMessages"
+      | "sendMessage"
+      | "sendChoices"
+      | "sendTyping"
+      | "sendAudio"
+      | "sendImage"
     > = {
       async readMessage(target) {
         return createFallbackSampleDiscordMessage(target.channelId, target.messageId);
@@ -1372,6 +1378,9 @@ async function executeSessionSlice(
       },
       async sendTyping() {},
       async sendAudio() {},
+      async sendImage() {
+        return [];
+      },
     };
 
     const watchToolCatalog = { tools: [createWatchFetchTool({ agentDir })] };

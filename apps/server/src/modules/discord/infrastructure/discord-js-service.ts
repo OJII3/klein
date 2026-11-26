@@ -83,7 +83,9 @@ import {
 
 const DISCORD_MESSAGE_LIMIT = 2_000;
 interface SendableChannel {
-  send(content: string | { files: AttachmentBuilder[] }): Promise<unknown>;
+  send(
+    content: string | { readonly content?: string; readonly files: AttachmentBuilder[] },
+  ): Promise<unknown>;
   sendTyping?(): Promise<void>;
 }
 
@@ -574,6 +576,23 @@ export class DiscordJsService
   async sendAudio(channelId: string, audio: Uint8Array, filename: string): Promise<void> {
     const channel = await this.getChannel(channelId);
     await channel.send({ files: [new AttachmentBuilder(Buffer.from(audio), { name: filename })] });
+  }
+
+  async sendImage(
+    channelId: string,
+    image: Uint8Array,
+    filename: string,
+    caption?: string,
+  ): Promise<readonly string[]> {
+    const channel = await this.getChannel(channelId);
+    const sent = await channel.send({
+      ...(caption ? { content: caption } : {}),
+      files: [new AttachmentBuilder(Buffer.from(image), { name: filename })],
+    });
+
+    return typeof sent === "object" && sent !== null && "id" in sent && typeof sent.id === "string"
+      ? [sent.id]
+      : [];
   }
 
   async readMessage(
