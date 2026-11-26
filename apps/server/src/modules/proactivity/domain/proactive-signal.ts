@@ -18,6 +18,7 @@ export interface ProactiveSignal {
   readonly summary: string;
   readonly evidence?: { url?: string; text?: string };
   readonly urgency: ProactiveUrgency;
+  readonly requestedMode?: ProactiveDeliveryMode;
   readonly dedupeKey: string;
   readonly observedAt: string;
   readonly expiresAt?: string;
@@ -78,6 +79,7 @@ export function parseProactiveSignal(value: unknown): ProactiveSignal {
     status,
     evidence,
     delivery,
+    requestedMode,
   } = value;
   const accessScope = parseAccessScope(value.accessScope);
   if (!isRecord(source)) {
@@ -124,6 +126,7 @@ export function parseProactiveSignal(value: unknown): ProactiveSignal {
     summary,
     ...(parsedEvidence !== undefined ? { evidence: parsedEvidence } : {}),
     urgency,
+    ...(requestedMode !== undefined ? { requestedMode: parseRequestedMode(requestedMode) } : {}),
     dedupeKey,
     observedAt,
     ...optionalTimestamp(value, "expiresAt"),
@@ -199,6 +202,11 @@ function parseEvidence(value: unknown): NonNullable<ProactiveSignal["evidence"]>
     ...(url !== undefined ? { url } : {}),
     ...(text !== undefined ? { text } : {}),
   };
+}
+
+function parseRequestedMode(value: unknown): ProactiveDeliveryMode {
+  if (!isDeliveryMode(value)) throw new Error("候補の要求配信方法が不正です。");
+  return value;
 }
 
 function parseDelivery(value: unknown): NonNullable<ProactiveSignal["delivery"]> {

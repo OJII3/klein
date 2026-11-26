@@ -156,8 +156,12 @@ export function isActiveGoal(goal: InitiativeGoal): boolean {
   return goal.status === "scheduled" || goal.status === "running" || goal.status === "ready";
 }
 
-export function isGoalDue(goal: InitiativeGoal, now: number): boolean {
-  return goal.status === "scheduled" && Date.parse(goal.dueAt) <= now;
+export function goalStartsAt(goal: InitiativeGoal, leadMs: number): number {
+  return Date.parse(goal.dueAt) - leadMs;
+}
+
+export function isGoalDue(goal: InitiativeGoal, now: number, leadMs = 0): boolean {
+  return goal.status === "scheduled" && goalStartsAt(goal, leadMs) <= now;
 }
 
 export function isGoalExpired(goal: InitiativeGoal, now: number): boolean {

@@ -9,6 +9,8 @@ const DEFAULT_MAX_PLANS_PER_DAY = 12;
 const DEFAULT_MAX_GOALS_PER_DAY = 4;
 const DEFAULT_MAX_ACTIVE_GOALS = 3;
 const DEFAULT_MAX_GOALS_PER_PLAN = 2;
+const DEFAULT_START_LEAD_MINUTES = 2;
+const MINUTE_MS = 60 * 1_000;
 
 export type InitiativeApprovalMode = "auto" | "propose" | "off";
 
@@ -24,6 +26,7 @@ export interface ResolvedInitiativeConfig {
   readonly maxGoalsPerDay: number;
   readonly maxActiveGoals: number;
   readonly maxGoalsPerPlan: number;
+  readonly startLeadMs: number;
   readonly approval: InitiativeApprovalMode;
 }
 
@@ -59,6 +62,7 @@ export function resolveInitiativeConfig(
     maxGoalsPerDay: initiative?.maxGoalsPerDay ?? DEFAULT_MAX_GOALS_PER_DAY,
     maxActiveGoals: initiative?.maxActiveGoals ?? DEFAULT_MAX_ACTIVE_GOALS,
     maxGoalsPerPlan: initiative?.maxGoalsPerPlan ?? DEFAULT_MAX_GOALS_PER_PLAN,
+    startLeadMs: (initiative?.startLeadMinutes ?? DEFAULT_START_LEAD_MINUTES) * MINUTE_MS,
     approval: initiative?.approval ?? "auto",
   };
 }

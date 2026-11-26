@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   createGoalDedupeKey,
+  goalStartsAt,
   isActiveGoal,
   isGoalDue,
   isGoalExpired,
@@ -64,6 +65,17 @@ test("detects due and expired goals", () => {
   assert.equal(isGoalDue(goal, Date.parse(goal.dueAt)), true);
   assert.equal(isGoalExpired(goal, Date.parse(goal.expiresAt) - 1), false);
   assert.equal(isGoalExpired(goal, Date.parse(goal.expiresAt)), true);
+});
+
+test("starts a goal the configured lead time before its due time", () => {
+  const goal = makeGoal();
+  const leadMs = 2 * 60 * 1_000;
+  const startsAt = goalStartsAt(goal, leadMs);
+
+  assert.equal(startsAt, Date.parse(goal.dueAt) - leadMs);
+  assert.equal(isGoalDue(goal, startsAt - 1, leadMs), false);
+  assert.equal(isGoalDue(goal, startsAt, leadMs), true);
+  assert.equal(isGoalDue(goal, startsAt, 0), false);
 });
 
 test("counts scheduled, running, and ready goals as active", () => {

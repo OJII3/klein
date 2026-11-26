@@ -3,7 +3,11 @@ import assert from "node:assert/strict";
 import { test } from "bun:test";
 
 import { decideDelivery, type ProactivePolicyDefaults } from "./proactive-delivery-policy";
-import { DEFAULT_PROACTIVE_PREFERENCES, type ProactivePreferences } from "./proactive-preference";
+import {
+  DEFAULT_PROACTIVE_PREFERENCES,
+  type ProactiveDeliveryMode,
+  type ProactivePreferences,
+} from "./proactive-preference";
 import type { ProactiveSignal, ProactiveUrgency } from "./proactive-signal";
 
 const MINUTE = 60_000;
@@ -52,10 +56,14 @@ function decide(
     now?: number;
     publicChannel?: boolean;
     deliveredToday?: number;
+    requestedMode?: ProactiveDeliveryMode;
   } = {},
 ) {
   return decideDelivery({
-    signal: withUrgency(urgency),
+    signal: {
+      ...withUrgency(urgency),
+      ...(overrides.requestedMode !== undefined ? { requestedMode: overrides.requestedMode } : {}),
+    },
     preferences: overrides.preferences ?? DEFAULT_PROACTIVE_PREFERENCES,
     defaults: overrides.defaults ?? defaults,
     now: overrides.now ?? japanTime(2026, 11, 20, 12, 0),
@@ -169,7 +177,49 @@ test("keeps watch signals in public channels but silences other sources", () => 
   );
 });
 
-test("downgrades every urgency to attach during quiet hours", () => {
+test("honors an explicit requested delivery mode", () => {
+  assert.deepEqual(
+    decide("today", {
+      requestedMode: "attach",
+      defaults: { ...defaults, defaultMode: "interrupt" },
+    }),
+    { mode: "attach", reason: "requested-attach" },
+  );
+  assert.deepEqual(decide("now", { requestedMode: "interrupt" }), {
+    mode: "interrupt",
+    reason: "requested-interrupt",
+  });
+  assert.deepEqual(decide("silent", { requestedMode: "silent" }), {
+    mode: "silent",
+    reason: "requested-silent",
+  });
+  assert.deepEqual(decide("today"), { mode: "attach", reason: "default-mode" });
+});
+
+test("keeps requested attach through quiet hours and the daily limit", () => {
+  const lateNight = japanTime(2026, 11, 20, 23, 30);
+
+  assert.deepEqual(decide("today", { requestedMode: "attach", now: lateNight }), {
+    mode: "attach",
+    reason: "requested-attach",
+  });
+  assert.deepEqual(decide("today", { requestedMode: "attach", deliveredToday: 3 }), {
+    mode: "attach",
+    reason: "requested-attach",
+  });
+});
+
+test("downgrades a requested interrupt during quiet hours", () => {
+  assert.deepEqual(
+    decide("now", {
+      requestedMode: "interrupt",
+      now: japanTime(2026, 11, 20, 23, 30),
+    }),
+    { mode: "attach", reason: "quiet-hours" },
+  );
+});
+
+test("downgrades non-silent urgencies to attach during quiet hours", () => {
   const lateNight = japanTime(2026, 11, 20, 23, 30);
 
   assert.deepEqual(decide("now", { now: lateNight }), {
@@ -185,8 +235,12 @@ test("downgrades every urgency to attach during quiet hours", () => {
     reason: "quiet-hours",
   });
   assert.deepEqual(decide("silent", { now: lateNight }), {
-    mode: "attach",
-    reason: "quiet-hours",
+    mode: "silent",
+    reason: "urgency-silent",
+  });
+  assert.deepEqual(decide("silent", { requestedMode: "silent", now: lateNight }), {
+    mode: "silent",
+    reason: "requested-silent",
   });
   assert.deepEqual(decide("digest", { now: japanTime(2026, 11, 21, 7, 59) }), {
     mode: "attach",
