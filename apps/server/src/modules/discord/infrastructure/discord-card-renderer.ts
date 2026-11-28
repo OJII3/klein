@@ -13,13 +13,7 @@ import {
   ThumbnailBuilder,
 } from "discord.js";
 
-import {
-  formatCardBlockText,
-  formatCardFooter,
-  formatCardHeader,
-  type DiscordCard,
-  type DiscordCardAccent,
-} from "../domain/discord-card";
+import { formatCardTexts, type DiscordCard, type DiscordCardAccent } from "../domain/discord-card";
 
 const ACCENT_COLORS: Readonly<Record<DiscordCardAccent, number>> = {
   neutral: 0x747f8d,
@@ -43,9 +37,10 @@ export function renderDiscordCards(cards: readonly DiscordCard[]): DiscordCardMe
 
 function renderCard(card: DiscordCard): ContainerBuilder {
   const container = new ContainerBuilder().setAccentColor(ACCENT_COLORS[card.accent ?? "neutral"]);
+  const texts = formatCardTexts(card);
 
-  if (card.title !== undefined || card.subtitle !== undefined || card.thumbnail !== undefined) {
-    const header = new TextDisplayBuilder().setContent(formatCardHeader(card));
+  if (texts.header !== undefined) {
+    const header = new TextDisplayBuilder().setContent(texts.header);
     if (card.thumbnail === undefined) {
       container.addTextDisplayComponents(header);
     } else {
@@ -57,7 +52,7 @@ function renderCard(card: DiscordCard): ContainerBuilder {
     }
   }
 
-  for (const block of card.blocks) {
+  for (const [blockIndex, block] of card.blocks.entries()) {
     switch (block.kind) {
       case "media":
         container.addMediaGalleryComponents(
@@ -90,7 +85,7 @@ function renderCard(card: DiscordCard): ContainerBuilder {
       case "stats":
       case "progress":
       case "callout": {
-        const text = formatCardBlockText(block);
+        const text = texts.blocks[blockIndex];
         if (text !== undefined) {
           container.addTextDisplayComponents(new TextDisplayBuilder().setContent(text));
         }
@@ -99,10 +94,8 @@ function renderCard(card: DiscordCard): ContainerBuilder {
     }
   }
 
-  if (card.footer !== undefined) {
-    container.addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(formatCardFooter(card.footer)),
-    );
+  if (texts.footer !== undefined) {
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(texts.footer));
   }
 
   return container;
