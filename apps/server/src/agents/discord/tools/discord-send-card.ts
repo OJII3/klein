@@ -6,11 +6,8 @@ import {
   type DiscordCard,
 } from "@modules/discord/domain/discord-card";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
-import type { PromiseGuard } from "../../tools/promise-guard";
+import { PROMISE_BLOCK_ERROR, type PromiseGuard } from "../../tools/promise-guard";
 import { defineSurfaceTool } from "./surface-tool";
-
-const PROMISE_BLOCK_ERROR =
-  "このカードは追跡を約束しているが、この会話に有効な追跡がない。follow_up_create を先に成功させるか、約束しない言い方に変えること。";
 
 const blockItemSchema = Type.Object({
   label: Type.Optional(Type.String({ description: "fields/stats/links label." })),

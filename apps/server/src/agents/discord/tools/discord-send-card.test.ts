@@ -108,7 +108,7 @@ test("blocks a card whose text promises an untracked follow-up", async () => {
       undefined,
       await createStubExtensionToolContext(),
     ),
-    /follow_up_create を先に成功させる/u,
+    /promises a later report.*follow_up_create/u,
   );
   assert.deepEqual(checked, ["進捗", "以上", "後で報告します"]);
   assert.equal(typingCount, 0);

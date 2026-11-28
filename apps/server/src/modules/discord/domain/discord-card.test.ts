@@ -62,9 +62,9 @@ test("parses every block kind and keeps its fields", () => {
 });
 
 test("applies the neutral accent and omits unset optional fields", () => {
-  const cards = parseValid([{ blocks: [{ kind: "divider" }] }]);
+  const cards = parseValid([{ blocks: [{ kind: "text", text: "hi" }] }]);
 
-  assert.deepEqual(cards[0], { accent: "neutral", blocks: [{ kind: "divider" }] });
+  assert.deepEqual(cards[0], { accent: "neutral", blocks: [{ kind: "text", text: "hi" }] });
 });
 
 test("drops the ordered and spoiler flags when they are not true", () => {
@@ -103,6 +103,18 @@ test("rejects a card with an empty block list", () => {
   assert.deepEqual(parseIssues([{ blocks: [] }]), [
     "cards[0].blocks: expected at least one block. Add a block or do not send the card.",
   ]);
+});
+
+test("rejects a card that only has dividers", () => {
+  assert.deepEqual(parseIssues([{ blocks: [{ kind: "divider" }] }]), [
+    "cards[0]: has no content. Add a title, text, media, links, or a content block.",
+  ]);
+});
+
+test("keeps a divider card when it has a title", () => {
+  const cards = parseValid([{ title: "Section", blocks: [{ kind: "divider" }] }]);
+
+  assert.deepEqual(cards[0]?.blocks, [{ kind: "divider" }]);
 });
 
 test("rejects an unknown block kind with the block path", () => {
@@ -216,7 +228,7 @@ test("rejects more than 5 links", () => {
   ]);
 
   assert.deepEqual(issues, [
-    "cards[0].blocks[0] (links).items: 6 links exceed the 5-button limit of one action row. Split them into two links blocks or drop 1 links.",
+    "cards[0].blocks[0] (links).items: 6 links exceed the 5-button limit of one action row. Split them into two links blocks or drop one link.",
   ]);
 });
 

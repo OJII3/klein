@@ -4,13 +4,10 @@ import { basename, extname, isAbsolute } from "node:path";
 import { Type } from "typebox";
 
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
-import type { PromiseGuard } from "../../tools/promise-guard";
+import { PROMISE_BLOCK_ERROR, type PromiseGuard } from "../../tools/promise-guard";
 import { defineSurfaceTool } from "./surface-tool";
 
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
-
-const PROMISE_BLOCK_ERROR =
-  "この文面は追跡を約束しているが、この会話に有効な追跡がない。follow_up_create を先に成功させるか、約束しない言い方に変えること。";
 
 export function createDiscordSendImageTool(
   channelApi: Pick<DiscordChannelApi, "sendImage" | "sendTyping">,

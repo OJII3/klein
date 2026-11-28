@@ -356,6 +356,7 @@ function parseCard(value: unknown, path: string, context: ParseContext): Discord
     addIssue(context, path, "expected a card object with a blocks array.");
     return undefined;
   }
+  const issuesBefore = context.issues.length;
 
   const title = optionalText(value.title, `${path}.title`, context);
   const subtitle = optionalText(value.subtitle, `${path}.subtitle`, context);
@@ -368,6 +369,18 @@ function parseCard(value: unknown, path: string, context: ParseContext): Discord
   const blocks = parseBlocks(value.blocks, `${path}.blocks`, context);
 
   if (blocks === undefined) return undefined;
+
+  if (
+    context.issues.length === issuesBefore &&
+    title === undefined &&
+    subtitle === undefined &&
+    thumbnail === undefined &&
+    footer === undefined &&
+    blocks.every((block) => block.kind === "divider")
+  ) {
+    addIssue(context, path, "has no content. Add a title, text, media, links, or a content block.");
+    return undefined;
+  }
 
   return {
     ...(title === undefined ? {} : { title }),
@@ -645,10 +658,11 @@ function parseBlock(
       );
       if (items === undefined) return undefined;
       if (items.length > 5) {
+        const extras = items.length - 5;
         addIssue(
           context,
           `${blockPath}.items`,
-          `${items.length} links exceed the 5-button limit of one action row. Split them into two links blocks or drop ${items.length - 5} links.`,
+          `${items.length} links exceed the 5-button limit of one action row. Split them into two links blocks or drop ${extras === 1 ? "one link" : `${extras} links`}.`,
         );
         return undefined;
       }
