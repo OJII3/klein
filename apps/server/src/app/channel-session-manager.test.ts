@@ -56,6 +56,9 @@ function createHarness(
     async sendImage() {
       return [];
     },
+    async sendCard() {
+      return [];
+    },
     async readMessage() {
       throw new Error("Unexpected message read");
     },

@@ -3,11 +3,10 @@ import test from "node:test";
 
 import { MessageFlags } from "discord.js";
 
+import { DISCORD_TEXT_DISPLAY_LIMIT, truncateTextLines } from "../domain/discord-text";
 import {
-  DISCORD_TEXT_DISPLAY_LIMIT,
   createEphemeralTextContainerMessage,
   createTextContainerMessage,
-  truncateTextLines,
 } from "./discord-component-message";
 
 test("wraps text in a components v2 container with the tone color", () => {

@@ -6,12 +6,15 @@ import {
   AttachmentBuilder,
   type ApplicationCommandDataResolvable,
   type ClientOptions,
+  type ContainerBuilder,
+  type MessageFlags,
 } from "discord.js";
 import type { Logger } from "pino";
 
 import { DiscordMessageIngest } from "../application/discord-message-ingest";
 import { DiscordReactionIngest } from "../application/discord-reaction-ingest";
 import type { DiscordAccessPolicy } from "../domain/discord-access-policy";
+import type { DiscordCard } from "../domain/discord-card";
 import type { DiscordChoiceRequest } from "../domain/discord-choice";
 import { isValidDiscordUserId } from "../domain/discord-user";
 import type { DiscordUserProfile } from "../domain/discord-user-profile";
@@ -58,6 +61,7 @@ import {
   type DiscordChannelAccessButtonInteraction,
   type DiscordChannelAccessClient,
 } from "./discord-channel-access-request";
+import { renderDiscordCards } from "./discord-card-renderer";
 import { DiscordChannelLinkRequester } from "./discord-channel-link-requester";
 import type { DiscordContainerMessage } from "./discord-component-message";
 import {
@@ -84,7 +88,14 @@ import {
 const DISCORD_MESSAGE_LIMIT = 2_000;
 interface SendableChannel {
   send(
-    content: string | { readonly content?: string; readonly files: AttachmentBuilder[] },
+    content:
+      | string
+      | {
+          readonly content?: string;
+          readonly files?: AttachmentBuilder[];
+          readonly components?: readonly ContainerBuilder[];
+          readonly flags?: MessageFlags;
+        },
   ): Promise<unknown>;
   sendTyping?(): Promise<void>;
 }
@@ -287,6 +298,12 @@ function isSendableChannel(value: unknown): value is SendableChannel {
     "send" in value &&
     typeof value.send === "function"
   );
+}
+
+function sentMessageId(sent: unknown): string | undefined {
+  return typeof sent === "object" && sent !== null && "id" in sent && typeof sent.id === "string"
+    ? sent.id
+    : undefined;
 }
 
 function splitMessage(content: string): string[] {
@@ -590,9 +607,17 @@ export class DiscordJsService
       files: [new AttachmentBuilder(Buffer.from(image), { name: filename })],
     });
 
-    return typeof sent === "object" && sent !== null && "id" in sent && typeof sent.id === "string"
-      ? [sent.id]
-      : [];
+    const messageId = sentMessageId(sent);
+    return messageId === undefined ? [] : [messageId];
+  }
+
+  async sendCard(channelId: string, cards: readonly DiscordCard[]): Promise<readonly string[]> {
+    const channel = await this.getChannel(channelId);
+    const rendered = renderDiscordCards(cards);
+    const sent = await channel.send({ components: rendered.components, flags: rendered.flags });
+
+    const messageId = sentMessageId(sent);
+    return messageId === undefined ? [] : [messageId];
   }
 
   async readMessage(

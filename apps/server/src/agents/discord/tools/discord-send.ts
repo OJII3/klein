@@ -1,7 +1,7 @@
 import { Type } from "typebox";
 
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
-import type { PromiseGuard } from "../../tools/promise-guard";
+import { PROMISE_BLOCK_ERROR, type PromiseGuard } from "../../tools/promise-guard";
 import { defineSurfaceTool } from "./surface-tool";
 
 export function createDiscordSendTool(
@@ -15,16 +15,16 @@ export function createDiscordSendTool(
       name: "discord_send",
       label: "Send Discord Message",
       exposure: "direct",
-      description: "Send a user-visible message to the current Discord conversation.",
+      description:
+        "Send a user-visible message to the current Discord conversation. " +
+        "For structured data (schedules, comparisons, metrics, logs), load discord_send_card with tool_search and send it alongside the spoken line.",
       parameters: Type.Object({
         content: Type.String({ minLength: 1 }),
       }),
       async execute(_toolCallId, params) {
         const decision = await guard?.check(params.content);
         if (decision?.action === "block") {
-          throw new Error(
-            "この文面は追跡を約束しているが、この会話に有効な追跡がない。follow_up_create を先に成功させるか、約束しない言い方に変えること。",
-          );
+          throw new Error(PROMISE_BLOCK_ERROR);
         }
         await channelApi.sendTyping(channelId);
         await new Promise<void>((resolve) => {

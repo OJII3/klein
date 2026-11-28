@@ -307,7 +307,7 @@ test("blocks a caption that promises an untracked follow-up", async () => {
       undefined,
       await createStubExtensionToolContext(),
     ),
-    /follow_up_create を先に成功させる/u,
+    /promises a later report.*follow_up_create/u,
   );
   assert.equal(checkedCaption, "後で報告します");
   assert.equal(typingCount, 1);

@@ -156,6 +156,9 @@ function createHarness(
     async sendImage() {
       return [];
     },
+    async sendCard() {
+      return [];
+    },
     async readMessage() {
       return message;
     },

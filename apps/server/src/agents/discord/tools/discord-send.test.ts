@@ -85,7 +85,7 @@ test("does not send a blocked promise", async () => {
       undefined,
       await createStubExtensionToolContext(),
     ),
-    /follow_up_create を先に成功させる/u,
+    /promises a later report.*follow_up_create/u,
   );
   assert.equal(sent, false);
 });

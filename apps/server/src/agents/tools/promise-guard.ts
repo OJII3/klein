@@ -9,6 +9,9 @@ export interface PromiseGuardDecision {
   readonly reason?: string;
 }
 
+export const PROMISE_BLOCK_ERROR =
+  "The message promises a later report, but this conversation has no tracked follow-up. Create one with follow_up_create first, or rephrase so it promises nothing.";
+
 export interface PromiseGuard {
   check(content: string): Promise<PromiseGuardDecision>;
 }

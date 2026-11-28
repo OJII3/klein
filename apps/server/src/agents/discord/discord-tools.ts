@@ -23,6 +23,7 @@ import {
   DiscordChannelHistoryStore,
 } from "./tools/discord-channel-history";
 import { createDiscordImageAnalysis, createDiscordReadTool } from "./tools/discord-read";
+import { createDiscordSendCardTool } from "./tools/discord-send-card";
 import { createDiscordSendImageTool } from "./tools/discord-send-image";
 import { createDiscordSendTool } from "./tools/discord-send";
 import { createDiscordSpeakTool } from "./tools/discord-speak";
@@ -40,6 +41,7 @@ export interface DiscordAgentToolsOptions {
     | "sendTyping"
     | "sendAudio"
     | "sendImage"
+    | "sendCard"
   >;
   readonly channelId: string;
   readonly requesterUserId?: () => string | undefined;
@@ -129,6 +131,12 @@ export function createDiscordAgentTools(
         ]
       : []),
     createDiscordSendImageTool(
+      options.channelApi,
+      options.channelId,
+      promiseGuard,
+      options.onMessageSent,
+    ),
+    createDiscordSendCardTool(
       options.channelApi,
       options.channelId,
       promiseGuard,
