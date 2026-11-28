@@ -74,6 +74,9 @@ export function createStubDiscordChannelApi(
     async sendImage() {
       return [];
     },
+    async sendCard() {
+      return [];
+    },
     async readMessage() {
       throw new Error("Unexpected readMessage call in test stub");
     },

@@ -165,6 +165,7 @@ test("inspects turns and raw context from a persisted session JSONL in turn-star
     | "sendTyping"
     | "sendAudio"
     | "sendImage"
+    | "sendCard"
   > = {
     async readMessage(target) {
       return createDiscordMessage({ id: target.messageId, content: "参照メッセージ内容" });
@@ -194,6 +195,9 @@ test("inspects turns and raw context from a persisted session JSONL in turn-star
     async sendTyping() {},
     async sendAudio() {},
     async sendImage() {
+      return [];
+    },
+    async sendCard() {
       return [];
     },
   };
@@ -362,6 +366,7 @@ test("records a 👎 feedback case, inspects original trace + raw context, and r
     | "sendTyping"
     | "sendAudio"
     | "sendImage"
+    | "sendCard"
   > = {
     async readMessage(target) {
       return createDiscordMessage({ id: target.messageId, content: "元の文脈メッセージ" });
@@ -391,6 +396,9 @@ test("records a 👎 feedback case, inspects original trace + raw context, and r
     async sendTyping() {},
     async sendAudio() {},
     async sendImage() {
+      return [];
+    },
+    async sendCard() {
       return [];
     },
   };

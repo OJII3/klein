@@ -1352,6 +1352,7 @@ async function executeSessionSlice(
       | "sendTyping"
       | "sendAudio"
       | "sendImage"
+      | "sendCard"
     > = {
       async readMessage(target) {
         return createFallbackSampleDiscordMessage(target.channelId, target.messageId);
@@ -1379,6 +1380,9 @@ async function executeSessionSlice(
       async sendTyping() {},
       async sendAudio() {},
       async sendImage() {
+        return [];
+      },
+      async sendCard() {
         return [];
       },
     };

@@ -119,6 +119,9 @@ async function withIntegration(
     async sendImage() {
       return [];
     },
+    async sendCard() {
+      return [];
+    },
     async readMessage() {
       throw new Error("Unexpected read");
     },

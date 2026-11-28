@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import test from "node:test";
 import {
+  ContainerBuilder,
   Events,
   GatewayIntentBits,
   IntentsBitField,
@@ -1633,6 +1634,60 @@ test("sends an image attachment with an optional caption and returns its message
       undefined,
     );
     assert.equal(attachmentName(withoutCaptionPayload), "icon.webp");
+  } finally {
+    await service.stop();
+  }
+});
+
+test("sends rendered cards as a components v2 message and returns its message ID", async () => {
+  const fakeClient = new FakeDiscordClient();
+  const payloads: unknown[] = [];
+  fakeClient.channels.fetch = async () => ({
+    isTextBased: () => true,
+    send: async (payload) => {
+      payloads.push(payload);
+      return { id: "card-1" };
+    },
+  });
+  const service = new DiscordJsService(
+    "token",
+    createDiscordAccessPolicy({ default: "allow", directMessages: "allow" }),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    { createClient: () => fakeClient },
+  );
+
+  try {
+    const ids = await service.sendCard("channel-123", [
+      { title: "Release", accent: "info", blocks: [{ kind: "text", text: "hi" }] },
+    ]);
+
+    assert.deepEqual(ids, ["card-1"]);
+    const payload = payloads[0];
+    assert.equal(isRecord(payload) ? payload.flags : undefined, MessageFlags.IsComponentsV2);
+    const rawComponents: readonly unknown[] =
+      isRecord(payload) && Array.isArray(payload.components) ? payload.components : [];
+    const containers = rawComponents.filter(
+      (component): component is ContainerBuilder => component instanceof ContainerBuilder,
+    );
+    assert.deepEqual(
+      containers.map((container) => container.toJSON()),
+      [
+        {
+          type: 17,
+          accent_color: 0x5865f2,
+          components: [
+            { type: 10, content: "### Release" },
+            { type: 10, content: "hi" },
+          ],
+        },
+      ],
+    );
   } finally {
     await service.stop();
   }

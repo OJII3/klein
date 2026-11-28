@@ -1,3 +1,4 @@
+import type { DiscordCard } from "../domain/discord-card";
 import type { DiscordChoiceRequest } from "../domain/discord-choice";
 import type {
   DiscordChannelHistoryMessage,
@@ -34,6 +35,7 @@ export interface DiscordChannelApi {
     filename: string,
     caption?: string,
   ): Promise<readonly string[]>;
+  sendCard(channelId: string, cards: readonly DiscordCard[]): Promise<readonly string[]>;
   readMessage(
     locator: DiscordMessageLocator,
     requester?: DiscordMessageRequester,
