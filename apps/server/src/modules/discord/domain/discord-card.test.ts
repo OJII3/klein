@@ -59,6 +59,16 @@ function linkCardWithLabel(length: number) {
   ];
 }
 
+function fiveLinkBlocks(rows: number) {
+  return Array.from({ length: rows }, (_, row) => ({
+    kind: "links" as const,
+    items: Array.from({ length: 5 }, (_cell, index) => ({
+      label: `Link ${row}-${index}`,
+      url: `https://example.com/${row}/${index}`,
+    })),
+  }));
+}
+
 test("parses every block kind and keeps its fields", () => {
   const cards = parseValid([{ accent: "info", blocks: ALL_BLOCKS }]);
 
@@ -298,6 +308,9 @@ test("rejects blank text blocks and header fields", () => {
       /^cards\[0\]\.blocks\[0\] \(text\)\.text: /u,
     );
   }
+  assert.deepEqual(parseIssues([{ blocks: [{ kind: "text", text: " " }] }]), [
+    "cards[0].blocks[0] (text).text: expected the text body as a non-empty string.",
+  ]);
   for (const field of ["title", "subtitle", "footer"] as const) {
     assert.match(
       parseIssues([{ [field]: "\u200b", blocks: [{ kind: "text", text: "hi" }] }])[0] ?? "",
@@ -344,30 +357,26 @@ test("rejects more than 5 action rows across the message", () => {
 });
 
 test("rejects a message with more than 40 components and reports the total", () => {
-  const linksBlocks = Array.from({ length: 5 }, (_, row) => ({
-    kind: "links" as const,
-    items: Array.from({ length: 5 }, (_cell, index) => ({
-      label: `Link ${row}-${index}`,
-      url: `https://example.com/${row}/${index}`,
-    })),
-  }));
   const issues = parseIssues([
     {
       title: "Release",
       thumbnail: "https://example.com/t.png",
       footer: "by Klein",
-      blocks: linksBlocks,
+      blocks: fiveLinkBlocks(2),
     },
     {
-      blocks: Array.from({ length: 10 }, (_, index) => ({
-        kind: "text" as const,
-        text: `line ${index}`,
-      })),
+      blocks: [
+        ...fiveLinkBlocks(3),
+        ...Array.from({ length: 5 }, (_, index) => ({
+          kind: "text" as const,
+          text: `line ${index}`,
+        })),
+      ],
     },
   ]);
 
   assert.deepEqual(issues, [
-    "cards: 46 components exceed Discord's 40-component limit for one message. Drop 6 components or split the cards into two messages.",
+    "cards: 41 components exceed Discord's 40-component limit for one message. Drop 1 component or split the cards into two messages.",
   ]);
 });
 
@@ -375,7 +384,7 @@ test("rejects a message whose text displays exceed 4000 characters and reports t
   const issues = parseIssues([{ blocks: [{ kind: "text", text: "a".repeat(4_001) }] }]);
 
   assert.deepEqual(issues, [
-    "cards: 4001 characters across text displays exceed Discord's 4000-character limit for one message. Shorten the text by 1 characters or split the cards into two messages.",
+    "cards: 4001 characters across text displays exceed Discord's 4000-character limit for one message. Shorten the text by 1 character or split the cards into two messages.",
   ]);
 });
 
@@ -529,16 +538,40 @@ test("clamps table cells at 20 display columns", () => {
   assert.ok(!text?.includes("x".repeat(20)));
 });
 
-test("caps tables at 6 columns and 20 rows", () => {
+test("rejects tables with more than 6 columns", () => {
   const columns = ["a", "b", "c", "d", "e", "f", "g"];
-  const rows = Array.from({ length: 22 }, (_, index) =>
-    Array.from({ length: 7 }, (_cellOffset, cell) => `${index}-${cell}`),
-  );
-  const text = formatCardBlockText({ kind: "table", columns, rows });
+  const issues = parseIssues([
+    {
+      blocks: [
+        {
+          kind: "table",
+          columns,
+          rows: [columns.map((_, index) => `${index}`)],
+        },
+      ],
+    },
+  ]);
 
-  assert.ok(text?.startsWith("```\na "));
-  assert.ok(!text?.includes("g"));
-  assert.ok(text?.includes("19-0"));
-  assert.ok(!text?.includes("20-0"));
-  assert.ok(text?.includes("…ほか 2 行"));
+  assert.deepEqual(issues, [
+    "cards[0].blocks[0] (table): 7 columns exceed the 6-column limit. Split it into two tables or drop a column.",
+  ]);
+});
+
+test("rejects tables with more than 20 rows", () => {
+  const rows = Array.from({ length: 21 }, (_, index) => [`row-${index}`]);
+  const issues = parseIssues([{ blocks: [{ kind: "table", columns: ["name"], rows }] }]);
+
+  assert.deepEqual(issues, [
+    "cards[0].blocks[0] (table): 21 rows exceed the 20-row limit. Split it into two tables or drop a row.",
+  ]);
+});
+
+test("accepts a table at the 6-column and 20-row limits", () => {
+  const columns = ["a", "b", "c", "d", "e", "f"];
+  const rows = Array.from({ length: 20 }, (_, index) =>
+    columns.map((_column, cell) => `${index}-${cell}`),
+  );
+
+  const cards = parseValid([{ blocks: [{ kind: "table", columns, rows }] }]);
+  assert.equal(cards.length, 1);
 });

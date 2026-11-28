@@ -109,7 +109,7 @@ export function parseDiscordCards(input: unknown): DiscordCardParseResult {
     return children <= DISCORD_CARD_CONTAINER_CHILD_LIMIT
       ? []
       : [
-          `cards[${index}]: ${children} container children exceed Discord's ${DISCORD_CARD_CONTAINER_CHILD_LIMIT}-per-container limit. Split the card into two cards.`,
+          `cards[${index}]: ${formatCount(children, "container child", "container children")} exceed Discord's ${DISCORD_CARD_CONTAINER_CHILD_LIMIT}-per-container limit. Split the card into two cards.`,
         ];
   });
   const actionRows = cards.reduce(
@@ -118,7 +118,7 @@ export function parseDiscordCards(input: unknown): DiscordCardParseResult {
   );
   if (actionRows > DISCORD_CARD_ACTION_ROW_LIMIT) {
     containerIssues.push(
-      `cards: ${actionRows} action rows exceed Discord's ${DISCORD_CARD_ACTION_ROW_LIMIT}-per-message limit. Split the links across two messages.`,
+      `cards: ${formatCount(actionRows, "action row", "action rows")} exceed Discord's ${DISCORD_CARD_ACTION_ROW_LIMIT}-per-message limit. Split the links across two messages.`,
     );
   }
   if (containerIssues.length > 0) return { ok: false, issues: containerIssues };
@@ -128,7 +128,7 @@ export function parseDiscordCards(input: unknown): DiscordCardParseResult {
     return {
       ok: false,
       issues: [
-        `cards: ${components} components exceed Discord's ${DISCORD_CARD_COMPONENT_LIMIT}-component limit for one message. Drop ${components - DISCORD_CARD_COMPONENT_LIMIT} components or split the cards into two messages.`,
+        `cards: ${formatCount(components, "component", "components")} exceed Discord's ${DISCORD_CARD_COMPONENT_LIMIT}-component limit for one message. Drop ${formatCount(components - DISCORD_CARD_COMPONENT_LIMIT, "component", "components")} or split the cards into two messages.`,
       ],
     };
   }
@@ -138,7 +138,7 @@ export function parseDiscordCards(input: unknown): DiscordCardParseResult {
     return {
       ok: false,
       issues: [
-        `cards: ${characters} characters across text displays exceed Discord's ${DISCORD_TEXT_DISPLAY_LIMIT}-character limit for one message. Shorten the text by ${characters - DISCORD_TEXT_DISPLAY_LIMIT} characters or split the cards into two messages.`,
+        `cards: ${formatCount(characters, "character", "characters")} across text displays exceed Discord's ${DISCORD_TEXT_DISPLAY_LIMIT}-character limit for one message. Shorten the text by ${formatCount(characters - DISCORD_TEXT_DISPLAY_LIMIT, "character", "characters")} or split the cards into two messages.`,
       ],
     };
   }
@@ -255,12 +255,10 @@ export function formatCardTable(
   columns: readonly string[],
   rows: readonly (readonly string[])[],
 ): string {
-  const headers = columns.slice(0, TABLE_COLUMN_LIMIT).map((column) => toTableCell(column));
-  const visibleRows = rows
-    .slice(0, TABLE_ROW_LIMIT)
-    .map((row) => row.slice(0, TABLE_COLUMN_LIMIT).map((cell) => toTableCell(cell)));
+  const headers = columns.map((column) => toTableCell(column));
+  const formattedRows = rows.map((row) => row.map((cell) => toTableCell(cell)));
   const widths = headers.map((header, index) =>
-    Math.max(displayWidth(header), ...visibleRows.map((row) => displayWidth(row[index] ?? ""))),
+    Math.max(displayWidth(header), ...formattedRows.map((row) => displayWidth(row[index] ?? ""))),
   );
   const formatRow = (cells: readonly string[]): string =>
     cells
@@ -268,9 +266,7 @@ export function formatCardTable(
       .join("  ")
       .trimEnd();
 
-  const lines = [formatRow(headers), ...visibleRows.map((row) => formatRow(row))];
-  const hiddenRows = rows.length - visibleRows.length;
-  if (hiddenRows > 0) lines.push(`…ほか ${hiddenRows} 行`);
+  const lines = [formatRow(headers), ...formattedRows.map((row) => formatRow(row))];
 
   return ["```", ...lines, "```"].join("\n");
 }
@@ -443,7 +439,7 @@ function parseBlock(
 
   switch (kind) {
     case "text": {
-      const text = requireText(value.text, `${blockPath}.text`, context, "expected the text body.");
+      const text = requireText(value.text, `${blockPath}.text`, context, "expected the text body");
       return text === undefined ? undefined : { kind, text };
     }
     case "fields": {
@@ -461,13 +457,13 @@ function parseBlock(
             item.label,
             `${itemPath}.label`,
             context,
-            "expected a field label.",
+            "expected a field label",
           );
           const fieldValue = requireText(
             item.value,
             `${itemPath}.value`,
             context,
-            "expected a field value.",
+            "expected a field value",
           );
           return label === undefined || fieldValue === undefined
             ? undefined
@@ -491,7 +487,7 @@ function parseBlock(
             item.text,
             `${itemPath}.text`,
             context,
-            "expected the item text.",
+            "expected the item text",
           );
           const detail = optionalText(item.detail, `${itemPath}.detail`, context);
           return text === undefined
@@ -503,6 +499,14 @@ function parseBlock(
       return { kind, items, ...(value.ordered === true ? { ordered: true } : {}) };
     }
     case "table": {
+      if (Array.isArray(value.columns) && value.columns.length > TABLE_COLUMN_LIMIT) {
+        addIssue(
+          context,
+          blockPath,
+          `${formatCount(value.columns.length, "column", "columns")} exceed the ${TABLE_COLUMN_LIMIT}-column limit. Split it into two tables or drop a column.`,
+        );
+        return undefined;
+      }
       const columns = parseColumns(value.columns, `${blockPath}.columns`, context);
       if (columns === undefined) return undefined;
       if (!Array.isArray(value.rows)) {
@@ -510,6 +514,14 @@ function parseBlock(
         return undefined;
       }
       const rawRows: readonly unknown[] = value.rows;
+      if (rawRows.length > TABLE_ROW_LIMIT) {
+        addIssue(
+          context,
+          blockPath,
+          `${formatCount(rawRows.length, "row", "rows")} exceed the ${TABLE_ROW_LIMIT}-row limit. Split it into two tables or drop a row.`,
+        );
+        return undefined;
+      }
       const rows = rawRows.flatMap((row, rowIndex) => {
         if (!Array.isArray(row)) {
           addIssue(context, `${blockPath}.rows[${rowIndex}]`, "expected an array of cells.");
@@ -561,13 +573,13 @@ function parseBlock(
             item.label,
             `${itemPath}.label`,
             context,
-            "expected a stat label.",
+            "expected a stat label",
           );
           const statValue = requireText(
             item.value,
             `${itemPath}.value`,
             context,
-            "expected a stat value.",
+            "expected a stat value",
           );
           const delta = optionalText(item.delta, `${itemPath}.delta`, context);
           return label === undefined || statValue === undefined
@@ -582,7 +594,7 @@ function parseBlock(
         value.label,
         `${blockPath}.label`,
         context,
-        "expected a progress label.",
+        "expected a progress label",
       );
       if (
         typeof value.value !== "number" ||
@@ -620,7 +632,7 @@ function parseBlock(
         value.text,
         `${blockPath}.text`,
         context,
-        "expected the callout text.",
+        "expected the callout text",
       );
       return text === undefined ? undefined : { kind, tone: value.tone, text };
     }
@@ -676,7 +688,7 @@ function parseBlock(
             item.label,
             `${itemPath}.label`,
             context,
-            "expected a link label.",
+            "expected a link label",
           );
           if (label === undefined) return undefined;
           if (label.length > DISCORD_CARD_LINK_LABEL_LIMIT) {
@@ -726,7 +738,7 @@ function parseColumns(value: unknown, path: string, context: ParseContext): stri
     return undefined;
   }
   const columns = rawColumns.flatMap((column, index) => {
-    const text = requireText(column, `${path}[${index}]`, context, "expected a column header.");
+    const text = requireText(column, `${path}[${index}]`, context, "expected a column header");
     return text === undefined ? [] : [text];
   });
   return columns.length === rawColumns.length ? columns : undefined;
@@ -907,6 +919,10 @@ function describeValue(value: unknown): string {
   } catch {
     return "an unsupported value";
   }
+}
+
+function formatCount(count: number, singular: string, plural: string): string {
+  return `${count} ${count === 1 ? singular : plural}`;
 }
 
 function addIssue(context: ParseContext, path: string, message: string): void {

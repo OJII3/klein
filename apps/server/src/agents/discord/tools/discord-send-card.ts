@@ -30,10 +30,15 @@ const blockSchema = Type.Object({
         "fields: {label,value}; list: {text,detail}; stats: {label,value,delta}; links: {label,url}.",
     }),
   ),
-  columns: Type.Optional(Type.Array(Type.String(), { description: "table headers." })),
+  columns: Type.Optional(
+    Type.Array(Type.String(), {
+      description: "table headers; max 6 columns. Table cells are clipped to 20 display columns.",
+    }),
+  ),
   rows: Type.Optional(
     Type.Array(Type.Array(Type.String()), {
-      description: "table rows; each row needs one cell per column.",
+      description:
+        "table rows; each row needs one cell per column, max 20 rows. Table cells are clipped to 20 display columns.",
     }),
   ),
   tone: Type.Optional(
