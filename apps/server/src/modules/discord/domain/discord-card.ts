@@ -1,6 +1,11 @@
 import { DISCORD_TEXT_DISPLAY_LIMIT } from "./discord-text";
 
 export const DISCORD_CARD_COMPONENT_LIMIT = 40;
+export const DISCORD_CARD_CONTAINER_CHILD_LIMIT = 10;
+export const DISCORD_CARD_ACTION_ROW_LIMIT = 5;
+export const DISCORD_CARD_LINK_LABEL_LIMIT = 80;
+export const DISCORD_CARD_LINK_URL_LIMIT = 512;
+export const DISCORD_CARD_MEDIA_URL_LIMIT = 2_048;
 
 export type DiscordCardAccent = "neutral" | "info" | "success" | "warning" | "danger";
 
@@ -99,6 +104,25 @@ export function parseDiscordCards(input: unknown): DiscordCardParseResult {
   });
   if (context.issues.length > 0) return { ok: false, issues: context.issues };
 
+  const containerIssues = cards.flatMap((card, index) => {
+    const children = countCardContainerChildren(card);
+    return children <= DISCORD_CARD_CONTAINER_CHILD_LIMIT
+      ? []
+      : [
+          `cards[${index}]: ${children} container children exceed Discord's ${DISCORD_CARD_CONTAINER_CHILD_LIMIT}-per-container limit. Split the card into two cards.`,
+        ];
+  });
+  const actionRows = cards.reduce(
+    (total, card) => total + card.blocks.filter((block) => block.kind === "links").length,
+    0,
+  );
+  if (actionRows > DISCORD_CARD_ACTION_ROW_LIMIT) {
+    containerIssues.push(
+      `cards: ${actionRows} action rows exceed Discord's ${DISCORD_CARD_ACTION_ROW_LIMIT}-per-message limit. Split the links across two messages.`,
+    );
+  }
+  if (containerIssues.length > 0) return { ok: false, issues: containerIssues };
+
   const components = cards.reduce((total, card) => total + countCardComponents(card), 0);
   if (components > DISCORD_CARD_COMPONENT_LIMIT) {
     return {
@@ -134,6 +158,13 @@ export function countCardComponents(card: DiscordCard): number {
   return total;
 }
 
+export function countCardContainerChildren(card: DiscordCard): number {
+  let total = card.blocks.length;
+  if (hasCardHeader(card)) total += 1;
+  if (card.footer !== undefined) total += 1;
+  return total;
+}
+
 export function countCardText(card: DiscordCard): number {
   let total = 0;
   if (hasCardHeader(card)) total += formatCardHeader(card).length;
@@ -144,52 +175,28 @@ export function countCardText(card: DiscordCard): number {
   return total;
 }
 
-export function listCardTexts(card: DiscordCard): readonly string[] {
-  const texts: string[] = [];
-  if (card.title !== undefined) texts.push(card.title);
-  if (card.subtitle !== undefined) texts.push(card.subtitle);
-  if (card.footer !== undefined) texts.push(card.footer);
-  for (const block of card.blocks) {
-    switch (block.kind) {
-      case "text":
-        texts.push(block.text);
-        break;
-      case "fields":
-        for (const item of block.items) texts.push(item.label, item.value);
-        break;
-      case "list":
-        for (const item of block.items) {
-          texts.push(item.text);
-          if (item.detail !== undefined) texts.push(item.detail);
-        }
-        break;
-      case "table":
-        texts.push(...block.columns);
-        for (const row of block.rows) texts.push(...row);
-        break;
-      case "stats":
-        for (const item of block.items) {
-          texts.push(item.label, item.value);
-          if (item.delta !== undefined) texts.push(item.delta);
-        }
-        break;
-      case "progress":
-        texts.push(block.label);
-        if (block.detail !== undefined) texts.push(block.detail);
-        break;
-      case "callout":
-        texts.push(block.text);
-        break;
-      case "media":
-        break;
-      case "links":
-        for (const item of block.items) texts.push(item.label);
-        break;
-      case "divider":
-        break;
-    }
-  }
-  return texts;
+export interface DiscordCardFormattedTexts {
+  readonly header?: string;
+  readonly blocks: readonly (string | undefined)[];
+  readonly footer?: string;
+}
+
+export function formatCardTexts(card: DiscordCard): DiscordCardFormattedTexts {
+  return {
+    ...(hasCardHeader(card) ? { header: formatCardHeader(card) } : {}),
+    blocks: card.blocks.map((block) => formatCardBlockText(block)),
+    ...(card.footer === undefined ? {} : { footer: formatCardFooter(card.footer) }),
+  };
+}
+
+export function listCardTextLines(card: DiscordCard): readonly string[] {
+  const texts = formatCardTexts(card);
+  const displays = [
+    ...(texts.header === undefined ? [] : [texts.header]),
+    ...texts.blocks.filter((text): text is string => text !== undefined),
+    ...(texts.footer === undefined ? [] : [texts.footer]),
+  ];
+  return displays.flatMap((text) => text.split("\n"));
 }
 
 export function formatCardHeader(card: Pick<DiscordCard, "title" | "subtitle">): string {
@@ -365,7 +372,7 @@ function parseCard(value: unknown, path: string, context: ParseContext): Discord
   const thumbnail =
     value.thumbnail === undefined
       ? undefined
-      : parseHttpsUrl(value.thumbnail, `${path}.thumbnail`, context);
+      : parseHttpsUrl(value.thumbnail, `${path}.thumbnail`, context, DISCORD_CARD_MEDIA_URL_LIMIT);
   const blocks = parseBlocks(value.blocks, `${path}.blocks`, context);
 
   if (blocks === undefined) return undefined;
@@ -517,7 +524,21 @@ function parseBlock(
           );
           return [];
         }
-        return [cells.map((cell) => (typeof cell === "string" ? cell : String(cell)))];
+        const parsedCells: string[] = [];
+        let rowIsValid = true;
+        cells.forEach((cell, cellIndex) => {
+          if (typeof cell !== "string") {
+            addIssue(
+              context,
+              `${path}.rows[${rowIndex}][${cellIndex}]`,
+              `table cells must be strings, got ${describeValue(cell)}.`,
+            );
+            rowIsValid = false;
+            return;
+          }
+          parsedCells.push(cell);
+        });
+        return rowIsValid ? [parsedCells] : [];
       });
       return { kind, columns, rows };
     }
@@ -622,7 +643,12 @@ function parseBlock(
         return undefined;
       }
       const urls = rawUrls.flatMap((url, index) => {
-        const parsed = parseHttpsUrl(url, `${blockPath}.urls[${index}]`, context);
+        const parsed = parseHttpsUrl(
+          url,
+          `${blockPath}.urls[${index}]`,
+          context,
+          DISCORD_CARD_MEDIA_URL_LIMIT,
+        );
         return parsed === undefined ? [] : [parsed];
       });
       if (value.spoiler !== undefined && typeof value.spoiler !== "boolean") {
@@ -652,8 +678,22 @@ function parseBlock(
             context,
             "expected a link label.",
           );
-          const url = parseHttpsUrl(item.url, `${itemPath}.url`, context);
-          return label === undefined || url === undefined ? undefined : { label, url };
+          if (label === undefined) return undefined;
+          if (label.length > DISCORD_CARD_LINK_LABEL_LIMIT) {
+            addIssue(
+              context,
+              `${itemPath}.label`,
+              `link label is ${label.length} characters; the limit is ${DISCORD_CARD_LINK_LABEL_LIMIT}. Shorten the label.`,
+            );
+            return undefined;
+          }
+          const url = parseHttpsUrl(
+            item.url,
+            `${itemPath}.url`,
+            context,
+            DISCORD_CARD_LINK_URL_LIMIT,
+          );
+          return url === undefined ? undefined : { label, url };
         },
       );
       if (items === undefined) return undefined;
@@ -734,23 +774,42 @@ function parseAccent(value: unknown, path: string, context: ParseContext): Disco
   return "neutral";
 }
 
-function parseHttpsUrl(value: unknown, path: string, context: ParseContext): string | undefined {
-  if (typeof value !== "string" || value.length === 0) {
-    addIssue(context, path, "expected a non-empty https URL.");
-    return undefined;
-  }
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch {
+function parseHttpsUrl(
+  value: unknown,
+  path: string,
+  context: ParseContext,
+  maxLength: number,
+): string | undefined {
+  if (typeof value !== "string") {
     addIssue(
       context,
       path,
-      `${describeValue(value)} is not a valid URL. Use an absolute https URL.`,
+      `expected a plain https://host/path URL as a string, got ${describeValue(value)}.`,
     );
     return undefined;
   }
-  if (url.protocol === "http:") {
+  const url = value.trim();
+  if (url.length === 0) {
+    addIssue(context, path, "expected a non-empty plain https://host/path URL.");
+    return undefined;
+  }
+  if (url.length > maxLength) {
+    addIssue(
+      context,
+      path,
+      `URL is ${url.length} characters; the limit is ${maxLength}. Use a plain https://host/path URL no longer than ${maxLength} characters.`,
+    );
+    return undefined;
+  }
+  if (/[\s\p{Cc}\p{Cf}]/u.test(url)) {
+    addIssue(
+      context,
+      path,
+      "URL contains whitespace or a control character. Use a plain https://host/path URL.",
+    );
+    return undefined;
+  }
+  if (/^http:\/\//iu.test(url)) {
     addIssue(
       context,
       path,
@@ -758,15 +817,52 @@ function parseHttpsUrl(value: unknown, path: string, context: ParseContext): str
     );
     return undefined;
   }
-  if (url.protocol !== "https:") {
+  if (!/^https:\/\/[^/?#]+/iu.test(url)) {
     addIssue(
       context,
       path,
-      `only https URLs are accepted, not ${describeValue(url.protocol)}. Change the URL scheme to https.`,
+      `${describeValue(url)} is not a plain https://host/path URL with a non-empty host.`,
     );
     return undefined;
   }
-  return value;
+
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    addIssue(
+      context,
+      path,
+      `${describeValue(url)} is not a valid URL. Use a plain https://host/path URL.`,
+    );
+    return undefined;
+  }
+  if (parsed.protocol !== "https:") {
+    addIssue(
+      context,
+      path,
+      `only https URLs are accepted, not ${describeValue(parsed.protocol)}. Change the URL scheme to https.`,
+    );
+    return undefined;
+  }
+  if (parsed.hostname.length === 0) {
+    addIssue(
+      context,
+      path,
+      `${describeValue(url)} has no host. Use a plain https://host/path URL.`,
+    );
+    return undefined;
+  }
+  const normalized = parsed.href;
+  if (normalized.length > maxLength) {
+    addIssue(
+      context,
+      path,
+      `URL is ${normalized.length} characters after normalization; the limit is ${maxLength}. Use a plain https://host/path URL no longer than ${maxLength} characters.`,
+    );
+    return undefined;
+  }
+  return normalized;
 }
 
 function requireText(
@@ -775,7 +871,7 @@ function requireText(
   context: ParseContext,
   expectation: string,
 ): string | undefined {
-  if (typeof value !== "string" || value.trim().length === 0) {
+  if (typeof value !== "string" || !hasVisibleText(value)) {
     addIssue(context, path, `${expectation} as a non-empty string.`);
     return undefined;
   }
@@ -784,11 +880,15 @@ function requireText(
 
 function optionalText(value: unknown, path: string, context: ParseContext): string | undefined {
   if (value === undefined) return undefined;
-  if (typeof value !== "string" || value.trim().length === 0) {
+  if (typeof value !== "string" || !hasVisibleText(value)) {
     addIssue(context, path, "expected a non-empty string. Provide text or drop the field.");
     return undefined;
   }
   return value;
+}
+
+function hasVisibleText(text: string): boolean {
+  return !/^[\s\p{Cf}]*$/u.test(text);
 }
 
 function isBlockKind(value: unknown): value is DiscordCardBlockKind {
@@ -802,7 +902,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function describeValue(value: unknown): string {
   if (typeof value === "string") return JSON.stringify(value);
   if (value === undefined) return "nothing";
-  return JSON.stringify(value) ?? "an unsupported value";
+  try {
+    return JSON.stringify(value) ?? "an unsupported value";
+  } catch {
+    return "an unsupported value";
+  }
 }
 
 function addIssue(context: ParseContext, path: string, message: string): void {

@@ -5,6 +5,7 @@ import { MessageFlags } from "discord.js";
 
 import {
   countCardComponents,
+  countCardContainerChildren,
   countCardText,
   formatCardTable,
   parseDiscordCards,
@@ -201,7 +202,7 @@ test("valid cards never exceed 40 components or 4000 text characters", () => {
       subtitle: "v1.2",
       thumbnail: "https://example.com/thumb.png",
       footer: "by Klein",
-      blocks: BLOCK_VARIANTS,
+      blocks: BLOCK_VARIANTS.slice(0, 6),
     },
     { title: "Title only", subtitle: "no thumbnail", blocks: [{ kind: "text", text: "a" }] },
     {
@@ -221,9 +222,50 @@ test("valid cards never exceed 40 components or 4000 text characters", () => {
     const components = countRenderedComponents(json);
     assert.ok(components <= 40, `rendered ${components} components`);
     assert.equal(components, countCardComponents(card));
+    assert.ok(countCardContainerChildren(card) <= 10);
 
     const characters = renderedTextCharacters(json);
     assert.ok(characters <= 4_000, `rendered ${characters} text characters`);
     assert.equal(characters, countCardText(card));
   }
+});
+
+test("renders every accepted block shape into a valid payload", () => {
+  for (const block of BLOCK_VARIANTS) {
+    const parsed = parseDiscordCards([
+      block.kind === "divider" ? { title: "Section", blocks: [block] } : { blocks: [block] },
+    ]);
+    if (!parsed.ok) throw new Error(parsed.issues.join("\n"));
+    const rendered = renderDiscordCards(parsed.cards);
+    const json = rendered.components.map((component) => component.toJSON());
+    assert.equal(countRenderedComponents(json), countCardComponents(parsed.cards[0]));
+    assert.equal(renderedTextCharacters(json), countCardText(parsed.cards[0]));
+  }
+});
+
+test("renders the maximum allowed labels and URLs without throwing", () => {
+  const linkBase = "https://example.com/";
+  const mediaBase = "https://example.com/";
+  const card: DiscordCard = {
+    thumbnail: mediaBase + "t".repeat(2_048 - mediaBase.length),
+    blocks: [
+      {
+        kind: "links",
+        items: Array.from({ length: 5 }, (_, index) => ({
+          label: `${index}`.padEnd(80, "L"),
+          url: linkBase + "u".repeat(512 - linkBase.length),
+        })),
+      },
+      {
+        kind: "media",
+        urls: Array.from({ length: 10 }, () => mediaBase + "m".repeat(2_048 - mediaBase.length)),
+      },
+      { kind: "text", text: "x".repeat(3_999) },
+    ],
+  };
+  const parsed = parseDiscordCards([card]);
+  if (!parsed.ok) throw new Error(parsed.issues.join("\n"));
+
+  const json = renderDiscordCards(parsed.cards).components.map((component) => component.toJSON());
+  assert.equal(countRenderedComponents(json), countCardComponents(card));
 });

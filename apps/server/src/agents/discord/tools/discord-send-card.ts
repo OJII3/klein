@@ -1,7 +1,7 @@
 import { Type } from "typebox";
 
 import {
-  listCardTexts,
+  listCardTextLines,
   parseDiscordCards,
   type DiscordCard,
 } from "@modules/discord/domain/discord-card";
@@ -77,7 +77,7 @@ export function createDiscordSendCardTool(
         "Cards carry data, never dialogue: say the line with discord_send, then send the card. " +
         "Blocks: text {text}; fields {items}; list {items,ordered}; table {columns,rows}; stats {items}; " +
         "progress {label,value,detail}; callout {tone,text}; media {urls}; links {items}; divider. " +
-        "Limits: 40 components and 4000 characters per message; split cards to fit. " +
+        "Limits: 10 container children per card, 5 links rows, 40 components, and 4000 characters per message; split cards to fit. " +
         'Example: {"cards":[{"title":"Deploys","accent":"info","blocks":[{"kind":"fields","items":[{"label":"Status","value":"green"}]}]}]}',
       parameters: Type.Object({
         cards: Type.Array(cardSchema, { description: "Cards sent as one message." }),
@@ -89,8 +89,8 @@ export function createDiscordSendCardTool(
         }
 
         for (const card of parsed.cards) {
-          for (const text of listCardTexts(card)) {
-            const decision = await guard?.check(text);
+          for (const line of listCardTextLines(card)) {
+            const decision = await guard?.check(line);
             if (decision?.action === "block") {
               throw new Error(PROMISE_BLOCK_ERROR);
             }

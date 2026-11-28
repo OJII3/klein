@@ -110,7 +110,97 @@ test("blocks a card whose text promises an untracked follow-up", async () => {
     ),
     /promises a later report.*follow_up_create/u,
   );
-  assert.deepEqual(checked, ["進捗", "以上", "後で報告します"]);
+  assert.deepEqual(checked, ["### 進捗", "後で報告します"]);
+  assert.equal(typingCount, 0);
+  assert.equal(sent, false);
+});
+
+test("checks the emitted line for fields, stats, and table rows", async () => {
+  const checked: string[] = [];
+  const guard: PromiseGuard = {
+    async check(content) {
+      checked.push(content);
+      return { action: "allow" };
+    },
+  };
+  const tool = createDiscordSendCardTool(
+    {
+      async sendTyping() {},
+      async sendCard() {
+        return ["message-302"];
+      },
+    },
+    "current-channel",
+    guard,
+  );
+  const cards = [
+    {
+      title: "進捗",
+      blocks: [{ kind: "fields", items: [{ label: "後で", value: "報告します" }] }],
+    },
+    {
+      title: "進捗",
+      blocks: [{ kind: "stats", items: [{ label: "報告します", value: "後で" }] }],
+    },
+    {
+      title: "進捗",
+      blocks: [{ kind: "table", columns: ["いつ", "なに"], rows: [["後で", "報告します"]] }],
+    },
+  ];
+
+  for (const card of cards) {
+    checked.length = 0;
+    await tool.execute(
+      "tool-call",
+      { cards: [card] },
+      undefined,
+      undefined,
+      await createStubExtensionToolContext(),
+    );
+    assert.ok(
+      checked.some((line) => /後で.{0,10}報告します/u.test(line)),
+      `guard saw ${JSON.stringify(checked)}`,
+    );
+  }
+});
+
+test("rejects a link label longer than 80 characters before rendering", async () => {
+  let typingCount = 0;
+  let sent = false;
+  const tool = createDiscordSendCardTool(
+    {
+      async sendTyping() {
+        typingCount += 1;
+      },
+      async sendCard() {
+        sent = true;
+        return [];
+      },
+    },
+    "current-channel",
+  );
+
+  await assert.rejects(
+    tool.execute(
+      "tool-call",
+      {
+        cards: [
+          {
+            blocks: [
+              {
+                kind: "links",
+                items: [{ label: "L".repeat(81), url: "https://example.com/logs" }],
+              },
+            ],
+          },
+        ],
+      },
+      undefined,
+      undefined,
+      await createStubExtensionToolContext(),
+    ),
+    /items\[0\]\.label: link label is 81 characters; the limit is 80/u,
+  );
   assert.equal(typingCount, 0);
   assert.equal(sent, false);
 });
