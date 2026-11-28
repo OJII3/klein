@@ -269,6 +269,8 @@ test("marks the Discord surface tools so the core layer can reject them", () => 
   assert.deepEqual(surfaceNames, [
     "discord_ask",
     "discord_send",
+    "discord_send_card",
+    "discord_send_card",
     "discord_send_image",
     "discord_send_image",
     "discord_speak",
@@ -289,6 +291,7 @@ test("marks the Discord surface tools so the core layer can reject them", () => 
   assert.deepEqual(surfaceOutcomes, {
     discord_ask: "Asked a question in Discord.",
     discord_send: "Sent a message to Discord.",
+    discord_send_card: "Sent a card to Discord.",
     discord_send_image: "Sent an image to Discord.",
     discord_speak: "Spoke in the Discord voice channel.",
     discord_voice: "Sent a voice message to Discord.",
