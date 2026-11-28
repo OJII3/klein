@@ -37,6 +37,44 @@ test("returns the sent content in the tool result", async () => {
   ]);
 });
 
+test("normalizes escaped line breaks before sending", async () => {
+  let sentContent: string | undefined;
+  let guardedContent: string | undefined;
+  const guard: PromiseGuard = {
+    async check(content) {
+      guardedContent = content;
+      return { action: "allow" };
+    },
+  };
+  const tool = createDiscordSendTool(
+    {
+      async sendTyping() {},
+      async sendMessage(_channelId, content) {
+        sentContent = content;
+      },
+    },
+    "current-channel",
+    guard,
+  );
+
+  const result = await tool.execute(
+    "tool-call",
+    { content: "……勘違いしてた\\nごめん" },
+    undefined,
+    undefined,
+    await createStubExtensionToolContext(),
+  );
+
+  assert.equal(guardedContent, "……勘違いしてた\nごめん");
+  assert.equal(sentContent, "……勘違いしてた\nごめん");
+  assert.deepEqual(result.content, [
+    {
+      type: "text",
+      text: "The message was sent to Discord.\nSent content:\n……勘違いしてた\nごめん",
+    },
+  ]);
+});
+
 test("records returned Discord message IDs in details", async () => {
   const tool = createDiscordSendTool(
     {
