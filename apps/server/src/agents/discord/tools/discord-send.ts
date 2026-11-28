@@ -1,5 +1,6 @@
 import { Type } from "typebox";
 
+import { normalizeEscapedNewlines } from "@modules/discord/domain/discord-text";
 import type { DiscordChannelApi } from "@modules/discord/ports/discord-channel-api";
 import { PROMISE_BLOCK_ERROR, type PromiseGuard } from "../../tools/promise-guard";
 import { defineSurfaceTool } from "./surface-tool";
@@ -22,7 +23,8 @@ export function createDiscordSendTool(
         content: Type.String({ minLength: 1 }),
       }),
       async execute(_toolCallId, params) {
-        const decision = await guard?.check(params.content);
+        const content = normalizeEscapedNewlines(params.content);
+        const decision = await guard?.check(content);
         if (decision?.action === "block") {
           throw new Error(PROMISE_BLOCK_ERROR);
         }
@@ -30,7 +32,7 @@ export function createDiscordSendTool(
         await new Promise<void>((resolve) => {
           setTimeout(resolve, 1_000);
         });
-        const sent = await channelApi.sendMessage(channelId, params.content);
+        const sent = await channelApi.sendMessage(channelId, content);
         const messageIds = Array.isArray(sent) ? sent : [];
         onMessageSent?.();
 
@@ -38,7 +40,7 @@ export function createDiscordSendTool(
           content: [
             {
               type: "text",
-              text: `The message was sent to Discord.\nSent content:\n${params.content}`,
+              text: `The message was sent to Discord.\nSent content:\n${content}`,
             },
           ],
           details: messageIds.length > 0 ? { messageIds } : {},
