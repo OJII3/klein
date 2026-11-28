@@ -5,8 +5,6 @@ import {
   type InteractionReplyOptions,
 } from "discord.js";
 
-export { DISCORD_TEXT_DISPLAY_LIMIT, truncateTextLines } from "../domain/discord-text";
-
 export type DiscordMessageTone = "neutral" | "success" | "warning" | "danger";
 
 const TONE_ACCENT_COLORS: Readonly<Record<DiscordMessageTone, number>> = {

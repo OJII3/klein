@@ -23,10 +23,10 @@ import type { DiscordOperatingMode } from "../domain/discord-operating-state";
 import type { DiscordAccessPolicy } from "../domain/discord-access-policy";
 import type { DiscordAccessRuleStore } from "../ports/discord-access-rule-store";
 import type { DiscordChannelRuleStore } from "../ports/discord-channel-rule-store";
+import { truncateTextLines } from "../domain/discord-text";
 import {
   createEphemeralTextContainerMessage,
   createTextContainerMessage,
-  truncateTextLines,
   type DiscordInteractionMessage,
 } from "./discord-component-message";
 import type { DiscordChannelLink, DiscordChannelLinkTarget } from "../domain/discord-channel-link";
