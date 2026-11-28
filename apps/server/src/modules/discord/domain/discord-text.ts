@@ -1,11 +1,6 @@
-/** The longest text a single TextDisplay component accepts. */
+/** External: Discord counts all text displays in one message against a shared 4,000-character limit. */
 export const DISCORD_TEXT_DISPLAY_LIMIT = 4_000;
 
-/**
- * Joins lines and keeps the result within the text display limit. When a line
- * would overflow, the remaining lines are summarized by their count so the
- * reader knows the list is partial.
- */
 export function truncateTextLines(
   lines: readonly string[],
   limit: number = DISCORD_TEXT_DISPLAY_LIMIT,
